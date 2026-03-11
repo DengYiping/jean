@@ -9,6 +9,7 @@ import {
   Loader2,
   AlertCircle,
   Wand2,
+  Eye,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { getModifierSymbol } from '@/lib/platform'
@@ -239,12 +240,14 @@ function PRRow({
   pr,
   isCreating,
   onClick,
+  onPreview,
   onInvestigate,
   onLabelClick,
 }: {
   pr: GitHubPullRequest
   isCreating: boolean
-  onClick: () => void
+  onClick: (background: boolean) => void
+  onPreview: () => void
   onInvestigate: (background: boolean) => void
   onLabelClick?: (label: string) => void
 }) {
@@ -310,7 +313,7 @@ function PRRow({
         />
       )}
       <button
-        onClick={onClick}
+        onClick={e => onClick(e.metaKey || e.ctrlKey)}
         disabled={isCreating}
         className="flex-1 min-w-0 text-left focus:outline-none disabled:cursor-not-allowed"
       >
@@ -372,7 +375,21 @@ function PRRow({
           </div>
         )}
       </button>
-      <div className="shrink-0 self-center">
+      <div className="shrink-0 flex items-center gap-1 self-center">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={e => {
+                e.stopPropagation()
+                onPreview()
+              }}
+              className="inline-flex h-6 w-6 items-center justify-center rounded px-1 text-foreground/80 transition-colors hover:text-foreground hover:bg-muted"
+            >
+              <Eye className="h-3.5 w-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>Preview PR ({getModifierSymbol()}O)</TooltipContent>
+        </Tooltip>
         <InvestigateButton
           isCreating={isCreating}
           tooltip={`Investigate PR (${getModifierSymbol()}+Click = background)`}
@@ -768,6 +785,50 @@ export function GitHubDashboardModal() {
     [createWorktree]
   )
 
+  const handleCheckoutPR = useCallback(
+    async (
+      pr: GitHubPullRequest,
+      projectId: string,
+      projectPath: string,
+      background: boolean
+    ) => {
+      setCreatingId(`pr-${pr.number}`)
+      try {
+        const detail = await invoke<
+          GitHubPullRequest & {
+            comments: { body: string; author: { login: string }; created_at: string }[]
+            reviews: { body: string; state: string; author: { login: string }; submittedAt?: string }[]
+          }
+        >('get_github_pr', { projectPath, prNumber: pr.number })
+
+        const prContext: PullRequestContext = {
+          number: detail.number,
+          title: detail.title,
+          body: detail.body,
+          headRefName: detail.headRefName,
+          baseRefName: detail.baseRefName,
+          comments: (detail.comments ?? [])
+            .filter(c => c && c.created_at && c.author)
+            .map(c => ({ body: c.body ?? '', author: { login: c.author.login ?? '' }, createdAt: c.created_at })),
+          reviews: (detail.reviews ?? [])
+            .filter(r => r && r.author)
+            .map(r => ({ body: r.body ?? '', state: r.state, author: { login: r.author.login ?? '' }, submittedAt: r.submittedAt })),
+        }
+
+        if (background) useUIStore.getState().incrementPendingBackgroundCreations()
+        await createWorktree.mutateAsync({ projectId, prContext, background })
+        if (!background) {
+          setGitHubDashboardOpen(false)
+        }
+      } catch (error) {
+        toast.error(`Failed: ${error}`)
+      } finally {
+        setCreatingId(null)
+      }
+    },
+    [createWorktree, setGitHubDashboardOpen]
+  )
+
   const handleInvestigateSecurityAlert = useCallback(
     async (alert: DependabotAlert, projectId: string, projectPath: string, background: boolean) => {
       setCreatingId(`security-${alert.number}`)
@@ -1006,8 +1067,15 @@ export function GitHubDashboardModal() {
                           key={pr.number}
                           pr={pr}
                           isCreating={creatingId === `pr-${pr.number}`}
-                          onClick={() =>
-                            setPreview({ projectPath: project.path, type: 'pr', number: pr.number })
+                          onClick={bg =>
+                            handleCheckoutPR(pr, project.id, project.path, bg)
+                          }
+                          onPreview={() =>
+                            setPreview({
+                              projectPath: project.path,
+                              type: 'pr',
+                              number: pr.number,
+                            })
                           }
                           onInvestigate={bg =>
                             handleInvestigatePR(pr, project.id, project.path, bg)

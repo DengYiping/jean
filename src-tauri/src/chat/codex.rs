@@ -347,13 +347,15 @@ pub fn execute_codex_via_server(
     // We don't have the turn_id yet — register with empty, update after turn/started
     super::registry::register_codex_turn(session_id.to_string(), thread_id.clone(), String::new());
 
-    // Start the turn
-    let turn_response = codex_server::send_request("turn/start", turn_params);
-    if let Err(e) = &turn_response {
-        codex_server::unregister_session(&thread_id);
-        super::registry::unregister_codex_turn(session_id);
-        return Err(format!("Failed to start turn: {e}"));
-    }
+    // Start the turn in the background so we can immediately begin draining
+    // server requests like approvals. The app-server is documented to return
+    // `turn/start` promptly, but approval callbacks can arrive in the same
+    // window and must not be blocked on the response round-trip.
+    let (turn_start_tx, turn_start_rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let result = codex_server::send_request("turn/start", turn_params);
+        let _ = turn_start_tx.send(result);
+    });
 
     // Process events until turn completes
     super::increment_tailer_count();
@@ -365,6 +367,7 @@ pub fn execute_codex_via_server(
         output_file,
         is_plan_mode,
         is_build_mode,
+        &turn_start_rx,
         &event_rx,
     );
     super::decrement_tailer_count();
@@ -426,11 +429,12 @@ fn process_turn_events(
     output_file: &std::path::Path,
     is_plan_mode: bool,
     is_build_mode: bool,
+    turn_start_rx: &std::sync::mpsc::Receiver<Result<serde_json::Value, String>>,
     event_rx: &std::sync::mpsc::Receiver<super::codex_server::ServerEvent>,
 ) -> CodexResponse {
     use super::codex_server::ServerEvent;
     use std::io::Write;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     let mut full_content = String::new();
     let mut response_thread_id = thread_id.to_string();
@@ -441,6 +445,8 @@ fn process_turn_events(
     let mut cancelled = false;
     let mut error_emitted = false;
     let mut usage: Option<UsageData> = None;
+    let mut turn_start_resolved = false;
+    let mut last_activity = Instant::now();
 
     // Open output file for history
     let mut output_writer = std::fs::OpenOptions::new()
@@ -450,20 +456,65 @@ fn process_turn_events(
         .ok();
 
     loop {
-        let event = match event_rx.recv_timeout(Duration::from_secs(300)) {
-            Ok(e) => e,
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                log::warn!("Turn event timeout for session {session_id}");
+        match turn_start_rx.try_recv() {
+            Ok(Ok(turn_start_result)) if !turn_start_resolved => {
+                turn_start_resolved = true;
+                if let Some(turn_id) = turn_start_result
+                    .get("turn")
+                    .and_then(|turn| turn.get("id"))
+                    .and_then(|v| v.as_str())
+                {
+                    super::registry::register_codex_turn(
+                        session_id.to_string(),
+                        thread_id.to_string(),
+                        turn_id.to_string(),
+                    );
+                }
+            }
+            Ok(Err(e)) if !turn_start_resolved => {
                 let _ = app.emit_all(
                     "chat:error",
                     &ErrorEvent {
                         session_id: session_id.to_string(),
                         worktree_id: worktree_id.to_string(),
-                        error: "Codex response timed out".to_string(),
+                        error: format!("Failed to start Codex turn: {e}"),
                     },
                 );
                 error_emitted = true;
                 break;
+            }
+            Err(std::sync::mpsc::TryRecvError::Disconnected) if !turn_start_resolved => {
+                let _ = app.emit_all(
+                    "chat:error",
+                    &ErrorEvent {
+                        session_id: session_id.to_string(),
+                        worktree_id: worktree_id.to_string(),
+                        error: "Failed to start Codex turn".to_string(),
+                    },
+                );
+                error_emitted = true;
+                break;
+            }
+            _ => {}
+        }
+
+        let event = match event_rx.recv_timeout(Duration::from_millis(200)) {
+            Ok(e) => e,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                if last_activity.elapsed() >= Duration::from_secs(300) {
+                    log::warn!("Turn event timeout for session {session_id}");
+                    let _ = app.emit_all(
+                        "chat:error",
+                        &ErrorEvent {
+                            session_id: session_id.to_string(),
+                            worktree_id: worktree_id.to_string(),
+                            error: "Codex response timed out".to_string(),
+                        },
+                    );
+                    error_emitted = true;
+                    break;
+                }
+                continue;
             }
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
                 log::warn!("Event channel disconnected for session {session_id}");
@@ -471,6 +522,7 @@ fn process_turn_events(
                 break;
             }
         };
+        last_activity = Instant::now();
 
         match event {
             ServerEvent::Notification { method, params } => {

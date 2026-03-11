@@ -282,10 +282,19 @@ export default function useStreamingEvents({
           executionModes,
           thinkingLevels,
           selectedModels,
+          removeSendingSession,
+          setWaitingForInput,
         } = useChatStore.getState()
 
         // Store the denials for the approval UI
         setPendingDenials(session_id, denials)
+
+        // Codex keeps the turn open while waiting for approval, so surface the
+        // approval UI by pausing the local "sending" state until the user acts.
+        if (denials.some(denial => denial.rpc_id != null)) {
+          removeSendingSession(session_id)
+          setWaitingForInput(session_id, true)
+        }
 
         // Store the message context for re-send
         const originalMessage = lastSentMessages[session_id]

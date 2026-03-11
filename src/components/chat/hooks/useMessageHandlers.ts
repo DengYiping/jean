@@ -1748,17 +1748,16 @@ export function useMessageHandlers({
         setExecutingMode,
         setExecutionMode,
         setWaitingForInput,
-        selectedBackends,
       } = useChatStore.getState()
-
-      const backend = selectedBackends[sessionId] ?? 'claude'
+      const denials = getPendingDenials(sessionId)
+      const isCodexApproval = denials.some(denial => denial.rpc_id != null)
 
       // Codex path: send approval response via JSON-RPC (process is still running)
-      if (backend === 'codex') {
-        const denials = getPendingDenials(sessionId)
+      if (isCodexApproval) {
         clearPendingDenials(sessionId)
         clearDeniedMessageContext(sessionId)
         setWaitingForInput(sessionId, false)
+        addSendingSession(sessionId)
         setExecutionMode(sessionId, 'build')
         console.log('[useMessageHandlers] Codex path: Broadcasting executionMode=build for session', sessionId)
         invoke('broadcast_session_setting', {
@@ -1934,17 +1933,16 @@ export function useMessageHandlers({
         setExecutingMode,
         setExecutionMode: setMode,
         setWaitingForInput,
-        selectedBackends,
       } = useChatStore.getState()
-
-      const backend = selectedBackends[sessionId] ?? 'claude'
+      const denials = getPendingDenials(sessionId)
+      const isCodexApproval = denials.some(denial => denial.rpc_id != null)
 
       // Codex path: accept current denial and switch to yolo for future messages
-      if (backend === 'codex') {
-        const denials = getPendingDenials(sessionId)
+      if (isCodexApproval) {
         clearPendingDenials(sessionId)
         clearDeniedMessageContext(sessionId)
         setWaitingForInput(sessionId, false)
+        addSendingSession(sessionId)
         setMode(sessionId, 'yolo')
 
         requestAnimationFrame(() => {
@@ -2078,14 +2076,12 @@ export function useMessageHandlers({
       getPendingDenials,
       setWaitingForInput,
       removeSendingSession,
-      selectedBackends,
     } = useChatStore.getState()
-
-    const backend = selectedBackends[sessionId] ?? 'claude'
+    const denials = getPendingDenials(sessionId)
+    const isCodexApproval = denials.some(denial => denial.rpc_id != null)
 
     // For Codex: send decline response to unblock the attached process
-    if (backend === 'codex') {
-      const denials = getPendingDenials(sessionId)
+    if (isCodexApproval) {
       for (const denial of denials) {
         if (denial.rpc_id != null) {
           invoke('approve_codex_command', {

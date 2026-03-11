@@ -1364,9 +1364,7 @@ fn compute_check_status(checks: &Option<Vec<RawStatusCheck>>) -> Option<String> 
             _ => {}
         }
         match check.status.as_deref().map(|s| s.to_ascii_uppercase()) {
-            Some(s) if s == "IN_PROGRESS" || s == "QUEUED" || s == "PENDING" => {
-                has_pending = true
-            }
+            Some(s) if s == "IN_PROGRESS" || s == "QUEUED" || s == "PENDING" => has_pending = true,
             _ => {}
         }
         if check.conclusion.is_none() {
@@ -1738,7 +1736,12 @@ pub fn get_pr_diff(
     const MAX_DIFF_SIZE: usize = 100_000;
     if diff.len() > MAX_DIFF_SIZE {
         // Find a safe UTF-8 char boundary near MAX_DIFF_SIZE
-        let end = diff.char_indices().take_while(|(i, _)| *i < MAX_DIFF_SIZE).last().map(|(i, c)| i + c.len_utf8()).unwrap_or(MAX_DIFF_SIZE.min(diff.len()));
+        let end = diff
+            .char_indices()
+            .take_while(|(i, _)| *i < MAX_DIFF_SIZE)
+            .last()
+            .map(|(i, c)| i + c.len_utf8())
+            .unwrap_or(MAX_DIFF_SIZE.min(diff.len()));
         Ok(format!(
             "{}...\n\n[Diff truncated at 100KB - {} bytes total. Run `gh pr diff {}` to see the full diff.]",
             &diff[..end],

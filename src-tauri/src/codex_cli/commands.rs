@@ -996,10 +996,7 @@ async fn find_asset_url(version: &str, asset_name: &str) -> Result<String, Strin
 
 /// Install Codex CLI by downloading from GitHub releases
 #[tauri::command]
-pub async fn install_codex_cli(
-    _app: AppHandle,
-    _version: Option<String>,
-) -> Result<(), String> {
+pub async fn install_codex_cli(_app: AppHandle, _version: Option<String>) -> Result<(), String> {
     Err(
         "Jean now uses the Codex CLI from your host system. Install `codex` on your machine and restart or refresh Jean."
             .to_string(),

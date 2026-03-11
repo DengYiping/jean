@@ -810,7 +810,9 @@ pub fn persist_partial_cancelled_content(
         line.contains("\"type\":\"assistant\"") || line.contains("\"type\": \"assistant\"")
     });
     if has_assistant_content {
-        log::trace!("JSONL already has assistant content, skipping persist for session {session_id}");
+        log::trace!(
+            "JSONL already has assistant content, skipping persist for session {session_id}"
+        );
         return Ok(());
     }
 
@@ -832,7 +834,8 @@ pub fn persist_partial_cancelled_content(
         .open(&path)
         .map_err(|e| format!("Failed to open run log for partial content: {e}"))?;
     writeln!(file, "{synthetic}").map_err(|e| format!("Failed to write partial content: {e}"))?;
-    file.flush().map_err(|e| format!("Failed to flush partial content: {e}"))?;
+    file.flush()
+        .map_err(|e| format!("Failed to flush partial content: {e}"))?;
 
     log::trace!(
         "Persisted partial cancelled content ({} chars) for session {session_id}",

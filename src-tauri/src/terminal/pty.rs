@@ -218,7 +218,10 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn shell_run_args_pass_raw_command_to_shell_c() {
-        assert_eq!(super::shell_run_args("bun run tauri:dev"), ["-c", "bun run tauri:dev"]);
+        assert_eq!(
+            super::shell_run_args("bun run tauri:dev"),
+            ["-c", "bun run tauri:dev"]
+        );
     }
 }
 

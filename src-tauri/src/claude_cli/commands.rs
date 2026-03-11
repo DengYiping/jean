@@ -338,10 +338,7 @@ fn verify_checksum(data: &[u8], expected: &str) -> Result<(), String> {
 
 /// Install Claude CLI by downloading the binary directly from Anthropic's distribution bucket
 #[tauri::command]
-pub async fn install_claude_cli(
-    _app: AppHandle,
-    _version: Option<String>,
-) -> Result<(), String> {
+pub async fn install_claude_cli(_app: AppHandle, _version: Option<String>) -> Result<(), String> {
     Err(
         "Jean now uses the Claude Code CLI from your host system. Install `claude` on your machine and restart or refresh Jean."
             .to_string(),

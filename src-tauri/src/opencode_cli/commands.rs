@@ -176,6 +176,41 @@ fn strip_ansi(input: &str) -> String {
     out
 }
 
+fn auth_list_has_credentials(stdout: &str) -> bool {
+    let normalized = strip_ansi(stdout).to_lowercase();
+    normalized.contains("credential") && !normalized.contains("0 credentials")
+}
+
+fn model_list_has_entries(stdout: &str) -> bool {
+    strip_ansi(stdout).lines().any(|line| {
+        let candidate = line.trim();
+        !candidate.is_empty()
+            && !candidate.starts_with('{')
+            && !candidate.starts_with('"')
+            && !candidate.starts_with("Models cache refreshed")
+            && candidate.contains('/')
+    })
+}
+
+fn check_opencode_has_available_models(binary_path: &std::path::Path) -> Result<bool, String> {
+    let output = silent_command(binary_path)
+        .arg("models")
+        .output()
+        .map_err(|e| format!("Failed to execute OpenCode CLI models command: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if stderr.is_empty() {
+            "OpenCode models command failed".to_string()
+        } else {
+            stderr
+        });
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(model_list_has_entries(&stdout))
+}
+
 /// Validates model identifiers in the format: `provider/model` or `openrouter/provider/model`.
 /// Both support an optional `:qualifier` suffix on the model (e.g. `:free`, `:exacto`).
 fn is_model_identifier(value: &str) -> bool {
@@ -219,30 +254,41 @@ pub async fn check_opencode_cli_auth(app: AppHandle) -> Result<OpenCodeAuthStatu
         .output()
         .map_err(|e| format!("Failed to execute OpenCode CLI: {e}"))?;
 
-    if !output.status.success() {
+    let auth_list_error = if output.status.success() {
+        None
+    } else {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        Some(if stderr.is_empty() {
+            "Not authenticated".to_string()
+        } else {
+            stderr
+        })
+    };
+
+    let auth_list_stdout = String::from_utf8_lossy(&output.stdout);
+    if auth_list_has_credentials(&auth_list_stdout) {
         return Ok(OpenCodeAuthStatus {
-            authenticated: false,
-            error: if stderr.is_empty() {
-                Some("Not authenticated".to_string())
-            } else {
-                Some(stderr)
-            },
+            authenticated: true,
+            error: None,
         });
     }
 
-    let stdout_raw = String::from_utf8_lossy(&output.stdout).to_string();
-    let stdout = strip_ansi(&stdout_raw).to_lowercase();
-    let has_credentials = stdout.contains("credential") && !stdout.contains("0 credentials");
-
-    Ok(OpenCodeAuthStatus {
-        authenticated: has_credentials,
-        error: if has_credentials {
-            None
-        } else {
-            Some("No credentials configured. Run `opencode auth login`.".to_string())
-        },
-    })
+    match check_opencode_has_available_models(&binary_path) {
+        Ok(true) => Ok(OpenCodeAuthStatus {
+            authenticated: true,
+            error: None,
+        }),
+        Ok(false) => Ok(OpenCodeAuthStatus {
+            authenticated: false,
+            error: Some(auth_list_error.unwrap_or_else(|| {
+                "No OpenCode credentials or configured providers detected.".to_string()
+            })),
+        }),
+        Err(models_error) => Ok(OpenCodeAuthStatus {
+            authenticated: false,
+            error: Some(auth_list_error.unwrap_or(models_error)),
+        }),
+    }
 }
 
 /// Get the platform-specific asset info for GitHub release downloads.
@@ -351,10 +397,7 @@ pub async fn get_available_opencode_versions() -> Result<Vec<OpenCodeReleaseInfo
 
 /// Install OpenCode CLI by downloading the binary from GitHub releases.
 #[tauri::command]
-pub async fn install_opencode_cli(
-    _app: AppHandle,
-    _version: Option<String>,
-) -> Result<(), String> {
+pub async fn install_opencode_cli(_app: AppHandle, _version: Option<String>) -> Result<(), String> {
     Err(
         "Jean now uses the OpenCode CLI from your host system. Install `opencode` on your machine and restart or refresh Jean."
             .to_string(),
@@ -454,7 +497,7 @@ async fn fetch_latest_version() -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::is_model_identifier;
+    use super::{auth_list_has_credentials, is_model_identifier, model_list_has_entries};
 
     #[test]
     fn accepts_valid_model_identifiers() {
@@ -472,6 +515,25 @@ mod tests {
             "\"url\": \"https://opencode.ai/zen/v1\","
         ));
         assert!(!is_model_identifier("https://opencode.ai/zen/v1"));
+    }
+
+    #[test]
+    fn detects_credentials_in_auth_list_output() {
+        assert!(auth_list_has_credentials(
+            "\u{1b}[0m\n┌  Credentials ~/.local/share/opencode/auth.json\n│\n├  openai\n└  1 credential\n"
+        ));
+        assert!(!auth_list_has_credentials(
+            "\u{1b}[0m\n┌  Credentials ~/.local/share/opencode/auth.json\n│\n└  0 credentials\n"
+        ));
+    }
+
+    #[test]
+    fn detects_models_in_plain_model_list_output() {
+        assert!(model_list_has_entries(
+            "anthropic_locked/claude-sonnet-4-6\nopenai_locked/gpt-5.4\n"
+        ));
+        assert!(!model_list_has_entries(""));
+        assert!(!model_list_has_entries("Models cache refreshed\n"));
     }
 
     #[test]

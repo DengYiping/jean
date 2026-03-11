@@ -5507,7 +5507,11 @@ fn get_staged_diff(repo_path: &str) -> Result<String, String> {
 
     // Truncate very long diffs (char-safe for multi-byte UTF-8)
     if diff.len() > 50000 {
-        let end = diff.char_indices().nth(50000).map(|(i, _)| i).unwrap_or(diff.len());
+        let end = diff
+            .char_indices()
+            .nth(50000)
+            .map(|(i, _)| i)
+            .unwrap_or(diff.len());
         Ok(format!(
             "{}...\n\n[Diff truncated - {} chars total]",
             &diff[..end],
@@ -6676,7 +6680,11 @@ fn generate_release_notes_content(
 
     // Truncate commits if too large (50K chars, char-safe for multi-byte UTF-8)
     let commits = if commits.len() > 50_000 {
-        let end = commits.char_indices().nth(50_000).map(|(i, _)| i).unwrap_or(commits.len());
+        let end = commits
+            .char_indices()
+            .nth(50_000)
+            .map(|(i, _)| i)
+            .unwrap_or(commits.len());
         format!(
             "{}\n\n[... truncated, {} total characters]",
             &commits[..end],

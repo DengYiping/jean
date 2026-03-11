@@ -5,18 +5,14 @@ import { DEFAULT_KEYBINDINGS, type KeybindingsMap } from './keybindings'
 // Notification Sounds
 // =============================================================================
 
-export type NotificationSound = 'none' | 'ding' | 'chime' | 'pop' | 'choochoo'
+export type NotificationSound = 'none' | 'choochoo'
 
 export const notificationSoundOptions: {
   value: NotificationSound
   label: string
 }[] = [
   { value: 'none', label: 'None' },
-  // More sounds will be added later:
-  // { value: 'ding', label: 'Ding' },
-  // { value: 'chime', label: 'Chime' },
-  // { value: 'pop', label: 'Pop' },
-  // { value: 'choochoo', label: 'Choo-choo' },
+  { value: 'choochoo', label: 'Choo-choo' },
 ]
 
 // =============================================================================

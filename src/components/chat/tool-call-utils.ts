@@ -53,6 +53,7 @@ function isSpecialTool(toolCall: ToolCall): boolean {
     toolCall.name === 'AskUserQuestion' ||
     toolCall.name === 'ExitPlanMode' ||
     toolCall.name === 'EnterPlanMode' ||
+    toolCall.name === 'FileChange' ||
     toolCall.name === 'TodoWrite' ||
     toolCall.name === 'CodexTodoList'
   )
@@ -320,6 +321,10 @@ export function buildTimeline(
           tool: toolCall,
           key: `enter-plan-${toolCall.id}`,
         })
+        continue
+      }
+      if (toolCall.name === 'FileChange') {
+        // File changes render as a dedicated card outside the tool-call timeline.
         continue
       }
       if (isTodoWrite(toolCall)) {

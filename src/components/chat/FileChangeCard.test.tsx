@@ -1,0 +1,47 @@
+import { fireEvent, render, screen } from '@/test/test-utils'
+import { describe, expect, it } from 'vitest'
+import { FileChangeCard } from './FileChangeCard'
+
+describe('FileChangeCard', () => {
+  it('renders a dedicated file-change summary card without undo actions', () => {
+    render(
+      <FileChangeCard
+        toolCalls={[
+          {
+            id: 'file-change-1',
+            name: 'FileChange',
+            input: [
+              {
+                path: 'src/components/chat/ToolCallInline.test.tsx',
+                kind: { type: 'update' },
+                diff: '@@ -1,2 +1,3 @@\n line 1\n-line 2\n+line 3\n+line 4\n',
+              },
+              {
+                path: 'src/components/chat/ToolCallInline.tsx',
+                kind: { type: 'delete' },
+                diff: 'line a\nline b\n',
+              },
+            ],
+          },
+        ]}
+      />
+    )
+
+    expect(screen.getByText('2 files changed')).toBeInTheDocument()
+    expect(screen.getAllByText('+2').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('-3').length).toBeGreaterThan(0)
+    expect(screen.getByText('Modified')).toBeInTheDocument()
+    expect(screen.getByText('Deleted')).toBeInTheDocument()
+    expect(screen.queryByText('Undo')).not.toBeInTheDocument()
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: /src\/components\/chat\/ToolCallInline\.test\.tsx/i,
+      })
+    )
+
+    expect(screen.getAllByText('Modified').length).toBeGreaterThan(0)
+    expect(screen.getByText('@@ -1,2 +1,3 @@')).toBeInTheDocument()
+    expect(screen.getByText('line 4')).toBeInTheDocument()
+  })
+})

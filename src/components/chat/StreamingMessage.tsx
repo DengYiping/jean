@@ -16,6 +16,7 @@ import { ToolCallsDisplay } from './ToolCallsDisplay'
 import { ExitPlanModeButton } from './ExitPlanModeButton'
 import { PlanDisplay } from './PlanFileDisplay'
 import { EditedFilesDisplay } from './EditedFilesDisplay'
+import { FileChangeCard } from './FileChangeCard'
 import { ThinkingBlock } from './ThinkingBlock'
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary'
 import { logger } from '@/lib/logger'
@@ -135,7 +136,10 @@ export const StreamingMessage = memo(function StreamingMessage({
           timeline.forEach((item, idx) => {
             if (item.type === 'task' && item.taskTool.output === undefined)
               incompleteIndices.add(idx)
-            else if (item.type === 'standalone' && item.tool.output === undefined)
+            else if (
+              item.type === 'standalone' &&
+              item.tool.output === undefined
+            )
               incompleteIndices.add(idx)
             else if (
               item.type === 'stackedGroup' &&
@@ -288,8 +292,12 @@ export const StreamingMessage = memo(function StreamingMessage({
                                   }
                                   shortcut={approveShortcut}
                                   shortcutYolo={approveShortcutYolo}
-                                  shortcutClearContext={approveShortcutClearContext}
-                                  shortcutClearContextBuild={approveShortcutClearContextBuild}
+                                  shortcutClearContext={
+                                    approveShortcutClearContext
+                                  }
+                                  shortcutClearContextBuild={
+                                    approveShortcutClearContextBuild
+                                  }
                                   hideApproveButtons={hideApproveButtons}
                                 />
                               </div>
@@ -334,6 +342,8 @@ export const StreamingMessage = memo(function StreamingMessage({
           )}
         </>
       )}
+
+      <FileChangeCard toolCalls={toolCalls} />
 
       {/* Show edited files during streaming */}
       <EditedFilesDisplay

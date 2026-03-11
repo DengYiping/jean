@@ -28,6 +28,8 @@ import type { StackableItem } from './tool-call-utils'
 import { Markdown } from '@/components/ui/markdown'
 import { cn } from '@/lib/utils'
 import { getFilename } from '@/lib/path-utils'
+import { FileChangeCard } from './FileChangeCard'
+import { normalizeFileChanges } from './file-change-utils'
 import {
   Collapsible,
   CollapsibleContent,
@@ -57,8 +59,14 @@ export function ToolCallInline({
   isIncomplete,
 }: ToolCallInlineProps) {
   const [isOpen, setIsOpen] = useState(false)
-  const { icon, label, detail, filePath, expandedContent } =
-    getToolDisplay(toolCall)
+  const {
+    icon,
+    label,
+    detail,
+    filePath,
+    expandedContent,
+    suppressDefaultOutput,
+  } = getToolDisplay(toolCall)
 
   const handleFileClick = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -117,7 +125,7 @@ export function ToolCallInline({
             <div className="whitespace-pre-wrap text-xs text-muted-foreground">
               {expandedContent}
             </div>
-            {toolCall.output && (
+            {toolCall.output && !suppressDefaultOutput && (
               <>
                 <div className="border-t border-border/30 my-2" />
                 <div className="text-xs text-muted-foreground/60 mb-1">
@@ -408,8 +416,14 @@ interface SubToolItemProps {
  */
 function SubToolItem({ toolCall, onFileClick }: SubToolItemProps) {
   const [isOpen, setIsOpen] = useState(false)
-  const { icon, label, detail, filePath, expandedContent } =
-    getToolDisplay(toolCall)
+  const {
+    icon,
+    label,
+    detail,
+    filePath,
+    expandedContent,
+    suppressDefaultOutput,
+  } = getToolDisplay(toolCall)
 
   const handleFileClick = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -460,7 +474,7 @@ function SubToolItem({ toolCall, onFileClick }: SubToolItemProps) {
             <div className="whitespace-pre-wrap text-[0.625rem] text-muted-foreground/70">
               {expandedContent}
             </div>
-            {toolCall.output && (
+            {toolCall.output && !suppressDefaultOutput && (
               <>
                 <div className="border-t border-border/20 my-1.5" />
                 <div className="text-[0.625rem] text-muted-foreground/50 mb-0.5">
@@ -485,6 +499,7 @@ interface ToolDisplay {
   /** Full file path for file-related tools (Read, Edit, Write) */
   filePath?: string
   expandedContent: React.ReactNode
+  suppressDefaultOutput?: boolean
 }
 
 /** Renders a unified diff view with colored +/- lines */
@@ -506,7 +521,9 @@ function DiffView({
 
   return (
     <div className={className}>
-      <div className="text-muted-foreground mb-1.5 font-mono">Path: {filePath}</div>
+      <div className="text-muted-foreground mb-1.5 font-mono">
+        Path: {filePath}
+      </div>
       <div className="rounded border border-border/30 overflow-auto max-h-64">
         {parts.map((part, i) => {
           const lines = part.value.replace(/\n$/, '').split('\n')
@@ -526,6 +543,79 @@ function DiffView({
             </div>
           ))
         })}
+      </div>
+    </div>
+  )
+}
+
+const ANSI_ESCAPE_PATTERN =
+  /\u001B(?:\][\s\S]*?(?:\u0007|\u001B\\)|\[[0-?]*[ -/]*[@-~]|[@-Z\\-_])/g
+
+function stripAnsiSequences(text: string): string {
+  return text.replace(ANSI_ESCAPE_PATTERN, '')
+}
+
+function normalizeTerminalOutput(text?: string): string {
+  if (!text) return ''
+
+  const normalized = stripAnsiSequences(text)
+  const lines: string[] = []
+  let currentLine = ''
+
+  for (const char of normalized) {
+    if (char === '\r') {
+      currentLine = ''
+      continue
+    }
+
+    if (char === '\n') {
+      lines.push(currentLine)
+      currentLine = ''
+      continue
+    }
+
+    if (char === '\b') {
+      currentLine = currentLine.slice(0, -1)
+      continue
+    }
+
+    currentLine += char
+  }
+
+  if (currentLine || normalized.endsWith('\n')) {
+    lines.push(currentLine)
+  }
+
+  return lines.join('\n')
+}
+
+function BashCommandView({
+  command,
+  description,
+  output,
+}: {
+  command?: string
+  description?: string
+  output?: string
+}) {
+  const normalizedOutput = useMemo(
+    () => normalizeTerminalOutput(output),
+    [output]
+  )
+
+  return (
+    <div className="space-y-2">
+      {description && (
+        <div className="text-[11px] text-muted-foreground">{description}</div>
+      )}
+      <div className="overflow-hidden rounded border border-border/30 bg-zinc-950 text-zinc-100">
+        <div className="border-b border-zinc-800 bg-zinc-900/90 px-3 py-1.5 font-mono text-[11px]">
+          <span className="mr-2 text-emerald-400">$</span>
+          <span>{command ?? '(no command)'}</span>
+        </div>
+        <pre className="max-h-64 overflow-auto whitespace-pre-wrap px-3 py-2 font-mono text-[11px] leading-5">
+          {normalizedOutput || '[no output]'}
+        </pre>
       </div>
     </div>
   )
@@ -601,9 +691,14 @@ function getToolDisplay(toolCall: ToolCall): ToolDisplay {
         icon: <Terminal className="h-4 w-4 shrink-0" />,
         label: 'Bash',
         detail: truncatedCommand,
-        expandedContent: description
-          ? `${description}\n\n$ ${command}`
-          : `$ ${command ?? '(no command)'}`,
+        expandedContent: (
+          <BashCommandView
+            command={command}
+            description={description}
+            output={toolCall.output}
+          />
+        ),
+        suppressDefaultOutput: true,
       }
     }
 
@@ -757,26 +852,31 @@ function getToolDisplay(toolCall: ToolCall): ToolDisplay {
     }
 
     case 'FileChange': {
-      // Codex file_change items — input is the raw "changes" JSON
-      const changes = input as Record<string, unknown>
-      const filePath = (changes.file ?? changes.path ?? changes.file_path) as
-        | string
-        | undefined
+      const changes = normalizeFileChanges(toolCall.input)
+      const totalAdded = changes.reduce((sum, change) => sum + change.added, 0)
+      const totalRemoved = changes.reduce(
+        (sum, change) => sum + change.removed,
+        0
+      )
+      const filePath = changes.length === 1 ? changes[0]?.path : undefined
       const filename = filePath ? getFilename(filePath) : undefined
-
-      // If input is an array of changes, summarize
-      const isArray = Array.isArray(toolCall.input)
-      const fileCount = isArray ? (toolCall.input as unknown[]).length : undefined
-      const detail = isArray
-        ? `${fileCount} file${fileCount === 1 ? '' : 's'}`
-        : filename
+      const detail =
+        changes.length <= 1
+          ? filename
+          : `${changes.length} files (+${totalAdded}/-${totalRemoved})`
 
       return {
         icon: <FileText className="h-4 w-4 shrink-0" />,
         label: 'File Change',
         detail,
         filePath,
-        expandedContent: JSON.stringify(toolCall.input, null, 2),
+        expandedContent:
+          changes.length > 0 ? (
+            <FileChangeCard toolCalls={[toolCall]} className="mt-0" />
+          ) : (
+            JSON.stringify(toolCall.input, null, 2)
+          ),
+        suppressDefaultOutput: true,
       }
     }
 
@@ -796,14 +896,14 @@ function getToolDisplay(toolCall: ToolCall): ToolDisplay {
         typeof args === 'string'
           ? args
           : args
-          ? JSON.stringify(args)
-          : undefined
+            ? JSON.stringify(args)
+            : undefined
       const expandedArgs =
         typeof args === 'string'
           ? args
           : args
-          ? JSON.stringify(args, null, 2)
-          : undefined
+            ? JSON.stringify(args, null, 2)
+            : undefined
       return {
         icon: <Wand2 className="h-4 w-4 shrink-0 text-purple-500" />,
         label: skillName ? `Skill: ${skillName}` : 'Skill',

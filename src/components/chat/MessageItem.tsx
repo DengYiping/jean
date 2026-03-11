@@ -20,6 +20,7 @@ import { SkillBadge } from './SkillBadge'
 import { ToolCallsDisplay } from './ToolCallsDisplay'
 import { ExitPlanModeButton } from './ExitPlanModeButton'
 import { EditedFilesDisplay } from './EditedFilesDisplay'
+import { FileChangeCard } from './FileChangeCard'
 import {
   Tooltip,
   TooltipTrigger,
@@ -400,9 +401,7 @@ export const MessageItem = memo(function MessageItem({
                             questions={input.questions}
                             introText={item.introText}
                             hasFollowUpMessage={hasFollowUpMessage}
-                            isSkipped={areQuestionsSkipped(
-                              message.session_id
-                            )}
+                            isSkipped={areQuestionsSkipped(message.session_id)}
                             onSubmit={(toolCallId, answers) =>
                               onQuestionAnswer(
                                 toolCallId,
@@ -560,6 +559,10 @@ export const MessageItem = memo(function MessageItem({
             )}
         </>
       )}
+
+      {message.role === 'assistant' &&
+        (message.tool_calls?.length ?? 0) > 0 &&
+        !skipToolCalls && <FileChangeCard toolCalls={message.tool_calls} />}
 
       {/* Show edited files at the bottom of assistant messages */}
       {message.role === 'assistant' &&

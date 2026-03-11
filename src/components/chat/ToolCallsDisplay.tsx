@@ -81,7 +81,7 @@ export const ToolCallsDisplay = memo(function ToolCallsDisplay({
   // Note: Edit tools are handled by EditedFilesDisplay at the bottom of the message
   const questionTools = toolCalls.filter(isAskUserQuestion)
   const otherTools = toolCalls.filter(
-    t => !isAskUserQuestion(t) && !isExitPlanMode(t)
+    t => !isAskUserQuestion(t) && !isExitPlanMode(t) && t.name !== 'FileChange'
   )
 
   // Merge multiple AskUserQuestion calls into one (Claude sometimes emits duplicates)
@@ -91,6 +91,8 @@ export const ToolCallsDisplay = memo(function ToolCallsDisplay({
   const mergedToolId = questionTools[0]?.id
 
   if (toolCalls.length === 0) return null
+  if (otherTools.length === 0 && (!mergedQuestions || !mergedToolId))
+    return null
 
   return (
     <div className="mb-2 space-y-1">

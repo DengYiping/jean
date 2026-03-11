@@ -853,6 +853,7 @@ export interface AppPreferences {
   chat_font_size: FontSize // Font size for chat text
   ui_font: UIFont // Font family for UI text
   chat_font: ChatFont // Font family for chat text
+  git_cli_path?: string | null // Optional git executable override (null = use git from PATH)
   git_poll_interval: number // Git status polling interval in seconds (10-600)
   remote_poll_interval: number // Remote API polling interval in seconds (30-600)
   keybindings: KeybindingsMap // User-configurable keyboard shortcuts
@@ -1375,6 +1376,7 @@ export const defaultPreferences: AppPreferences = {
   chat_font_size: FONT_SIZE_DEFAULT,
   ui_font: 'geist',
   chat_font: 'geist',
+  git_cli_path: null,
   git_poll_interval: 60,
   remote_poll_interval: 60,
   keybindings: DEFAULT_KEYBINDINGS,

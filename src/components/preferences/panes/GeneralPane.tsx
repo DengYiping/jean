@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, type FC } from 'react'
+import React, { useState, useCallback, useMemo, useEffect, type FC } from 'react'
 import { invoke } from '@/lib/transport'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -1482,6 +1482,13 @@ export const GeneralPane: React.FC = () => {
             patchPreferences={patchPreferences}
           />
 
+          {isNativeApp() && (
+            <GitCliPathField
+              preferences={preferences}
+              patchPreferences={patchPreferences}
+            />
+          )}
+
           <InlineField
             label="Allow web tools in plan mode"
             description="WebFetch/WebSearch for Claude, --search for Codex"
@@ -1903,6 +1910,10 @@ const AiLanguageField: FC<{
 }> = ({ preferences, patchPreferences }) => {
   const [localValue, setLocalValue] = useState(preferences?.ai_language ?? '')
 
+  useEffect(() => {
+    setLocalValue(preferences?.ai_language ?? '')
+  }, [preferences?.ai_language])
+
   const hasChanges = localValue !== (preferences?.ai_language ?? '')
 
   const handleSave = useCallback(() => {
@@ -1919,6 +1930,60 @@ const AiLanguageField: FC<{
         <Input
           className="w-40"
           placeholder="Default"
+          value={localValue}
+          onChange={e => setLocalValue(e.target.value)}
+        />
+        <Button
+          size="sm"
+          onClick={handleSave}
+          disabled={!hasChanges || patchPreferences.isPending}
+        >
+          {patchPreferences.isPending && (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          )}
+          Save
+        </Button>
+      </div>
+    </InlineField>
+  )
+}
+
+const GitCliPathField: FC<{
+  preferences: AppPreferences | undefined
+  patchPreferences: ReturnType<typeof usePatchPreferences>
+}> = ({ preferences, patchPreferences }) => {
+  const [localValue, setLocalValue] = useState(
+    preferences?.git_cli_path ?? ''
+  )
+
+  useEffect(() => {
+    setLocalValue(preferences?.git_cli_path ?? '')
+  }, [preferences?.git_cli_path])
+
+  const hasChanges = localValue !== (preferences?.git_cli_path ?? '')
+
+  const handleSave = useCallback(() => {
+    if (!preferences) return
+    const trimmed = localValue.trim()
+    patchPreferences.mutate({
+      git_cli_path: trimmed.length > 0 ? trimmed : null,
+    })
+  }, [preferences, patchPreferences, localValue])
+
+  return (
+    <InlineField
+      label="Git executable"
+      description={
+        <>
+          Optional override for the <code>git</code> binary. Supports{' '}
+          <code>~</code>, for example <code>~/.hubspot/git-wrapper</code>.
+        </>
+      }
+    >
+      <div className="flex items-center gap-2">
+        <Input
+          className="w-80"
+          placeholder="System default (git)"
           value={localValue}
           onChange={e => setLocalValue(e.target.value)}
         />

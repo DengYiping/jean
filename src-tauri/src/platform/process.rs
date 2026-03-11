@@ -1,6 +1,48 @@
 // Cross-platform process management
 
+use once_cell::sync::Lazy;
+use std::ffi::OsStr;
+use std::path::PathBuf;
 use std::process::Command;
+use std::sync::RwLock;
+
+static GIT_BINARY_OVERRIDE: Lazy<RwLock<Option<PathBuf>>> = Lazy::new(|| RwLock::new(None));
+
+fn is_git_program(program: &OsStr) -> bool {
+    matches!(program.to_str(), Some("git") | Some("git.exe"))
+}
+
+fn expand_home_path(path: &str) -> PathBuf {
+    if path == "~" {
+        return dirs::home_dir().unwrap_or_else(|| PathBuf::from(path));
+    }
+
+    if let Some(rest) = path.strip_prefix("~/") {
+        if let Some(home) = dirs::home_dir() {
+            return home.join(rest);
+        }
+    }
+
+    PathBuf::from(path)
+}
+
+pub fn set_git_binary_override(path: Option<&str>) {
+    let override_path = path
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(expand_home_path);
+    let mut guard = GIT_BINARY_OVERRIDE
+        .write()
+        .expect("git binary override lock poisoned");
+    *guard = override_path;
+}
+
+fn get_git_binary_override() -> Option<PathBuf> {
+    GIT_BINARY_OVERRIDE
+        .read()
+        .expect("git binary override lock poisoned")
+        .clone()
+}
 
 /// Escape a string for safe use in a shell command.
 /// Wraps in single quotes and escapes any embedded single quotes.
@@ -35,8 +77,18 @@ pub fn silent_command<S: AsRef<std::ffi::OsStr>>(program: S) -> Command {
     #[cfg(target_os = "macos")]
     ensure_macos_path();
 
+    let program = program.as_ref();
+    let resolved_program = if is_git_program(program) {
+        get_git_binary_override()
+    } else {
+        None
+    };
+
     #[allow(unused_mut)]
-    let mut cmd = Command::new(program);
+    let mut cmd = match resolved_program.as_ref() {
+        Some(path) => Command::new(path),
+        None => Command::new(program),
+    };
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -44,6 +96,75 @@ pub fn silent_command<S: AsRef<std::ffi::OsStr>>(program: S) -> Command {
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
     cmd
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    static GIT_OVERRIDE_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    struct GitOverrideTestGuard;
+
+    impl Drop for GitOverrideTestGuard {
+        fn drop(&mut self) {
+            set_git_binary_override(None);
+        }
+    }
+
+    fn lock_git_override() -> (std::sync::MutexGuard<'static, ()>, GitOverrideTestGuard) {
+        (
+            GIT_OVERRIDE_TEST_LOCK
+                .lock()
+                .expect("git override test lock poisoned"),
+            GitOverrideTestGuard,
+        )
+    }
+
+    #[test]
+    fn expands_tilde_for_git_override() {
+        let (_lock, _guard) = lock_git_override();
+        let home = dirs::home_dir().expect("home directory should exist in tests");
+        set_git_binary_override(Some("~/bin/git-wrapper"));
+
+        assert_eq!(
+            get_git_binary_override(),
+            Some(home.join("bin/git-wrapper"))
+        );
+    }
+
+    #[test]
+    fn clears_git_override_for_blank_values() {
+        let (_lock, _guard) = lock_git_override();
+        set_git_binary_override(Some("~/bin/git-wrapper"));
+        set_git_binary_override(Some("   "));
+
+        assert_eq!(get_git_binary_override(), None);
+    }
+
+    #[test]
+    fn silent_command_uses_git_override_for_git_program() {
+        let (_lock, _guard) = lock_git_override();
+        set_git_binary_override(Some("~/bin/git-wrapper"));
+
+        let command = silent_command("git");
+        let expected = dirs::home_dir()
+            .expect("home directory should exist in tests")
+            .join("bin/git-wrapper");
+
+        assert_eq!(command.get_program(), expected.as_os_str());
+    }
+
+    #[test]
+    fn silent_command_leaves_non_git_programs_unchanged() {
+        let (_lock, _guard) = lock_git_override();
+        set_git_binary_override(Some("~/bin/git-wrapper"));
+
+        let command = silent_command("gh");
+
+        assert_eq!(command.get_program(), OsStr::new("gh"));
+    }
 }
 
 /// Check if a process is still alive

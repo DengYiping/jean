@@ -104,6 +104,8 @@ pub struct AppPreferences {
     pub ui_font: String, // Font family for UI: inter, geist, system
     #[serde(default = "default_chat_font")]
     pub chat_font: String, // Font family for chat: jetbrains-mono, fira-code, source-code-pro, inter, geist, roboto, lato
+    #[serde(default)]
+    pub git_cli_path: Option<String>, // Optional git executable override (None = use git from PATH)
     #[serde(default = "default_git_poll_interval")]
     pub git_poll_interval: u64, // Git status polling interval in seconds (10-600)
     #[serde(default = "default_remote_poll_interval")]
@@ -1061,6 +1063,7 @@ impl Default for AppPreferences {
             chat_font_size: 16,
             ui_font: default_ui_font(),
             chat_font: default_chat_font(),
+            git_cli_path: None,
             git_poll_interval: default_git_poll_interval(),
             remote_poll_interval: default_remote_poll_interval(),
             keybindings: default_keybindings(),
@@ -1119,6 +1122,21 @@ impl Default for AppPreferences {
             linear_api_key: None,
         }
     }
+}
+
+fn normalize_optional_path(path: &mut Option<String>) {
+    if let Some(value) = path.as_mut() {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            *path = None;
+        } else if trimmed.len() != value.len() {
+            *value = trimmed.to_string();
+        }
+    }
+}
+
+fn normalize_preferences(preferences: &mut AppPreferences) {
+    normalize_optional_path(&mut preferences.git_cli_path);
 }
 
 // UI State data structure
@@ -1249,12 +1267,15 @@ pub fn get_preferences_path(app: &AppHandle) -> Result<PathBuf, String> {
 pub fn load_preferences_sync(app: &AppHandle) -> Result<AppPreferences, String> {
     let prefs_path = get_preferences_path(app)?;
     if !prefs_path.exists() {
+        crate::platform::set_git_binary_override(None);
         return Ok(AppPreferences::default());
     }
     let contents = std::fs::read_to_string(&prefs_path)
         .map_err(|e| format!("Failed to read preferences file: {e}"))?;
-    let preferences: AppPreferences =
+    let mut preferences: AppPreferences =
         serde_json::from_str(&contents).map_err(|e| format!("Failed to parse preferences: {e}"))?;
+    normalize_preferences(&mut preferences);
+    crate::platform::set_git_binary_override(preferences.git_cli_path.as_deref());
     Ok(preferences)
 }
 
@@ -1265,6 +1286,7 @@ async fn load_preferences(app: AppHandle) -> Result<AppPreferences, String> {
 
     if !prefs_path.exists() {
         log::trace!("Preferences file not found, using defaults");
+        crate::platform::set_git_binary_override(None);
         return Ok(AppPreferences::default());
     }
 
@@ -1277,6 +1299,8 @@ async fn load_preferences(app: AppHandle) -> Result<AppPreferences, String> {
         log::error!("Failed to parse preferences JSON: {e}");
         format!("Failed to parse preferences: {e}")
     })?;
+
+    normalize_preferences(&mut preferences);
 
     // Migrate magic prompts: convert prompts matching current defaults to None
     // so they auto-update when new defaults are shipped
@@ -1332,14 +1356,17 @@ async fn load_preferences(app: AppHandle) -> Result<AppPreferences, String> {
         }
     }
 
+    crate::platform::set_git_binary_override(preferences.git_cli_path.as_deref());
     log::trace!("Successfully loaded preferences");
     Ok(preferences)
 }
 
 #[tauri::command]
-async fn save_preferences(app: AppHandle, preferences: AppPreferences) -> Result<(), String> {
+async fn save_preferences(app: AppHandle, mut preferences: AppPreferences) -> Result<(), String> {
     // Validate theme value
     validate_theme(&preferences.theme)?;
+    normalize_preferences(&mut preferences);
+    let git_cli_override = preferences.git_cli_path.clone();
 
     log::trace!("Saving preferences to disk");
     let prefs_path = get_preferences_path(&app)?;
@@ -1386,6 +1413,7 @@ async fn save_preferences(app: AppHandle, preferences: AppPreferences) -> Result
         format!("Failed to finalize preferences file: {e}")
     })?;
 
+    crate::platform::set_git_binary_override(git_cli_override.as_deref());
     log::trace!("Successfully saved preferences to {prefs_path:?}");
     Ok(())
 }
@@ -2229,6 +2257,17 @@ pub fn run() {
                 app.package_info().name
             );
 
+            let app_handle = app.handle().clone();
+            match load_preferences_sync(&app_handle) {
+                Ok(prefs) => {
+                    crate::platform::set_git_binary_override(prefs.git_cli_path.as_deref());
+                }
+                Err(e) => {
+                    log::warn!("Failed to initialize git CLI override from preferences: {e}");
+                    crate::platform::set_git_binary_override(None);
+                }
+            }
+
             // In headless mode, close the window immediately
             if headless {
                 log::info!("Running in headless mode");
@@ -2254,7 +2293,6 @@ pub fn run() {
             log::info!("Startup: orphaned server cleanup spawned at {:?}", setup_start.elapsed());
 
             // Allow image access from all known project/worktree directories.
-            let app_handle = app.handle().clone();
             match crate::projects::storage::load_projects_data(&app_handle) {
                 Ok(data) => {
                     for project in &data.projects {

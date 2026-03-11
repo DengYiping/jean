@@ -11,7 +11,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
 use tokio::sync::Mutex as AsyncMutex;
 
-use super::config::{ensure_cli_dir, get_cli_binary_path, resolve_cli_binary};
+use super::config::resolve_cli_binary;
 use crate::http_server::EmitExt;
 use crate::platform::silent_command;
 
@@ -338,140 +338,14 @@ fn verify_checksum(data: &[u8], expected: &str) -> Result<(), String> {
 
 /// Install Claude CLI by downloading the binary directly from Anthropic's distribution bucket
 #[tauri::command]
-pub async fn install_claude_cli(app: AppHandle, version: Option<String>) -> Result<(), String> {
-    log::trace!("Installing Claude CLI, version: {:?}", version);
-
-    // Check if any Claude processes are running - cannot replace binary while in use
-    let running_sessions = crate::chat::registry::get_running_sessions();
-    if !running_sessions.is_empty() {
-        let count = running_sessions.len();
-        return Err(format!(
-            "Cannot install Claude CLI while {} Claude {} running. Please stop all active sessions first.",
-            count,
-            if count == 1 { "session is" } else { "sessions are" }
-        ));
-    }
-
-    let _cli_dir = ensure_cli_dir(&app)?;
-    let binary_path = get_cli_binary_path(&app)?;
-
-    // Emit progress: starting
-    emit_progress(&app, "starting", "Preparing installation...", 0);
-
-    // Determine version (use provided or fetch stable)
-    let version = match version {
-        Some(v) => v,
-        None => fetch_latest_version().await?,
-    };
-
-    // Detect platform
-    let platform = get_platform()?;
-    log::trace!("Installing version {version} for platform {platform}");
-
-    // Fetch manifest and get expected checksum
-    emit_progress(
-        &app,
-        "fetching_manifest",
-        "Fetching release manifest...",
-        10,
-    );
-    let manifest = fetch_manifest(&version).await?;
-    let expected_checksum = manifest
-        .platforms
-        .get(platform)
-        .ok_or_else(|| format!("No checksum found for platform {platform}"))?
-        .checksum
-        .clone();
-    log::trace!("Expected checksum for {platform}: {expected_checksum}");
-
-    // Build download URL
-    let binary_name = if cfg!(windows) {
-        "claude.exe"
-    } else {
-        "claude"
-    };
-    let download_url = format!("{CLAUDE_DIST_BUCKET}/{version}/{platform}/{binary_name}");
-    log::trace!("Downloading from: {download_url}");
-
-    // Emit progress: downloading
-    emit_progress(&app, "downloading", "Downloading Claude CLI...", 25);
-
-    // Download the binary
-    let client = reqwest::Client::new();
-    let response = client
-        .get(&download_url)
-        .send()
-        .await
-        .map_err(|e| format!("Failed to download Claude CLI: {e}"))?;
-
-    if !response.status().is_success() {
-        return Err(format!(
-            "Failed to download Claude CLI: HTTP {}",
-            response.status()
-        ));
-    }
-
-    // Get the binary content
-    let binary_content = response
-        .bytes()
-        .await
-        .map_err(|e| format!("Failed to read binary content: {e}"))?;
-
-    log::trace!(
-        "Downloaded {} bytes, saving to {:?}",
-        binary_content.len(),
-        binary_path
-    );
-
-    // Verify checksum before writing to disk
-    emit_progress(&app, "verifying_checksum", "Verifying checksum...", 55);
-    verify_checksum(&binary_content, &expected_checksum)?;
-    log::trace!("Checksum verified successfully");
-
-    // Emit progress: installing
-    emit_progress(&app, "installing", "Installing Claude CLI...", 65);
-
-    // Write the binary to the target path
-    // Uses platform::write_binary_file which handles Windows file-locking (OS error 32)
-    // via a rename strategy when the existing binary is in use by another process.
-    log::trace!("Creating binary file at {:?}", binary_path);
-    crate::platform::write_binary_file(&binary_path, &binary_content)
-        .map_err(|e| format!("Failed to create binary file: {e}"))?;
-    log::trace!("Binary file written successfully");
-
-    // Make sure the binary is executable
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        log::trace!(
-            "Setting executable permissions (0o755) on {:?}",
-            binary_path
-        );
-        let mut perms = std::fs::metadata(&binary_path)
-            .map_err(|e| format!("Failed to get binary metadata: {e}"))?
-            .permissions();
-        perms.set_mode(0o755);
-        std::fs::set_permissions(&binary_path, perms)
-            .map_err(|e| format!("Failed to set binary permissions: {e}"))?;
-        log::trace!("Executable permissions set successfully");
-    }
-
-    // Remove macOS quarantine attribute to allow execution
-    #[cfg(target_os = "macos")]
-    {
-        log::trace!("Removing quarantine attribute from {:?}", binary_path);
-        let _ = silent_command("xattr")
-            .args(["-d", "com.apple.quarantine"])
-            .arg(&binary_path)
-            .output();
-        // Ignore errors - attribute might not exist
-    }
-
-    // Emit progress: complete
-    emit_progress(&app, "complete", "Installation complete!", 100);
-
-    log::trace!("Claude CLI installed successfully at {:?}", binary_path);
-    Ok(())
+pub async fn install_claude_cli(
+    _app: AppHandle,
+    _version: Option<String>,
+) -> Result<(), String> {
+    Err(
+        "Jean now uses the Claude Code CLI from your host system. Install `claude` on your machine and restart or refresh Jean."
+            .to_string(),
+    )
 }
 
 /// Result of checking Claude CLI authentication status

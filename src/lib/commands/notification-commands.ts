@@ -31,19 +31,19 @@ export const notificationCommands: AppCommand[] = [
     description: 'Show a fake CLI update toast',
     icon: Bug,
     group: 'debug',
-    keywords: ['test', 'cli', 'update', 'notification', 'debug', 'claude'],
+    keywords: ['test', 'cli', 'update', 'notification', 'debug', 'github'],
     execute() {
       const { openCliUpdateModal } = useUIStore.getState()
       const toastId = 'cli-update-claude-test'
 
-      toast.info('Claude CLI update available', {
+      toast.info('GitHub CLI update available', {
         id: toastId,
         description: 'v1.0.0 → v2.0.0',
         duration: Infinity,
         action: {
           label: 'Update',
           onClick: () => {
-            openCliUpdateModal('claude')
+            openCliUpdateModal('gh')
             toast.dismiss(toastId)
           },
         },

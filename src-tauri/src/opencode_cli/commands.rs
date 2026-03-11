@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
-use super::config::{ensure_cli_dir, resolve_cli_binary};
+use super::config::resolve_cli_binary;
 use crate::http_server::EmitExt;
 use crate::platform::silent_command;
 
@@ -351,98 +351,14 @@ pub async fn get_available_opencode_versions() -> Result<Vec<OpenCodeReleaseInfo
 
 /// Install OpenCode CLI by downloading the binary from GitHub releases.
 #[tauri::command]
-pub async fn install_opencode_cli(app: AppHandle, version: Option<String>) -> Result<(), String> {
-    log::trace!("Installing OpenCode CLI: {version:?}");
-
-    emit_progress(&app, "starting", "Preparing OpenCode installation", 5);
-
-    let cli_dir = ensure_cli_dir(&app)?;
-    let platform_asset = get_platform_asset()?;
-
-    // Determine version
-    let version = match version.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
-        Some(v) => v.trim_start_matches('v').to_string(),
-        None => fetch_latest_version().await?,
-    };
-
-    let tag = format!("v{version}");
-    let download_url = format!(
-        "https://github.com/{GITHUB_REPO}/releases/download/{tag}/{}",
-        platform_asset.asset_name
-    );
-    log::trace!("Downloading from: {download_url}");
-
-    emit_progress(&app, "downloading", "Downloading OpenCode CLI", 30);
-
-    let client = reqwest::Client::new();
-    let response = client
-        .get(&download_url)
-        .header("User-Agent", "jean-desktop")
-        .send()
-        .await
-        .map_err(|e| format!("Failed to download OpenCode CLI: {e}"))?;
-
-    if !response.status().is_success() {
-        return Err(format!(
-            "Failed to download OpenCode CLI: HTTP {}",
-            response.status()
-        ));
-    }
-
-    let archive_bytes = response
-        .bytes()
-        .await
-        .map_err(|e| format!("Failed to read download: {e}"))?;
-
-    log::trace!("Downloaded {} bytes", archive_bytes.len());
-
-    emit_progress(&app, "extracting", "Extracting OpenCode binary", 60);
-
-    let binary_name = if cfg!(windows) {
-        "opencode.exe"
-    } else {
-        "opencode"
-    };
-
-    let binary_data = match platform_asset.format {
-        ArchiveFormat::Zip => extract_binary_from_zip(&archive_bytes, binary_name)?,
-        ArchiveFormat::TarGz => extract_binary_from_tar_gz(&archive_bytes, binary_name)?,
-    };
-
-    let binary_path = cli_dir.join(binary_name);
-    crate::platform::write_binary_file(&binary_path, &binary_data)
-        .map_err(|e| format!("Failed to write binary: {e}"))?;
-
-    // Set executable permissions
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(&binary_path)
-            .map_err(|e| format!("Failed to get binary metadata: {e}"))?
-            .permissions();
-        perms.set_mode(0o755);
-        std::fs::set_permissions(&binary_path, perms)
-            .map_err(|e| format!("Failed to set binary permissions: {e}"))?;
-    }
-
-    // Remove macOS quarantine attribute
-    #[cfg(target_os = "macos")]
-    {
-        let _ = silent_command("xattr")
-            .args(["-d", "com.apple.quarantine"])
-            .arg(&binary_path)
-            .output();
-    }
-
-    emit_progress(&app, "verifying", "Verifying OpenCode CLI", 85);
-
-    let status = check_opencode_cli_installed(app.clone()).await?;
-    if !status.installed {
-        return Err("OpenCode CLI install completed but binary was not found".to_string());
-    }
-
-    emit_progress(&app, "complete", "OpenCode CLI installed", 100);
-    Ok(())
+pub async fn install_opencode_cli(
+    _app: AppHandle,
+    _version: Option<String>,
+) -> Result<(), String> {
+    Err(
+        "Jean now uses the OpenCode CLI from your host system. Install `opencode` on your machine and restart or refresh Jean."
+            .to_string(),
+    )
 }
 
 /// Extract a named binary from a tar.gz archive.

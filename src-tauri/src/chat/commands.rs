@@ -1908,23 +1908,21 @@ pub async fn send_chat_message(
                             gh_binary.display()
                         ));
                     }
-                    if let Ok(claude_binary) = crate::claude_cli::get_cli_binary_path(&thread_app) {
-                        if claude_binary.exists() {
-                            system_prompt_parts.push(format!(
-                                "When running Claude CLI commands, use the full path to the embedded binary: {}\n\
-                                 Do NOT use bare `claude` — always use the full path above.",
-                                claude_binary.display()
-                            ));
-                        }
+                    let claude_binary = crate::claude_cli::resolve_cli_binary(&thread_app);
+                    if claude_binary.is_absolute() {
+                        system_prompt_parts.push(format!(
+                            "When running Claude CLI commands, use the full path to the host system binary: {}\n\
+                             Do NOT use bare `claude` — always use the full path above.",
+                            claude_binary.display()
+                        ));
                     }
-                    if let Ok(codex_binary) = crate::codex_cli::get_cli_binary_path(&thread_app) {
-                        if codex_binary.exists() {
-                            system_prompt_parts.push(format!(
-                                "When running Codex CLI commands, use the full path to the embedded binary: {}\n\
-                                 Do NOT use bare `codex` — always use the full path above.",
-                                codex_binary.display()
-                            ));
-                        }
+                    let codex_binary = crate::codex_cli::resolve_cli_binary(&thread_app);
+                    if codex_binary.is_absolute() {
+                        system_prompt_parts.push(format!(
+                            "When running Codex CLI commands, use the full path to the host system binary: {}\n\
+                             Do NOT use bare `codex` — always use the full path above.",
+                            codex_binary.display()
+                        ));
                     }
 
                     // Collect context file paths (issues, PRs, saved contexts)
@@ -2170,23 +2168,21 @@ pub async fn send_chat_message(
                             gh_binary.display()
                         ));
                     }
-                    if let Ok(claude_binary) = crate::claude_cli::get_cli_binary_path(&thread_app) {
-                        if claude_binary.exists() {
-                            system_prompt_parts.push(format!(
-                                "When running Claude CLI commands, use the full path to the embedded binary: {}\n\
-                                 Do NOT use bare `claude` — always use the full path above.",
-                                claude_binary.display()
-                            ));
-                        }
+                    let claude_binary = crate::claude_cli::resolve_cli_binary(&thread_app);
+                    if claude_binary.is_absolute() {
+                        system_prompt_parts.push(format!(
+                            "When running Claude CLI commands, use the full path to the host system binary: {}\n\
+                             Do NOT use bare `claude` — always use the full path above.",
+                            claude_binary.display()
+                        ));
                     }
-                    if let Ok(codex_binary) = crate::codex_cli::get_cli_binary_path(&thread_app) {
-                        if codex_binary.exists() {
-                            system_prompt_parts.push(format!(
-                                "When running Codex CLI commands, use the full path to the embedded binary: {}\n\
-                                 Do NOT use bare `codex` — always use the full path above.",
-                                codex_binary.display()
-                            ));
-                        }
+                    let codex_binary = crate::codex_cli::resolve_cli_binary(&thread_app);
+                    if codex_binary.is_absolute() {
+                        system_prompt_parts.push(format!(
+                            "When running Codex CLI commands, use the full path to the host system binary: {}\n\
+                             Do NOT use bare `codex` — always use the full path above.",
+                            codex_binary.display()
+                        ));
                     }
 
                     // Collect and inline context files (issues, PRs, saved contexts)

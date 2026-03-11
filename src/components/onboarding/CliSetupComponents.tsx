@@ -19,6 +19,43 @@ import {
 import { useTerminal } from '@/hooks/useTerminal'
 import { disposeTerminal, setOnStopped } from '@/lib/terminal-instances'
 
+export interface HostInstallStateProps {
+  cliName: string
+  binaryName: string
+  onRefresh: () => void
+}
+
+export function HostInstallState({
+  cliName,
+  binaryName,
+  onRefresh,
+}: HostInstallStateProps) {
+  return (
+    <div className="space-y-6">
+      <div className="space-y-2">
+        <p className="font-medium">Install {cliName} on your host system</p>
+        <p className="text-sm text-muted-foreground">
+          Jean now uses the system <code>{binaryName}</code> binary directly and
+          does not install a separate bundled copy.
+        </p>
+      </div>
+
+      <div className="rounded-lg border border-border bg-muted/40 p-4">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Expected command
+        </p>
+        <pre className="mt-2 overflow-x-auto rounded bg-background px-3 py-2 text-sm">
+          <code>{binaryName}</code>
+        </pre>
+      </div>
+
+      <Button onClick={onRefresh} className="w-full" size="lg">
+        I installed it
+      </Button>
+    </div>
+  )
+}
+
 export interface SetupStateProps {
   cliName: string
   versions: {

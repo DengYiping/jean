@@ -443,26 +443,24 @@ fn build_claude_args(
         ));
     }
 
-    // Embedded Claude CLI path - tell Claude to use the app's bundled binary
-    if let Ok(claude_binary) = crate::claude_cli::get_cli_binary_path(app) {
-        if claude_binary.exists() {
-            system_prompt_parts.push(format!(
-                "When running Claude CLI commands, use the full path to the embedded binary: {}\n\
-                 Do NOT use bare `claude` — always use the full path above.",
-                claude_binary.display()
-            ));
-        }
+    // System Claude CLI path - tell Claude to use the host binary explicitly when available
+    let claude_binary = crate::claude_cli::resolve_cli_binary(app);
+    if claude_binary.is_absolute() {
+        system_prompt_parts.push(format!(
+            "When running Claude CLI commands, use the full path to the host system binary: {}\n\
+             Do NOT use bare `claude` — always use the full path above.",
+            claude_binary.display()
+        ));
     }
 
-    // Embedded Codex CLI path - tell Claude to use the app's bundled binary
-    if let Ok(codex_binary) = crate::codex_cli::get_cli_binary_path(app) {
-        if codex_binary.exists() {
-            system_prompt_parts.push(format!(
-                "When running Codex CLI commands, use the full path to the embedded binary: {}\n\
-                 Do NOT use bare `codex` — always use the full path above.",
-                codex_binary.display()
-            ));
-        }
+    // System Codex CLI path - tell Claude to use the host binary explicitly when available
+    let codex_binary = crate::codex_cli::resolve_cli_binary(app);
+    if codex_binary.is_absolute() {
+        system_prompt_parts.push(format!(
+            "When running Codex CLI commands, use the full path to the host system binary: {}\n\
+             Do NOT use bare `codex` — always use the full path above.",
+            codex_binary.display()
+        ));
     }
 
     // Collect all context files (issues and PRs) and concatenate into a single file

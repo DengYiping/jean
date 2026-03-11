@@ -29,6 +29,7 @@ import {
   ErrorState,
   AuthCheckingState,
   AuthLoginState,
+  HostInstallState,
 } from './CliSetupComponents'
 import { toast } from 'sonner'
 import { usePreferences, usePatchPreferences } from '@/services/preferences'
@@ -474,49 +475,43 @@ function OnboardingDialogContent() {
   }, [selectedBackends, onboardingManuallyTriggered, getNextStepForBackend, getNextStepAfterBackends])
 
   const handleClaudeInstall = useCallback(() => {
-    if (!claudeVersion) return
-    setStep('claude-installing')
-    claudeSetup.install(claudeVersion, {
-      onSuccess: () => {
+    claudeSetup.refetchStatus().then(result => {
+      if (result.data?.installed) {
         setStep('claude-auth-checking')
         claudeAuth.refetch()
-      },
-      onError: () => {
-        setClaudeInstallFailed(true)
-        setStep('claude-setup')
-      },
+        return
+      }
+      toast.error(
+        'Claude CLI not found in PATH. Install `claude` on your system first.'
+      )
     })
-  }, [claudeVersion, claudeSetup, claudeAuth])
+  }, [claudeSetup, claudeAuth])
 
   const handleCodexInstall = useCallback(() => {
-    if (!codexVersion) return
-    setStep('codex-installing')
-    codexSetup.install(codexVersion, {
-      onSuccess: () => {
+    codexSetup.refetchStatus().then(result => {
+      if (result.data?.installed) {
         setStep('codex-auth-checking')
         codexAuth.refetch()
-      },
-      onError: () => {
-        setCodexInstallFailed(true)
-        setStep('codex-setup')
-      },
+        return
+      }
+      toast.error(
+        'Codex CLI not found in PATH. Install `codex` on your system first.'
+      )
     })
-  }, [codexVersion, codexSetup, codexAuth])
+  }, [codexSetup, codexAuth])
 
   const handleOpencodeInstall = useCallback(() => {
-    if (!opencodeVersion) return
-    setStep('opencode-installing')
-    opencodeSetup.install(opencodeVersion, {
-      onSuccess: () => {
+    opencodeSetup.refetchStatus().then(result => {
+      if (result.data?.installed) {
         setStep('opencode-auth-checking')
         opencodeAuth.refetch()
-      },
-      onError: () => {
-        setOpencodeInstallFailed(true)
-        setStep('opencode-setup')
-      },
+        return
+      }
+      toast.error(
+        'OpenCode CLI not found in PATH. Install `opencode` on your system first.'
+      )
     })
-  }, [opencodeVersion, opencodeSetup, opencodeAuth])
+  }, [opencodeSetup, opencodeAuth])
 
   const handleGhInstall = useCallback(() => {
     if (!ghVersion) return
@@ -753,18 +748,9 @@ function OnboardingDialogContent() {
       step === 'opencode-setup' ||
       step === 'opencode-installing'
     ) {
-      const isReinstall =
-        (currentBackend === 'claude' && isClaudeReinstall) ||
-        (currentBackend === 'codex' && isCodexReinstall) ||
-        (currentBackend === 'opencode' && isOpencodeReinstall)
-
       return {
-        title: isReinstall
-          ? `Change ${backendName} Version`
-          : `Install ${backendName}`,
-        description: isReinstall
-          ? 'Select a version to install. This will replace the current installation.'
-          : `Select a version to install.`,
+        title: `Detect ${backendName}`,
+        description: `${backendName} must be installed on your host system before Jean can use it.`,
       }
     }
 
@@ -934,6 +920,24 @@ function OnboardingDialogContent() {
               commandArgs={ghLoginArgs}
               onComplete={handleGhLoginComplete}
               onRetry={handleGhLoginRetry}
+            />
+          ) : step === 'claude-setup' ? (
+            <HostInstallState
+              cliName="Claude CLI"
+              binaryName="claude"
+              onRefresh={handleClaudeInstall}
+            />
+          ) : step === 'codex-setup' ? (
+            <HostInstallState
+              cliName="Codex CLI"
+              binaryName="codex"
+              onRefresh={handleCodexInstall}
+            />
+          ) : step === 'opencode-setup' ? (
+            <HostInstallState
+              cliName="OpenCode CLI"
+              binaryName="opencode"
+              onRefresh={handleOpencodeInstall}
             />
           ) : cliData ? (
             cliData.installError ? (

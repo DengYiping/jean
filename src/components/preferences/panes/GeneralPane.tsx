@@ -587,6 +587,21 @@ export const GeneralPane: React.FC = () => {
     toast.success('Path copied to clipboard')
   }, [])
 
+  const handleRefreshClaudeStatus = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: claudeCliQueryKeys.status() })
+    queryClient.invalidateQueries({ queryKey: claudeCliQueryKeys.auth() })
+  }, [queryClient])
+
+  const handleRefreshCodexStatus = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: codexCliQueryKeys.status() })
+    queryClient.invalidateQueries({ queryKey: codexCliQueryKeys.auth() })
+  }, [queryClient])
+
+  const handleRefreshOpenCodeStatus = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: opencodeCliQueryKeys.status() })
+    queryClient.invalidateQueries({ queryKey: opencodeCliQueryKeys.auth() })
+  }, [queryClient])
+
   return (
     <div className="space-y-6">
       {isNativeApp() && (
@@ -635,27 +650,32 @@ export const GeneralPane: React.FC = () => {
                     <TooltipContent>Click to copy path</TooltipContent>
                   </Tooltip>
                 ) : (
-                  'Optional — enables Claude AI sessions'
+                  <>Install <code>claude</code> on your system to enable Claude AI sessions.</>
                 )
               }
             >
               {isCliLoading ? (
                 <Loader2 className="size-4 animate-spin text-muted-foreground" />
               ) : cliStatus?.installed ? (
-                <Button
-                  variant="outline"
-                  className="w-40 justify-between"
-                  onClick={() => openCliUpdateModal('claude')}
-                >
-                  {cliStatus.version ?? 'Installed'}
-                  <ChevronDown className="size-3" />
-                </Button>
+                <div className="flex items-center gap-2">
+                  <div className="w-40 rounded-md border border-input bg-background px-3 py-2 text-sm">
+                    {cliStatus.version ?? 'Installed'}
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRefreshClaudeStatus}
+                  >
+                    Refresh
+                  </Button>
+                </div>
               ) : (
                 <Button
+                  variant="outline"
                   className="w-40"
-                  onClick={() => openCliUpdateModal('claude')}
+                  onClick={handleRefreshClaudeStatus}
                 >
-                  Install
+                  Refresh
                 </Button>
               )}
             </InlineField>
@@ -790,27 +810,32 @@ export const GeneralPane: React.FC = () => {
                     <TooltipContent>Click to copy path</TooltipContent>
                   </Tooltip>
                 ) : (
-                  'Optional — enables Codex AI sessions'
+                  <>Install <code>codex</code> on your system to enable Codex AI sessions.</>
                 )
               }
             >
               {isCodexLoading ? (
                 <Loader2 className="size-4 animate-spin text-muted-foreground" />
               ) : codexStatus?.installed ? (
-                <Button
-                  variant="outline"
-                  className="w-40 justify-between"
-                  onClick={() => openCliUpdateModal('codex')}
-                >
-                  {codexStatus.version ?? 'Installed'}
-                  <ChevronDown className="size-3" />
-                </Button>
+                <div className="flex items-center gap-2">
+                  <div className="w-40 rounded-md border border-input bg-background px-3 py-2 text-sm">
+                    {codexStatus.version ?? 'Installed'}
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRefreshCodexStatus}
+                  >
+                    Refresh
+                  </Button>
+                </div>
               ) : (
                 <Button
+                  variant="outline"
                   className="w-40"
-                  onClick={() => openCliUpdateModal('codex')}
+                  onClick={handleRefreshCodexStatus}
                 >
-                  Install
+                  Refresh
                 </Button>
               )}
             </InlineField>
@@ -871,27 +896,32 @@ export const GeneralPane: React.FC = () => {
                     <TooltipContent>Click to copy path</TooltipContent>
                   </Tooltip>
                 ) : (
-                  'Optional — enables OpenCode AI sessions'
+                  <>Install <code>opencode</code> on your system to enable OpenCode AI sessions.</>
                 )
               }
             >
               {isOpenCodeLoading ? (
                 <Loader2 className="size-4 animate-spin text-muted-foreground" />
               ) : opencodeStatus?.installed ? (
-                <Button
-                  variant="outline"
-                  className="w-40 justify-between"
-                  onClick={() => openCliUpdateModal('opencode')}
-                >
-                  {opencodeStatus.version ?? 'Installed'}
-                  <ChevronDown className="size-3" />
-                </Button>
+                <div className="flex items-center gap-2">
+                  <div className="w-40 rounded-md border border-input bg-background px-3 py-2 text-sm">
+                    {opencodeStatus.version ?? 'Installed'}
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRefreshOpenCodeStatus}
+                  >
+                    Refresh
+                  </Button>
+                </div>
               ) : (
                 <Button
+                  variant="outline"
                   className="w-40"
-                  onClick={() => openCliUpdateModal('opencode')}
+                  onClick={handleRefreshOpenCodeStatus}
                 >
-                  Install
+                  Refresh
                 </Button>
               )}
             </InlineField>

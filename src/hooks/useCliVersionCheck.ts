@@ -7,19 +7,10 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import {
-  useClaudeCliStatus,
-  useAvailableCliVersions,
-} from '@/services/claude-cli'
+import { useClaudeCliStatus } from '@/services/claude-cli'
 import { useGhCliStatus, useAvailableGhVersions } from '@/services/gh-cli'
-import {
-  useCodexCliStatus,
-  useAvailableCodexVersions,
-} from '@/services/codex-cli'
-import {
-  useOpencodeCliStatus,
-  useAvailableOpencodeVersions,
-} from '@/services/opencode-cli'
+import { useCodexCliStatus } from '@/services/codex-cli'
+import { useOpencodeCliStatus } from '@/services/opencode-cli'
 import { useUIStore } from '@/store/ui-store'
 import { isNewerVersion } from '@/lib/version-utils'
 import { logger } from '@/lib/logger'
@@ -55,22 +46,19 @@ export function useCliVersionCheck() {
     return () => clearTimeout(timer)
   }, [shouldCheck])
 
-  const { data: claudeStatus, isLoading: claudeLoading } =
-    useClaudeCliStatus({ enabled: shouldCheck && versionCheckReady })
+  const { isLoading: claudeLoading } = useClaudeCliStatus({
+    enabled: shouldCheck && versionCheckReady,
+  })
   const { data: ghStatus, isLoading: ghLoading } =
     useGhCliStatus({ enabled: shouldCheck && versionCheckReady })
-  const { data: codexStatus, isLoading: codexLoading } =
-    useCodexCliStatus({ enabled: shouldCheck && versionCheckReady })
-  const { data: opencodeStatus, isLoading: opencodeLoading } =
-    useOpencodeCliStatus({ enabled: shouldCheck && versionCheckReady })
-  const { data: claudeVersions, isLoading: claudeVersionsLoading } =
-    useAvailableCliVersions({ enabled: shouldCheck && versionCheckReady })
+  const { isLoading: codexLoading } = useCodexCliStatus({
+    enabled: shouldCheck && versionCheckReady,
+  })
+  const { isLoading: opencodeLoading } = useOpencodeCliStatus({
+    enabled: shouldCheck && versionCheckReady,
+  })
   const { data: ghVersions, isLoading: ghVersionsLoading } =
     useAvailableGhVersions({ enabled: shouldCheck && versionCheckReady })
-  const { data: codexVersions, isLoading: codexVersionsLoading } =
-    useAvailableCodexVersions({ enabled: shouldCheck && versionCheckReady })
-  const { data: opencodeVersions, isLoading: opencodeVersionsLoading } =
-    useAvailableOpencodeVersions({ enabled: shouldCheck && versionCheckReady })
 
   // Track which update pairs we've already shown notifications for
   // Format: "type:currentVersion→latestVersion"
@@ -84,36 +72,10 @@ export function useCliVersionCheck() {
       ghLoading ||
       codexLoading ||
       opencodeLoading ||
-      claudeVersionsLoading ||
-      ghVersionsLoading ||
-      codexVersionsLoading ||
-      opencodeVersionsLoading
+      ghVersionsLoading
     if (isLoading) return
 
     const updates: CliUpdateInfo[] = []
-
-    // Check Claude CLI
-    if (
-      claudeStatus?.installed &&
-      claudeStatus.version &&
-      claudeVersions?.length
-    ) {
-      const latestStable = claudeVersions.find(v => !v.prerelease)
-      if (
-        latestStable &&
-        isNewerVersion(latestStable.version, claudeStatus.version)
-      ) {
-        const key = `claude:${claudeStatus.version}→${latestStable.version}`
-        if (!notifiedRef.current.has(key)) {
-          notifiedRef.current.add(key)
-          updates.push({
-            type: 'claude',
-            currentVersion: claudeStatus.version,
-            latestVersion: latestStable.version,
-          })
-        }
-      }
-    }
 
     // Check GitHub CLI
     if (ghStatus?.installed && ghStatus.version && ghVersions?.length) {
@@ -128,52 +90,6 @@ export function useCliVersionCheck() {
           updates.push({
             type: 'gh',
             currentVersion: ghStatus.version,
-            latestVersion: latestStable.version,
-          })
-        }
-      }
-    }
-
-    // Check Codex CLI
-    if (
-      codexStatus?.installed &&
-      codexStatus.version &&
-      codexVersions?.length
-    ) {
-      const latestStable = codexVersions.find(v => !v.prerelease)
-      if (
-        latestStable &&
-        isNewerVersion(latestStable.version, codexStatus.version)
-      ) {
-        const key = `codex:${codexStatus.version}→${latestStable.version}`
-        if (!notifiedRef.current.has(key)) {
-          notifiedRef.current.add(key)
-          updates.push({
-            type: 'codex',
-            currentVersion: codexStatus.version,
-            latestVersion: latestStable.version,
-          })
-        }
-      }
-    }
-
-    // Check OpenCode CLI
-    if (
-      opencodeStatus?.installed &&
-      opencodeStatus.version &&
-      opencodeVersions?.length
-    ) {
-      const latestStable = opencodeVersions.find(v => !v.prerelease)
-      if (
-        latestStable &&
-        isNewerVersion(latestStable.version, opencodeStatus.version)
-      ) {
-        const key = `opencode:${opencodeStatus.version}→${latestStable.version}`
-        if (!notifiedRef.current.has(key)) {
-          notifiedRef.current.add(key)
-          updates.push({
-            type: 'opencode',
-            currentVersion: opencodeStatus.version,
             latestVersion: latestStable.version,
           })
         }
@@ -195,22 +111,13 @@ export function useCliVersionCheck() {
 
     isInitialCheckRef.current = false
   }, [
-    claudeStatus,
     ghStatus,
-    codexStatus,
-    opencodeStatus,
-    claudeVersions,
     ghVersions,
-    codexVersions,
-    opencodeVersions,
     claudeLoading,
     ghLoading,
     codexLoading,
     opencodeLoading,
-    claudeVersionsLoading,
     ghVersionsLoading,
-    codexVersionsLoading,
-    opencodeVersionsLoading,
   ])
 }
 

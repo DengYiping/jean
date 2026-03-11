@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
 
-use super::config::{ensure_cli_dir, get_cli_binary_path, resolve_cli_binary};
+use super::config::resolve_cli_binary;
 use crate::gh_cli::resolve_github_api_token;
 use crate::http_server::EmitExt;
 use crate::platform::silent_command;
@@ -996,148 +996,14 @@ async fn find_asset_url(version: &str, asset_name: &str) -> Result<String, Strin
 
 /// Install Codex CLI by downloading from GitHub releases
 #[tauri::command]
-pub async fn install_codex_cli(app: AppHandle, version: Option<String>) -> Result<(), String> {
-    log::trace!("Installing Codex CLI, version: {:?}", version);
-
-    let _cli_dir = ensure_cli_dir(&app)?;
-    let binary_path = get_cli_binary_path(&app)?;
-
-    // Emit progress: starting
-    emit_progress(&app, "starting", "Preparing installation...", 0);
-
-    // Determine version
-    let version = match version {
-        Some(v) => v,
-        None => fetch_latest_codex_version(&app).await?,
-    };
-
-    let target = get_codex_target()?;
-    log::trace!("Installing version {version} for target {target}");
-
-    // Build asset name to search for in release assets
-    #[cfg(target_os = "windows")]
-    let (asset_name, is_zip) = (format!("codex-{target}.exe.zip"), true);
-    #[cfg(not(target_os = "windows"))]
-    let (asset_name, is_zip) = (format!("codex-{target}.tar.gz"), false);
-
-    // Find the download URL from the release assets
-    let download_url = find_asset_url(&version, &asset_name).await?;
-    log::trace!("Downloading from: {download_url}");
-
-    // Emit progress: downloading
-    emit_progress(&app, "downloading", "Downloading Codex CLI...", 20);
-
-    let client = reqwest::Client::builder()
-        .user_agent("Jean-App/1.0")
-        .redirect(reqwest::redirect::Policy::limited(10))
-        .build()
-        .map_err(|e| format!("Failed to create HTTP client: {e}"))?;
-
-    let response = client
-        .get(&download_url)
-        .send()
-        .await
-        .map_err(|e| format!("Failed to download Codex CLI: {e}"))?;
-
-    if !response.status().is_success() {
-        return Err(format!(
-            "Failed to download Codex CLI: HTTP {}",
-            response.status()
-        ));
-    }
-
-    let archive_content = response
-        .bytes()
-        .await
-        .map_err(|e| format!("Failed to read archive content: {e}"))?;
-
-    log::trace!("Downloaded {} bytes", archive_content.len());
-
-    // Emit progress: extracting
-    emit_progress(&app, "extracting", "Extracting archive...", 45);
-
-    // On Windows, a running codex.exe holds a file lock that prevents overwriting.
-    // Rename the old binary out of the way before extracting the new one.
-    #[cfg(windows)]
-    if binary_path.exists() {
-        let old_path = binary_path.with_extension("exe.old");
-        let _ = std::fs::remove_file(&old_path); // Clean up previous .old if any
-        if let Err(e) = std::fs::rename(&binary_path, &old_path) {
-            log::warn!("Could not rename existing binary (may be unlocked): {e}");
-            // Try removing directly as a fallback
-            if let Err(e2) = std::fs::remove_file(&binary_path) {
-                return Err(format!(
-                    "Cannot replace existing Codex CLI binary — it may be in use by another process. \
-                     Please close any running Codex sessions and try again. (rename: {e}, remove: {e2})"
-                ));
-            }
-        }
-    }
-
-    if is_zip {
-        extract_zip_binary(&archive_content, &binary_path, target)?;
-    } else {
-        extract_tar_gz_binary(&archive_content, &binary_path, target)?;
-    }
-
-    // Emit progress: installing
-    emit_progress(&app, "installing", "Installing Codex CLI...", 65);
-
-    // Make executable
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(&binary_path)
-            .map_err(|e| format!("Failed to get binary metadata: {e}"))?
-            .permissions();
-        perms.set_mode(0o755);
-        std::fs::set_permissions(&binary_path, perms)
-            .map_err(|e| format!("Failed to set binary permissions: {e}"))?;
-    }
-
-    // Remove macOS quarantine attribute
-    #[cfg(target_os = "macos")]
-    {
-        let _ = silent_command("xattr")
-            .args(["-d", "com.apple.quarantine"])
-            .arg(&binary_path)
-            .output();
-    }
-
-    // Emit progress: verifying
-    emit_progress(&app, "verifying", "Verifying installation...", 80);
-
-    // Verify the binary works
-    let version_output = silent_command(&binary_path)
-        .arg("--version")
-        .output()
-        .map_err(|e| format!("Failed to verify Codex CLI: {e}"))?;
-
-    if !version_output.status.success() {
-        let stderr = String::from_utf8_lossy(&version_output.stderr);
-        let stdout = String::from_utf8_lossy(&version_output.stdout);
-        let output = if !stderr.is_empty() {
-            stderr.to_string()
-        } else if !stdout.is_empty() {
-            stdout.to_string()
-        } else {
-            format!("exit code {}", version_output.status)
-        };
-        return Err(format!("Codex CLI verification failed: {output}"));
-    }
-
-    // Clean up stale .old binary from Windows rename-on-reinstall
-    #[cfg(windows)]
-    {
-        let old_path = binary_path.with_extension("exe.old");
-        let _ = std::fs::remove_file(&old_path);
-    }
-
-    // Emit progress: complete
-    emit_progress(&app, "complete", "Installation complete!", 100);
-
-    log::trace!("Codex CLI installed successfully at {:?}", binary_path);
-    Ok(())
+pub async fn install_codex_cli(
+    _app: AppHandle,
+    _version: Option<String>,
+) -> Result<(), String> {
+    Err(
+        "Jean now uses the Codex CLI from your host system. Install `codex` on your machine and restart or refresh Jean."
+            .to_string(),
+    )
 }
 
 /// Extract the codex binary from a tar.gz archive

@@ -81,6 +81,8 @@ export interface GitHubPullRequest {
   created_at: string // From GitHub API (snake_case)
   author: GitHubAuthor
   labels: GitHubLabel[]
+  reviewDecision?: 'approved' | 'changes_requested' | 'review_required' | null
+  checkStatus?: 'success' | 'failure' | 'pending' | 'error' | null
 }
 
 export interface GitHubReview {

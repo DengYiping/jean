@@ -248,6 +248,46 @@ function PRRow({
   onInvestigate: (background: boolean) => void
   onLabelClick?: (label: string) => void
 }) {
+  const reviewBadge =
+    pr.reviewDecision === 'approved'
+      ? {
+          label: 'Approved',
+          className:
+            'bg-green-500/10 text-green-600 border border-green-500/20',
+        }
+      : pr.reviewDecision === 'changes_requested'
+        ? {
+            label: 'Changes requested',
+            className: 'bg-red-500/10 text-red-600 border border-red-500/20',
+          }
+        : pr.reviewDecision === 'review_required'
+          ? {
+              label: 'Review required',
+              className:
+                'bg-amber-500/10 text-amber-600 border border-amber-500/20',
+            }
+          : null
+
+  const checkBadge =
+    pr.checkStatus === 'success'
+      ? {
+          label: 'Checks pass',
+          className:
+            'bg-green-500/10 text-green-600 border border-green-500/20',
+        }
+      : pr.checkStatus === 'failure' || pr.checkStatus === 'error'
+        ? {
+            label: 'Checks failing',
+            className: 'bg-red-500/10 text-red-600 border border-red-500/20',
+          }
+        : pr.checkStatus === 'pending'
+          ? {
+              label: 'Checks pending',
+              className:
+                'bg-amber-500/10 text-amber-600 border border-amber-500/20',
+            }
+          : null
+
   return (
     <div
       className={cn(
@@ -286,6 +326,30 @@ function PRRow({
         <span className="text-xs text-muted-foreground">
           {pr.headRefName} → {pr.baseRefName}
         </span>
+        {(reviewBadge || checkBadge) && (
+          <div className="flex flex-wrap gap-1 mt-1">
+            {reviewBadge && (
+              <span
+                className={cn(
+                  'px-1.5 py-0.5 text-[10px] rounded-full font-medium',
+                  reviewBadge.className
+                )}
+              >
+                {reviewBadge.label}
+              </span>
+            )}
+            {checkBadge && (
+              <span
+                className={cn(
+                  'px-1.5 py-0.5 text-[10px] rounded-full font-medium',
+                  checkBadge.className
+                )}
+              >
+                {checkBadge.label}
+              </span>
+            )}
+          </div>
+        )}
         {pr.labels.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-1">
             {pr.labels.slice(0, 3).map(label => (

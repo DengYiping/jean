@@ -1276,6 +1276,36 @@ pub struct GitHubPullRequest {
     pub author: GitHubAuthor,
     #[serde(default)]
     pub labels: Vec<GitHubLabel>,
+    #[serde(default)]
+    pub review_decision: Option<String>,
+    #[serde(default)]
+    pub check_status: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawGitHubPullRequest {
+    number: u32,
+    title: String,
+    body: Option<String>,
+    state: String,
+    head_ref_name: String,
+    base_ref_name: String,
+    is_draft: bool,
+    created_at: String,
+    author: GitHubAuthor,
+    #[serde(default)]
+    labels: Vec<GitHubLabel>,
+    #[serde(default)]
+    review_decision: Option<String>,
+    #[serde(default)]
+    status_check_rollup: Option<Vec<RawStatusCheck>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct RawStatusCheck {
+    conclusion: Option<String>,
+    status: Option<String>,
 }
 
 /// GitHub review
@@ -1309,6 +1339,68 @@ pub struct GitHubPullRequestDetail {
     pub comments: Vec<GitHubComment>,
     #[serde(default)]
     pub reviews: Vec<GitHubReview>,
+}
+
+fn normalize_review_decision(review_decision: &Option<String>) -> Option<String> {
+    match review_decision.as_deref().map(|s| s.to_ascii_uppercase()) {
+        Some(s) if s == "APPROVED" => Some("approved".to_string()),
+        Some(s) if s == "CHANGES_REQUESTED" => Some("changes_requested".to_string()),
+        Some(s) if s == "REVIEW_REQUIRED" => Some("review_required".to_string()),
+        _ => None,
+    }
+}
+
+fn compute_check_status(checks: &Option<Vec<RawStatusCheck>>) -> Option<String> {
+    let checks = checks.as_ref()?;
+    if checks.is_empty() {
+        return None;
+    }
+
+    let mut has_pending = false;
+    for check in checks {
+        match check.conclusion.as_deref().map(|s| s.to_ascii_uppercase()) {
+            Some(s) if s == "FAILURE" => return Some("failure".to_string()),
+            Some(s) if s == "ERROR" => return Some("error".to_string()),
+            _ => {}
+        }
+        match check.status.as_deref().map(|s| s.to_ascii_uppercase()) {
+            Some(s) if s == "IN_PROGRESS" || s == "QUEUED" || s == "PENDING" => {
+                has_pending = true
+            }
+            _ => {}
+        }
+        if check.conclusion.is_none() {
+            if let Some(status) = &check.status {
+                let status = status.to_ascii_uppercase();
+                if status != "COMPLETED" {
+                    has_pending = true;
+                }
+            }
+        }
+    }
+
+    if has_pending {
+        Some("pending".to_string())
+    } else {
+        Some("success".to_string())
+    }
+}
+
+fn map_raw_pr(pr: RawGitHubPullRequest) -> GitHubPullRequest {
+    GitHubPullRequest {
+        number: pr.number,
+        title: pr.title,
+        body: pr.body,
+        state: pr.state,
+        head_ref_name: pr.head_ref_name,
+        base_ref_name: pr.base_ref_name,
+        is_draft: pr.is_draft,
+        created_at: pr.created_at,
+        author: pr.author,
+        labels: pr.labels,
+        review_decision: normalize_review_decision(&pr.review_decision),
+        check_status: compute_check_status(&pr.status_check_rollup),
+    }
 }
 
 /// PR context to pass when creating a worktree
@@ -1359,7 +1451,7 @@ pub async fn list_github_prs(
             "pr",
             "list",
             "--json",
-            "number,title,body,state,headRefName,baseRefName,isDraft,createdAt,author,labels",
+            "number,title,body,state,headRefName,baseRefName,isDraft,createdAt,author,labels,reviewDecision,statusCheckRollup",
             "-L",
             "100",
             "--state",
@@ -1384,8 +1476,9 @@ pub async fn list_github_prs(
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let prs: Vec<GitHubPullRequest> =
+    let prs: Vec<RawGitHubPullRequest> =
         serde_json::from_str(&stdout).map_err(|e| format!("Failed to parse gh response: {e}"))?;
+    let prs: Vec<GitHubPullRequest> = prs.into_iter().map(map_raw_pr).collect();
 
     log::trace!("Found {} PRs", prs.len());
     Ok(prs)
@@ -1411,7 +1504,7 @@ pub async fn search_github_prs(
             "--search",
             &query,
             "--json",
-            "number,title,body,state,headRefName,baseRefName,isDraft,createdAt,author,labels",
+            "number,title,body,state,headRefName,baseRefName,isDraft,createdAt,author,labels,reviewDecision,statusCheckRollup",
             "-L",
             "30",
             "--state",
@@ -1436,8 +1529,9 @@ pub async fn search_github_prs(
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let prs: Vec<GitHubPullRequest> =
+    let prs: Vec<RawGitHubPullRequest> =
         serde_json::from_str(&stdout).map_err(|e| format!("Failed to parse gh response: {e}"))?;
+    let prs: Vec<GitHubPullRequest> = prs.into_iter().map(map_raw_pr).collect();
 
     log::trace!("Search found {} PRs", prs.len());
     Ok(prs)
@@ -1462,7 +1556,7 @@ pub async fn get_github_pr_by_number(
             "view",
             &pr_number.to_string(),
             "--json",
-            "number,title,body,state,headRefName,baseRefName,isDraft,createdAt,author,labels",
+            "number,title,body,state,headRefName,baseRefName,isDraft,createdAt,author,labels,reviewDecision,statusCheckRollup",
         ])
         .current_dir(&project_path)
         .output()
@@ -1480,8 +1574,9 @@ pub async fn get_github_pr_by_number(
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let pr: GitHubPullRequest =
+    let pr: RawGitHubPullRequest =
         serde_json::from_str(&stdout).map_err(|e| format!("Failed to parse gh response: {e}"))?;
+    let pr = map_raw_pr(pr);
 
     log::trace!("Got PR #{}: {}", pr.number, pr.title);
     Ok(pr)

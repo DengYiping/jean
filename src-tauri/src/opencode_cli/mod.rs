@@ -7,4 +7,4 @@ mod config;
 pub mod mcp;
 
 pub use commands::*;
-pub use config::resolve_cli_binary;
+pub use config::resolve_cli_command;

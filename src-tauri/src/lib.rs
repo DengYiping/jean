@@ -192,6 +192,8 @@ pub struct AppPreferences {
     pub selected_codex_model: String, // Default Codex model
     #[serde(default = "default_opencode_model")]
     pub selected_opencode_model: String, // Default OpenCode model (provider/model)
+    #[serde(default)]
+    pub opencode_launch_command: Option<String>, // Optional OpenCode launcher command, e.g. "dvx opencode"
     #[serde(default = "default_codex_reasoning_effort")]
     pub default_codex_reasoning_effort: String, // Codex reasoning effort: low, medium, high, xhigh
     #[serde(default)]
@@ -1108,6 +1110,7 @@ impl Default for AppPreferences {
             default_backend: default_backend(),
             selected_codex_model: default_codex_model(),
             selected_opencode_model: default_opencode_model(),
+            opencode_launch_command: None,
             default_codex_reasoning_effort: default_codex_reasoning_effort(),
             codex_multi_agent_enabled: false,
             codex_max_agent_threads: default_codex_max_agent_threads(),
@@ -1137,6 +1140,7 @@ fn normalize_optional_path(path: &mut Option<String>) {
 
 fn normalize_preferences(preferences: &mut AppPreferences) {
     normalize_optional_path(&mut preferences.git_cli_path);
+    normalize_optional_path(&mut preferences.opencode_launch_command);
 }
 
 // UI State data structure

@@ -530,7 +530,7 @@ export const GeneralPane: React.FC = () => {
   }, [codexStatus?.path, openCliLoginModal, queryClient])
 
   const handleOpenCodeLogin = useCallback(async () => {
-    if (!opencodeStatus?.path) return
+    if (!opencodeStatus?.command) return
 
     setCheckingOpenCodeAuth(true)
     try {
@@ -549,8 +549,17 @@ export const GeneralPane: React.FC = () => {
       setCheckingOpenCodeAuth(false)
     }
 
-    openCliLoginModal('opencode', opencodeStatus.path, ['auth', 'login'])
-  }, [opencodeStatus?.path, openCliLoginModal, queryClient])
+    openCliLoginModal('opencode', opencodeStatus.command, [
+      ...(opencodeStatus.command_args ?? []),
+      'auth',
+      'login',
+    ])
+  }, [
+    opencodeStatus?.command,
+    opencodeStatus?.command_args,
+    openCliLoginModal,
+    queryClient,
+  ])
 
   const handleClaudeRelogin = useCallback(() => {
     if (!cliStatus?.path) return
@@ -569,9 +578,17 @@ export const GeneralPane: React.FC = () => {
   }, [codexStatus?.path, openCliLoginModal])
 
   const handleOpenCodeRelogin = useCallback(() => {
-    if (!opencodeStatus?.path) return
-    openCliLoginModal('opencode', opencodeStatus.path, ['auth', 'login'])
-  }, [opencodeStatus?.path, openCliLoginModal])
+    if (!opencodeStatus?.command) return
+    openCliLoginModal('opencode', opencodeStatus.command, [
+      ...(opencodeStatus.command_args ?? []),
+      'auth',
+      'login',
+    ])
+  }, [
+    opencodeStatus?.command,
+    opencodeStatus?.command_args,
+    openCliLoginModal,
+  ])
 
   const claudeStatusDescription = cliStatus?.installed
     ? cliStatus.path
@@ -880,6 +897,11 @@ export const GeneralPane: React.FC = () => {
           }
         >
           <div className="space-y-4">
+            <OpenCodeLauncherCommandField
+              preferences={preferences}
+              patchPreferences={patchPreferences}
+              queryClient={queryClient}
+            />
             <InlineField
               label={opencodeStatus?.installed ? 'Version' : 'Status'}
               description={
@@ -890,13 +912,17 @@ export const GeneralPane: React.FC = () => {
                         onClick={() => handleCopyPath(opencodeStatus.path)}
                         className="text-left hover:underline cursor-pointer"
                       >
-                        {opencodeStatus.path ?? 'Unknown path'}
+                        {opencodeStatus.path ?? 'Unknown launcher command'}
                       </button>
                     </TooltipTrigger>
-                    <TooltipContent>Click to copy path</TooltipContent>
+                    <TooltipContent>Click to copy launcher command</TooltipContent>
                   </Tooltip>
                 ) : (
-                  <>Install <code>opencode</code> on your system to enable OpenCode AI sessions.</>
+                  <>
+                    Install <code>opencode</code> on your system, or set a
+                    wrapper like <code>dvx opencode</code> below, to enable
+                    OpenCode AI sessions.
+                  </>
                 )
               }
             >
@@ -1984,6 +2010,76 @@ const GitCliPathField: FC<{
         <Input
           className="w-80"
           placeholder="System default (git)"
+          value={localValue}
+          onChange={e => setLocalValue(e.target.value)}
+        />
+        <Button
+          size="sm"
+          onClick={handleSave}
+          disabled={!hasChanges || patchPreferences.isPending}
+        >
+          {patchPreferences.isPending && (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          )}
+          Save
+        </Button>
+      </div>
+    </InlineField>
+  )
+}
+
+const OpenCodeLauncherCommandField: FC<{
+  preferences: AppPreferences | undefined
+  patchPreferences: ReturnType<typeof usePatchPreferences>
+  queryClient: ReturnType<typeof useQueryClient>
+}> = ({ preferences, patchPreferences, queryClient }) => {
+  const [localValue, setLocalValue] = useState(
+    preferences?.opencode_launch_command ?? ''
+  )
+
+  useEffect(() => {
+    setLocalValue(preferences?.opencode_launch_command ?? '')
+  }, [preferences?.opencode_launch_command])
+
+  const hasChanges = localValue !== (preferences?.opencode_launch_command ?? '')
+
+  const handleSave = useCallback(() => {
+    if (!preferences) return
+    const trimmed = localValue.trim()
+    patchPreferences.mutate(
+      {
+        opencode_launch_command: trimmed.length > 0 ? trimmed : null,
+      },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({
+            queryKey: opencodeCliQueryKeys.status(),
+          })
+          queryClient.invalidateQueries({
+            queryKey: opencodeCliQueryKeys.auth(),
+          })
+          queryClient.invalidateQueries({
+            queryKey: opencodeCliQueryKeys.models(),
+          })
+        },
+      }
+    )
+  }, [preferences, patchPreferences, localValue, queryClient])
+
+  return (
+    <InlineField
+      label="Launcher command"
+      description={
+        <>
+          Optional wrapper used to start OpenCode. Leave blank to run{' '}
+          <code>opencode</code> directly. Example: <code>dvx opencode</code>.
+        </>
+      }
+    >
+      <div className="flex items-center gap-2">
+        <Input
+          className="w-80"
+          placeholder="System default (opencode)"
           value={localValue}
           onChange={e => setLocalValue(e.target.value)}
         />

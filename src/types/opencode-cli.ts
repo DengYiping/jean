@@ -6,6 +6,8 @@ export interface OpencodeCliStatus {
   installed: boolean
   version: string | null
   path: string | null
+  command: string | null
+  command_args: string[] | null
 }
 
 // Backward-compatible aliases (existing components use OpenCode* naming).

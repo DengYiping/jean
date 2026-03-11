@@ -8,7 +8,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
 
-use crate::opencode_cli::resolve_cli_binary;
+use crate::opencode_cli::resolve_cli_command;
 use crate::platform::silent_command;
 
 const DEFAULT_PORT: u16 = 4096;
@@ -191,16 +191,11 @@ pub fn ensure_running(app: &AppHandle) -> Result<String, String> {
         }
     }
 
-    let cli_path = resolve_cli_binary(app);
-    if !cli_path.exists() {
-        return Err(format!(
-            "OpenCode CLI not found at {}. Install it in Settings > General.",
-            cli_path.display()
-        ));
-    }
+    let cli = resolve_cli_command(app)?;
 
-    let mut cmd = silent_command(&cli_path);
-    cmd.arg("serve")
+    let mut cmd = silent_command(&cli.program);
+    cmd.args(&cli.args)
+        .arg("serve")
         .arg("--hostname")
         .arg(&hostname)
         .arg("--port")

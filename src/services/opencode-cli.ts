@@ -33,12 +33,26 @@ export function useOpencodeCliStatus(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: opencodeCliQueryKeys.status(),
     queryFn: async (): Promise<OpencodeCliStatus> => {
-      if (!isTauri()) return { installed: false, version: null, path: null }
+      if (!isTauri()) {
+        return {
+          installed: false,
+          version: null,
+          path: null,
+          command: null,
+          command_args: null,
+        }
+      }
       try {
         return await invoke<OpencodeCliStatus>('check_opencode_cli_installed')
       } catch (error) {
         logger.error('Failed to check OpenCode CLI status', { error })
-        return { installed: false, version: null, path: null }
+        return {
+          installed: false,
+          version: null,
+          path: null,
+          command: null,
+          command_args: null,
+        }
       }
     },
     enabled: options?.enabled ?? true,

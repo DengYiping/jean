@@ -8036,7 +8036,21 @@ pub async fn list_claude_skills() -> Result<Vec<ClaudeSkill>, String> {
 
     let home = dirs::home_dir().ok_or_else(|| "Failed to get home directory".to_string())?;
     let skills_dir = home.join(".claude").join("skills");
+    list_skills_in_directory(skills_dir)
+}
 
+/// List Codex CLI skills from ~/.codex/skills/
+/// Skills are directories containing a SKILL.md file
+#[tauri::command]
+pub async fn list_codex_skills() -> Result<Vec<ClaudeSkill>, String> {
+    log::trace!("Listing Codex CLI skills");
+
+    let home = dirs::home_dir().ok_or_else(|| "Failed to get home directory".to_string())?;
+    let skills_dir = home.join(".codex").join("skills");
+    list_skills_in_directory(skills_dir)
+}
+
+fn list_skills_in_directory(skills_dir: std::path::PathBuf) -> Result<Vec<ClaudeSkill>, String> {
     if !skills_dir.exists() {
         log::trace!("Skills directory does not exist: {:?}", skills_dir);
         return Ok(Vec::new());
@@ -8097,7 +8111,7 @@ pub async fn list_claude_skills() -> Result<Vec<ClaudeSkill>, String> {
     }
 
     skills.sort_by(|a, b| a.name.cmp(&b.name));
-    log::trace!("Found {} Claude CLI skills", skills.len());
+    log::trace!("Found {} skills", skills.len());
     Ok(skills)
 }
 

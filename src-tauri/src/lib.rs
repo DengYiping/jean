@@ -2554,6 +2554,7 @@ pub fn run() {
             projects::fetch_worktrees_status,
             // Claude CLI skills & commands
             projects::list_claude_skills,
+            projects::list_codex_skills,
             projects::list_claude_commands,
             projects::resolve_claude_command,
             // GitHub issues commands

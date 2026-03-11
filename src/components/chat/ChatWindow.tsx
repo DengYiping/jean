@@ -2283,6 +2283,7 @@ export function ChatWindow({
                                 activeWorktreePath={activeWorktreePath}
                                 isSending={isSending}
                                 executionMode={executionMode}
+                                backend={selectedBackend}
                                 canSwitchBackendWithTab={
                                   (session?.messages?.length ?? 0) === 0
                                 }

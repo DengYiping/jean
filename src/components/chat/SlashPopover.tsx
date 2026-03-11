@@ -15,8 +15,13 @@ import {
   CommandList,
 } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverAnchor } from '@/components/ui/popover'
-import { useClaudeSkills, useClaudeCommands } from '@/services/skills'
-import type { ClaudeSkill, ClaudeCommand, PendingSkill } from '@/types/chat'
+import { useSkills, useClaudeCommands } from '@/services/skills'
+import type {
+  Backend,
+  ClaudeSkill,
+  ClaudeCommand,
+  PendingSkill,
+} from '@/types/chat'
 import { cn } from '@/lib/utils'
 import { generateId } from '@/lib/uuid'
 import { fuzzySearchItems } from '@/lib/fuzzy-search'
@@ -44,6 +49,8 @@ interface SlashPopoverProps {
   containerRef?: React.RefObject<HTMLElement | null>
   /** Whether slash is at prompt start (enables commands) */
   isAtPromptStart: boolean
+  /** Active backend for this session */
+  backend: Backend
   /** Ref to expose navigation methods to parent */
   handleRef?: React.RefObject<SlashPopoverHandle | null>
 }
@@ -61,9 +68,10 @@ export function SlashPopover({
   anchorPosition,
   containerRef,
   isAtPromptStart,
+  backend,
   handleRef,
 }: SlashPopoverProps) {
-  const { data: skills = [] } = useClaudeSkills()
+  const { data: skills = [] } = useSkills(backend)
   const { data: commands = [] } = useClaudeCommands()
   const listRef = useRef<HTMLDivElement>(null)
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -73,7 +81,7 @@ export function SlashPopover({
     const items: ListItem[] = []
 
     // Add commands first (only if at prompt start)
-    if (isAtPromptStart) {
+    if (isAtPromptStart && backend === 'claude') {
       fuzzySearchItems(commands, searchQuery, 10).forEach(cmd => {
         items.push({ type: 'command', data: cmd })
       })
@@ -85,7 +93,7 @@ export function SlashPopover({
     })
 
     return items.slice(0, 15) // Limit total to 15
-  }, [skills, commands, searchQuery, isAtPromptStart])
+  }, [skills, commands, searchQuery, isAtPromptStart, backend])
 
   // Clamp selectedIndex to valid range (handles case when filter reduces results)
   const clampedSelectedIndex = Math.min(

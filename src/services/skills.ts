@@ -1,13 +1,14 @@
 import { useQuery } from '@tanstack/react-query'
 import { invoke } from '@/lib/transport'
 import { logger } from '@/lib/logger'
-import type { ClaudeSkill, ClaudeCommand } from '@/types/chat'
+import type { Backend, ClaudeSkill, ClaudeCommand } from '@/types/chat'
 import { isTauri } from '@/services/projects'
 
 // Query keys for Claude CLI skills and commands
 export const skillQueryKeys = {
   all: ['claude-cli'] as const,
-  skills: () => [...skillQueryKeys.all, 'skills'] as const,
+  skills: (backend: Backend) =>
+    [...skillQueryKeys.all, 'skills', backend] as const,
   commands: () => [...skillQueryKeys.all, 'commands'] as const,
 }
 
@@ -16,27 +17,33 @@ export const skillQueryKeys = {
  * Skills can be attached anywhere in a prompt as context
  * Results are cached for 5 minutes (skills rarely change)
  */
-export function useClaudeSkills() {
+export function useSkills(backend: Backend) {
   return useQuery({
-    queryKey: skillQueryKeys.skills(),
+    queryKey: skillQueryKeys.skills(backend),
     queryFn: async (): Promise<ClaudeSkill[]> => {
       if (!isTauri()) {
         return []
       }
 
       try {
-        logger.debug('Loading Claude CLI skills')
-        const skills = await invoke<ClaudeSkill[]>('list_claude_skills')
-        logger.info('Claude CLI skills loaded', { count: skills.length })
+        const command =
+          backend === 'codex' ? 'list_codex_skills' : 'list_claude_skills'
+        logger.debug('Loading backend skills', { backend, command })
+        const skills = await invoke<ClaudeSkill[]>(command)
+        logger.info('Backend skills loaded', { backend, count: skills.length })
         return skills
       } catch (error) {
-        logger.error('Failed to load Claude CLI skills', { error })
+        logger.error('Failed to load backend skills', { backend, error })
         return []
       }
     },
     staleTime: 1000 * 60 * 5, // Cache for 5 minutes
     gcTime: 1000 * 60 * 10, // Keep in memory for 10 minutes
   })
+}
+
+export function useClaudeSkills() {
+  return useSkills('claude')
 }
 
 /**

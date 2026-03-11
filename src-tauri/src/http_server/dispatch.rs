@@ -1289,6 +1289,10 @@ pub async fn dispatch_command(
             let result = crate::projects::list_claude_skills().await?;
             to_value(result)
         }
+        "list_codex_skills" => {
+            let result = crate::projects::list_codex_skills().await?;
+            to_value(result)
+        }
         "list_claude_commands" => {
             let result = crate::projects::list_claude_commands().await?;
             to_value(result)

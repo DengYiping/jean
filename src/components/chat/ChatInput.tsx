@@ -7,6 +7,7 @@ import { Kbd } from '@/components/ui/kbd'
 import { useChatStore } from '@/store/chat-store'
 import { getFilename, getExtension } from '@/lib/path-utils'
 import type {
+  Backend,
   PendingFile,
   PendingSkill,
   ClaudeCommand,
@@ -45,6 +46,7 @@ interface ChatInputProps {
   onCommandExecute?: (command: ClaudeCommand) => void
   onHasValueChange?: (hasValue: boolean) => void
   onRegisterClearHandler?: (clearHandler: (() => void) | null) => void
+  backend: Backend
   formRef: React.RefObject<HTMLFormElement | null>
   inputRef: React.RefObject<HTMLTextAreaElement | null>
 }
@@ -62,6 +64,7 @@ export const ChatInput = memo(function ChatInput({
   onCommandExecute,
   onHasValueChange,
   onRegisterClearHandler,
+  backend,
   formRef,
   inputRef,
 }: ChatInputProps) {
@@ -983,6 +986,7 @@ export const ChatInput = memo(function ChatInput({
         anchorPosition={slashAnchor}
         containerRef={formRef}
         isAtPromptStart={isSlashAtPromptStart}
+        backend={backend}
         handleRef={slashPopoverHandleRef}
       />
     </div>

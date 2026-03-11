@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { invoke } from '@/lib/transport'
+import { invoke, listen } from '@/lib/transport'
 import { openExternal } from '@/lib/platform'
 import type { QueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -418,8 +418,22 @@ export function useGitOperations({
           },
         },
       })
+      let unlistenReviewProgress: (() => void) | null = null
 
       try {
+        unlistenReviewProgress = await listen<{
+          reviewRunId?: string
+          stage: string
+          message: string
+          percent: number
+        }>('review:progress', event => {
+          if (event.payload.reviewRunId !== reviewRunId) return
+          toast.loading(`${reviewTarget}: ${event.payload.message}`, {
+            id: toastId,
+            description: `${event.payload.percent}%`,
+          })
+        })
+
         const result = await invoke<ReviewResponse>('run_review_with_ai', {
           worktreePath: activeWorktreePath,
           customPrompt: preferences?.magic_prompts?.code_review,
@@ -524,6 +538,7 @@ export function useGitOperations({
           toast.error(`Failed to review: ${error}`, { id: toastId })
         }
       } finally {
+        unlistenReviewProgress?.()
         clearWorktreeLoading(activeWorktreeId)
       }
     },

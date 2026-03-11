@@ -5916,6 +5916,33 @@ pub struct ReviewResponse {
     pub approval_status: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReviewProgressEvent {
+    review_run_id: Option<String>,
+    stage: String,
+    message: String,
+    percent: u8,
+}
+
+fn emit_review_progress(
+    app: &AppHandle,
+    review_run_id: Option<&str>,
+    stage: &str,
+    message: &str,
+    percent: u8,
+) {
+    let _ = app.emit_all(
+        "review:progress",
+        &ReviewProgressEvent {
+            review_run_id: review_run_id.map(str::to_string),
+            stage: stage.to_string(),
+            message: message.to_string(),
+            percent,
+        },
+    );
+}
+
 fn extract_codex_review_structured_output(output: &str) -> Result<String, String> {
     let mut last_agent_message = None;
 
@@ -6217,6 +6244,13 @@ pub async fn run_review_with_ai(
     reasoning_effort: Option<String>,
 ) -> Result<ReviewResponse, String> {
     log::trace!("Running AI code review for: {worktree_path}");
+    emit_review_progress(
+        &app,
+        review_run_id.as_deref(),
+        "loading_context",
+        "Loading worktree and project context...",
+        5,
+    );
 
     // Load projects data to find the target branch
     let data = load_projects_data(&app)?;
@@ -6237,12 +6271,33 @@ pub async fn run_review_with_ai(
     let current_branch = git::get_current_branch(&worktree_path)?;
 
     // Get branch diff (non-fatal — may fail if origin ref doesn't exist)
+    emit_review_progress(
+        &app,
+        review_run_id.as_deref(),
+        "collecting_diff",
+        "Collecting branch diff...",
+        20,
+    );
     let diff = get_branch_diff(&worktree_path, target_branch).unwrap_or_default();
 
     // Get commit history (non-fatal — same reason)
+    emit_review_progress(
+        &app,
+        review_run_id.as_deref(),
+        "collecting_commits",
+        "Collecting commit history...",
+        30,
+    );
     let commits = get_branch_commits(&worktree_path, target_branch).unwrap_or_default();
 
     // Get uncommitted changes (staged + unstaged for tracked files)
+    emit_review_progress(
+        &app,
+        review_run_id.as_deref(),
+        "collecting_uncommitted",
+        "Collecting uncommitted changes...",
+        40,
+    );
     let uncommitted_output = silent_command("git")
         .args(["diff", "HEAD"])
         .current_dir(&worktree_path)
@@ -6334,6 +6389,13 @@ pub async fn run_review_with_ai(
     };
 
     // Build prompt - use custom if provided and non-empty, otherwise use default
+    emit_review_progress(
+        &app,
+        review_run_id.as_deref(),
+        "building_prompt",
+        "Preparing review prompt...",
+        55,
+    );
     let branch_info = format!("{current_branch} → {target_branch}");
     let prompt_template = custom_prompt
         .as_ref()
@@ -6348,6 +6410,13 @@ pub async fn run_review_with_ai(
         .replace("{uncommitted_section}", &uncommitted_section);
 
     // Run review with Claude CLI
+    emit_review_progress(
+        &app,
+        review_run_id.as_deref(),
+        "running_model",
+        "Waiting for AI review...",
+        70,
+    );
     let review_magic_backend = crate::get_preferences_path(&app)
         .ok()
         .and_then(|p| std::fs::read_to_string(p).ok())
@@ -6364,11 +6433,25 @@ pub async fn run_review_with_ai(
         review_magic_backend.as_deref(),
         reasoning_effort.as_deref(),
     )?;
+    emit_review_progress(
+        &app,
+        review_run_id.as_deref(),
+        "finalizing",
+        "Finalizing review results...",
+        95,
+    );
 
     log::trace!(
         "Review complete: {} findings, status: {}",
         response.findings.len(),
         response.approval_status
+    );
+    emit_review_progress(
+        &app,
+        review_run_id.as_deref(),
+        "complete",
+        "Review complete.",
+        100,
     );
 
     Ok(response)

@@ -1,5 +1,5 @@
 import { useCallback, useContext, useMemo } from 'react'
-import { invoke } from '@/lib/transport'
+import { invoke, listen } from '@/lib/transport'
 import { toast } from 'sonner'
 import { useUIStore } from '@/store/ui-store'
 import { useProjectsStore } from '@/store/projects-store'
@@ -8,6 +8,7 @@ import { useTerminalStore } from '@/store/terminal-store'
 import { ThemeProviderContext, type Theme } from '@/lib/theme-context'
 import { notify } from '@/lib/notifications'
 import { logger } from '@/lib/logger'
+import { generateId } from '@/lib/uuid'
 import type { CommandContext } from '@/lib/commands/types'
 import type { AppPreferences, ClaudeModel } from '@/types/preferences'
 import { resolveMagicPromptProvider } from '@/types/preferences'
@@ -563,7 +564,22 @@ export function useCommandContext(
     }
 
     const toastId = toast.loading('Running AI code review...')
+    const reviewRunId = generateId()
+    let unlistenReviewProgress: (() => void) | null = null
     try {
+      unlistenReviewProgress = await listen<{
+        reviewRunId?: string
+        stage: string
+        message: string
+        percent: number
+      }>('review:progress', event => {
+        if (event.payload.reviewRunId !== reviewRunId) return
+        toast.loading(event.payload.message, {
+          id: toastId,
+          description: `${event.payload.percent}%`,
+        })
+      })
+
       const result = await invoke<ReviewResponse>('run_review_with_ai', {
         worktreePath: activeWorktreePath,
         customPrompt: preferences?.magic_prompts?.code_review,
@@ -574,6 +590,7 @@ export function useCommandContext(
           preferences?.default_provider
         ),
         reasoningEffort: preferences?.magic_prompt_efforts?.code_review_effort ?? null,
+        reviewRunId,
       })
 
       // Store review results in Zustand (also activates review tab)
@@ -594,6 +611,8 @@ export function useCommandContext(
       )
     } catch (error) {
       toast.error(`Failed to review: ${error}`, { id: toastId })
+    } finally {
+      unlistenReviewProgress?.()
     }
   }, [
     preferences?.magic_prompts?.code_review,

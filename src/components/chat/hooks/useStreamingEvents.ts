@@ -60,6 +60,13 @@ function upsertAssistantMessage(
   return [...messages, newMsg]
 }
 
+export function shouldPlayPermissionApprovalSound(
+  currentDenials: PermissionDeniedEvent['denials'] | undefined,
+  newDenials: PermissionDeniedEvent['denials']
+): boolean {
+  return newDenials.length > 0 && (currentDenials?.length ?? 0) === 0
+}
+
 /**
  * Look up project/worktree/session names from query cache for display in toasts.
  * Returns a formatted label like "project / worktree / session" with graceful fallback.
@@ -187,7 +194,7 @@ export default function useStreamingEvents({
     // Buffer chunks and flush on animation frames to avoid per-chunk re-renders.
     // Codex app-server sends very frequent deltas; without batching, each delta
     // triggers 2 store mutations + full StreamingMessage re-render.
-    const chunkBuffer: Record<string, string> = {}
+    let chunkBuffer: Record<string, string> = {}
     let chunkRafId: number | null = null
 
     function flushChunkBuffer() {
@@ -196,10 +203,7 @@ export default function useStreamingEvents({
         appendStreamingContent(sid, buffered)
         addTextBlock(sid, buffered)
       }
-      // Clear buffer (mutate in place for perf)
-      for (const key of Object.keys(chunkBuffer)) {
-        delete chunkBuffer[key]
-      }
+      chunkBuffer = {}
     }
 
     const unlistenChunk = listen<ChunkEvent>('chat:chunk', event => {
@@ -276,6 +280,7 @@ export default function useStreamingEvents({
       event => {
         const { session_id, denials } = event.payload
         const {
+          pendingPermissionDenials,
           setPendingDenials,
           lastSentMessages,
           setDeniedMessageContext,
@@ -285,9 +290,19 @@ export default function useStreamingEvents({
           removeSendingSession,
           setWaitingForInput,
         } = useChatStore.getState()
+        const currentDenials = pendingPermissionDenials[session_id]
 
         // Store the denials for the approval UI
         setPendingDenials(session_id, denials)
+
+        if (shouldPlayPermissionApprovalSound(currentDenials, denials)) {
+          const preferences = queryClient.getQueryData<AppPreferences>(
+            preferencesQueryKeys.preferences()
+          )
+          const waitingSound = (preferences?.waiting_sound ??
+            'none') as NotificationSound
+          playNotificationSound(waitingSound)
+        }
 
         // Codex keeps the turn open while waiting for approval, so surface the
         // approval UI by pausing the local "sending" state until the user acts.

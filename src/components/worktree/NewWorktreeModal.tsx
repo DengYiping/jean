@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { getModifierSymbol } from '@/lib/platform'
 import { useIsMobile } from '@/hooks/use-mobile'
 import {
@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { useUIStore } from '@/store/ui-store'
+import { usePreferences } from '@/services/preferences'
 import { useNewWorktreeData } from './hooks/useNewWorktreeData'
 import { useNewWorktreeHandlers } from './hooks/useNewWorktreeHandlers'
 import { useNewWorktreeKeyboard } from './hooks/useNewWorktreeKeyboard'
@@ -52,7 +53,9 @@ export const TABS: Tab[] = [
 export function NewWorktreeModal() {
   const { triggerLogin: triggerGhLogin, isGhInstalled } = useGhLogin()
   const { newWorktreeModalOpen } = useUIStore()
+  const { data: preferences } = usePreferences()
   const isMobile = useIsMobile()
+  const showIssueSources = preferences?.show_create_page_issue_sources ?? true
 
   // Local state
   const [activeTab, setActiveTab] = useState<TabId>('quick')
@@ -69,7 +72,7 @@ export function NewWorktreeModal() {
   const previewOpenRef = useRef(false)
 
   // Hooks
-  const data = useNewWorktreeData(searchQuery, includeClosed)
+  const data = useNewWorktreeData(searchQuery, includeClosed, showIssueSources)
   const handlers = useNewWorktreeHandlers(data, {
     setActiveTab,
     setSearchQuery,
@@ -130,7 +133,22 @@ export function NewWorktreeModal() {
     handleSelectLinearIssue: handlers.handleSelectLinearIssue,
     handleSelectLinearIssueAndInvestigate:
       handlers.handleSelectLinearIssueAndInvestigate,
+    showIssueSources,
   })
+
+  const visibleTabs = useMemo(() => {
+    const tabs = showIssueSources
+      ? TABS
+      : TABS.filter(
+          tab =>
+            tab.id !== 'issues' && tab.id !== 'security' && tab.id !== 'linear'
+        )
+
+    return tabs.map((tab, index) => ({
+      ...tab,
+      key: String(index + 1),
+    }))
+  }, [showIssueSources])
 
   // Apply store-provided default tab when modal opens
   useEffect(() => {
@@ -139,11 +157,28 @@ export function NewWorktreeModal() {
         useUIStore.getState()
       if (newWorktreeModalDefaultTab) {
         // eslint-disable-next-line react-hooks/set-state-in-effect
-        setActiveTab(newWorktreeModalDefaultTab)
+        if (
+          !showIssueSources &&
+          (newWorktreeModalDefaultTab === 'issues' ||
+            newWorktreeModalDefaultTab === 'security')
+        ) {
+          setActiveTab('quick')
+        } else {
+          setActiveTab(newWorktreeModalDefaultTab)
+        }
         setNewWorktreeModalDefaultTab(null)
       }
     }
-  }, [newWorktreeModalOpen])
+  }, [newWorktreeModalOpen, showIssueSources])
+
+  useEffect(() => {
+    if (
+      !showIssueSources &&
+      (activeTab === 'issues' || activeTab === 'security' || activeTab === 'linear')
+    ) {
+      setActiveTab('quick')
+    }
+  }, [activeTab, showIssueSources])
 
   // Focus search input when switching to searchable tabs
   useEffect(() => {
@@ -209,7 +244,7 @@ export function NewWorktreeModal() {
         <SessionTabBar
           activeTab={activeTab}
           onTabChange={setActiveTab}
-          tabs={TABS}
+          tabs={visibleTabs}
         />
 
         {/* Tab content */}
@@ -228,7 +263,7 @@ export function NewWorktreeModal() {
             />
           )}
 
-          {activeTab === 'issues' && (
+          {showIssueSources && activeTab === 'issues' && (
             <GitHubIssuesTab
               searchQuery={searchQuery}
               setSearchQuery={setSearchQuery}
@@ -276,7 +311,7 @@ export function NewWorktreeModal() {
             />
           )}
 
-          {activeTab === 'security' && (
+          {showIssueSources && activeTab === 'security' && (
             <SecurityAlertsTab
               searchQuery={searchQuery}
               setSearchQuery={setSearchQuery}
@@ -313,7 +348,7 @@ export function NewWorktreeModal() {
             />
           )}
 
-          {activeTab === 'linear' && (
+          {showIssueSources && activeTab === 'linear' && (
             <LinearIssuesTab
               searchQuery={searchQuery}
               setSearchQuery={setSearchQuery}

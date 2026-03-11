@@ -883,6 +883,7 @@ export interface AppPreferences {
   http_server_token_required: boolean // Require token for web access (default true)
   removal_behavior: RemovalBehavior // What happens when closing sessions/worktrees: 'archive' or 'delete'
   auto_pull_base_branch: boolean // Auto-pull base branch before creating a new worktree
+  show_create_page_issue_sources: boolean // Show GitHub issues, security, and Linear on the create page
   auto_archive_on_pr_merged: boolean // Auto-archive worktrees when their PR is merged
   debug_mode_enabled: boolean // Show debug panel in chat sessions
   default_enabled_mcp_servers: string[] // MCP server names enabled by default (empty = none)
@@ -1404,6 +1405,7 @@ export const defaultPreferences: AppPreferences = {
   http_server_token_required: true, // Default: require token for security
   removal_behavior: 'delete', // Default: delete (permanent)
   auto_pull_base_branch: true, // Default: enabled
+  show_create_page_issue_sources: true, // Default: enabled
   auto_archive_on_pr_merged: true, // Default: enabled
   debug_mode_enabled: false, // Default: disabled
   default_enabled_mcp_servers: [], // Default: no MCP servers enabled

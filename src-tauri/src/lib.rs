@@ -158,6 +158,8 @@ pub struct AppPreferences {
     pub removal_behavior: String, // What happens when closing sessions/worktrees: archive, delete
     #[serde(default = "default_auto_pull_base_branch")]
     pub auto_pull_base_branch: bool, // Auto-pull base branch before creating a new worktree
+    #[serde(default = "default_show_create_page_issue_sources")]
+    pub show_create_page_issue_sources: bool, // Show GitHub issues/security and Linear on the create page
     #[serde(default = "default_auto_archive_on_pr_merged")]
     pub auto_archive_on_pr_merged: bool, // Auto-archive worktrees when their PR is merged
     #[serde(default)]
@@ -413,6 +415,10 @@ fn default_removal_behavior() -> String {
 }
 
 fn default_auto_pull_base_branch() -> bool {
+    true // Enabled by default
+}
+
+fn default_show_create_page_issue_sources() -> bool {
     true // Enabled by default
 }
 
@@ -1082,6 +1088,7 @@ impl Default for AppPreferences {
             http_server_token_required: default_http_server_token_required(),
             removal_behavior: default_removal_behavior(),
             auto_pull_base_branch: default_auto_pull_base_branch(),
+            show_create_page_issue_sources: default_show_create_page_issue_sources(),
             auto_archive_on_pr_merged: default_auto_archive_on_pr_merged(),
             debug_mode_enabled: false,
             default_effort_level: default_effort_level(),

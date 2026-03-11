@@ -10,6 +10,7 @@ import type { LinearIssue } from '@/types/linear'
 
 interface Params {
   activeTab: TabId
+  showIssueSources: boolean
   setActiveTab: (tab: TabId) => void
   filteredIssues: GitHubIssue[]
   filteredPRs: GitHubPullRequest[]
@@ -62,6 +63,7 @@ interface Params {
 
 export function useNewWorktreeKeyboard({
   activeTab,
+  showIssueSources,
   setActiveTab,
   filteredIssues,
   filteredPRs,
@@ -111,28 +113,34 @@ export function useNewWorktreeKeyboard({
         }
         if (key === '2') {
           e.preventDefault()
-          setActiveTab('issues')
+          setActiveTab(showIssueSources ? 'issues' : 'prs')
           return
         }
         if (key === '3') {
           e.preventDefault()
-          setActiveTab('prs')
+          setActiveTab(showIssueSources ? 'prs' : 'branches')
           return
         }
         if (key === '4') {
-          e.preventDefault()
-          setActiveTab('security')
-          return
+          if (showIssueSources) {
+            e.preventDefault()
+            setActiveTab('security')
+            return
+          }
         }
         if (key === '5') {
-          e.preventDefault()
-          setActiveTab('branches')
-          return
+          if (showIssueSources) {
+            e.preventDefault()
+            setActiveTab('branches')
+            return
+          }
         }
         if (key === '6') {
-          e.preventDefault()
-          setActiveTab('linear')
-          return
+          if (showIssueSources) {
+            e.preventDefault()
+            setActiveTab('linear')
+            return
+          }
         }
       }
 
@@ -404,6 +412,7 @@ export function useNewWorktreeKeyboard({
       handleSelectLinearIssue,
       handleSelectLinearIssueAndInvestigate,
       creatingFromNumber,
+      showIssueSources,
       setActiveTab,
       setSelectedItemIndex,
     ]

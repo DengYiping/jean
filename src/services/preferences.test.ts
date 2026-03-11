@@ -133,6 +133,7 @@ describe('preferences service', () => {
         default_provider: null,
 
         auto_pull_base_branch: true,
+        show_create_page_issue_sources: true,
         confirm_session_close: true,
         default_backend: 'claude',
         selected_codex_model: 'gpt-5.4',
@@ -248,6 +249,7 @@ describe('preferences service', () => {
         default_provider: null,
 
         auto_pull_base_branch: true,
+        show_create_page_issue_sources: true,
         confirm_session_close: true,
         default_backend: 'claude',
         selected_codex_model: 'gpt-5.4',
@@ -335,6 +337,7 @@ describe('preferences service', () => {
         default_provider: null,
 
         auto_pull_base_branch: true,
+        show_create_page_issue_sources: true,
         confirm_session_close: true,
         default_backend: 'claude',
         selected_codex_model: 'gpt-5.3-fast' as AppPreferences['selected_codex_model'],
@@ -423,6 +426,7 @@ describe('preferences service', () => {
         default_provider: null,
 
         auto_pull_base_branch: true,
+        show_create_page_issue_sources: true,
         confirm_session_close: true,
         default_backend: 'claude',
         selected_codex_model: 'gpt-5.4',
@@ -513,6 +517,7 @@ describe('preferences service', () => {
         default_provider: null,
 
         auto_pull_base_branch: true,
+        show_create_page_issue_sources: true,
         confirm_session_close: true,
         default_backend: 'claude',
         selected_codex_model: 'gpt-5.4',
@@ -603,6 +608,7 @@ describe('preferences service', () => {
         default_provider: null,
 
         auto_pull_base_branch: true,
+        show_create_page_issue_sources: true,
         confirm_session_close: true,
         default_backend: 'claude',
         selected_codex_model: 'gpt-5.4',
@@ -691,6 +697,7 @@ describe('preferences service', () => {
         default_provider: null,
 
         auto_pull_base_branch: true,
+        show_create_page_issue_sources: true,
         confirm_session_close: true,
         default_backend: 'claude',
         selected_codex_model: 'gpt-5.4',

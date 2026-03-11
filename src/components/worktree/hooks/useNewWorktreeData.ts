@@ -37,7 +37,8 @@ import { isBaseSession } from '@/types/projects'
 
 export function useNewWorktreeData(
   searchQuery: string,
-  includeClosed: boolean
+  includeClosed: boolean,
+  showIssueSources: boolean
 ) {
   const queryClient = useQueryClient()
   const selectedProjectId = useProjectsStore(state => state.selectedProjectId)
@@ -68,7 +69,9 @@ export function useNewWorktreeData(
     isFetching: isRefetchingIssues,
     error: issuesError,
     refetch: refetchIssues,
-  } = useGitHubIssues(selectedProject?.path ?? null, issueState)
+  } = useGitHubIssues(selectedProject?.path ?? null, issueState, {
+    enabled: showIssueSources,
+  })
   const issues = issueResult?.issues
 
   // GitHub PRs
@@ -85,7 +88,10 @@ export function useNewWorktreeData(
   const debouncedSearchQuery = useDebouncedValue(searchQuery, 300)
 
   const { data: searchedIssues, isFetching: isSearchingIssues } =
-    useSearchGitHubIssues(selectedProject?.path ?? null, debouncedSearchQuery)
+    useSearchGitHubIssues(
+      selectedProject?.path ?? null,
+      showIssueSources ? debouncedSearchQuery : ''
+    )
 
   const { data: searchedPRs, isFetching: isSearchingPRs } = useSearchGitHubPRs(
     selectedProject?.path ?? null,
@@ -95,7 +101,7 @@ export function useNewWorktreeData(
   // Exact number lookups (finds any issue/PR regardless of age or state)
   const { data: exactIssue } = useGetGitHubIssueByNumber(
     selectedProject?.path ?? null,
-    debouncedSearchQuery
+    showIssueSources ? debouncedSearchQuery : ''
   )
   const { data: exactPR } = useGetGitHubPRByNumber(
     selectedProject?.path ?? null,
@@ -153,7 +159,9 @@ export function useNewWorktreeData(
     isFetching: isRefetchingSecurityAlerts,
     error: securityError,
     refetch: refetchSecurityAlerts,
-  } = useDependabotAlerts(selectedProject?.path ?? null, securityState)
+  } = useDependabotAlerts(selectedProject?.path ?? null, securityState, {
+    enabled: showIssueSources,
+  })
 
   const filteredSecurityAlerts = useMemo(() => {
     const ALERT_STATE_ORDER = ['open', 'dismissed', 'fixed', 'auto_dismissed']
@@ -170,7 +178,9 @@ export function useNewWorktreeData(
     isLoading: isLoadingAdvisories,
     isFetching: isRefetchingAdvisories,
     refetch: refetchAdvisories,
-  } = useRepositoryAdvisories(selectedProject?.path ?? null)
+  } = useRepositoryAdvisories(selectedProject?.path ?? null, undefined, {
+    enabled: showIssueSources,
+  })
 
   const filteredAdvisories = useMemo(() => {
     const ADVISORY_STATE_ORDER = ['triage', 'draft', 'published', 'closed']
@@ -190,11 +200,13 @@ export function useNewWorktreeData(
     isFetching: isRefetchingLinearIssues,
     error: linearIssuesError,
     refetch: refetchLinearIssues,
-  } = useLinearIssues(selectedProjectId)
+  } = useLinearIssues(selectedProjectId, { enabled: showIssueSources })
   const linearIssues = linearIssueResult?.issues
 
   const { data: searchedLinearIssues, isFetching: isSearchingLinearIssues } =
-    useSearchLinearIssues(selectedProjectId, debouncedSearchQuery)
+    useSearchLinearIssues(selectedProjectId, debouncedSearchQuery, {
+      enabled: showIssueSources,
+    })
 
   const filteredLinearIssues = useMemo(() => {
     const local = filterLinearIssues(linearIssues ?? [], searchQuery)

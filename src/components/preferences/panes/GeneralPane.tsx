@@ -1696,6 +1696,22 @@ export const GeneralPane: React.FC = () => {
           </InlineField>
 
           <InlineField
+            label="Show issue sources on create page"
+            description="Show GitHub Issues, Security, and Linear sections in the New Session page, plus project issue/security badges"
+          >
+            <Switch
+              checked={preferences?.show_create_page_issue_sources ?? true}
+              onCheckedChange={checked => {
+                if (preferences) {
+                  patchPreferences.mutate({
+                    show_create_page_issue_sources: checked,
+                  })
+                }
+              }}
+            />
+          </InlineField>
+
+          <InlineField
             label="Restore last session on project switch"
             description="Automatically reopen the last worktree and session when switching projects"
           >

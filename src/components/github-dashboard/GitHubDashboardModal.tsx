@@ -35,6 +35,7 @@ import {
 import { cn } from '@/lib/utils'
 import { useUIStore } from '@/store/ui-store'
 import { useProjects, isTauri, useCreateWorktree } from '@/services/projects'
+import { usePreferences } from '@/services/preferences'
 import { isFolder } from '@/types/projects'
 import { isGhAuthError, githubQueryKeys, parseLabelQuery } from '@/services/github'
 import { GhAuthError } from '@/components/shared/GhAuthError'
@@ -81,13 +82,15 @@ const TABS: { id: DashboardTab; label: string; icon: ElementType }[] = [
 function DashboardTabBar({
   activeTab,
   onTabChange,
+  tabs,
 }: {
   activeTab: DashboardTab
   onTabChange: (tab: DashboardTab) => void
+  tabs: { id: DashboardTab; label: string; icon: ElementType }[]
 }) {
   return (
     <div className="flex border-b border-border flex-shrink-0">
-      {TABS.map((tab, idx) => (
+      {tabs.map((tab, idx) => (
         <button
           key={tab.id}
           onClick={() => onTabChange(tab.id)}
@@ -489,9 +492,17 @@ function ProjectSection({
 export function GitHubDashboardModal() {
   const githubDashboardOpen = useUIStore(state => state.githubDashboardOpen)
   const setGitHubDashboardOpen = useUIStore(state => state.setGitHubDashboardOpen)
-  const [activeTab, setActiveTab] = useState<DashboardTab>('issues')
+  const { data: preferences } = usePreferences()
+  const showIssueSources = preferences?.show_create_page_issue_sources ?? true
+  const [activeTab, setActiveTab] = useState<DashboardTab>(
+    showIssueSources ? 'issues' : 'prs'
+  )
   const [searchQuery, setSearchQuery] = useState('')
   const [projectFilter, setProjectFilter] = useState<string>('all')
+  const visibleTabs = useMemo(
+    () => (showIssueSources ? TABS : TABS.filter(tab => tab.id !== 'issues')),
+    [showIssueSources]
+  )
 
   const handleLabelClick = useCallback((labelName: string) => {
     const token = `label:"${labelName}"`
@@ -505,11 +516,21 @@ export function GitHubDashboardModal() {
   useEffect(() => {
     const handler = (e: Event) => {
       const tab = (e as CustomEvent<{ tab: DashboardTab }>).detail.tab
+      if (!showIssueSources && tab === 'issues') {
+        setActiveTab('prs')
+        return
+      }
       setActiveTab(tab)
     }
     window.addEventListener('switch-dashboard-tab', handler)
     return () => window.removeEventListener('switch-dashboard-tab', handler)
-  }, [])
+  }, [showIssueSources])
+
+  useEffect(() => {
+    if (!showIssueSources && activeTab === 'issues') {
+      setActiveTab('prs')
+    }
+  }, [activeTab, showIssueSources])
 
   const { data: allProjects = [] } = useProjects()
   const { triggerLogin, isGhInstalled } = useGhLogin()
@@ -867,7 +888,11 @@ export function GitHubDashboardModal() {
           </div>
         </DialogHeader>
 
-        <DashboardTabBar activeTab={activeTab} onTabChange={setActiveTab} />
+        <DashboardTabBar
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          tabs={visibleTabs}
+        />
 
         {/* Content */}
         <ScrollArea className="flex-1 min-h-0">

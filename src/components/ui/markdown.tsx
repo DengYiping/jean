@@ -1,4 +1,4 @@
-import { memo, useState, useCallback, type ReactNode } from 'react'
+import { memo, useMemo, useState, useCallback, type ReactNode } from 'react'
 import type { Components } from 'react-markdown'
 import ReactMarkdown from 'react-markdown'
 import rehypeRaw from 'rehype-raw'
@@ -6,6 +6,9 @@ import remarkGfm from 'remark-gfm'
 import remend from 'remend'
 import { Copy, Check } from 'lucide-react'
 import { toast } from 'sonner'
+import { invoke } from '@/lib/transport'
+import { usePreferences } from '@/services/preferences'
+import { isNativeApp } from '@/lib/environment'
 import {
   Tooltip,
   TooltipTrigger,
@@ -66,120 +69,25 @@ function CodeBlock({ children }: { children: ReactNode }) {
   )
 }
 
-const components: Components = {
-  // Headers - clear hierarchy with generous spacing
-  h1: ({ children }) => (
-    <div className="mt-8 mb-5 text-3xl font-bold text-foreground first:mt-0">
-      {children}
-    </div>
-  ),
-  h2: ({ children }) => (
-    <div className="mt-8 mb-4 text-2xl font-bold text-foreground first:mt-0">
-      {children}
-    </div>
-  ),
-  h3: ({ children }) => (
-    <div className="mt-7 mb-3 text-xl font-semibold text-foreground first:mt-0">
-      {children}
-    </div>
-  ),
-  h4: ({ children }) => (
-    <div className="mt-6 mb-2.5 text-lg font-semibold text-foreground first:mt-0">
-      {children}
-    </div>
-  ),
-  h5: ({ children }) => (
-    <div className="mt-5 mb-2 text-base font-medium text-foreground first:mt-0">
-      {children}
-    </div>
-  ),
-  h6: ({ children }) => (
-    <div className="mt-4 mb-1.5 text-sm font-medium text-muted-foreground first:mt-0">
-      {children}
-    </div>
-  ),
+function parseLocalEditorLink(
+  href: string | undefined
+): { path: string; lineNumber: number | null } | null {
+  if (!href) return null
+  if (href.startsWith('#')) return null
+  if (/^(https?:|mailto:|tel:)/i.test(href)) return null
 
-  // Emphasis
-  strong: ({ children }) => (
-    <strong className="font-semibold">{children}</strong>
-  ),
-  em: ({ children }) => <em className="italic">{children}</em>,
+  const lineMatch = href.match(/#L?(\d+)$/)
+  const lineNumber = lineMatch?.[1] ? Number.parseInt(lineMatch[1], 10) : null
+  const path = lineMatch ? href.slice(0, href.length - lineMatch[0].length) : href
 
-  // Code - inline and blocks
-  code: ({ children, className }) => {
-    // Fenced code blocks have a className like "language-js"
-    const isBlock = className?.startsWith('language-')
-    if (isBlock) {
-      return <code className={className}>{children}</code>
-    }
-    // Inline code
-    return (
-      <code className="rounded-md bg-muted px-1.5 py-0.5 text-[0.875em]">
-        {children}
-      </code>
-    )
-  },
+  const isWindowsPath = /^[A-Za-z]:[\\/]/.test(path)
+  const isUnixPath = path.startsWith('/')
+  const isRelativePath = path.startsWith('./') || path.startsWith('../') || path.startsWith('~/')
 
-  // Code blocks
-  pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
+  if (!isWindowsPath && !isUnixPath && !isRelativePath) return null
+  if (!path) return null
 
-  // Images
-  img: ({ src, alt }) => (
-    <img
-      src={src}
-      alt={alt || ''}
-      className="max-w-full h-auto rounded-md my-4"
-    />
-  ),
-
-  // Links
-  a: ({ href, children }) => (
-    <a
-      href={href}
-      className="underline underline-offset-2 hover:text-foreground"
-      target="_blank"
-      rel="noopener noreferrer"
-    >
-      {children}
-    </a>
-  ),
-
-  // Lists - generous spacing and indentation
-  ul: ({ children }) => (
-    <ul className="my-4 ml-6 list-disc list-outside space-y-2">{children}</ul>
-  ),
-  ol: ({ children }) => (
-    <ol className="my-4 ml-6 list-decimal list-outside space-y-2">
-      {children}
-    </ol>
-  ),
-  li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-
-  // Blockquotes - more prominent
-  blockquote: ({ children }) => (
-    <blockquote className="my-5 border-l-2 border-muted-foreground/40 pl-4 py-1 italic">
-      {children}
-    </blockquote>
-  ),
-
-  // Paragraphs - more breathing room
-  p: ({ children }) => (
-    <p className="my-3 leading-relaxed first:mt-0 last:mb-0">{children}</p>
-  ),
-
-  // Tables
-  table: ({ children }) => (
-    <div className="my-5 overflow-x-auto">
-      <table className="min-w-full border-collapse text-sm">{children}</table>
-    </div>
-  ),
-  thead: ({ children }) => <thead className="bg-muted/50">{children}</thead>,
-  tbody: ({ children }) => <tbody>{children}</tbody>,
-  tr: ({ children }) => <tr className="border-b border-border">{children}</tr>,
-  th: ({ children }) => (
-    <th className="px-4 py-2.5 text-left font-semibold">{children}</th>
-  ),
-  td: ({ children }) => <td className="px-4 py-2.5">{children}</td>,
+  return { path, lineNumber }
 }
 
 /**
@@ -191,8 +99,145 @@ const Markdown = memo(function Markdown({
   streaming = false,
   className,
 }: MarkdownProps) {
+  const { data: preferences } = usePreferences()
   // Apply remend preprocessing for streaming content to auto-close incomplete markdown
   const content = streaming ? remend(children) : children
+
+  const handleLocalLinkOpen = useCallback(
+    async (href: string) => {
+      const parsed = parseLocalEditorLink(href)
+      if (!parsed || !isNativeApp()) return false
+
+      try {
+        await invoke('open_file_in_default_app', {
+          path: parsed.path,
+          editor: preferences?.editor,
+          lineNumber: parsed.lineNumber,
+        })
+        return true
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        toast.error(`Failed to open link: ${message}`)
+        return true
+      }
+    },
+    [preferences?.editor]
+  )
+
+  const components = useMemo<Components>(
+    () => ({
+      h1: ({ children }) => (
+        <div className="mt-8 mb-5 text-3xl font-bold text-foreground first:mt-0">
+          {children}
+        </div>
+      ),
+      h2: ({ children }) => (
+        <div className="mt-8 mb-4 text-2xl font-bold text-foreground first:mt-0">
+          {children}
+        </div>
+      ),
+      h3: ({ children }) => (
+        <div className="mt-7 mb-3 text-xl font-semibold text-foreground first:mt-0">
+          {children}
+        </div>
+      ),
+      h4: ({ children }) => (
+        <div className="mt-6 mb-2.5 text-lg font-semibold text-foreground first:mt-0">
+          {children}
+        </div>
+      ),
+      h5: ({ children }) => (
+        <div className="mt-5 mb-2 text-base font-medium text-foreground first:mt-0">
+          {children}
+        </div>
+      ),
+      h6: ({ children }) => (
+        <div className="mt-4 mb-1.5 text-sm font-medium text-muted-foreground first:mt-0">
+          {children}
+        </div>
+      ),
+      strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+      em: ({ children }) => <em className="italic">{children}</em>,
+      code: ({ children, className }) => {
+        const isBlock = className?.startsWith('language-')
+        if (isBlock) {
+          return <code className={className}>{children}</code>
+        }
+        return (
+          <code className="rounded-md bg-muted px-1.5 py-0.5 text-[0.875em]">
+            {children}
+          </code>
+        )
+      },
+      pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
+      img: ({ src, alt }) => (
+        <img
+          src={src}
+          alt={alt || ''}
+          className="max-w-full h-auto rounded-md my-4"
+        />
+      ),
+      a: ({ href, children }) => {
+        const localLink = parseLocalEditorLink(href)
+        if (localLink && isNativeApp()) {
+          return (
+            <button
+              type="button"
+              className="inline cursor-pointer text-left underline underline-offset-2 hover:text-foreground"
+              onClick={() => {
+                if (href) {
+                  void handleLocalLinkOpen(href)
+                }
+              }}
+            >
+              {children}
+            </button>
+          )
+        }
+
+        return (
+          <a
+            href={href}
+            className="underline underline-offset-2 hover:text-foreground"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {children}
+          </a>
+        )
+      },
+      ul: ({ children }) => (
+        <ul className="my-4 ml-6 list-disc list-outside space-y-2">{children}</ul>
+      ),
+      ol: ({ children }) => (
+        <ol className="my-4 ml-6 list-decimal list-outside space-y-2">
+          {children}
+        </ol>
+      ),
+      li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+      blockquote: ({ children }) => (
+        <blockquote className="my-5 border-l-2 border-muted-foreground/40 pl-4 py-1 italic">
+          {children}
+        </blockquote>
+      ),
+      p: ({ children }) => (
+        <p className="my-3 leading-relaxed first:mt-0 last:mb-0">{children}</p>
+      ),
+      table: ({ children }) => (
+        <div className="my-5 overflow-x-auto">
+          <table className="min-w-full border-collapse text-sm">{children}</table>
+        </div>
+      ),
+      thead: ({ children }) => <thead className="bg-muted/50">{children}</thead>,
+      tbody: ({ children }) => <tbody>{children}</tbody>,
+      tr: ({ children }) => <tr className="border-b border-border">{children}</tr>,
+      th: ({ children }) => (
+        <th className="px-4 py-2.5 text-left font-semibold">{children}</th>
+      ),
+      td: ({ children }) => <td className="px-4 py-2.5">{children}</td>,
+    }),
+    [handleLocalLinkOpen]
+  )
 
   return (
     <div className={cn('markdown leading-relaxed break-words', className)}>

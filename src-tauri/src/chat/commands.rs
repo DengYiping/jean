@@ -3420,13 +3420,18 @@ pub async fn write_file_content(path: String, content: String) -> Result<(), Str
     std::fs::write(&file_path, &content).map_err(|e| format!("Failed to write file: {e}"))
 }
 
-/// Open a file in the user's preferred editor
+/// Open a file in the user's preferred editor.
 ///
 /// Uses the editor preference (zed, vscode, cursor, xcode, intellij) to open files.
+/// When `line_number` is provided, opens the file at that line when the editor supports it.
 #[tauri::command]
-pub async fn open_file_in_default_app(path: String, editor: Option<String>) -> Result<(), String> {
+pub async fn open_file_in_default_app(
+    path: String,
+    editor: Option<String>,
+    line_number: Option<u32>,
+) -> Result<(), String> {
     let editor_app = editor.unwrap_or_else(|| "zed".to_string());
-    log::trace!("Opening file in {editor_app}: {path}");
+    log::trace!("Opening file in {editor_app}: {path} line={line_number:?}");
 
     let friendly_name = match editor_app.as_str() {
         "vscode" => "VS Code ('code')",
@@ -3439,8 +3444,11 @@ pub async fn open_file_in_default_app(path: String, editor: Option<String>) -> R
 
     #[cfg(target_os = "macos")]
     {
+        let zed_target = line_number.map(|line| format!("{path}:{line}")).unwrap_or_else(|| path.clone());
+        let cursor_target = line_number.map(|line| format!("{path}:{line}")).unwrap_or_else(|| path.clone());
+        let vscode_target = line_number.map(|line| format!("{path}:{line}")).unwrap_or_else(|| path.clone());
         let result = match editor_app.as_str() {
-            "zed" => match std::process::Command::new("zed").arg(&path).spawn() {
+            "zed" => match std::process::Command::new("zed").arg(&zed_target).spawn() {
                 Ok(child) => Ok(child),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                     std::process::Command::new("open")
@@ -3449,7 +3457,14 @@ pub async fn open_file_in_default_app(path: String, editor: Option<String>) -> R
                 }
                 Err(e) => Err(e),
             },
-            "cursor" => match std::process::Command::new("cursor").arg(&path).spawn() {
+            "cursor" => match std::process::Command::new("cursor")
+                .args(if line_number.is_some() {
+                    vec!["-g", cursor_target.as_str()]
+                } else {
+                    vec![path.as_str()]
+                })
+                .spawn()
+            {
                 Ok(child) => Ok(child),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                     std::process::Command::new("open")
@@ -3458,8 +3473,20 @@ pub async fn open_file_in_default_app(path: String, editor: Option<String>) -> R
                 }
                 Err(e) => Err(e),
             },
-            "xcode" => std::process::Command::new("xed").arg(&path).spawn(),
-            "intellij" => match std::process::Command::new("idea").arg(&path).spawn() {
+            "xcode" => {
+                let mut cmd = std::process::Command::new("xed");
+                if let Some(line) = line_number {
+                    cmd.args(["--line", &line.to_string()]);
+                }
+                cmd.arg(&path).spawn()
+            }
+            "intellij" => match {
+                let mut cmd = std::process::Command::new("idea");
+                if let Some(line) = line_number {
+                    cmd.args(["--line", &line.to_string()]);
+                }
+                cmd.arg(&path).spawn()
+            } {
                 Ok(child) => Ok(child),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                     std::process::Command::new("open")
@@ -3468,7 +3495,14 @@ pub async fn open_file_in_default_app(path: String, editor: Option<String>) -> R
                 }
                 Err(e) => Err(e),
             },
-            _ => match std::process::Command::new("code").arg(&path).spawn() {
+            _ => match std::process::Command::new("code")
+                .args(if line_number.is_some() {
+                    vec!["-g", vscode_target.as_str()]
+                } else {
+                    vec![path.as_str()]
+                })
+                .spawn()
+            {
                 Ok(child) => Ok(child),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                     std::process::Command::new("open")
@@ -3496,19 +3530,34 @@ pub async fn open_file_in_default_app(path: String, editor: Option<String>) -> R
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+        let zed_target = line_number.map(|line| format!("{path}:{line}")).unwrap_or_else(|| path.clone());
+        let cursor_target = line_number.map(|line| format!("{path}:{line}")).unwrap_or_else(|| path.clone());
+        let vscode_target = line_number.map(|line| format!("{path}:{line}")).unwrap_or_else(|| path.clone());
         let result = match editor_app.as_str() {
-            "zed" => std::process::Command::new("zed").arg(&path).spawn(),
+            "zed" => std::process::Command::new("zed").arg(&zed_target).spawn(),
             "cursor" => std::process::Command::new("cmd")
-                .args(["/c", "cursor", &path])
+                .args(if line_number.is_some() {
+                    vec!["/c", "cursor", "-g", cursor_target.as_str()]
+                } else {
+                    vec!["/c", "cursor", path.as_str()]
+                })
                 .creation_flags(CREATE_NO_WINDOW)
                 .spawn(),
             "intellij" => std::process::Command::new("cmd")
-                .args(["/c", "idea", &path])
+                .args(if let Some(line) = line_number {
+                    vec!["/c", "idea", "--line", &line.to_string(), &path]
+                } else {
+                    vec!["/c", "idea", &path]
+                })
                 .creation_flags(CREATE_NO_WINDOW)
                 .spawn(),
             "xcode" => return Err("Xcode is only available on macOS".to_string()),
             _ => std::process::Command::new("cmd")
-                .args(["/c", "code", &path])
+                .args(if line_number.is_some() {
+                    vec!["/c", "code", "-g", vscode_target.as_str()]
+                } else {
+                    vec!["/c", "code", path.as_str()]
+                })
                 .creation_flags(CREATE_NO_WINDOW)
                 .spawn(),
         };
@@ -3524,12 +3573,37 @@ pub async fn open_file_in_default_app(path: String, editor: Option<String>) -> R
 
     #[cfg(target_os = "linux")]
     {
+        let zed_target = line_number.map(|line| format!("{path}:{line}")).unwrap_or_else(|| path.clone());
+        let cursor_target = line_number.map(|line| format!("{path}:{line}")).unwrap_or_else(|| path.clone());
+        let vscode_target = line_number.map(|line| format!("{path}:{line}")).unwrap_or_else(|| path.clone());
         let result = match editor_app.as_str() {
-            "zed" => std::process::Command::new("zed").arg(&path).spawn(),
-            "cursor" => std::process::Command::new("cursor").arg(&path).spawn(),
-            "intellij" => std::process::Command::new("idea").arg(&path).spawn(),
+            "zed" => std::process::Command::new("zed").arg(&zed_target).spawn(),
+            "cursor" => {
+                let mut cmd = std::process::Command::new("cursor");
+                if line_number.is_some() {
+                    cmd.args(["-g", &cursor_target]);
+                } else {
+                    cmd.arg(&path);
+                }
+                cmd.spawn()
+            }
+            "intellij" => {
+                let mut cmd = std::process::Command::new("idea");
+                if let Some(line) = line_number {
+                    cmd.args(["--line", &line.to_string()]);
+                }
+                cmd.arg(&path).spawn()
+            }
             "xcode" => return Err("Xcode is only available on macOS".to_string()),
-            _ => std::process::Command::new("code").arg(&path).spawn(),
+            _ => {
+                let mut cmd = std::process::Command::new("code");
+                if line_number.is_some() {
+                    cmd.args(["-g", &vscode_target]);
+                } else {
+                    cmd.arg(&path);
+                }
+                cmd.spawn()
+            }
         };
 
         result.map_err(|e| {

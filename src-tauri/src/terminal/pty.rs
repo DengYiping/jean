@@ -14,6 +14,11 @@ fn get_user_shell() -> String {
     crate::platform::get_default_shell()
 }
 
+#[cfg(unix)]
+fn shell_run_args(run_command: &str) -> [&str; 2] {
+    ["-c", run_command]
+}
+
 /// Spawn a terminal, optionally running a command
 ///
 /// When `command_args` is provided alongside `command`, the binary at `command`
@@ -75,8 +80,10 @@ pub fn spawn_terminal(
             }
             #[cfg(not(windows))]
             {
-                c.arg("-c");
-                c.arg(&crate::platform::shell_escape(run_command));
+                // `shell -c` expects the raw command string. Wrapping the whole
+                // script in shell quotes makes shells like zsh treat it as a
+                // single executable name (for example `bun run tauri:dev`).
+                c.args(shell_run_args(run_command));
             }
             c
         }
@@ -204,6 +211,15 @@ pub fn spawn_terminal(
     });
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg(unix)]
+    #[test]
+    fn shell_run_args_pass_raw_command_to_shell_c() {
+        assert_eq!(super::shell_run_args("bun run tauri:dev"), ["-c", "bun run tauri:dev"]);
+    }
 }
 
 /// Write data to a terminal

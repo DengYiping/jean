@@ -309,6 +309,21 @@ describe('ChatStore', () => {
       expect(blocks[0]).toEqual({ type: 'thinking', thinking: 'Thinking...' })
     })
 
+    it('appends streaming thinking chunks into one block', () => {
+      const { appendThinkingBlock, getStreamingContentBlocks } =
+        useChatStore.getState()
+
+      appendThinkingBlock('session-1', '**Thinking**')
+      appendThinkingBlock('session-1', '\nTracing the repo')
+
+      const blocks = getStreamingContentBlocks('session-1')
+      expect(blocks).toHaveLength(1)
+      expect(blocks[0]).toEqual({
+        type: 'thinking',
+        thinking: '**Thinking**\nTracing the repo',
+      })
+    })
+
     it('clears content blocks', () => {
       const {
         addTextBlock,

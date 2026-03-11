@@ -36,6 +36,7 @@ function JeanConfigWizardContent() {
   const [setupScript, setSetupScript] = useState('')
   const [teardownScript, setTeardownScript] = useState('')
   const [runScript, setRunScript] = useState('')
+  const [buildScript, setBuildScript] = useState('')
 
   const markSeen = () => {
     if (preferences && !preferences.has_seen_jean_config_wizard) {
@@ -53,6 +54,7 @@ function JeanConfigWizardContent() {
           setup: setupScript.trim() || null,
           teardown: teardownScript.trim() || null,
           run: runScript.trim() || null,
+          build: buildScript.trim() || null,
         },
       },
     })
@@ -66,7 +68,11 @@ function JeanConfigWizardContent() {
     closeJeanConfigWizard()
   }
 
-  const hasContent = setupScript.trim() || teardownScript.trim() || runScript.trim()
+  const hasContent =
+    setupScript.trim() ||
+    teardownScript.trim() ||
+    runScript.trim() ||
+    buildScript.trim()
 
   return (
     <Dialog
@@ -107,6 +113,9 @@ function JeanConfigWizardContent() {
                 <li>
                   <strong>Run</strong> launches your dev server via the run
                   command
+                </li>
+                <li>
+                  <strong>Build</strong> launches your build command on demand
                 </li>
               </ul>
               <div className="space-y-0.5 pt-1">
@@ -175,6 +184,22 @@ function JeanConfigWizardContent() {
             />
             <p className="text-xs text-muted-foreground">
               Launches your dev environment in the terminal
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="wizard-build-script" className="text-sm">
+              Build Script
+            </Label>
+            <Input
+              id="wizard-build-script"
+              placeholder="e.g. npm run build"
+              value={buildScript}
+              onChange={e => setBuildScript(e.target.value)}
+              className="font-mono text-sm"
+            />
+            <p className="text-xs text-muted-foreground">
+              Launches your build command in the terminal
             </p>
           </div>
         </div>

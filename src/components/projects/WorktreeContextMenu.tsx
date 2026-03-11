@@ -3,6 +3,7 @@ import {
   Code,
   FileJson,
   FolderOpen,
+  Hammer,
   Play,
   Sparkles,
   Terminal,
@@ -50,8 +51,10 @@ export function WorktreeContextMenu({
     isBase,
     hasMessages,
     runScript,
+    buildScript,
     preferences,
     handleRun,
+    handleBuild,
     handleOpenInFinder,
     handleOpenInTerminal,
     handleOpenInEditor,
@@ -72,6 +75,13 @@ export function WorktreeContextMenu({
           <ContextMenuItem onClick={handleRun}>
             <Play className="mr-2 h-4 w-4" />
             Run
+          </ContextMenuItem>
+        )}
+
+        {isNativeApp() && buildScript && (
+          <ContextMenuItem onClick={handleBuild}>
+            <Hammer className="mr-2 h-4 w-4" />
+            Build
           </ContextMenuItem>
         )}
 

@@ -2624,6 +2624,7 @@ pub fn run() {
             terminal::get_active_terminals,
             terminal::has_active_terminal,
             terminal::get_run_script,
+            terminal::get_build_script,
             terminal::kill_all_terminals,
             // Chat commands - Session management
             chat::get_sessions,

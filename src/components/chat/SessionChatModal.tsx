@@ -17,6 +17,7 @@ import {
   FileText,
   FolderOpen,
   Github,
+  Hammer,
   MoreHorizontal,
   Pencil,
   Sparkles,
@@ -51,7 +52,12 @@ import {
   useRenameSession,
 } from '@/services/chat'
 import { usePreferences } from '@/services/preferences'
-import { useWorktree, useProjects, useRunScript } from '@/services/projects'
+import {
+  useBuildScript,
+  useProjects,
+  useRunScript,
+  useWorktree,
+} from '@/services/projects'
 import {
   useGitStatus,
   gitPush,
@@ -235,6 +241,7 @@ export function SessionChatModal({
   )
   const { data: preferences } = usePreferences()
   const { data: runScript } = useRunScript(worktreePath)
+  const { data: buildScript } = useBuildScript(worktreePath)
   const createSession = useCreateSession()
 
   // Horizontal scroll on session tabs
@@ -682,6 +689,17 @@ export function SessionChatModal({
     useTerminalStore.getState().setModalTerminalOpen(worktreeId, true)
   }, [worktreeId, runScript])
 
+  const handleBuild = useCallback(() => {
+    if (!buildScript) {
+      notify('No build script configured in jean.json', undefined, {
+        type: 'error',
+      })
+      return
+    }
+    useTerminalStore.getState().startRun(worktreeId, buildScript)
+    useTerminalStore.getState().setModalTerminalOpen(worktreeId, true)
+  }, [buildScript, worktreeId])
+
   // Close on Escape key
   useEffect(() => {
     if (!isOpen) return
@@ -850,6 +868,21 @@ export function SessionChatModal({
                       <TooltipContent>Run</TooltipContent>
                     </Tooltip>
                   )}
+                  {buildScript && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-xs"
+                          onClick={handleBuild}
+                        >
+                          <Hammer className="h-3 w-3" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Build</TooltipContent>
+                    </Tooltip>
+                  )}
                 </div>
               )}
               {/* Mobile: overflow menu */}
@@ -966,6 +999,12 @@ export function SessionChatModal({
                       <DropdownMenuItem onSelect={handleRun}>
                         <Play className="h-4 w-4" />
                         Run
+                      </DropdownMenuItem>
+                    )}
+                    {buildScript && (
+                      <DropdownMenuItem onSelect={handleBuild}>
+                        <Hammer className="h-4 w-4" />
+                        Build
                       </DropdownMenuItem>
                     )}
                     {currentResumeCommand && (

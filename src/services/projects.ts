@@ -1966,6 +1966,7 @@ export interface JeanConfig {
     setup: string | null
     teardown: string | null
     run: string | null
+    build: string | null
   }
 }
 
@@ -2006,6 +2007,7 @@ export function useSaveJeanConfig() {
     onSuccess: (_, { projectPath }) => {
       queryClient.invalidateQueries({ queryKey: ['jean-config', projectPath] })
       queryClient.invalidateQueries({ queryKey: ['run-script'] })
+      queryClient.invalidateQueries({ queryKey: ['build-script'] })
     },
     onError: error => {
       toast.error('Failed to save jean.json', {
@@ -2015,25 +2017,44 @@ export function useSaveJeanConfig() {
   })
 }
 
-/**
- * Hook to get the run script from jean.json for a worktree
- */
-export function useRunScript(worktreePath: string | null) {
+function useJeanScript(
+  worktreePath: string | null,
+  scriptType: 'run' | 'build'
+) {
+  const queryKey = [`${scriptType}-script`, worktreePath]
+  const commandName =
+    scriptType === 'run' ? 'get_run_script' : 'get_build_script'
+
   return useQuery<string | null>({
-    queryKey: ['run-script', worktreePath],
+    queryKey,
     queryFn: async () => {
       if (!isTauri() || !worktreePath) return null
 
-      logger.debug('Fetching run script', { worktreePath })
-      const script = await invoke<string | null>('get_run_script', {
+      logger.debug(`Fetching ${scriptType} script`, { worktreePath })
+      const script = await invoke<string | null>(commandName, {
         worktreePath,
       })
-      logger.debug('Run script result', { script })
-      return script
+      const normalizedScript = script?.trim() || null
+      logger.debug(`${scriptType} script result`, { script: normalizedScript })
+      return normalizedScript
     },
     enabled: !!worktreePath,
     staleTime: 30_000, // Cache for 30 seconds
   })
+}
+
+/**
+ * Hook to get the run script from jean.json for a worktree
+ */
+export function useRunScript(worktreePath: string | null) {
+  return useJeanScript(worktreePath, 'run')
+}
+
+/**
+ * Hook to get the build script from jean.json for a worktree
+ */
+export function useBuildScript(worktreePath: string | null) {
+  return useJeanScript(worktreePath, 'build')
 }
 
 /**

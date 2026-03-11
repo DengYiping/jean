@@ -1399,6 +1399,10 @@ pub async fn dispatch_command(
             // NATIVE ONLY: Terminals don't work in browser mode
             Ok(Value::Null)
         }
+        "get_build_script" => {
+            // NATIVE ONLY: Terminals don't work in browser mode
+            Ok(Value::Null)
+        }
 
         // =====================================================================
         // Session Management (additional)

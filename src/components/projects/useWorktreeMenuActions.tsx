@@ -9,6 +9,7 @@ import {
   useOpenWorktreeInFinder,
   useOpenWorktreeInTerminal,
   useOpenWorktreeInEditor,
+  useBuildScript,
   useRunScript,
 } from '@/services/projects'
 import { usePreferences } from '@/services/preferences'
@@ -35,6 +36,7 @@ export function useWorktreeMenuActions({
   const openInTerminal = useOpenWorktreeInTerminal()
   const openInEditor = useOpenWorktreeInEditor()
   const { data: runScript } = useRunScript(worktree.path)
+  const { data: buildScript } = useBuildScript(worktree.path)
   const { data: preferences } = usePreferences()
   const { data: sessionsData } = useSessions(worktree.id, worktree.path)
   const isBase = isBaseSession(worktree)
@@ -49,6 +51,12 @@ export function useWorktreeMenuActions({
       useTerminalStore.getState().startRun(worktree.id, runScript)
     }
   }, [runScript, worktree.id])
+
+  const handleBuild = useCallback(() => {
+    if (buildScript) {
+      useTerminalStore.getState().startRun(worktree.id, buildScript)
+    }
+  }, [buildScript, worktree.id])
 
   const handleOpenTerminalPanel = useCallback(() => {
     useTerminalStore.getState().addTerminal(worktree.id)
@@ -136,10 +144,12 @@ export function useWorktreeMenuActions({
     isBase,
     hasMessages,
     runScript,
+    buildScript,
     preferences,
 
     // Handlers
     handleRun,
+    handleBuild,
     handleOpenTerminalPanel,
     handleOpenInFinder,
     handleOpenInTerminal,

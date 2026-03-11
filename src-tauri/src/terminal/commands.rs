@@ -42,6 +42,12 @@ pub async fn get_run_script(worktree_path: String) -> Option<String> {
     read_jean_config(&worktree_path).and_then(|config| config.scripts.run)
 }
 
+/// Get the build script from jean.json for a worktree
+#[tauri::command]
+pub async fn get_build_script(worktree_path: String) -> Option<String> {
+    read_jean_config(&worktree_path).and_then(|config| config.scripts.build)
+}
+
 /// Write data to a terminal (stdin)
 #[tauri::command]
 pub async fn terminal_write(terminal_id: String, data: String) -> Result<(), String> {

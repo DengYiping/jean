@@ -7,6 +7,7 @@ import {
   FileJson,
   FolderOpen,
   GitPullRequestArrow,
+  Hammer,
   MoreHorizontal,
   Play,
   Plus,
@@ -73,8 +74,10 @@ export function WorktreeDropdownMenu({
     isBase,
     hasMessages,
     runScript,
+    buildScript,
     preferences,
     handleRun,
+    handleBuild,
     handleOpenInFinder,
     handleOpenInTerminal,
     handleOpenInEditor,
@@ -171,6 +174,13 @@ export function WorktreeDropdownMenu({
             <DropdownMenuItem onClick={handleRun}>
               <Play className="mr-2 h-4 w-4" />
               Run
+            </DropdownMenuItem>
+          )}
+
+          {isNativeApp() && buildScript && (
+            <DropdownMenuItem onClick={handleBuild}>
+              <Hammer className="mr-2 h-4 w-4" />
+              Build
             </DropdownMenuItem>
           )}
 

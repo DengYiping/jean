@@ -328,6 +328,7 @@ interface ChatUIState {
   addTextBlock: (sessionId: string, text: string) => void
   addToolBlock: (sessionId: string, toolCallId: string) => void
   addThinkingBlock: (sessionId: string, thinking: string) => void
+  appendThinkingBlock: (sessionId: string, chunk: string) => void
   clearStreamingContentBlocks: (sessionId: string) => void
   getStreamingContentBlocks: (sessionId: string) => ContentBlock[]
 
@@ -1192,6 +1193,37 @@ export const useChatStore = create<ChatUIState>()(
           },
           undefined,
           'addThinkingBlock'
+        ),
+
+      appendThinkingBlock: (sessionId, chunk) =>
+        set(
+          state => {
+            const blocks = state.streamingContentBlocks[sessionId] ?? []
+            const lastBlock = blocks[blocks.length - 1]
+
+            if (lastBlock && lastBlock.type === 'thinking') {
+              const newBlocks = [...blocks]
+              newBlocks[newBlocks.length - 1] = {
+                type: 'thinking',
+                thinking: lastBlock.thinking + chunk,
+              }
+              return {
+                streamingContentBlocks: {
+                  ...state.streamingContentBlocks,
+                  [sessionId]: newBlocks,
+                },
+              }
+            }
+
+            return {
+              streamingContentBlocks: {
+                ...state.streamingContentBlocks,
+                [sessionId]: [...blocks, { type: 'thinking', thinking: chunk }],
+              },
+            }
+          },
+          undefined,
+          'appendThinkingBlock'
         ),
 
       clearStreamingContentBlocks: sessionId =>

@@ -41,6 +41,8 @@ pub struct JeanScripts {
     pub teardown: Option<String>,
     /// Script to run the dev environment
     pub run: Option<String>,
+    /// Script to run a project build
+    pub build: Option<String>,
 }
 
 /// A git project that has been added to Jean, or a folder for organizing projects

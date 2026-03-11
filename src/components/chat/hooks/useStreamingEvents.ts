@@ -129,7 +129,7 @@ export default function useStreamingEvents({
       updateToolCallOutput,
       addTextBlock,
       addToolBlock,
-      addThinkingBlock,
+      appendThinkingBlock,
       addSendingSession,
     } = useChatStore.getState()
 
@@ -235,7 +235,7 @@ export default function useStreamingEvents({
     // Handle thinking content blocks (extended thinking)
     const unlistenThinking = listen<ThinkingEvent>('chat:thinking', event => {
       const { session_id, content } = event.payload
-      addThinkingBlock(session_id, content)
+      appendThinkingBlock(session_id, content)
     })
 
     // Handle tool result events (tool execution output)

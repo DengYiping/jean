@@ -31,6 +31,7 @@ export function JeanJsonPane({
   const [localSetup, setLocalSetup] = useState('')
   const [localTeardown, setLocalTeardown] = useState('')
   const [localRun, setLocalRun] = useState('')
+  const [localBuild, setLocalBuild] = useState('')
   const [synced, setSynced] = useState(false)
 
   // Sync from query data
@@ -40,6 +41,7 @@ export function JeanJsonPane({
       setLocalSetup(jeanConfig.scripts.setup ?? '')
       setLocalTeardown(jeanConfig.scripts.teardown ?? '')
       setLocalRun(jeanConfig.scripts.run ?? '')
+      setLocalBuild(jeanConfig.scripts.build ?? '')
 
       setSynced(true)
     }
@@ -48,10 +50,12 @@ export function JeanJsonPane({
   const hasChanges = synced
     ? localSetup !== (jeanConfig?.scripts.setup ?? '') ||
       localTeardown !== (jeanConfig?.scripts.teardown ?? '') ||
-      localRun !== (jeanConfig?.scripts.run ?? '')
+      localRun !== (jeanConfig?.scripts.run ?? '') ||
+      localBuild !== (jeanConfig?.scripts.build ?? '')
     : localSetup.trim() !== '' ||
       localTeardown.trim() !== '' ||
-      localRun.trim() !== ''
+      localRun.trim() !== '' ||
+      localBuild.trim() !== ''
 
   const handleSave = useCallback(() => {
     saveJeanConfig.mutate({
@@ -61,17 +65,26 @@ export function JeanJsonPane({
           setup: localSetup.trim() || null,
           teardown: localTeardown.trim() || null,
           run: localRun.trim() || null,
+          build: localBuild.trim() || null,
         },
       },
     })
-  }, [localSetup, localTeardown, localRun, projectPath, saveJeanConfig])
+  }, [
+    localBuild,
+    localRun,
+    localSetup,
+    localTeardown,
+    projectPath,
+    saveJeanConfig,
+  ])
 
   return (
     <div className="space-y-6">
       <SettingsSection title="Automation Scripts">
         <p className="text-xs text-muted-foreground">
           Scripts from jean.json — setup runs after worktree creation, teardown
-          before deletion, run launches via the run command
+          before deletion, run launches via the run command, and build launches
+          via the build command
         </p>
         <div className="space-y-4">
           <div className="space-y-1.5">
@@ -117,6 +130,21 @@ export function JeanJsonPane({
             />
             <p className="text-xs text-muted-foreground">
               Runs automatically before a worktree is deleted/archived
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="build-script" className="text-sm">
+              Build
+            </Label>
+            <Input
+              id="build-script"
+              placeholder="e.g. npm run build"
+              value={localBuild}
+              onChange={e => setLocalBuild(e.target.value)}
+              className="font-mono text-sm"
+            />
+            <p className="text-xs text-muted-foreground">
+              Launches via the build command in the toolbar
             </p>
           </div>
           <div className="space-y-0.5 text-xs text-muted-foreground">

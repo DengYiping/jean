@@ -1,4 +1,4 @@
-import { Fragment, useState, useEffect, useCallback } from 'react'
+import { Fragment, useState, useEffect, useCallback, useMemo } from 'react'
 import {
   LayoutDashboard,
   Command,
@@ -38,9 +38,8 @@ import { isNativeApp } from '@/lib/environment'
 import { useUIStore } from '@/store/ui-store'
 import { useChatStore } from '@/store/chat-store'
 import { useProjectsStore } from '@/store/projects-store'
-import { chatQueryKeys } from '@/services/chat'
+import { chatQueryKeys, useSession } from '@/services/chat'
 import { usePreferences } from '@/services/preferences'
-import { useCodexCliAuth, useCodexCliStatus, useCodexUsage } from '@/services/codex-cli'
 import type { WorktreeSessions } from '@/types/chat'
 import { DEFAULT_KEYBINDINGS, formatShortcutDisplay } from '@/types/keybindings'
 import type { KeybindingHint } from '@/components/ui/keybinding-hints'
@@ -130,55 +129,75 @@ export function FloatingDock() {
   const activeSessionId = useChatStore(state =>
     currentWorktreeId ? state.activeSessionIds[currentWorktreeId] : undefined
   )
+  const currentWorktreePath = useChatStore(state =>
+    currentWorktreeId
+      ? (state.worktreePaths[currentWorktreeId] ??
+        (state.activeWorktreeId === currentWorktreeId
+          ? state.activeWorktreePath
+          : null))
+      : null
+  )
   const selectedBackend = useChatStore(state =>
     activeSessionId ? state.selectedBackends[activeSessionId] : undefined
   )
   const [menuOpen, setMenuOpen] = useState(false)
   const [usageMenuOpen, setUsageMenuOpen] = useState(false)
   const [resumeCommand, setResumeCommand] = useState<string | null>(null)
-  const shouldFetchUsage = !import.meta.env.DEV || usageMenuOpen
 
   const activeBackend = (selectedBackend ??
     preferences?.default_backend ??
     'claude') as 'claude' | 'codex' | 'opencode'
 
-  const codexStatus = useCodexCliStatus()
-  const codexAuth = useCodexCliAuth({
-    enabled: !!codexStatus.data?.installed,
-  })
-  const codexUsage = useCodexUsage({
-    enabled:
-      !!codexStatus.data?.installed &&
-      !!codexAuth.data?.authenticated &&
-      shouldFetchUsage,
-  })
+  const { data: activeSession } = useSession(
+    activeSessionId ?? null,
+    currentWorktreeId ?? null,
+    currentWorktreePath
+  )
 
-  const usageEntries = [
-    {
-      id: 'codex' as const,
-      label: 'Codex',
-      Icon: CodexIcon,
-      plan: codexUsage.data?.planType ?? null,
-      session: codexUsage.data?.session?.usedPercent ?? null,
-      weekly: codexUsage.data?.weekly?.usedPercent ?? null,
-      available: !!codexStatus.data?.installed && !!codexAuth.data?.authenticated,
-    },
-  ]
+  const activeUsageEntry = useMemo(() => {
+    const usageTotals = (activeSession?.messages ?? []).reduce(
+      (totals, message) => {
+        if (!message.usage) return totals
+        totals.input += message.usage.input_tokens
+        totals.output += message.usage.output_tokens
+        totals.cacheRead += message.usage.cache_read_input_tokens ?? 0
+        totals.cacheCreation += message.usage.cache_creation_input_tokens ?? 0
+        return totals
+      },
+      { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 }
+    )
 
-  const activeUsageEntry =
-    usageEntries.find(entry => entry.id === activeBackend) ??
-    usageEntries.find(entry => entry.available) ??
-    usageEntries[0]
+    const total = usageTotals.input + usageTotals.output
+    const iconMap = {
+      claude: Sparkles,
+      codex: CodexIcon,
+      opencode: Terminal,
+    } as const
+    const labelMap = {
+      claude: 'Claude',
+      codex: 'Codex',
+      opencode: 'OpenCode',
+    } as const
 
-  const usageBadge = (() => {
-    const session = activeUsageEntry?.session ?? null
-    const weekly = activeUsageEntry?.weekly ?? null
-    const sessionText = session === null ? '--' : `${Math.round(session)}`
-    const weeklyText = weekly === null ? '--' : `${Math.round(weekly)}`
     return {
-      text: `${sessionText}|${weeklyText}%`,
+      id: activeBackend,
+      label: labelMap[activeBackend],
+      Icon: iconMap[activeBackend],
+      sessionId: activeSessionId ?? null,
+      totalTokens: total,
+      ...usageTotals,
     }
-  })()
+  }, [activeBackend, activeSession?.messages, activeSessionId])
+
+  const usageBadge = useMemo(
+    () => ({
+      text:
+        activeUsageEntry.totalTokens > 0
+          ? `${formatTokens(activeUsageEntry.totalTokens)} tok`
+          : '-- tok',
+    }),
+    [activeUsageEntry.totalTokens]
+  )
 
   const getActiveResumeCommand = useCallback(() => {
     const { selectedWorktreeId: currentWorktreeId } = useProjectsStore.getState()
@@ -350,7 +369,7 @@ export function FloatingDock() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-7 w-[88px] justify-center rounded-full px-2 text-muted-foreground hover:text-foreground"
+                  className="h-7 min-w-[88px] justify-center rounded-full px-2 text-muted-foreground hover:text-foreground"
                 >
                   <activeUsageEntry.Icon className="mr-1 size-3.5 shrink-0" />
                   <span className="text-[11px] leading-none tabular-nums">{usageBadge.text}</span>
@@ -358,47 +377,40 @@ export function FloatingDock() {
               </DropdownMenuTrigger>
             </TooltipTrigger>
             <TooltipContent side="top">
-              {activeUsageEntry.label} Session|Weekly{' '}
+              {activeUsageEntry.label} current session tokens{' '}
               <kbd className="ml-1 text-[0.625rem] opacity-60">{usageShortcut}</kbd>
             </TooltipContent>
           </Tooltip>
           <DropdownMenuContent
             side="top"
             align="start"
-            className="min-w-[180px]"
+            className="min-w-[240px]"
             onEscapeKeyDown={e => e.stopPropagation()}
           >
-            {usageEntries.map(entry => {
-              const sessionText =
-                entry.session === null ? '--' : `${Math.round(entry.session)}`
-              const weeklyText =
-                entry.weekly === null ? '--' : `${Math.round(entry.weekly)}`
-              const planText = entry.plan && entry.plan.trim().length > 0
-                ? entry.plan
-                : '--'
-              return (
-                <DropdownMenuItem
-                  key={entry.id}
-                  onClick={() => useUIStore.getState().openPreferencesPane('usage')}
-                >
-                  <entry.Icon className="mr-2 h-4 w-4 shrink-0" />
-                  <div className="flex min-w-0 flex-col">
-                    <span>{entry.label}</span>
-                    <span className="text-[11px] text-muted-foreground">
-                      Plan: {planText}
-                    </span>
-                  </div>
-                  <DropdownMenuShortcut>
-                    {sessionText}|{weeklyText}%
-                  </DropdownMenuShortcut>
-                </DropdownMenuItem>
-              )
-            })}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={() => useUIStore.getState().openPreferencesPane('usage')}
-            >
-              Open Usage Details
+            <DropdownMenuItem disabled>
+              <activeUsageEntry.Icon className="mr-2 h-4 w-4 shrink-0" />
+              <div className="flex min-w-0 flex-col">
+                <span>{activeUsageEntry.label}</span>
+                <span className="max-w-[180px] truncate font-mono text-[11px] text-muted-foreground">
+                  Session: {activeUsageEntry.sessionId ?? 'none'}
+                </span>
+              </div>
+              <DropdownMenuShortcut>
+                {usageBadge.text}
+              </DropdownMenuShortcut>
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled>
+              <div className="flex min-w-0 flex-col text-[11px] text-muted-foreground">
+                <span>In: {formatTokens(activeUsageEntry.input)}</span>
+                <span>Out: {formatTokens(activeUsageEntry.output)}</span>
+                {(activeUsageEntry.cacheRead > 0 ||
+                  activeUsageEntry.cacheCreation > 0) && (
+                  <span>
+                    Cache: {formatTokens(activeUsageEntry.cacheRead)} read /{' '}
+                    {formatTokens(activeUsageEntry.cacheCreation)} write
+                  </span>
+                )}
+              </div>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -408,4 +420,10 @@ export function FloatingDock() {
       {showKeybindingHints && <KeybindingHintsButton hints={CANVAS_HINTS} />}
     </div>
   )
+}
+
+function formatTokens(tokens: number): string {
+  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`
+  if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}k`
+  return tokens.toString()
 }

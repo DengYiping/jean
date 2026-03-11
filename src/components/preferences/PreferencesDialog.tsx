@@ -6,7 +6,6 @@ import {
   Wand2,
   Plug,
   Blocks,
-  BarChart3,
   Puzzle,
   FlaskConical,
   Globe,
@@ -50,7 +49,6 @@ import { KeybindingsPane } from './panes/KeybindingsPane'
 import { MagicPromptsPane } from './panes/MagicPromptsPane'
 import { McpServersPane } from './panes/McpServersPane'
 import { ProvidersPane } from './panes/ProvidersPane'
-import { UsagePane } from './panes/UsagePane'
 import { IntegrationsPane } from './panes/IntegrationsPane'
 import { ExperimentalPane } from './panes/ExperimentalPane'
 import { WebAccessPane } from './panes/WebAccessPane'
@@ -65,11 +63,6 @@ const navigationItems = [
     id: 'providers' as const,
     name: 'Providers',
     icon: Blocks,
-  },
-  {
-    id: 'usage' as const,
-    name: 'Usage',
-    icon: BarChart3,
   },
   {
     id: 'appearance' as const,
@@ -124,8 +117,6 @@ const getPaneTitle = (pane: PreferencePane): string => {
       return 'MCP Servers'
     case 'providers':
       return 'Providers'
-    case 'usage':
-      return 'Usage'
     case 'integrations':
       return 'Integrations'
     case 'experimental':
@@ -254,7 +245,6 @@ export function PreferencesDialog() {
               {activePane === 'magic-prompts' && <MagicPromptsPane />}
               {activePane === 'mcp-servers' && <McpServersPane />}
               {activePane === 'providers' && <ProvidersPane />}
-              {activePane === 'usage' && <UsagePane />}
               {activePane === 'integrations' && <IntegrationsPane />}
               {activePane === 'experimental' && <ExperimentalPane />}
               {activePane === 'web-access' && <WebAccessPane />}

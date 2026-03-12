@@ -698,8 +698,9 @@ export function DesktopToolbarControls({
                 } else if (event.key === 'Enter') {
                   event.preventDefault()
                   event.stopPropagation()
-                  if (visibleModelOptions.length > 0) {
-                    handleModelChange(visibleModelOptions[0]!.value)
+                  const firstVisibleOption = visibleModelOptions[0]
+                  if (firstVisibleOption) {
+                    handleModelChange(firstVisibleOption.value)
                   }
                 } else {
                   event.stopPropagation()

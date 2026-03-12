@@ -22,10 +22,10 @@ import {
   useOpenWorktreeInFinder,
   useOpenWorktreeInTerminal,
   useOpenWorktreeInEditor,
-  GitHubRemote,
   useProjects,
   useWorktree,
 } from '@/services/projects'
+import type { GitHubRemote } from '@/services/projects'
 import { useLoadedIssueContexts, useLoadedPRContexts } from '@/services/github'
 import { usePreferences } from '@/services/preferences'
 import { getEditorLabel, getTerminalLabel } from '@/types/preferences'
@@ -239,6 +239,7 @@ export function OpenInModal() {
           break
         case 'github': {
           const branch = worktree?.branch
+          const repoPath = targetPath
           if (!branch) {
             if (selectedProjectId) {
               invoke('open_project_on_github', { projectId: selectedProjectId })
@@ -255,7 +256,7 @@ export function OpenInModal() {
                 const url = remotes?.[0]?.url
                 if (url) openExternal(`${url}/tree/${branch}`)
               } else {
-                openRemotePicker(targetPath!, remoteName => {
+                openRemotePicker(repoPath, remoteName => {
                   const remote = remotes.find(r => r.name === remoteName)
                   if (remote) openExternal(`${remote.url}/tree/${branch}`)
                 })

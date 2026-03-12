@@ -548,8 +548,10 @@ function DiffView({
   )
 }
 
-const ANSI_ESCAPE_PATTERN =
-  /\u001B(?:\][\s\S]*?(?:\u0007|\u001B\\)|\[[0-?]*[ -/]*[@-~]|[@-Z\\-_])/g
+const ANSI_ESCAPE_PATTERN = new RegExp(
+  String.raw`\u001B(?:\][\s\S]*?(?:\u0007|\u001B\\)|\[[0-?]*[ -/]*[@-~]|[@-Z\\-_])`,
+  'g'
+)
 
 function stripAnsiSequences(text: string): string {
   return text.replace(ANSI_ESCAPE_PATTERN, '')

@@ -110,21 +110,22 @@ function executeKeybindingAction(
         notify('Open a worktree to run', undefined, { type: 'error' })
         break
       }
+      const resolvedWorktreePath = targetWorktreePath
 
       // Fetch run script - use fetchQuery to handle uncached dashboard worktrees
       ;(async () => {
         let runScript = queryClient.getQueryData<string | null>([
           'run-script',
-          targetWorktreePath,
+          resolvedWorktreePath,
         ])
 
         if (runScript === undefined) {
           try {
             runScript = await queryClient.fetchQuery<string | null>({
-              queryKey: ['run-script', targetWorktreePath],
+              queryKey: ['run-script', resolvedWorktreePath],
               queryFn: () =>
                 invoke<string | null>('get_run_script', {
-                  worktreePath: targetWorktreePath,
+                  worktreePath: resolvedWorktreePath,
                 }),
             })
           } catch {
@@ -162,7 +163,7 @@ function executeKeybindingAction(
           // Canvas view: start PTY headlessly (no terminal UI mounted yet)
           startHeadless(terminalId, {
             worktreeId: targetWorktreeId,
-            worktreePath: targetWorktreePath!,
+            worktreePath: resolvedWorktreePath,
             command: runScript,
           })
         }
@@ -452,7 +453,8 @@ export function useMainWindowEventListeners() {
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
         // Use e.code (physical key) since e.key can vary with CMD held on macOS
         const digitMatch = e.code.match(/^Digit(\d)$/)
-        const digit = digitMatch ? parseInt(digitMatch[1]!, 10) : NaN
+        const digitString = digitMatch?.[1]
+        const digit = digitString ? parseInt(digitString, 10) : NaN
         if (digit >= 1 && digit <= 9) {
           e.preventDefault()
           e.stopPropagation()

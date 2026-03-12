@@ -114,11 +114,43 @@ export function useScrollManagement({
       // Don't scroll if user has scrolled away from bottom
       if (!isAtBottomRef.current) return
 
-      viewport.scrollTop = viewport.scrollHeight
+      // If a plan is visible during streaming, pin it to the top of the viewport
+      const planEl = viewport.querySelector('[data-plan-display]')
+      if (planEl) {
+        isAutoScrollingRef.current = true
+        planEl.scrollIntoView({ block: 'start' })
+        requestAnimationFrame(() => {
+          isAutoScrollingRef.current = false
+        })
+      } else {
+        viewport.scrollTop = viewport.scrollHeight
+      }
     })
 
     observer.observe(viewport.firstElementChild)
     return () => observer.disconnect()
+  }, [isSending])
+
+  // After streaming ends, ensure we're pinned to the actual bottom.
+  // The ResizeObserver disconnects when isSending=false, but the DOM may
+  // still reflow (streaming → final rendered content). A delayed instant
+  // scroll catches any late layout shifts.
+  const wasSendingRef = useRef(false)
+  useEffect(() => {
+    if (wasSendingRef.current && !isSending && isAtBottomRef.current) {
+      const timer = setTimeout(() => {
+        const viewport = scrollViewportRef.current
+        if (viewport && isAtBottomRef.current) {
+          const { scrollTop, scrollHeight, clientHeight } = viewport
+          if (scrollHeight - scrollTop - clientHeight > 1) {
+            viewport.scrollTo({ top: scrollHeight, behavior: 'instant' })
+          }
+        }
+      }, 150)
+      wasSendingRef.current = false
+      return () => clearTimeout(timer)
+    }
+    wasSendingRef.current = !!isSending
   }, [isSending])
 
   // Scroll to bottom before paint when switching worktrees to prevent flash of top content
@@ -128,6 +160,22 @@ export function useScrollManagement({
       viewport.scrollTop = viewport.scrollHeight
     }
   }, [activeWorktreeId])
+
+  // Scroll to bottom when messages first load for a session (async data arrival).
+  // Without this, opening a session shows the top of the message list.
+  const prevMessageLengthRef = useRef(messages?.length ?? 0)
+  useLayoutEffect(() => {
+    const currentLength = messages?.length ?? 0
+    const prevLength = prevMessageLengthRef.current
+    prevMessageLengthRef.current = currentLength
+
+    if (prevLength === 0 && currentLength > 0) {
+      const viewport = scrollViewportRef.current
+      if (viewport) {
+        viewport.scrollTop = viewport.scrollHeight
+      }
+    }
+  }, [messages?.length])
 
   // Handle scroll events to track if user is at bottom and if findings are visible
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {

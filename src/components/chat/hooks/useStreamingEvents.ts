@@ -424,8 +424,6 @@ export default function useStreamingEvents({
       const toolCalls = activeToolCalls[sessionId]
       const contentBlocks = streamingContentBlocks[sessionId]
 
-      // Codex has no native plan approval flow — skip synthetic ExitPlanMode injection.
-      // Codex plan completions fall through to the "no blocking tools" path → status = "review".
       const effectiveToolCalls = toolCalls
       const effectiveContentBlocks = contentBlocks
 

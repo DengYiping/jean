@@ -1270,7 +1270,7 @@ export function useSendMessage() {
 
       return { previous, worktreeId }
     },
-    onSuccess: (response, { sessionId, worktreeId, executionMode }) => {
+    onSuccess: (response, { sessionId, worktreeId }) => {
       // All cancelled responses are handled by the chat:cancelled event handler,
       // which already correctly restores the user message (undo path) or preserves
       // the partial assistant response (preserve path). Letting onSuccess proceed
@@ -1280,29 +1280,7 @@ export function useSendMessage() {
         return
       }
 
-      // For Codex plan mode: inject synthetic ExitPlanMode tool call into the response
-      // so the plan approval UI renders (Codex has no native ExitPlanMode tool)
-      const { selectedBackends } = useChatStore.getState()
-      const isCodexPlan =
-        selectedBackends[sessionId] === 'codex' &&
-        executionMode === 'plan' &&
-        !response.cancelled &&
-        response.content.length > 0
-      let finalResponse = response
-      if (isCodexPlan) {
-        const syntheticId = `codex-plan-${sessionId}-${Date.now()}`
-        finalResponse = {
-          ...response,
-          tool_calls: [
-            ...response.tool_calls,
-            { id: syntheticId, name: 'ExitPlanMode', input: {} },
-          ],
-          content_blocks: [
-            ...(response.content_blocks ?? []),
-            { type: 'tool_use' as const, tool_call_id: syntheticId },
-          ],
-        }
-      }
+      const finalResponse = response
 
       // Replace the optimistic assistant message with the complete one from backend
       // This fixes a race condition where chat:done creates an optimistic message

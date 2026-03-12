@@ -216,9 +216,6 @@ export function computeSessionCardData(
         break // Only check the last assistant message
       }
     }
-
-    // Codex has no native plan approval flow — no fallback needed.
-    // Codex plan completions go straight to "review" status.
   }
 
   // Also check for plan file/content in streaming tool calls

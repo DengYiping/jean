@@ -458,6 +458,7 @@ fn process_turn_events(
     let mut tool_calls: Vec<ToolCall> = Vec::new();
     let mut content_blocks: Vec<ContentBlock> = Vec::new();
     let mut pending_tool_ids: HashMap<String, String> = HashMap::new();
+    let mut pending_plan_texts: HashMap<String, String> = HashMap::new();
     let mut seen_plan_ids_for_history: HashSet<String> = HashSet::new();
     let mut completed = false;
     let mut cancelled = false;
@@ -567,6 +568,7 @@ fn process_turn_events(
                     &mut tool_calls,
                     &mut content_blocks,
                     &mut pending_tool_ids,
+                    &mut pending_plan_texts,
                     &mut completed,
                     &mut cancelled,
                     &mut usage,
@@ -671,7 +673,10 @@ fn process_turn_events(
             &DoneEvent {
                 session_id: session_id.to_string(),
                 worktree_id: worktree_id.to_string(),
-                waiting_for_plan: is_plan_mode && !full_content.is_empty(),
+                waiting_for_plan: is_plan_mode
+                    && tool_calls
+                        .iter()
+                        .any(|tool_call| tool_call.name == "ExitPlanMode"),
             },
         );
     }
@@ -784,6 +789,7 @@ fn process_server_notification(
     tool_calls: &mut Vec<ToolCall>,
     content_blocks: &mut Vec<ContentBlock>,
     pending_tool_ids: &mut HashMap<String, String>,
+    pending_plan_texts: &mut HashMap<String, String>,
     completed: &mut bool,
     cancelled: &mut bool,
     usage: &mut Option<UsageData>,
@@ -836,6 +842,7 @@ fn process_server_notification(
                 tool_calls,
                 content_blocks,
                 pending_tool_ids,
+                pending_plan_texts,
                 completed,
                 usage,
                 error_emitted,
@@ -857,6 +864,7 @@ fn process_server_notification(
                 tool_calls,
                 content_blocks,
                 pending_tool_ids,
+                pending_plan_texts,
                 completed,
                 usage,
                 error_emitted,
@@ -878,10 +886,34 @@ fn process_server_notification(
                 tool_calls,
                 content_blocks,
                 pending_tool_ids,
+                pending_plan_texts,
                 completed,
                 usage,
                 error_emitted,
             );
+        }
+        "item/plan/delta" => {
+            let item_id = params.get("itemId").and_then(|v| v.as_str()).unwrap_or("");
+            let delta = params.get("delta").and_then(|v| v.as_str()).unwrap_or("");
+            if !delta.is_empty() {
+                let next_plan = if item_id.is_empty() {
+                    delta.to_string()
+                } else {
+                    let plan = pending_plan_texts.entry(item_id.to_string()).or_default();
+                    plan.push_str(delta);
+                    plan.clone()
+                };
+                upsert_codex_plan_tool(
+                    app,
+                    session_id,
+                    worktree_id,
+                    item_id,
+                    next_plan,
+                    tool_calls,
+                    content_blocks,
+                    pending_tool_ids,
+                );
+            }
         }
         "turn/plan/updated" => {
             if let Some(item) = synthetic_todo_list_item_from_plan_update(params) {
@@ -903,6 +935,7 @@ fn process_server_notification(
                     tool_calls,
                     content_blocks,
                     pending_tool_ids,
+                    pending_plan_texts,
                     completed,
                     usage,
                     error_emitted,
@@ -1300,6 +1333,66 @@ fn format_codex_user_error(error_msg: &str) -> String {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn upsert_codex_plan_tool(
+    app: &tauri::AppHandle,
+    session_id: &str,
+    worktree_id: &str,
+    item_id: &str,
+    plan_text: String,
+    tool_calls: &mut Vec<ToolCall>,
+    content_blocks: &mut Vec<ContentBlock>,
+    pending_tool_ids: &mut HashMap<String, String>,
+) {
+    let tool_id = if let Some(existing) = pending_tool_ids.get(item_id) {
+        existing.clone()
+    } else if item_id.is_empty() {
+        uuid::Uuid::new_v4().to_string()
+    } else {
+        item_id.to_string()
+    };
+    let tool_input = serde_json::json!({ "plan": plan_text });
+
+    if let Some(existing_tool) = tool_calls.iter_mut().find(|t| t.id == tool_id) {
+        existing_tool.name = "ExitPlanMode".to_string();
+        existing_tool.input = tool_input.clone();
+    } else {
+        tool_calls.push(ToolCall {
+            id: tool_id.clone(),
+            name: "ExitPlanMode".to_string(),
+            input: tool_input.clone(),
+            output: None,
+            parent_tool_use_id: None,
+        });
+        content_blocks.push(ContentBlock::ToolUse {
+            tool_call_id: tool_id.clone(),
+        });
+        if !item_id.is_empty() {
+            pending_tool_ids.insert(item_id.to_string(), tool_id.clone());
+        }
+        let _ = app.emit_all(
+            "chat:tool_block",
+            &ToolBlockEvent {
+                session_id: session_id.to_string(),
+                worktree_id: worktree_id.to_string(),
+                tool_call_id: tool_id.clone(),
+            },
+        );
+    }
+
+    let _ = app.emit_all(
+        "chat:tool_use",
+        &ToolUseEvent {
+            session_id: session_id.to_string(),
+            worktree_id: worktree_id.to_string(),
+            id: tool_id,
+            name: "ExitPlanMode".to_string(),
+            input: tool_input,
+            parent_tool_use_id: None,
+        },
+    );
+}
+
 /// Process a single Codex JSONL event. Shared between attached and detached tailers.
 #[allow(clippy::too_many_arguments)]
 fn process_codex_event(
@@ -1313,6 +1406,7 @@ fn process_codex_event(
     tool_calls: &mut Vec<ToolCall>,
     content_blocks: &mut Vec<ContentBlock>,
     pending_tool_ids: &mut HashMap<String, String>,
+    pending_plan_texts: &mut HashMap<String, String>,
     completed: &mut bool,
     usage: &mut Option<UsageData>,
     error_emitted: &mut bool,
@@ -1411,6 +1505,26 @@ fn process_codex_event(
                             worktree_id: worktree_id.to_string(),
                             tool_call_id: tool_id,
                         },
+                    );
+                }
+                "plan" => {
+                    let initial_plan = item
+                        .get("text")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    if !item_id.is_empty() {
+                        pending_plan_texts.insert(item_id.to_string(), initial_plan.clone());
+                    }
+                    upsert_codex_plan_tool(
+                        app,
+                        session_id,
+                        worktree_id,
+                        item_id,
+                        initial_plan,
+                        tool_calls,
+                        content_blocks,
+                        pending_tool_ids,
                     );
                 }
                 "mcp_tool_call" => {
@@ -1644,6 +1758,26 @@ fn process_codex_event(
                         );
                     }
                 }
+                "plan" => {
+                    let final_plan = item
+                        .get("text")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    if !item_id.is_empty() {
+                        pending_plan_texts.remove(item_id);
+                    }
+                    upsert_codex_plan_tool(
+                        app,
+                        session_id,
+                        worktree_id,
+                        item_id,
+                        final_plan,
+                        tool_calls,
+                        content_blocks,
+                        pending_tool_ids,
+                    );
+                }
                 "mcp_tool_call" => {
                     let output = item
                         .get("output")
@@ -1754,6 +1888,7 @@ fn process_codex_event(
 
             if let Some(tool_id) = pending_tool_ids.get(item_id) {
                 let tool_name = match item_type {
+                    "plan" => Some("ExitPlanMode".to_string()),
                     "todo_list" => Some("CodexTodoList".to_string()),
                     "collab_tool_call" => item
                         .get("tool")

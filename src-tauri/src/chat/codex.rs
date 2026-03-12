@@ -183,6 +183,7 @@ pub fn build_turn_start_params(
     thread_id: &str,
     prompt: &str,
     working_dir: &std::path::Path,
+    model: Option<&str>,
     execution_mode: Option<&str>,
     reasoning_effort: Option<&str>,
     add_dirs: &[String],
@@ -199,6 +200,20 @@ pub fn build_turn_start_params(
     // Reasoning effort (per-turn override)
     if let Some(effort) = reasoning_effort {
         params["effort"] = serde_json::json!(effort);
+    }
+
+    if execution_mode.unwrap_or("plan") == "plan" {
+        let plan_model = model.unwrap_or("gpt-5.4");
+        let mut settings = serde_json::json!({
+            "model": plan_model,
+        });
+        if let Some(effort) = reasoning_effort {
+            settings["reasoningEffort"] = serde_json::json!(effort);
+        }
+        params["collaborationMode"] = serde_json::json!({
+            "mode": "plan",
+            "settings": settings,
+        });
     }
 
     // Sandbox policy with writable roots (for build/yolo modes with add_dirs)
@@ -329,6 +344,7 @@ pub fn execute_codex_via_server(
         &thread_id,
         prompt,
         working_dir,
+        model,
         execution_mode,
         reasoning_effort,
         add_dirs,
@@ -2344,6 +2360,44 @@ mod tests {
         );
         assert_eq!(params["model"], "gpt-5.3");
         assert!(params.get("serviceTier").is_none());
+    }
+
+    #[test]
+    fn plan_turns_set_collaboration_mode() {
+        let params = build_turn_start_params(
+            "thread-1",
+            "Plan this",
+            std::path::Path::new("/tmp"),
+            Some("gpt-5.4-fast"),
+            Some("plan"),
+            Some("medium"),
+            &[],
+        );
+
+        assert_eq!(params["collaborationMode"]["mode"], "plan");
+        assert_eq!(
+            params["collaborationMode"]["settings"]["model"],
+            "gpt-5.4-fast"
+        );
+        assert_eq!(
+            params["collaborationMode"]["settings"]["reasoningEffort"],
+            "medium"
+        );
+    }
+
+    #[test]
+    fn non_plan_turns_do_not_set_collaboration_mode() {
+        let params = build_turn_start_params(
+            "thread-1",
+            "Build this",
+            std::path::Path::new("/tmp"),
+            Some("gpt-5.4"),
+            Some("build"),
+            Some("medium"),
+            &[],
+        );
+
+        assert!(params.get("collaborationMode").is_none());
     }
 
     #[test]

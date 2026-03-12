@@ -1,4 +1,4 @@
-import { Fragment, useState, useEffect, useCallback, useMemo } from 'react'
+import { Fragment, useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   LayoutDashboard,
   Command,
@@ -146,6 +146,7 @@ export function FloatingDock() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [usageMenuOpen, setUsageMenuOpen] = useState(false)
   const [resumeCommand, setResumeCommand] = useState<string | null>(null)
+  const usageTriggerRef = useRef<HTMLButtonElement>(null)
 
   const activeBackend = (selectedBackend ??
     preferences?.default_backend ??
@@ -279,6 +280,13 @@ export function FloatingDock() {
     setUsageMenuOpen(prev => !prev)
   }, [])
 
+  const handleUsageMenuCloseAutoFocus = useCallback((event: Event) => {
+    event.preventDefault()
+    requestAnimationFrame(() => {
+      usageTriggerRef.current?.blur()
+    })
+  }, [])
+
   useEffect(() => {
     const handler = () => toggleUsageMenu()
     window.addEventListener('toggle-usage-menu', handler)
@@ -388,6 +396,7 @@ export function FloatingDock() {
             <TooltipTrigger asChild>
               <DropdownMenuTrigger asChild>
                 <Button
+                  ref={usageTriggerRef}
                   variant="ghost"
                   size="sm"
                   className="h-7 min-w-[88px] justify-center rounded-full px-2 text-muted-foreground hover:text-foreground"
@@ -409,6 +418,7 @@ export function FloatingDock() {
             align="start"
             className="min-w-[240px]"
             onEscapeKeyDown={e => e.stopPropagation()}
+            onCloseAutoFocus={handleUsageMenuCloseAutoFocus}
           >
             <DropdownMenuItem disabled>
               <activeUsageEntry.Icon className="mr-2 h-4 w-4 shrink-0" />

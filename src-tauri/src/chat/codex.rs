@@ -337,11 +337,12 @@ pub fn execute_codex_via_server(
     // Set up event channel for this session
     let (event_tx, event_rx) = std::sync::mpsc::channel();
     let ctx = codex_server::SessionContext {
+        registration_id: 0,
         session_id: session_id.to_string(),
         worktree_id: worktree_id.to_string(),
         event_tx,
     };
-    codex_server::register_session(&thread_id, ctx);
+    let registration_id = codex_server::register_session(&thread_id, ctx);
 
     // Register turn for cancellation
     // We don't have the turn_id yet — register with empty, update after turn/started
@@ -373,7 +374,7 @@ pub fn execute_codex_via_server(
     super::decrement_tailer_count();
 
     // Cleanup
-    codex_server::unregister_session(&thread_id);
+    codex_server::unregister_session(&thread_id, registration_id);
     super::registry::unregister_codex_turn(session_id);
 
     // Set the thread_id on the response

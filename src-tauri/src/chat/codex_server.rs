@@ -41,6 +41,7 @@ pub enum ServerEvent {
 
 /// Per-session context registered while a turn is active.
 pub struct SessionContext {
+    pub registration_id: u64,
     pub session_id: String,
     pub worktree_id: String,
     pub event_tx: std::sync::mpsc::Sender<ServerEvent>,
@@ -74,6 +75,11 @@ static USAGE_COUNT: AtomicU64 = AtomicU64::new(0);
 /// Generation counter incremented each time a new server is spawned.
 /// Used by the delayed shutdown thread to avoid killing a newly-spawned server.
 static SERVER_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+/// Monotonic registration ID for active Codex thread consumers.
+/// This prevents an older tailer's cleanup from removing a newer registration
+/// for the same thread_id after a replacement.
+static NEXT_SESSION_REGISTRATION_ID: AtomicU64 = AtomicU64::new(1);
 
 // =============================================================================
 // PID file for crash-recovery
@@ -419,15 +425,29 @@ pub fn send_notification(method: &str, params: Value) -> Result<(), String> {
 // =============================================================================
 
 /// Register a session to receive events for a given codex thread_id.
-pub fn register_session(thread_id: &str, ctx: SessionContext) {
+pub fn register_session(thread_id: &str, mut ctx: SessionContext) -> u64 {
+    let registration_id = NEXT_SESSION_REGISTRATION_ID.fetch_add(1, Ordering::SeqCst);
+    ctx.registration_id = registration_id;
+
     let guard = CODEX_SERVER.lock().unwrap();
     if let Some(ref server) = *guard {
-        server
+        if let Some(previous) = server
             .active_sessions
             .lock()
             .unwrap()
-            .insert(thread_id.to_string(), ctx);
+            .insert(thread_id.to_string(), ctx)
+        {
+            log::warn!(
+                "Replacing active Codex session registration for thread {}: old_session={} old_registration={} new_registration={}",
+                thread_id,
+                previous.session_id,
+                previous.registration_id,
+                registration_id
+            );
+        }
     }
+
+    registration_id
 }
 
 /// Decrement the usage count without unregistering a session or scheduling shutdown.
@@ -437,11 +457,39 @@ pub fn decrement_usage_count() {
     USAGE_COUNT.fetch_sub(1, Ordering::SeqCst);
 }
 
+fn remove_session_if_current(
+    active_sessions: &mut HashMap<String, SessionContext>,
+    thread_id: &str,
+    registration_id: u64,
+) -> bool {
+    match active_sessions.get(thread_id) {
+        Some(ctx) if ctx.registration_id == registration_id => {
+            active_sessions.remove(thread_id);
+            true
+        }
+        _ => false,
+    }
+}
+
 /// Unregister a session and schedule delayed shutdown if no sessions remain.
-pub fn unregister_session(thread_id: &str) {
+///
+/// `registration_id` ensures stale cleanup from an older tailer cannot remove a
+/// newer active registration for the same Codex thread.
+pub fn unregister_session(thread_id: &str, registration_id: u64) {
     let guard = CODEX_SERVER.lock().unwrap();
     if let Some(ref server) = *guard {
-        server.active_sessions.lock().unwrap().remove(thread_id);
+        let removed = remove_session_if_current(
+            &mut server.active_sessions.lock().unwrap(),
+            thread_id,
+            registration_id,
+        );
+        if !removed {
+            log::trace!(
+                "Skipping stale Codex session unregister for thread {} registration {}",
+                thread_id,
+                registration_id
+            );
+        }
     }
     drop(guard);
 
@@ -460,6 +508,41 @@ pub fn unregister_session(thread_id: &str) {
                 shutdown_server();
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn remove_session_if_current_ignores_stale_registration() {
+        let (_tx1, _rx1) = std::sync::mpsc::channel::<ServerEvent>();
+        let (tx2, _rx2) = std::sync::mpsc::channel::<ServerEvent>();
+        let mut active_sessions = HashMap::new();
+
+        active_sessions.insert(
+            "thread-1".to_string(),
+            SessionContext {
+                registration_id: 2,
+                session_id: "session-new".to_string(),
+                worktree_id: "wt-1".to_string(),
+                event_tx: tx2,
+            },
+        );
+
+        let removed = remove_session_if_current(&mut active_sessions, "thread-1", 1);
+        assert!(!removed);
+
+        let current = active_sessions
+            .get("thread-1")
+            .expect("session should remain");
+        assert_eq!(current.session_id, "session-new");
+        assert_eq!(current.registration_id, 2);
+
+        let removed_current = remove_session_if_current(&mut active_sessions, "thread-1", 2);
+        assert!(removed_current);
+        assert!(!active_sessions.contains_key("thread-1"));
     }
 }
 

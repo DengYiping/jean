@@ -14,6 +14,11 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 
 interface AgentWidgetProps {
   agents: CodexAgent[]
@@ -39,9 +44,10 @@ export function AgentWidget({
 }: AgentWidgetProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen)
 
-  const completedCount = agents.filter(a => a.status === 'completed').length
+  const resolvedCount = agents.filter(a => a.status !== 'in_progress').length
   const totalCount = agents.length
-  const allCompleted = completedCount === totalCount && totalCount > 0
+  const allResolved = resolvedCount === totalCount && totalCount > 0
+  const hasErrors = agents.some(a => a.status === 'errored')
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen} className={className}>
@@ -60,7 +66,7 @@ export function AgentWidget({
               )}
             />
             {!isOpen &&
-            !allCompleted &&
+            !allResolved &&
             (isStreaming || agents.some(a => a.status === 'in_progress')) ? (
               <Loader2 className="h-4 w-4 shrink-0 animate-spin text-primary" />
             ) : (
@@ -70,11 +76,13 @@ export function AgentWidget({
             <span
               className={cn(
                 'rounded bg-muted/50 px-1.5 py-0.5 text-xs',
-                allCompleted &&
-                  'bg-green-500/20 text-green-600 dark:text-green-400'
+                allResolved &&
+                  !hasErrors &&
+                  'bg-green-500/20 text-green-600 dark:text-green-400',
+                hasErrors && 'bg-amber-500/20 text-amber-600 dark:text-amber-400'
               )}
             >
-              {completedCount}/{totalCount}
+              {resolvedCount}/{totalCount}
             </span>
           </CollapsibleTrigger>
           {onClose && (
@@ -107,6 +115,19 @@ interface AgentItemProps {
 }
 
 function AgentItem({ agent }: AgentItemProps) {
+  const label = (
+    <span
+      className={cn(
+        'block min-w-0 truncate text-muted-foreground',
+        agent.status === 'completed' &&
+          'line-through text-muted-foreground/60',
+        agent.status === 'errored' && 'text-muted-foreground/60'
+      )}
+    >
+      {agent.name}
+    </span>
+  )
+
   return (
     <li className="flex items-start gap-2 py-0.5 text-xs">
       <span className="mt-0.5 shrink-0">
@@ -118,16 +139,27 @@ function AgentItem({ agent }: AgentItemProps) {
           <Loader2 className="h-4 w-4 animate-spin text-primary" />
         )}
       </span>
-      <span
-        className={cn(
-          'text-muted-foreground',
-          agent.status === 'completed' &&
-            'line-through text-muted-foreground/60',
-          agent.status === 'errored' && 'text-muted-foreground/60'
-        )}
-      >
-        {agent.prompt}
-      </span>
+      {agent.prompt ? (
+        <Tooltip>
+          <TooltipTrigger asChild>{label}</TooltipTrigger>
+          <TooltipContent
+            side="right"
+            align="start"
+            className="max-w-[32rem] whitespace-pre-wrap break-words px-3 py-2 text-xs leading-relaxed"
+          >
+            <div className="space-y-2">
+              <div>{agent.prompt}</div>
+              {agent.message && (
+                <div className="border-t border-border/60 pt-2 text-muted-foreground">
+                  {agent.message}
+                </div>
+              )}
+            </div>
+          </TooltipContent>
+        </Tooltip>
+      ) : (
+        label
+      )}
     </li>
   )
 }

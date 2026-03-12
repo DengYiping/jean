@@ -858,23 +858,68 @@ fn process_server_notification(
             log::trace!("Codex turn completed for session: {session_id}");
         }
         "thread/tokenUsage/updated" => {
-            // Extract usage data
             if let Some(token_usage) = params.get("tokenUsage") {
+                // Parse nested total/last breakdown (Codex app-server v2 protocol)
+                let parse_breakdown =
+                    |obj: &serde_json::Value| -> super::types::TokenUsageBreakdown {
+                        super::types::TokenUsageBreakdown {
+                            total_tokens: obj
+                                .get("totalTokens")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0),
+                            input_tokens: obj
+                                .get("inputTokens")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0),
+                            cached_input_tokens: obj
+                                .get("cachedInputTokens")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0),
+                            output_tokens: obj
+                                .get("outputTokens")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0),
+                            reasoning_output_tokens: obj
+                                .get("reasoningOutputTokens")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0),
+                        }
+                    };
+
+                let total_breakdown = token_usage
+                    .get("total")
+                    .map(parse_breakdown)
+                    .unwrap_or_default();
+                let last_breakdown = token_usage
+                    .get("last")
+                    .map(parse_breakdown)
+                    .unwrap_or_default();
+                let model_context_window = token_usage
+                    .get("modelContextWindow")
+                    .and_then(|v| v.as_i64());
+
+                // Populate per-message UsageData from the last-turn breakdown
                 *usage = Some(UsageData {
-                    input_tokens: token_usage
-                        .get("inputTokens")
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(0),
-                    output_tokens: token_usage
-                        .get("outputTokens")
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(0),
-                    cache_read_input_tokens: token_usage
-                        .get("cachedInputTokens")
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(0),
+                    input_tokens: last_breakdown.input_tokens,
+                    output_tokens: last_breakdown.output_tokens,
+                    cache_read_input_tokens: last_breakdown.cached_input_tokens,
                     cache_creation_input_tokens: 0,
                 });
+
+                // Emit thread-level token usage for context meter UI
+                let thread_usage = super::types::ThreadTokenUsage {
+                    total: total_breakdown,
+                    last: last_breakdown,
+                    model_context_window,
+                };
+                let _ = app.emit_all(
+                    "chat:thread_token_usage",
+                    &super::types::ThreadTokenUsageEvent {
+                        session_id: session_id.to_string(),
+                        worktree_id: worktree_id.to_string(),
+                        thread_token_usage: thread_usage,
+                    },
+                );
             }
         }
         "item/reasoning/textDelta" | "item/reasoning/summaryTextDelta" => {

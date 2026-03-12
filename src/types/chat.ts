@@ -406,6 +406,39 @@ export interface PermissionDeniedEvent {
 }
 
 // ============================================================================
+// Thread Token Usage Types (Codex app-server v2 protocol)
+// ============================================================================
+
+/**
+ * Detailed token usage breakdown from Codex app-server
+ */
+export interface TokenUsageBreakdown {
+  totalTokens: number
+  inputTokens: number
+  cachedInputTokens: number
+  outputTokens: number
+  reasoningOutputTokens: number
+}
+
+/**
+ * Thread-level token usage snapshot with context window info
+ */
+export interface ThreadTokenUsage {
+  total: TokenUsageBreakdown
+  last: TokenUsageBreakdown
+  modelContextWindow: number | null
+}
+
+/**
+ * Event payload for thread-level token usage updates from Rust
+ */
+export interface ThreadTokenUsageEvent {
+  session_id: string
+  worktree_id: string
+  thread_token_usage: ThreadTokenUsage
+}
+
+// ============================================================================
 // AskUserQuestion Types
 // ============================================================================
 

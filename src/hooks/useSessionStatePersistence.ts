@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback, useMemo } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useChatStore } from '@/store/chat-store'
+import { useUIStore } from '@/store/ui-store'
 import {
   useUpdateSessionState,
   useSessions,
@@ -74,6 +75,37 @@ interface SessionState {
   selectedExecutionMode: ExecutionMode | null
 }
 
+export function resolveSessionPersistenceContext(params: {
+  activeWorktreeId: string | null
+  activeWorktreePath: string | null
+  activeSessionIds: Record<string, string>
+  modalWorktreeId: string | null
+  worktreePaths: Record<string, string>
+}) {
+  const effectiveWorktreeId = params.activeWorktreeId ?? params.modalWorktreeId
+  if (!effectiveWorktreeId) {
+    return {
+      activeSessionId: null,
+      effectiveWorktreeId: null,
+      effectiveWorktreePath: null,
+    }
+  }
+
+  const activeSessionId = params.activeSessionIds[effectiveWorktreeId] ?? null
+  const effectiveWorktreePath =
+    params.activeWorktreeId === effectiveWorktreeId
+      ? (params.activeWorktreePath ??
+        params.worktreePaths[effectiveWorktreeId] ??
+        null)
+      : (params.worktreePaths[effectiveWorktreeId] ?? null)
+
+  return {
+    activeSessionId,
+    effectiveWorktreeId,
+    effectiveWorktreePath,
+  }
+}
+
 /**
  * Hook that handles session-specific state persistence:
  * 1. Loads session state from the Session object when session changes
@@ -83,33 +115,33 @@ interface SessionState {
  */
 export function useSessionStatePersistence() {
   // Subscribe to primitive values to trigger re-renders only when context actually changes.
-  // Prefer full-view active session, fall back to canvas-modal selected session
-  // (canvas modals don't set activeWorktreeId).
-  const activeSessionId = useChatStore(state => {
-    if (state.activeWorktreeId) {
-      return state.activeSessionIds[state.activeWorktreeId] ?? null
-    }
-    return null
-  })
+  // Prefer full-view active session, fall back to canvas-modal selected session.
+  const activeWorktreeId = useChatStore(state => state.activeWorktreeId)
+  const activeWorktreePath = useChatStore(state => state.activeWorktreePath)
+  const activeSessionIds = useChatStore(state => state.activeSessionIds)
+  const worktreePaths = useChatStore(state => state.worktreePaths)
+  const modalWorktreeId = useUIStore(state =>
+    state.sessionChatModalOpen ? state.sessionChatModalWorktreeId : null
+  )
 
-  // Derive worktree context via getState() (non-reactive) keyed on the reactive activeSessionId
-  const { effectiveWorktreeId, effectiveWorktreePath } = useMemo(() => {
-    if (!activeSessionId)
-      return {
-        effectiveWorktreeId: null as string | null,
-        effectiveWorktreePath: null as string | null,
-      }
-    const {
-      activeWorktreeId,
-      activeWorktreePath,
-      sessionWorktreeMap,
-      worktreePaths,
-    } = useChatStore.getState()
-    const wtId = activeWorktreeId ?? sessionWorktreeMap[activeSessionId] ?? null
-    const wtPath =
-      activeWorktreePath ?? (wtId ? (worktreePaths[wtId] ?? null) : null)
-    return { effectiveWorktreeId: wtId, effectiveWorktreePath: wtPath }
-  }, [activeSessionId])
+  const { activeSessionId, effectiveWorktreeId, effectiveWorktreePath } =
+    useMemo(
+      () =>
+        resolveSessionPersistenceContext({
+          activeWorktreeId,
+          activeWorktreePath,
+          activeSessionIds,
+          modalWorktreeId,
+          worktreePaths,
+        }),
+      [
+        activeWorktreeId,
+        activeWorktreePath,
+        activeSessionIds,
+        modalWorktreeId,
+        worktreePaths,
+      ]
+    )
 
   // Load sessions to get session data
   const { data: sessionsData } = useSessions(
@@ -168,7 +200,10 @@ export function useSessionStatePersistence() {
         isReviewing: reviewingSessions[sessionId] ?? false,
         waitingForInput: waitingForInputSessionIds[sessionId] ?? false,
         planFilePath: planFilePaths[sessionId] ?? null,
-        pendingPlanMessageId: pendingPlanMessageIds[sessionId] ?? null,
+        pendingPlanMessageId:
+          waitingForInputSessionIds[sessionId] ?? false
+            ? (pendingPlanMessageIds[sessionId] ?? null)
+            : null,
         enabledMcpServers: enabledMcpServers[sessionId] ?? null,
         selectedExecutionMode: executionModes[sessionId] ?? null,
       }
@@ -361,11 +396,20 @@ export function useSessionStatePersistence() {
       }
     }
 
-    // Load pending plan message ID
-    if (session.pending_plan_message_id) {
+    // Load pending plan message ID only while the session is actually waiting.
+    const persistedPendingPlanMessageId = waitingForInput
+      ? (session.pending_plan_message_id ?? null)
+      : null
+    const currentPendingPlanMessageId =
+      currentState.pendingPlanMessageIds[activeSessionId] ?? null
+    if (currentPendingPlanMessageId !== persistedPendingPlanMessageId) {
+      const { [activeSessionId]: _removed, ...restPendingPlanMessageIds } =
+        currentState.pendingPlanMessageIds
       updates.pendingPlanMessageIds = {
-        ...currentState.pendingPlanMessageIds,
-        [activeSessionId]: session.pending_plan_message_id,
+        ...restPendingPlanMessageIds,
+        ...(persistedPendingPlanMessageId
+          ? { [activeSessionId]: persistedPendingPlanMessageId }
+          : {}),
       }
     }
 
@@ -417,6 +461,7 @@ export function useSessionStatePersistence() {
                 waiting_for_input: false,
                 is_reviewing: true,
                 waiting_for_input_type: null,
+                pending_plan_message_id: undefined,
               }
             : old
       )
@@ -434,6 +479,7 @@ export function useSessionStatePersistence() {
                       waiting_for_input: false,
                       is_reviewing: true,
                       waiting_for_input_type: null,
+                      pending_plan_message_id: undefined,
                     }
                   : s
               ),
@@ -516,15 +562,16 @@ export function useSessionStatePersistence() {
     // Update TanStack Query cache immediately to prevent timing gap
     queryClient.setQueryData<Session>(
       chatQueryKeys.session(activeSessionId),
-      old =>
-        old
-          ? {
-              ...old,
-              waiting_for_input: false,
-              is_reviewing: true,
-              waiting_for_input_type: null,
-            }
-          : old
+        old =>
+          old
+            ? {
+                ...old,
+                waiting_for_input: false,
+                is_reviewing: true,
+                waiting_for_input_type: null,
+                pending_plan_message_id: undefined,
+              }
+            : old
     )
     queryClient.setQueryData<WorktreeSessions>(
       chatQueryKeys.sessions(effectiveWorktreeId),
@@ -539,6 +586,7 @@ export function useSessionStatePersistence() {
                   waiting_for_input: false,
                   is_reviewing: true,
                   waiting_for_input_type: null,
+                  pending_plan_message_id: undefined,
                 }
               : s
           ),

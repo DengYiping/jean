@@ -501,6 +501,7 @@ pub async fn update_session_state(
 
     with_sessions_mut(&app, &worktree_path, &worktree_id, |sessions| {
         if let Some(session) = sessions.find_session_mut(&session_id) {
+            let clear_waiting_metadata = matches!(waiting_for_input, Some(false));
             if let Some(v) = answered_questions {
                 session.answered_questions = v;
             }
@@ -548,6 +549,10 @@ pub async fn update_session_state(
             }
             if let Some(v) = selected_execution_mode {
                 session.selected_execution_mode = v;
+            }
+            if clear_waiting_metadata {
+                session.waiting_for_input_type = None;
+                session.pending_plan_message_id = None;
             }
             Ok(())
         } else {

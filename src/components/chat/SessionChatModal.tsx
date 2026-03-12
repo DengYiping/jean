@@ -92,6 +92,8 @@ import {
 } from '@/services/projects'
 import { getOpenInDefaultLabel } from '@/types/preferences'
 import {
+  computeSessionCardData,
+  type ChatStoreState,
   getResumeCommand,
   statusConfig,
   type SessionStatus,
@@ -111,12 +113,7 @@ import { useIsMobile } from '@/hooks/use-mobile'
 /** Track whether any waiting tabs are off-screen to the left or right */
 function useOffScreenWaiting(
   sortedSessions: Session[],
-  storeState: {
-    sendingSessionIds: Record<string, boolean>
-    executionModes: Record<string, string>
-    executingModes: Record<string, string>
-    reviewingSessions: Record<string, boolean>
-  },
+  storeState: ChatStoreState,
   viewportRef: RefObject<HTMLDivElement | null>
 ) {
   const [hasLeft, setHasLeft] = useState(false)
@@ -176,51 +173,9 @@ interface SessionChatModalProps {
 
 function getSessionStatus(
   session: Session,
-  storeState: {
-    sendingSessionIds: Record<string, boolean>
-    executionModes: Record<string, string>
-    executingModes: Record<string, string>
-    reviewingSessions: Record<string, boolean>
-  }
+  storeState: ChatStoreState
 ): SessionStatus {
-  const isSending = storeState.sendingSessionIds[session.id]
-  const executionMode = isSending
-    ? (storeState.executingModes[session.id] ??
-      storeState.executionModes[session.id] ??
-      session.selected_execution_mode ??
-      'plan')
-    : (storeState.executionModes[session.id] ??
-      session.selected_execution_mode ??
-      'plan')
-  const isReviewing =
-    storeState.reviewingSessions[session.id] || !!session.review_results
-
-  if (isSending) {
-    if (executionMode === 'plan') return 'planning'
-    if (executionMode === 'yolo') return 'yoloing'
-    return 'vibing'
-  }
-
-  if (session.waiting_for_input) {
-    return 'waiting'
-  }
-
-  if (isReviewing) return 'review'
-
-  // Check for running/resumable processes (detected on app restart recovery)
-  if (
-    session.last_run_status === 'running' ||
-    session.last_run_status === 'resumable'
-  ) {
-    const mode = session.last_run_execution_mode ?? 'plan'
-    if (mode === 'plan') return 'planning'
-    if (mode === 'yolo') return 'yoloing'
-    return 'vibing'
-  }
-
-  if (session.last_run_status === 'completed') return 'completed'
-
-  return 'idle'
+  return computeSessionCardData(session, storeState).status
 }
 
 export function SessionChatModal({
@@ -272,17 +227,43 @@ export function SessionChatModal({
   const sendingSessionIds = useChatStore(state => state.sendingSessionIds)
   const executionModes = useChatStore(state => state.executionModes)
   const executingModes = useChatStore(state => state.executingModes)
+  const activeToolCalls = useChatStore(state => state.activeToolCalls)
+  const answeredQuestions = useChatStore(state => state.answeredQuestions)
+  const waitingForInputSessionIds = useChatStore(
+    state => state.waitingForInputSessionIds
+  )
   const reviewingSessions = useChatStore(state => state.reviewingSessions)
+  const pendingPermissionDenials = useChatStore(
+    state => state.pendingPermissionDenials
+  )
   const planFilePaths = useChatStore(state => state.planFilePaths)
   const sessionDigests = useChatStore(state => state.sessionDigests)
+  const sessionLabels = useChatStore(state => state.sessionLabels)
   const storeState = useMemo(
     () => ({
       sendingSessionIds,
       executionModes,
       executingModes,
+      activeToolCalls,
+      answeredQuestions,
+      waitingForInputSessionIds,
       reviewingSessions,
+      pendingPermissionDenials,
+      sessionDigests,
+      sessionLabels,
     }),
-    [sendingSessionIds, executionModes, executingModes, reviewingSessions]
+    [
+      sendingSessionIds,
+      executionModes,
+      executingModes,
+      activeToolCalls,
+      answeredQuestions,
+      waitingForInputSessionIds,
+      reviewingSessions,
+      pendingPermissionDenials,
+      sessionDigests,
+      sessionLabels,
+    ]
   )
 
   // Track focused session's status so scroll fires when it changes position

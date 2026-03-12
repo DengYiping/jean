@@ -2173,6 +2173,8 @@ export const useChatStore = create<ChatUIState>()(
               state.waitingForInputSessionIds
             const { [sessionId]: _sp, ...streamingPlanApprovals } =
               state.streamingPlanApprovals
+            const { [sessionId]: _pp, ...pendingPlanMessageIds } =
+              state.pendingPlanMessageIds
             const { [sessionId]: _em, ...executingModes } = state.executingModes
             const { [sessionId]: _sa, ...sendStartedAtRest } =
               state.sendStartedAt
@@ -2183,6 +2185,7 @@ export const useChatStore = create<ChatUIState>()(
               sendingSessionIds,
               waitingForInputSessionIds,
               streamingPlanApprovals,
+              pendingPlanMessageIds,
               executingModes,
               sendStartedAt: sendStartedAtRest,
               reviewingSessions: {

@@ -170,7 +170,11 @@ export function FloatingDock() {
       { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 }
     )
 
-    const total = usageTotals.input + usageTotals.output
+    const total =
+      usageTotals.input +
+      usageTotals.output +
+      usageTotals.cacheRead +
+      usageTotals.cacheCreation
     const iconMap = {
       claude: Sparkles,
       codex: CodexIcon,

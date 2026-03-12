@@ -4,7 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
 
 use super::git::get_repo_identifier;
-use crate::gh_cli::config::resolve_gh_binary;
+use crate::gh_cli::{apply_gh_account_env, build_gh_command};
 use crate::platform::silent_command;
 
 // =============================================================================
@@ -94,11 +94,10 @@ pub async fn list_github_issues(
 ) -> Result<GitHubIssueListResult, String> {
     log::trace!("Listing GitHub issues for {project_path} with state: {state:?}");
 
-    let gh = resolve_gh_binary(&app);
     let state_arg = state.unwrap_or_else(|| "open".to_string());
 
     // Run gh issue list
-    let output = silent_command(&gh)
+    let output = build_gh_command(&app, Some(&project_path))
         .args([
             "issue",
             "list",
@@ -134,7 +133,7 @@ pub async fn list_github_issues(
 
     // Get accurate total count from GitHub search API
     let total_count =
-        get_issue_total_count(&gh, &project_path, &state_arg).unwrap_or(issues.len() as u32);
+        get_issue_total_count(&app, &project_path, &state_arg).unwrap_or(issues.len() as u32);
 
     log::trace!("Found {} issues (total: {total_count})", issues.len());
     Ok(GitHubIssueListResult {
@@ -147,7 +146,7 @@ pub async fn list_github_issues(
 ///
 /// Uses `gh api search/issues` to get the real total count without fetching all issues.
 /// Falls back to None on any error so callers can use issues.len() instead.
-fn get_issue_total_count(gh: &PathBuf, project_path: &str, state: &str) -> Option<u32> {
+fn get_issue_total_count(app: &AppHandle, project_path: &str, state: &str) -> Option<u32> {
     let repo_id = get_repo_identifier(project_path).ok()?;
     let state_qualifier = match state {
         "closed" => "+state:closed",
@@ -159,7 +158,7 @@ fn get_issue_total_count(gh: &PathBuf, project_path: &str, state: &str) -> Optio
         repo_id.owner, repo_id.repo, state_qualifier
     );
 
-    let output = silent_command(gh)
+    let output = build_gh_command(app, Some(project_path))
         .args(["api", &query])
         .current_dir(project_path)
         .output()
@@ -186,8 +185,7 @@ pub async fn search_github_issues(
 ) -> Result<Vec<GitHubIssue>, String> {
     log::trace!("Searching GitHub issues for {project_path} with query: {query}");
 
-    let gh = resolve_gh_binary(&app);
-    let output = silent_command(&gh)
+    let output = build_gh_command(&app, Some(&project_path))
         .args([
             "issue",
             "list",
@@ -238,8 +236,7 @@ pub async fn get_github_issue_by_number(
 ) -> Result<GitHubIssue, String> {
     log::trace!("Getting GitHub issue #{issue_number} by number for {project_path}");
 
-    let gh = resolve_gh_binary(&app);
-    let output = silent_command(&gh)
+    let output = build_gh_command(&app, Some(&project_path))
         .args([
             "issue",
             "view",
@@ -281,9 +278,8 @@ pub async fn get_github_issue(
 ) -> Result<GitHubIssueDetail, String> {
     log::trace!("Getting GitHub issue #{issue_number} for {project_path}");
 
-    let gh = resolve_gh_binary(&app);
     // Run gh issue view
-    let output = silent_command(&gh)
+    let output = build_gh_command(&app, Some(&project_path))
         .args([
             "issue",
             "view",
@@ -1440,11 +1436,10 @@ pub async fn list_github_prs(
 ) -> Result<Vec<GitHubPullRequest>, String> {
     log::trace!("Listing GitHub PRs for {project_path} with state: {state:?}");
 
-    let gh = resolve_gh_binary(&app);
     let state_arg = state.unwrap_or_else(|| "open".to_string());
 
     // Run gh pr list
-    let output = silent_command(&gh)
+    let output = build_gh_command(&app, Some(&project_path))
         .args([
             "pr",
             "list",
@@ -1494,8 +1489,7 @@ pub async fn search_github_prs(
 ) -> Result<Vec<GitHubPullRequest>, String> {
     log::trace!("Searching GitHub PRs for {project_path} with query: {query}");
 
-    let gh = resolve_gh_binary(&app);
-    let output = silent_command(&gh)
+    let output = build_gh_command(&app, Some(&project_path))
         .args([
             "pr",
             "list",
@@ -1547,8 +1541,7 @@ pub async fn get_github_pr_by_number(
 ) -> Result<GitHubPullRequest, String> {
     log::trace!("Getting GitHub PR #{pr_number} by number for {project_path}");
 
-    let gh = resolve_gh_binary(&app);
-    let output = silent_command(&gh)
+    let output = build_gh_command(&app, Some(&project_path))
         .args([
             "pr",
             "view",
@@ -1591,9 +1584,8 @@ pub async fn get_github_pr(
 ) -> Result<GitHubPullRequestDetail, String> {
     log::trace!("Getting GitHub PR #{pr_number} for {project_path}");
 
-    let gh = resolve_gh_binary(&app);
     // Run gh pr view
-    let output = silent_command(&gh)
+    let output = build_gh_command(&app, Some(&project_path))
         .args([
             "pr",
             "view",
@@ -1709,14 +1701,12 @@ pub fn format_pr_context_markdown(ctx: &PullRequestContext) -> String {
 /// Get the diff for a PR using `gh pr diff`
 ///
 /// Returns the diff as a string, truncated to 100KB if too large.
-pub fn get_pr_diff(
-    project_path: &str,
-    pr_number: u32,
-    gh_binary: &std::path::Path,
-) -> Result<String, String> {
+pub fn get_pr_diff(app: &AppHandle, project_path: &str, pr_number: u32) -> Result<String, String> {
     log::debug!("Fetching diff for PR #{pr_number} in {project_path}");
 
-    let output = silent_command(gh_binary)
+    let mut cmd = silent_command(crate::gh_cli::config::resolve_gh_binary(app));
+    apply_gh_account_env(app, Some(project_path), &mut cmd);
+    let output = cmd
         .args(["pr", "diff", &pr_number.to_string(), "--color", "never"])
         .current_dir(project_path)
         .output()
@@ -1770,13 +1760,11 @@ pub async fn load_pr_context(
     let repo_id = get_repo_identifier(&project_path)?;
     let repo_key = repo_id.to_key();
 
-    let gh = resolve_gh_binary(&app);
-
     // Fetch PR data from GitHub
     let pr = get_github_pr(app.clone(), project_path.clone(), pr_number).await?;
 
     // Fetch the diff
-    let diff = get_pr_diff(&project_path, pr_number, &gh).ok();
+    let diff = get_pr_diff(&app, &project_path, pr_number).ok();
 
     // Create PR context
     let ctx = PullRequestContext {
@@ -2354,7 +2342,6 @@ pub async fn list_dependabot_alerts(
 ) -> Result<Vec<DependabotAlert>, String> {
     log::trace!("Listing Dependabot alerts for {project_path} with state: {state:?}");
 
-    let gh = resolve_gh_binary(&app);
     let repo_id = get_repo_identifier(&project_path)?;
     let state_arg = state.unwrap_or_else(|| "open".to_string());
 
@@ -2363,7 +2350,7 @@ pub async fn list_dependabot_alerts(
         repo_id.owner, repo_id.repo, state_arg
     );
 
-    let output = silent_command(&gh)
+    let output = build_gh_command(&app, Some(&project_path))
         .args(["api", &endpoint])
         .current_dir(&project_path)
         .output()
@@ -2404,7 +2391,6 @@ pub async fn get_dependabot_alert(
     project_path: String,
     alert_number: u32,
 ) -> Result<DependabotAlert, String> {
-    let gh = resolve_gh_binary(&app);
     let repo_id = get_repo_identifier(&project_path)?;
 
     let endpoint = format!(
@@ -2412,7 +2398,7 @@ pub async fn get_dependabot_alert(
         repo_id.owner, repo_id.repo
     );
 
-    let output = silent_command(&gh)
+    let output = build_gh_command(&app, Some(&project_path))
         .args(["api", &endpoint])
         .current_dir(&project_path)
         .output()
@@ -2454,12 +2440,11 @@ pub async fn load_security_alert_context(
 
     // Fetch alert from GitHub
     let alert_raw = {
-        let gh = resolve_gh_binary(&app);
         let endpoint = format!(
             "/repos/{}/{}/dependabot/alerts/{alert_number}",
             repo_id.owner, repo_id.repo
         );
-        let output = silent_command(&gh)
+        let output = build_gh_command(&app, Some(&project_path))
             .args(["api", &endpoint])
             .current_dir(&project_path)
             .output()
@@ -2674,7 +2659,6 @@ pub async fn list_repository_advisories(
 ) -> Result<Vec<RepositoryAdvisory>, String> {
     log::trace!("Listing repository advisories for {project_path} with state: {state:?}");
 
-    let gh = resolve_gh_binary(&app);
     let repo_id = get_repo_identifier(&project_path)?;
 
     let mut endpoint = format!(
@@ -2685,7 +2669,7 @@ pub async fn list_repository_advisories(
         endpoint.push_str(&format!("&state={s}"));
     }
 
-    let output = silent_command(&gh)
+    let output = build_gh_command(&app, Some(&project_path))
         .args(["api", &endpoint])
         .current_dir(&project_path)
         .output()
@@ -2726,7 +2710,6 @@ pub async fn get_repository_advisory(
     project_path: String,
     ghsa_id: String,
 ) -> Result<RepositoryAdvisory, String> {
-    let gh = resolve_gh_binary(&app);
     let repo_id = get_repo_identifier(&project_path)?;
 
     let endpoint = format!(
@@ -2734,7 +2717,7 @@ pub async fn get_repository_advisory(
         repo_id.owner, repo_id.repo
     );
 
-    let output = silent_command(&gh)
+    let output = build_gh_command(&app, Some(&project_path))
         .args(["api", &endpoint])
         .current_dir(&project_path)
         .output()
@@ -2776,12 +2759,11 @@ pub async fn load_advisory_context(
 
     // Fetch advisory from GitHub
     let advisory_raw = {
-        let gh = resolve_gh_binary(&app);
         let endpoint = format!(
             "/repos/{}/{}/security-advisories/{ghsa_id}",
             repo_id.owner, repo_id.repo
         );
-        let output = silent_command(&gh)
+        let output = build_gh_command(&app, Some(&project_path))
             .args(["api", &endpoint])
             .current_dir(&project_path)
             .output()

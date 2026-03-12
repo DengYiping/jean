@@ -1,8 +1,7 @@
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
-use crate::gh_cli::config::resolve_gh_binary;
-use crate::platform::silent_command;
+use crate::gh_cli::build_gh_command;
 
 // =============================================================================
 // GitHub Actions Types
@@ -45,8 +44,6 @@ pub async fn list_workflow_runs(
 ) -> Result<WorkflowRunsResult, String> {
     log::trace!("Listing workflow runs for {project_path} with branch: {branch:?}");
 
-    let gh = resolve_gh_binary(&app);
-
     let mut args = vec![
         "run".to_string(),
         "list".to_string(),
@@ -62,7 +59,7 @@ pub async fn list_workflow_runs(
         args.push(b.clone());
     }
 
-    let output = silent_command(&gh)
+    let output = build_gh_command(&app, Some(&project_path))
         .args(&args)
         .current_dir(&project_path)
         .output()

@@ -4,7 +4,7 @@ use std::sync::Mutex;
 use once_cell::sync::Lazy;
 use tauri::{AppHandle, Manager};
 
-use super::types::ProjectsData;
+use super::types::{Project, ProjectsData};
 
 /// Global mutex to prevent concurrent read-modify-write races on projects.json.
 /// Multiple threads (e.g., fetch_worktrees_status) can call save_projects_data simultaneously,
@@ -187,6 +187,28 @@ fn save_projects_data_internal(app: &AppHandle, data: &ProjectsData) -> Result<(
 pub fn save_projects_data(app: &AppHandle, data: &ProjectsData) -> Result<(), String> {
     let _lock = PROJECTS_LOCK.lock().unwrap();
     save_projects_data_internal(app, data)
+}
+
+/// Find the project owning a repository path.
+///
+/// The path may be either the base project repository path or a tracked worktree path.
+pub fn find_project_for_repo_path<'a>(
+    data: &'a ProjectsData,
+    repo_path: &str,
+) -> Option<&'a Project> {
+    if let Some(project) = data
+        .projects
+        .iter()
+        .find(|project| !project.is_folder && project.path == repo_path)
+    {
+        return Some(project);
+    }
+
+    let worktree = data
+        .worktrees
+        .iter()
+        .find(|worktree| worktree.path == repo_path)?;
+    data.find_project(&worktree.project_id)
 }
 
 #[cfg(test)]

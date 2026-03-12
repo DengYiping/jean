@@ -1,6 +1,8 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::platform::silent_command;
+use tauri::AppHandle;
+
+use crate::gh_cli::build_gh_command;
 use serde::{Deserialize, Serialize};
 
 /// PR state from GitHub API
@@ -85,16 +87,16 @@ pub struct PrStatus {
 
 /// Fetch PR status using gh CLI
 pub fn get_pr_status(
+    app: &AppHandle,
     repo_path: &str,
     pr_number: u32,
     pr_url: &str,
     worktree_id: &str,
-    gh_binary: &std::path::Path,
 ) -> Result<PrStatus, String> {
     log::trace!("Fetching PR status for #{pr_number} in {repo_path}");
 
     // Run gh pr view
-    let output = silent_command(gh_binary)
+    let output = build_gh_command(app, Some(repo_path))
         .args([
             "pr",
             "view",

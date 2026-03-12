@@ -114,18 +114,39 @@ pub async fn dispatch_command(
             let project_id: String = field(&args, "projectId", "project_id")?;
             let default_branch: Option<String> =
                 field_opt(&args, "defaultBranch", "default_branch")?;
+            let enabled_mcp_servers: Option<Vec<String>> =
+                field_opt(&args, "enabledMcpServers", "enabled_mcp_servers")?;
+            let known_mcp_servers: Option<Vec<String>> =
+                field_opt(&args, "knownMcpServers", "known_mcp_servers")?;
+            let custom_system_prompt: Option<String> =
+                field_opt(&args, "customSystemPrompt", "custom_system_prompt")?;
+            let default_provider: Option<Option<String>> =
+                field_opt(&args, "defaultProvider", "default_provider")?;
+            let default_backend: Option<Option<String>> =
+                field_opt(&args, "defaultBackend", "default_backend")?;
+            let github_account_host: Option<String> =
+                field_opt(&args, "githubAccountHost", "github_account_host")?;
+            let github_account_user: Option<String> =
+                field_opt(&args, "githubAccountUser", "github_account_user")?;
+            let worktrees_dir: Option<String> = field_opt(&args, "worktreesDir", "worktrees_dir")?;
+            let linear_api_key: Option<String> =
+                field_opt(&args, "linearApiKey", "linear_api_key")?;
+            let linear_team_id: Option<String> =
+                field_opt(&args, "linearTeamId", "linear_team_id")?;
             let result = crate::projects::update_project_settings(
                 app.clone(),
                 project_id,
                 default_branch,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
+                enabled_mcp_servers,
+                known_mcp_servers,
+                custom_system_prompt,
+                default_provider,
+                default_backend,
+                github_account_host,
+                github_account_user,
+                worktrees_dir,
+                linear_api_key,
+                linear_team_id,
             )
             .await?;
             to_value(result)
@@ -1694,6 +1715,10 @@ pub async fn dispatch_command(
         }
         "check_gh_cli_auth" => {
             let result = crate::gh_cli::check_gh_cli_auth(app.clone()).await?;
+            to_value(result)
+        }
+        "list_gh_cli_accounts" => {
+            let result = crate::gh_cli::list_gh_cli_accounts(app.clone()).await?;
             to_value(result)
         }
         "get_available_gh_versions" => {

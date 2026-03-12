@@ -40,6 +40,7 @@ import {
 } from '@/services/projects'
 import { usePreferences } from '@/services/preferences'
 import { useLinearTeams, linearQueryKeys } from '@/services/linear'
+import { useGhCliAccounts } from '@/services/gh-cli'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   Select,
@@ -92,6 +93,9 @@ export function GeneralPane({
   } = useProjectBranches(projectId)
 
   const { data: preferences } = usePreferences()
+  const { data: githubAccounts = [] } = useGhCliAccounts({
+    enabled: !!project && !project.is_folder,
+  })
   const profiles = preferences?.custom_cli_profiles ?? []
 
   const updateSettings = useUpdateProjectSettings()
@@ -168,6 +172,27 @@ export function GeneralPane({
     [projectId, updateSettings]
   )
 
+  const handleGitHubAccountChange = useCallback(
+    (value: string) => {
+      if (value === 'cli-default') {
+        updateSettings.mutate({
+          projectId,
+          githubAccountHost: '',
+          githubAccountUser: '',
+        })
+        return
+      }
+
+      const [host, user] = value.split('::', 2)
+      updateSettings.mutate({
+        projectId,
+        githubAccountHost: host ?? '',
+        githubAccountUser: user ?? '',
+      })
+    },
+    [projectId, updateSettings]
+  )
+
   const systemPromptChanged =
     localSystemPrompt !== null &&
     localSystemPrompt !== (project?.custom_system_prompt ?? '')
@@ -207,6 +232,19 @@ export function GeneralPane({
 
   const displayedLinearApiKey =
     localLinearApiKey ?? project?.linear_api_key ?? ''
+
+  const storedGitHubAccountValue =
+    project?.github_account_host && project?.github_account_user
+      ? `${project.github_account_host}::${project.github_account_user}`
+      : null
+  const selectedGitHubAccountValue =
+    storedGitHubAccountValue &&
+    githubAccounts.some(
+      account =>
+        `${account.host}::${account.user}` === storedGitHubAccountValue
+    )
+      ? storedGitHubAccountValue
+      : 'cli-default'
 
   const linearApiKeyChanged =
     localLinearApiKey !== null &&
@@ -437,6 +475,36 @@ export function GeneralPane({
                   BETA
                 </span>
               </SelectItem>
+            </SelectContent>
+          </Select>
+        </InlineField>
+
+        <InlineField
+          label="GitHub Account"
+          description="Sets the gh host/user context for this project. Jean will export GH_HOST and GH_USER and use the matching locally logged-in account for gh commands."
+        >
+          <Select
+            value={selectedGitHubAccountValue}
+            onValueChange={handleGitHubAccountChange}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="cli-default">
+                Use gh active account
+              </SelectItem>
+              {githubAccounts.map(account => {
+                const value = `${account.host}::${account.user}`
+                const status = account.active
+                  ? `${account.host} · active`
+                  : account.host
+                return (
+                  <SelectItem key={value} value={value}>
+                    {account.user} · {status}
+                  </SelectItem>
+                )
+              })}
             </SelectContent>
           </Select>
         </InlineField>

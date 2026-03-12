@@ -49,6 +49,10 @@ export interface Project {
   default_provider?: string | null
   /** Default CLI backend for sessions in this project (undefined = use global default) */
   default_backend?: string | null
+  /** GitHub host to target for gh commands in this project (undefined = gh active host/account) */
+  github_account_host?: string | null
+  /** GitHub user to target for gh commands in this project (undefined = gh active host/account) */
+  github_account_user?: string | null
   /** Custom base directory for worktrees (undefined = use default ~/jean) */
   worktrees_dir?: string | null
   /** Linear personal API key for fetching issues (per-project) */

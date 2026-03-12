@@ -429,6 +429,17 @@ fn build_claude_args(
                         system_prompt_parts.push(prompt.to_string());
                     }
                 }
+                if let (Some(host), Some(user)) = (
+                    project.github_account_host.as_deref(),
+                    project.github_account_user.as_deref(),
+                ) {
+                    if !host.trim().is_empty() && !user.trim().is_empty() {
+                        env_vars.push(("GH_HOST".to_string(), host.to_string()));
+                        env_vars.push(("GH_USER".to_string(), user.to_string()));
+                        env_vars.push(("JEAN_GH_HOST".to_string(), host.to_string()));
+                        env_vars.push(("JEAN_GH_USER".to_string(), user.to_string()));
+                    }
+                }
             }
         }
     }

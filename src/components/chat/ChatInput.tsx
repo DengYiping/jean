@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { invoke } from '@/lib/transport'
 import { generateId } from '@/lib/uuid'
 import { toast } from 'sonner'
+import { logger } from '@/lib/logger'
 import { Textarea } from '@/components/ui/textarea'
 import { Kbd } from '@/components/ui/kbd'
 import { useChatStore } from '@/store/chat-store'
@@ -253,7 +254,11 @@ export const ChatInput = memo(function ChatInput({
           setFileMentionOpen(true)
 
           // Anchor at the top-left of the form so popover appears above the input
-          setFileMentionAnchor({ top: 0, left: 0, containerWidth: formRef.current?.offsetWidth ?? 0 })
+          setFileMentionAnchor({
+            top: 0,
+            left: 0,
+            containerWidth: formRef.current?.offsetWidth ?? 0,
+          })
         }
       } else if (atTriggerIndex !== null && fileMentionOpen) {
         // Continuing to type after @, update query
@@ -288,7 +293,11 @@ export const ChatInput = memo(function ChatInput({
               setFileMentionQuery(query)
               setFileMentionOpen(true)
               // Anchor at the top-left of the form so popover appears above the input
-              setFileMentionAnchor({ top: 0, left: 0, containerWidth: formRef.current?.offsetWidth ?? 0 })
+              setFileMentionAnchor({
+                top: 0,
+                left: 0,
+                containerWidth: formRef.current?.offsetWidth ?? 0,
+              })
             }
             break
           }
@@ -331,7 +340,6 @@ export const ChatInput = memo(function ChatInput({
           }
         }
       }
-
     },
     [
       activeSessionId,
@@ -574,10 +582,9 @@ export const ChatInput = memo(function ChatInput({
 
           try {
             const svgText = await file.text()
-            const result = await invoke<SaveTextResponse>(
-              'save_pasted_text',
-              { content: svgText }
-            )
+            const result = await invoke<SaveTextResponse>('save_pasted_text', {
+              content: svgText,
+            })
             const { addPendingTextFile } = useChatStore.getState()
             addPendingTextFile(activeSessionId, {
               id: result.id,
@@ -587,7 +594,7 @@ export const ChatInput = memo(function ChatInput({
               content: svgText,
             })
           } catch (error) {
-            console.error('Failed to save SVG:', error)
+            logger.error('Failed to save SVG:', error)
             toast.error('Failed to save SVG', {
               description: String(error),
             })
@@ -656,7 +663,7 @@ export const ChatInput = memo(function ChatInput({
               loading: false,
             })
           } catch (error) {
-            console.error('Failed to save image:', error)
+            logger.error('Failed to save image:', error)
             removePendingImage(activeSessionId, placeholderId)
             toast.error('Failed to save image', {
               description: String(error),
@@ -699,7 +706,7 @@ export const ChatInput = memo(function ChatInput({
           // No image in clipboard — remove placeholder
           removePendingImage(activeSessionId, placeholderId)
         } catch (error) {
-          console.error('Failed to read clipboard image natively:', error)
+          logger.error('Failed to read clipboard image natively:', error)
           removePendingImage(activeSessionId, placeholderId)
           toast.error('Failed to paste image', {
             description: String(error),
@@ -738,7 +745,7 @@ export const ChatInput = memo(function ChatInput({
             content: text,
           })
         } catch (error) {
-          console.error('Failed to save text file:', error)
+          logger.error('Failed to save text file:', error)
           toast.error('Failed to save text file', {
             description: String(error),
           })
@@ -756,10 +763,9 @@ export const ChatInput = memo(function ChatInput({
 
         if (mentions.length > 0) {
           // Get file list: cache-first, async fallback
-          let fileList: WorktreeFile[] | undefined =
-            queryClient.getQueryData(
-              fileQueryKeys.worktreeFiles(activeWorktreePath)
-            )
+          let fileList: WorktreeFile[] | undefined = queryClient.getQueryData(
+            fileQueryKeys.worktreeFiles(activeWorktreePath)
+          )
           if (!fileList) {
             try {
               fileList = await invoke<WorktreeFile[]>('list_worktree_files', {
@@ -805,7 +811,6 @@ export const ChatInput = memo(function ChatInput({
           }
         }
       }
-
     },
     [activeSessionId, activeWorktreePath, inputRef]
   )

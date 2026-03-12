@@ -5,6 +5,7 @@ import type { ApprovalContext } from '../PlanDialog'
 import { useChatStore } from '@/store/chat-store'
 import { invoke } from '@/lib/transport'
 import { toast } from 'sonner'
+import { logger } from '@/lib/logger'
 
 interface UseCanvasShortcutEventsOptions {
   /** Currently selected card (null if none selected) */
@@ -22,11 +23,18 @@ interface UseCanvasShortcutEventsOptions {
   /** Callback for clear context approval (new session with plan in yolo mode) */
   onClearContextApproval: (card: SessionCardData, updatedPlan?: string) => void
   /** Callback for clear context approval (new session with plan in build mode) */
-  onClearContextApprovalBuild: (card: SessionCardData, updatedPlan?: string) => void
+  onClearContextApprovalBuild: (
+    card: SessionCardData,
+    updatedPlan?: string
+  ) => void
   /** Callback for worktree approval (new worktree with plan in build mode) */
-  onWorktreeApproval?: ((card: SessionCardData, updatedPlan?: string) => void) | null
+  onWorktreeApproval?:
+    | ((card: SessionCardData, updatedPlan?: string) => void)
+    | null
   /** Callback for worktree approval (new worktree with plan in yolo mode) */
-  onWorktreeApprovalYolo?: ((card: SessionCardData, updatedPlan?: string) => void) | null
+  onWorktreeApprovalYolo?:
+    | ((card: SessionCardData, updatedPlan?: string) => void)
+    | null
   /** If true, skip handling toggle-session-label event (caller handles it) */
   skipLabelHandling?: boolean
 }
@@ -172,10 +180,7 @@ export function useCanvasShortcutEvents({
 
       // Persist to disk (fire and forget)
       invoke('update_session_digest', { sessionId, digest }).catch(err => {
-        console.error(
-          '[useCanvasShortcutEvents] Failed to persist digest:',
-          err
-        )
+        logger.error('[useCanvasShortcutEvents] Failed to persist digest:', err)
       })
 
       setRecapDialogDigest(digest)
@@ -233,10 +238,7 @@ export function useCanvasShortcutEvents({
       useChatStore.getState().setSessionDigest(sessionId, digest)
 
       invoke('update_session_digest', { sessionId, digest }).catch(err => {
-        console.error(
-          '[useCanvasShortcutEvents] Failed to persist digest:',
-          err
-        )
+        logger.error('[useCanvasShortcutEvents] Failed to persist digest:', err)
       })
 
       setRecapDialogDigest(digest)
@@ -377,10 +379,22 @@ export function useCanvasShortcutEvents({
 
     window.addEventListener('approve-plan', handleApprovePlanEvent)
     window.addEventListener('approve-plan-yolo', handleApprovePlanYoloEvent)
-    window.addEventListener('approve-plan-clear-context', handleClearContextApproveEvent)
-    window.addEventListener('approve-plan-clear-context-build', handleClearContextApproveBuildEvent)
-    window.addEventListener('approve-plan-worktree-build', handleWorktreeApproveEvent)
-    window.addEventListener('approve-plan-worktree-yolo', handleWorktreeApproveYoloEvent)
+    window.addEventListener(
+      'approve-plan-clear-context',
+      handleClearContextApproveEvent
+    )
+    window.addEventListener(
+      'approve-plan-clear-context-build',
+      handleClearContextApproveBuildEvent
+    )
+    window.addEventListener(
+      'approve-plan-worktree-build',
+      handleWorktreeApproveEvent
+    )
+    window.addEventListener(
+      'approve-plan-worktree-yolo',
+      handleWorktreeApproveYoloEvent
+    )
     window.addEventListener('open-plan', handleOpenPlanEvent)
     window.addEventListener('open-recap', handleOpenRecapEvent)
     if (!skipLabelHandling) {
@@ -401,12 +415,21 @@ export function useCanvasShortcutEvents({
         'approve-plan-clear-context-build',
         handleClearContextApproveBuildEvent
       )
-      window.removeEventListener('approve-plan-worktree-build', handleWorktreeApproveEvent)
-      window.removeEventListener('approve-plan-worktree-yolo', handleWorktreeApproveYoloEvent)
+      window.removeEventListener(
+        'approve-plan-worktree-build',
+        handleWorktreeApproveEvent
+      )
+      window.removeEventListener(
+        'approve-plan-worktree-yolo',
+        handleWorktreeApproveYoloEvent
+      )
       window.removeEventListener('open-plan', handleOpenPlanEvent)
       window.removeEventListener('open-recap', handleOpenRecapEvent)
       if (!skipLabelHandling) {
-        window.removeEventListener('toggle-session-label', handleToggleLabelEvent)
+        window.removeEventListener(
+          'toggle-session-label',
+          handleToggleLabelEvent
+        )
       }
     }
   }, [

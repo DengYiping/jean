@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
+import { logger } from '@/lib/logger'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import { Button } from '@/components/ui/button'
@@ -192,7 +193,7 @@ const CliProfilesEditor: React.FC<{
       try {
         await invoke('delete_cli_profile', { name: profile.name })
       } catch (e) {
-        console.error('Failed to delete CLI profile file:', e)
+        logger.error('Failed to delete CLI profile file:', e)
       }
     }
     onSave(profiles.filter((_, i) => i !== index))

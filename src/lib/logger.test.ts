@@ -13,26 +13,34 @@ describe('logger', () => {
     vi.restoreAllMocks()
   })
 
-  describe('no-op methods (debug, info, warn)', () => {
-    it('debug does not call console.debug', () => {
+  describe('dev-only methods (debug, info)', () => {
+    it('debug calls console.debug in dev mode', () => {
       const logger = createLogger()
       logger.debug('test message', { data: 123 })
 
-      expect(console.debug).not.toHaveBeenCalled()
+      expect(console.debug).toHaveBeenCalledWith('[DEBUG]', 'test message', {
+        data: 123,
+      })
     })
 
-    it('info does not call console.info', () => {
+    it('info calls console.info in dev mode', () => {
       const logger = createLogger()
       logger.info('info message')
 
-      expect(console.info).not.toHaveBeenCalled()
+      expect(console.info).toHaveBeenCalledWith('[INFO]', 'info message')
     })
+  })
 
-    it('warn does not call console.warn', () => {
+  describe('warn (always logs)', () => {
+    it('logs warnings with correct format', () => {
       const logger = createLogger()
       logger.warn('warning message', 'extra')
 
-      expect(console.warn).not.toHaveBeenCalled()
+      expect(console.warn).toHaveBeenCalledWith(
+        '[WARN]',
+        'warning message',
+        'extra'
+      )
     })
   })
 

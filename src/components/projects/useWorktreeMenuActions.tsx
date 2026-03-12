@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import { invoke } from '@/lib/transport'
 import { toast } from 'sonner'
+import { logger } from '@/lib/logger'
 import { isBaseSession, type Worktree } from '@/types/projects'
 import {
   useArchiveWorktree,
@@ -120,7 +121,7 @@ export function useWorktreeMenuActions({
         sessionId: sessionWithMessages.id,
         digest,
       }).catch(err => {
-        console.error('[useWorktreeMenuActions] Failed to persist digest:', err)
+        logger.error('[useWorktreeMenuActions] Failed to persist digest:', err)
       })
 
       toast.success(

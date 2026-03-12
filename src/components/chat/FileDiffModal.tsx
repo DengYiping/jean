@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { FileText, Loader2, AlertCircle, Columns2, Rows3 } from 'lucide-react'
 import { FileDiff } from '@pierre/diffs/react'
 import { parsePatchFiles, type FileDiffMetadata } from '@pierre/diffs'
+import { logger } from '@/lib/logger'
 import {
   Dialog,
   DialogContent,
@@ -106,7 +107,7 @@ export function FileDiffModal({
     try {
       return parsePatchFiles(diff.raw_patch)
     } catch (e) {
-      console.error('Failed to parse patch:', e)
+      logger.error('Failed to parse patch:', e)
       return []
     }
   }, [diff?.raw_patch])

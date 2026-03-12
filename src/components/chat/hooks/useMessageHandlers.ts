@@ -27,7 +27,12 @@ import { generateId } from '@/lib/uuid'
 import { preferencesQueryKeys } from '@/services/preferences'
 import { useProjectsStore } from '@/store/projects-store'
 import type { AppPreferences } from '@/types/preferences'
-import type { Worktree, WorktreeCreatedEvent, WorktreeCreateErrorEvent } from '@/types/projects'
+import type {
+  Worktree,
+  WorktreeCreatedEvent,
+  WorktreeCreateErrorEvent,
+} from '@/types/projects'
+import { logger } from '@/lib/logger'
 
 /** Git commands to auto-approve for magic prompts (no permission prompts needed) */
 export const GIT_ALLOWED_TOOLS = [
@@ -145,12 +150,16 @@ const THINKING_LEVEL_VALUES = new Set<ThinkingLevel>([
   'ultrathink',
 ])
 
-function isThinkingLevel(value: string | null | undefined): value is ThinkingLevel {
+function isThinkingLevel(
+  value: string | null | undefined
+): value is ThinkingLevel {
   if (!value) return false
   return THINKING_LEVEL_VALUES.has(value as ThinkingLevel)
 }
 
-function mapCodexReasoningToEffort(value: string | null | undefined): EffortLevel | undefined {
+function mapCodexReasoningToEffort(
+  value: string | null | undefined
+): EffortLevel | undefined {
   switch (value) {
     case 'low':
       return 'low'
@@ -247,10 +256,7 @@ export function useMessageHandlers({
         waitingForInput: false,
         waitingForInputType: null,
       }).catch(err => {
-        console.error(
-          '[useMessageHandlers] Failed to clear waiting state:',
-          err
-        )
+        logger.error('[useMessageHandlers] Failed to clear waiting state:', err)
       })
 
       // Scroll to bottom after DOM updates from collapsing the question form.
@@ -358,10 +364,7 @@ export function useMessageHandlers({
         waitingForInput: false,
         waitingForInputType: null,
       }).catch(err => {
-        console.error(
-          '[useMessageHandlers] Failed to clear waiting state:',
-          err
-        )
+        logger.error('[useMessageHandlers] Failed to clear waiting state:', err)
       })
 
       // Focus input so user can type their next message
@@ -662,7 +665,8 @@ export function useMessageHandlers({
     // Send approval message to Claude so it continues with execution
     // NOTE: setLastSentMessage is critical for permission denial flow - without it,
     // the denied message context won't be set and approval UI won't work
-    const buildApprovalMsg = 'Plan approved. Begin implementing the changes now. Do not re-explain the plan — start writing code.'
+    const buildApprovalMsg =
+      'Plan approved. Begin implementing the changes now. Do not re-explain the plan — start writing code.'
     setLastSentMessage(sessionId, buildApprovalMsg)
     setError(sessionId, null)
     addSendingSession(sessionId)
@@ -744,7 +748,8 @@ export function useMessageHandlers({
     setSelectedModel(sessionId, selectedModelRef.current)
 
     // Send approval message to Claude so it continues with execution
-    const yoloApprovalMsg = 'Plan approved (yolo mode). Begin implementing all changes immediately without asking for confirmation. Do not re-explain the plan — start writing code.'
+    const yoloApprovalMsg =
+      'Plan approved (yolo mode). Begin implementing all changes immediately without asking for confirmation. Do not re-explain the plan — start writing code.'
     setLastSentMessage(sessionId, yoloApprovalMsg)
     setError(sessionId, null)
     addSendingSession(sessionId)
@@ -870,7 +875,9 @@ export function useMessageHandlers({
       const isYolo = mode === 'yolo'
       const modeModelRef = isYolo ? yoloModelRef : buildModelRef
       const modeBackendRef = isYolo ? yoloBackendRef : buildBackendRef
-      const modeThinkingRef = isYolo ? yoloThinkingLevelRef : buildThinkingLevelRef
+      const modeThinkingRef = isYolo
+        ? yoloThinkingLevelRef
+        : buildThinkingLevelRef
       const modeLabel = isYolo ? 'Yolo' : 'Build'
 
       const currentSessionBackend = queryClient.getQueryData<Session>(
@@ -879,7 +886,8 @@ export function useMessageHandlers({
       const prefs = queryClient.getQueryData<AppPreferences>(
         preferencesQueryKeys.preferences()
       )
-      const modeBackendOverride = (modeBackendRef.current as Session['backend']) ?? null
+      const modeBackendOverride =
+        (modeBackendRef.current as Session['backend']) ?? null
       const resolvedBackend = modeBackendOverride ?? undefined
       const modelBackend = resolvedBackend ?? currentSessionBackend
       const resolvedModel =
@@ -887,9 +895,10 @@ export function useMessageHandlers({
         (modeBackendOverride
           ? getDefaultModelForBackend(modelBackend, prefs)
           : selectedModelRef.current)
-      const modeOverride = (modeModelRef.current || modeBackendOverride)
-        ? [resolvedBackend, resolvedModel].filter(Boolean).join(' / ')
-        : ''
+      const modeOverride =
+        modeModelRef.current || modeBackendOverride
+          ? [resolvedBackend, resolvedModel].filter(Boolean).join(' / ')
+          : ''
       if (modeOverride) toast.info(`${modeLabel}: ${modeOverride}`)
       const planMessage = modeOverride
         ? `[${modeLabel}: ${modeOverride}]\nExecute this plan. Implement all changes described.\n\n<plan>\n${planContent}\n</plan>`
@@ -911,29 +920,49 @@ export function useMessageHandlers({
       // and overrides the Zustand value in the backend resolution chain.
       queryClient.setQueryData<Session>(
         chatQueryKeys.session(newSession.id),
-        old => old ? { ...old, backend: resolvedBackend ?? old.backend, selected_model: resolvedModel } : old
+        old =>
+          old
+            ? {
+                ...old,
+                backend: resolvedBackend ?? old.backend,
+                selected_model: resolvedModel,
+              }
+            : old
       )
 
       // Persist model and backend to Rust session BEFORE sending so send_chat_message
       // reads the updated session state (both use with_sessions_mut, so ordering matters)
       await invoke('set_session_model', {
-        worktreeId, worktreePath, sessionId: newSession.id, model: resolvedModel,
-      }).catch(err => console.error('[clearContext] Failed to persist model:', err))
+        worktreeId,
+        worktreePath,
+        sessionId: newSession.id,
+        model: resolvedModel,
+      }).catch(err =>
+        logger.error('[clearContext] Failed to persist model:', err)
+      )
       if (resolvedBackend) {
         await invoke('set_session_backend', {
-          worktreeId, worktreePath, sessionId: newSession.id, backend: resolvedBackend,
-        }).catch(err => console.error('[clearContext] Failed to persist backend:', err))
+          worktreeId,
+          worktreePath,
+          sessionId: newSession.id,
+          backend: resolvedBackend,
+        }).catch(err =>
+          logger.error('[clearContext] Failed to persist backend:', err)
+        )
       }
 
       const effectiveBackend = resolvedBackend ?? currentSessionBackend
-      let resolvedThinkingLevel: ThinkingLevel = selectedThinkingLevelRef.current
-      let resolvedEffortLevel: EffortLevel | undefined = useAdaptiveThinkingRef.current
-        ? selectedEffortLevelRef.current
-        : undefined
+      let resolvedThinkingLevel: ThinkingLevel =
+        selectedThinkingLevelRef.current
+      let resolvedEffortLevel: EffortLevel | undefined =
+        useAdaptiveThinkingRef.current
+          ? selectedEffortLevelRef.current
+          : undefined
       if (effectiveBackend === 'codex') {
         resolvedThinkingLevel = 'off'
         resolvedEffortLevel =
-          mapCodexReasoningToEffort(modeThinkingRef.current) ?? selectedEffortLevelRef.current
+          mapCodexReasoningToEffort(modeThinkingRef.current) ??
+          selectedEffortLevelRef.current
       } else if (isThinkingLevel(modeThinkingRef.current)) {
         resolvedThinkingLevel = modeThinkingRef.current
       }
@@ -983,7 +1012,7 @@ export function useMessageHandlers({
             })
           )
           .catch(err =>
-            console.error(
+            logger.error(
               '[useMessageHandlers] Failed to close original session:',
               err
             )
@@ -1013,211 +1042,241 @@ export function useMessageHandlers({
   )
 
   // Handle clear context approval during streaming
-  const handleStreamingClearContextApproval = useCallback(async (mode: 'yolo' | 'build' = 'yolo') => {
-    const sessionId = activeSessionIdRef.current
-    const worktreeId = activeWorktreeIdRef.current
-    const worktreePath = activeWorktreePathRef.current
-    if (!sessionId || !worktreeId || !worktreePath) return
+  const handleStreamingClearContextApproval = useCallback(
+    async (mode: 'yolo' | 'build' = 'yolo') => {
+      const sessionId = activeSessionIdRef.current
+      const worktreeId = activeWorktreeIdRef.current
+      const worktreePath = activeWorktreePathRef.current
+      if (!sessionId || !worktreeId || !worktreePath) return
 
-    // Get streaming content blocks to extract plan content
-    const store = useChatStore.getState()
-    const contentBlocks = store.streamingContentBlocks[sessionId]
-    const toolCalls = store.activeToolCalls[sessionId]
+      // Get streaming content blocks to extract plan content
+      const store = useChatStore.getState()
+      const contentBlocks = store.streamingContentBlocks[sessionId]
+      const toolCalls = store.activeToolCalls[sessionId]
 
-    // Try to get plan content from tool calls first, then from streaming blocks
-    let planContent: string | null = null
-    if (toolCalls) {
-      planContent = findPlanContent(toolCalls)
-      if (!planContent) {
-        const planFilePath = findPlanFilePath(toolCalls)
-        if (planFilePath) {
-          try {
-            planContent = await readPlanFile(planFilePath)
-          } catch {
-            // Fall through to content blocks
+      // Try to get plan content from tool calls first, then from streaming blocks
+      let planContent: string | null = null
+      if (toolCalls) {
+        planContent = findPlanContent(toolCalls)
+        if (!planContent) {
+          const planFilePath = findPlanFilePath(toolCalls)
+          if (planFilePath) {
+            try {
+              planContent = await readPlanFile(planFilePath)
+            } catch {
+              // Fall through to content blocks
+            }
           }
         }
       }
-    }
 
-    if (!planContent && contentBlocks) {
-      // Try to extract from streaming content blocks (text content)
-      for (const block of contentBlocks) {
-        if ('text' in block && block.text) {
-          planContent = block.text
-          break
+      if (!planContent && contentBlocks) {
+        // Try to extract from streaming content blocks (text content)
+        for (const block of contentBlocks) {
+          if ('text' in block && block.text) {
+            planContent = block.text
+            break
+          }
         }
       }
-    }
 
-    if (!planContent) {
-      toast.error('No plan content available')
-      return
-    }
+      if (!planContent) {
+        toast.error('No plan content available')
+        return
+      }
 
-    // Mark as approved in streaming state
-    store.setStreamingPlanApproved(sessionId, true)
-    store.clearToolCalls(sessionId)
-    store.clearStreamingContentBlocks(sessionId)
-    store.setSessionReviewing(sessionId, false)
-    store.setWaitingForInput(sessionId, false)
+      // Mark as approved in streaming state
+      store.setStreamingPlanApproved(sessionId, true)
+      store.clearToolCalls(sessionId)
+      store.clearStreamingContentBlocks(sessionId)
+      store.setSessionReviewing(sessionId, false)
+      store.setWaitingForInput(sessionId, false)
 
-    // Create new session
-    let newSession: Session
-    try {
-      newSession = await createSession.mutateAsync({
+      // Create new session
+      let newSession: Session
+      try {
+        newSession = await createSession.mutateAsync({
+          worktreeId,
+          worktreePath,
+        })
+      } catch (err) {
+        toast.error(`Failed to create session: ${err}`)
+        return
+      }
+
+      // Switch to new session
+      store.setActiveSession(worktreeId, newSession.id)
+
+      // Resolve model/backend/thinking based on mode
+      const isYolo = mode === 'yolo'
+      const modeModelRef = isYolo ? yoloModelRef : buildModelRef
+      const modeBackendRef = isYolo ? yoloBackendRef : buildBackendRef
+      const modeThinkingRef = isYolo
+        ? yoloThinkingLevelRef
+        : buildThinkingLevelRef
+      const modeLabel = isYolo ? 'Yolo' : 'Build'
+
+      const currentSessionBackend = queryClient.getQueryData<Session>(
+        chatQueryKeys.session(sessionId)
+      )?.backend
+      const prefs = queryClient.getQueryData<AppPreferences>(
+        preferencesQueryKeys.preferences()
+      )
+      const modeBackendOverride =
+        (modeBackendRef.current as Session['backend']) ?? null
+      const resolvedBackend = modeBackendOverride ?? undefined
+      const modelBackend = resolvedBackend ?? currentSessionBackend
+      const resolvedModel =
+        modeModelRef.current ??
+        (modeBackendOverride
+          ? getDefaultModelForBackend(modelBackend, prefs)
+          : selectedModelRef.current)
+      const modeOverride =
+        modeModelRef.current || modeBackendOverride
+          ? [resolvedBackend, resolvedModel].filter(Boolean).join(' / ')
+          : ''
+      if (modeOverride) toast.info(`${modeLabel}: ${modeOverride}`)
+      const planMessage = modeOverride
+        ? `[${modeLabel}: ${modeOverride}]\nExecute this plan. Implement all changes described.\n\n<plan>\n${planContent}\n</plan>`
+        : `Execute this plan. Implement all changes described.\n\n<plan>\n${planContent}\n</plan>`
+      store.setExecutionMode(newSession.id, mode)
+      store.setLastSentMessage(newSession.id, planMessage)
+      store.setError(newSession.id, null)
+      store.addSendingSession(newSession.id)
+      store.setSelectedModel(newSession.id, resolvedModel)
+      store.setExecutingMode(newSession.id, mode)
+      if (resolvedBackend) {
+        store.setSelectedBackend(
+          newSession.id,
+          resolvedBackend as 'claude' | 'codex' | 'opencode'
+        )
+      }
+      // Optimistically update TanStack Query cache so UI shows correct backend/model immediately.
+      queryClient.setQueryData<Session>(
+        chatQueryKeys.session(newSession.id),
+        old =>
+          old
+            ? {
+                ...old,
+                backend: resolvedBackend ?? old.backend,
+                selected_model: resolvedModel,
+              }
+            : old
+      )
+
+      // Persist model and backend to Rust session BEFORE sending so send_chat_message
+      // reads the updated session state (both use with_sessions_mut, so ordering matters)
+      await invoke('set_session_model', {
         worktreeId,
         worktreePath,
-      })
-    } catch (err) {
-      toast.error(`Failed to create session: ${err}`)
-      return
-    }
-
-    // Switch to new session
-    store.setActiveSession(worktreeId, newSession.id)
-
-    // Resolve model/backend/thinking based on mode
-    const isYolo = mode === 'yolo'
-    const modeModelRef = isYolo ? yoloModelRef : buildModelRef
-    const modeBackendRef = isYolo ? yoloBackendRef : buildBackendRef
-    const modeThinkingRef = isYolo ? yoloThinkingLevelRef : buildThinkingLevelRef
-    const modeLabel = isYolo ? 'Yolo' : 'Build'
-
-    const currentSessionBackend = queryClient.getQueryData<Session>(
-      chatQueryKeys.session(sessionId)
-    )?.backend
-    const prefs = queryClient.getQueryData<AppPreferences>(
-      preferencesQueryKeys.preferences()
-    )
-    const modeBackendOverride = (modeBackendRef.current as Session['backend']) ?? null
-    const resolvedBackend = modeBackendOverride ?? undefined
-    const modelBackend = resolvedBackend ?? currentSessionBackend
-    const resolvedModel =
-      modeModelRef.current ??
-      (modeBackendOverride
-        ? getDefaultModelForBackend(modelBackend, prefs)
-        : selectedModelRef.current)
-    const modeOverride = (modeModelRef.current || modeBackendOverride)
-      ? [resolvedBackend, resolvedModel].filter(Boolean).join(' / ')
-      : ''
-    if (modeOverride) toast.info(`${modeLabel}: ${modeOverride}`)
-    const planMessage = modeOverride
-      ? `[${modeLabel}: ${modeOverride}]\nExecute this plan. Implement all changes described.\n\n<plan>\n${planContent}\n</plan>`
-      : `Execute this plan. Implement all changes described.\n\n<plan>\n${planContent}\n</plan>`
-    store.setExecutionMode(newSession.id, mode)
-    store.setLastSentMessage(newSession.id, planMessage)
-    store.setError(newSession.id, null)
-    store.addSendingSession(newSession.id)
-    store.setSelectedModel(newSession.id, resolvedModel)
-    store.setExecutingMode(newSession.id, mode)
-    if (resolvedBackend) {
-      store.setSelectedBackend(
-        newSession.id,
-        resolvedBackend as 'claude' | 'codex' | 'opencode'
+        sessionId: newSession.id,
+        model: resolvedModel,
+      }).catch(err =>
+        logger.error('[streamingClearContext] Failed to persist model:', err)
       )
-    }
-    // Optimistically update TanStack Query cache so UI shows correct backend/model immediately.
-    queryClient.setQueryData<Session>(
-      chatQueryKeys.session(newSession.id),
-      old => old ? { ...old, backend: resolvedBackend ?? old.backend, selected_model: resolvedModel } : old
-    )
-
-    // Persist model and backend to Rust session BEFORE sending so send_chat_message
-    // reads the updated session state (both use with_sessions_mut, so ordering matters)
-    await invoke('set_session_model', {
-      worktreeId, worktreePath, sessionId: newSession.id, model: resolvedModel,
-    }).catch(err => console.error('[streamingClearContext] Failed to persist model:', err))
-    if (resolvedBackend) {
-      await invoke('set_session_backend', {
-        worktreeId, worktreePath, sessionId: newSession.id, backend: resolvedBackend,
-      }).catch(err => console.error('[streamingClearContext] Failed to persist backend:', err))
-    }
-
-    const effectiveBackend = resolvedBackend ?? currentSessionBackend
-    let resolvedThinkingLevel: ThinkingLevel = selectedThinkingLevelRef.current
-    let resolvedEffortLevel: EffortLevel | undefined = useAdaptiveThinkingRef.current
-      ? selectedEffortLevelRef.current
-      : undefined
-    if (effectiveBackend === 'codex') {
-      resolvedThinkingLevel = 'off'
-      resolvedEffortLevel =
-        mapCodexReasoningToEffort(modeThinkingRef.current) ?? selectedEffortLevelRef.current
-    } else if (isThinkingLevel(modeThinkingRef.current)) {
-      resolvedThinkingLevel = modeThinkingRef.current
-    }
-    sendMessage.mutate({
-      sessionId: newSession.id,
-      worktreeId,
-      worktreePath,
-      message: planMessage,
-      model: resolvedModel,
-      executionMode: mode,
-      thinkingLevel: resolvedThinkingLevel,
-      effortLevel: resolvedEffortLevel,
-      mcpConfig: getMcpConfig(),
-      customProfileName: getCustomProfileName(),
-      backend: resolvedBackend,
-    })
-
-    // Optionally close the original session immediately.
-    // cancel_process_if_running (used by close/archive) safely skips idle sessions,
-    // and with_sessions_mut uses a per-worktree mutex so there's no file-level race.
-    if (prefs?.close_original_on_clear_context) {
-      const command =
-        prefs.removal_behavior === 'archive'
-          ? 'archive_session'
-          : 'close_session'
-
-      // Optimistically remove from UI immediately
-      queryClient.setQueryData<WorktreeSessions>(
-        chatQueryKeys.sessions(worktreeId),
-        old => {
-          if (!old) return old
-          return {
-            ...old,
-            sessions: old.sessions.filter(s => s.id !== sessionId),
-            active_session_id:
-              old.active_session_id === sessionId
-                ? newSession.id
-                : old.active_session_id,
-          }
-        }
-      )
-
-      invoke(command, { worktreeId, worktreePath, sessionId })
-        .then(() =>
-          queryClient.invalidateQueries({
-            queryKey: chatQueryKeys.sessions(worktreeId),
-          })
-        )
-        .catch(err =>
-          console.error(
-            '[useMessageHandlers] Failed to close original session:',
+      if (resolvedBackend) {
+        await invoke('set_session_backend', {
+          worktreeId,
+          worktreePath,
+          sessionId: newSession.id,
+          backend: resolvedBackend,
+        }).catch(err =>
+          logger.error(
+            '[streamingClearContext] Failed to persist backend:',
             err
           )
         )
-    }
-  }, [
-    activeSessionIdRef,
-    activeWorktreeIdRef,
-    activeWorktreePathRef,
-    selectedModelRef,
-    buildModelRef,
-    buildBackendRef,
-    buildThinkingLevelRef,
-    yoloModelRef,
-    yoloBackendRef,
-    yoloThinkingLevelRef,
-    selectedThinkingLevelRef,
-    selectedEffortLevelRef,
-    useAdaptiveThinkingRef,
-    getMcpConfig,
-    getCustomProfileName,
-    createSession,
-    sendMessage,
-    queryClient,
-  ])
+      }
+
+      const effectiveBackend = resolvedBackend ?? currentSessionBackend
+      let resolvedThinkingLevel: ThinkingLevel =
+        selectedThinkingLevelRef.current
+      let resolvedEffortLevel: EffortLevel | undefined =
+        useAdaptiveThinkingRef.current
+          ? selectedEffortLevelRef.current
+          : undefined
+      if (effectiveBackend === 'codex') {
+        resolvedThinkingLevel = 'off'
+        resolvedEffortLevel =
+          mapCodexReasoningToEffort(modeThinkingRef.current) ??
+          selectedEffortLevelRef.current
+      } else if (isThinkingLevel(modeThinkingRef.current)) {
+        resolvedThinkingLevel = modeThinkingRef.current
+      }
+      sendMessage.mutate({
+        sessionId: newSession.id,
+        worktreeId,
+        worktreePath,
+        message: planMessage,
+        model: resolvedModel,
+        executionMode: mode,
+        thinkingLevel: resolvedThinkingLevel,
+        effortLevel: resolvedEffortLevel,
+        mcpConfig: getMcpConfig(),
+        customProfileName: getCustomProfileName(),
+        backend: resolvedBackend,
+      })
+
+      // Optionally close the original session immediately.
+      // cancel_process_if_running (used by close/archive) safely skips idle sessions,
+      // and with_sessions_mut uses a per-worktree mutex so there's no file-level race.
+      if (prefs?.close_original_on_clear_context) {
+        const command =
+          prefs.removal_behavior === 'archive'
+            ? 'archive_session'
+            : 'close_session'
+
+        // Optimistically remove from UI immediately
+        queryClient.setQueryData<WorktreeSessions>(
+          chatQueryKeys.sessions(worktreeId),
+          old => {
+            if (!old) return old
+            return {
+              ...old,
+              sessions: old.sessions.filter(s => s.id !== sessionId),
+              active_session_id:
+                old.active_session_id === sessionId
+                  ? newSession.id
+                  : old.active_session_id,
+            }
+          }
+        )
+
+        invoke(command, { worktreeId, worktreePath, sessionId })
+          .then(() =>
+            queryClient.invalidateQueries({
+              queryKey: chatQueryKeys.sessions(worktreeId),
+            })
+          )
+          .catch(err =>
+            logger.error(
+              '[useMessageHandlers] Failed to close original session:',
+              err
+            )
+          )
+      }
+    },
+    [
+      activeSessionIdRef,
+      activeWorktreeIdRef,
+      activeWorktreePathRef,
+      selectedModelRef,
+      buildModelRef,
+      buildBackendRef,
+      buildThinkingLevelRef,
+      yoloModelRef,
+      yoloBackendRef,
+      yoloThinkingLevelRef,
+      selectedThinkingLevelRef,
+      selectedEffortLevelRef,
+      useAdaptiveThinkingRef,
+      getMcpConfig,
+      getCustomProfileName,
+      createSession,
+      sendMessage,
+      queryClient,
+    ]
+  )
 
   const handleClearContextApprovalBuild = useCallback(
     (messageId: string) => handleClearContextApproval(messageId, 'build'),
@@ -1299,7 +1358,9 @@ export function useMessageHandlers({
       // Create new worktree
       let pendingWorktree: Worktree
       try {
-        pendingWorktree = await invoke<Worktree>('create_worktree', { projectId })
+        pendingWorktree = await invoke<Worktree>('create_worktree', {
+          projectId,
+        })
       } catch (err) {
         toast.error(`Failed to create worktree: ${err}`, { id: toastId })
         return
@@ -1315,23 +1376,29 @@ export function useMessageHandlers({
             reject(new Error('Worktree creation timed out'))
           }, 120_000)
 
-          const unlistenCreated = listen<WorktreeCreatedEvent>('worktree:created', event => {
-            if (event.payload.worktree.id === pendingWorktree.id) {
-              clearTimeout(timeout)
-              void unlistenCreated.then(fn => fn())
-              void unlistenError.then(fn => fn())
-              resolve(event.payload.worktree)
+          const unlistenCreated = listen<WorktreeCreatedEvent>(
+            'worktree:created',
+            event => {
+              if (event.payload.worktree.id === pendingWorktree.id) {
+                clearTimeout(timeout)
+                void unlistenCreated.then(fn => fn())
+                void unlistenError.then(fn => fn())
+                resolve(event.payload.worktree)
+              }
             }
-          })
+          )
 
-          const unlistenError = listen<WorktreeCreateErrorEvent>('worktree:error', event => {
-            if (event.payload.id === pendingWorktree.id) {
-              clearTimeout(timeout)
-              void unlistenCreated.then(fn => fn())
-              void unlistenError.then(fn => fn())
-              reject(new Error(event.payload.error))
+          const unlistenError = listen<WorktreeCreateErrorEvent>(
+            'worktree:error',
+            event => {
+              if (event.payload.id === pendingWorktree.id) {
+                clearTimeout(timeout)
+                void unlistenCreated.then(fn => fn())
+                void unlistenError.then(fn => fn())
+                reject(new Error(event.payload.error))
+              }
             }
-          })
+          )
         })
       } catch (err) {
         toast.error(`Worktree creation failed: ${err}`, { id: toastId })
@@ -1374,7 +1441,9 @@ export function useMessageHandlers({
       const isYolo = mode === 'yolo'
       const modeModelRef = isYolo ? yoloModelRef : buildModelRef
       const modeBackendRef = isYolo ? yoloBackendRef : buildBackendRef
-      const modeThinkingRef = isYolo ? yoloThinkingLevelRef : buildThinkingLevelRef
+      const modeThinkingRef = isYolo
+        ? yoloThinkingLevelRef
+        : buildThinkingLevelRef
       const modeLabel = isYolo ? 'Yolo' : 'Build'
 
       const currentSessionBackend = queryClient.getQueryData<Session>(
@@ -1383,7 +1452,8 @@ export function useMessageHandlers({
       const prefs = queryClient.getQueryData<AppPreferences>(
         preferencesQueryKeys.preferences()
       )
-      const modeBackendOverride = (modeBackendRef.current as Session['backend']) ?? null
+      const modeBackendOverride =
+        (modeBackendRef.current as Session['backend']) ?? null
       const resolvedBackend = modeBackendOverride ?? undefined
       const modelBackend = resolvedBackend ?? currentSessionBackend
       const resolvedModel =
@@ -1391,9 +1461,10 @@ export function useMessageHandlers({
         (modeBackendOverride
           ? getDefaultModelForBackend(modelBackend, prefs)
           : selectedModelRef.current)
-      const modeOverride = (modeModelRef.current || modeBackendOverride)
-        ? [resolvedBackend, resolvedModel].filter(Boolean).join(' / ')
-        : ''
+      const modeOverride =
+        modeModelRef.current || modeBackendOverride
+          ? [resolvedBackend, resolvedModel].filter(Boolean).join(' / ')
+          : ''
       if (modeOverride) toast.info(`${modeLabel}: ${modeOverride}`)
       const planMessage = modeOverride
         ? `[${modeLabel}: ${modeOverride}]\nExecute this plan. Implement all changes described.\n\n<plan>\n${planContent}\n</plan>`
@@ -1412,29 +1483,47 @@ export function useMessageHandlers({
       }
       queryClient.setQueryData<Session>(
         chatQueryKeys.session(newSession.id),
-        old => old ? { ...old, backend: resolvedBackend ?? old.backend, selected_model: resolvedModel } : old
+        old =>
+          old
+            ? {
+                ...old,
+                backend: resolvedBackend ?? old.backend,
+                selected_model: resolvedModel,
+              }
+            : old
       )
 
       await invoke('set_session_model', {
-        worktreeId: readyWorktree.id, worktreePath: readyWorktree.path,
-        sessionId: newSession.id, model: resolvedModel,
-      }).catch(err => console.error('[worktreeApproval] Failed to persist model:', err))
+        worktreeId: readyWorktree.id,
+        worktreePath: readyWorktree.path,
+        sessionId: newSession.id,
+        model: resolvedModel,
+      }).catch(err =>
+        logger.error('[worktreeApproval] Failed to persist model:', err)
+      )
       if (resolvedBackend) {
         await invoke('set_session_backend', {
-          worktreeId: readyWorktree.id, worktreePath: readyWorktree.path,
-          sessionId: newSession.id, backend: resolvedBackend,
-        }).catch(err => console.error('[worktreeApproval] Failed to persist backend:', err))
+          worktreeId: readyWorktree.id,
+          worktreePath: readyWorktree.path,
+          sessionId: newSession.id,
+          backend: resolvedBackend,
+        }).catch(err =>
+          logger.error('[worktreeApproval] Failed to persist backend:', err)
+        )
       }
 
       const effectiveBackend = resolvedBackend ?? currentSessionBackend
-      let resolvedThinkingLevel: ThinkingLevel = selectedThinkingLevelRef.current
-      let resolvedEffortLevel: EffortLevel | undefined = useAdaptiveThinkingRef.current
-        ? selectedEffortLevelRef.current
-        : undefined
+      let resolvedThinkingLevel: ThinkingLevel =
+        selectedThinkingLevelRef.current
+      let resolvedEffortLevel: EffortLevel | undefined =
+        useAdaptiveThinkingRef.current
+          ? selectedEffortLevelRef.current
+          : undefined
       if (effectiveBackend === 'codex') {
         resolvedThinkingLevel = 'off'
         resolvedEffortLevel =
-          mapCodexReasoningToEffort(modeThinkingRef.current) ?? selectedEffortLevelRef.current
+          mapCodexReasoningToEffort(modeThinkingRef.current) ??
+          selectedEffortLevelRef.current
       } else if (isThinkingLevel(modeThinkingRef.current)) {
         resolvedThinkingLevel = modeThinkingRef.current
       }
@@ -1477,233 +1566,272 @@ export function useMessageHandlers({
   )
 
   // Handle streaming worktree approval
-  const handleStreamingWorktreeApproval = useCallback(async (mode: 'yolo' | 'build' = 'build') => {
-    const sessionId = activeSessionIdRef.current
-    const worktreeId = activeWorktreeIdRef.current
-    const worktreePath = activeWorktreePathRef.current
-    const projectId = projectIdRef.current
-    if (!sessionId || !worktreeId || !worktreePath || !projectId) return
+  const handleStreamingWorktreeApproval = useCallback(
+    async (mode: 'yolo' | 'build' = 'build') => {
+      const sessionId = activeSessionIdRef.current
+      const worktreeId = activeWorktreeIdRef.current
+      const worktreePath = activeWorktreePathRef.current
+      const projectId = projectIdRef.current
+      if (!sessionId || !worktreeId || !worktreePath || !projectId) return
 
-    // Get streaming content blocks to extract plan content
-    const store = useChatStore.getState()
-    const contentBlocks = store.streamingContentBlocks[sessionId]
-    const toolCalls = store.activeToolCalls[sessionId]
+      // Get streaming content blocks to extract plan content
+      const store = useChatStore.getState()
+      const contentBlocks = store.streamingContentBlocks[sessionId]
+      const toolCalls = store.activeToolCalls[sessionId]
 
-    let planContent: string | null = null
-    if (toolCalls) {
-      planContent = findPlanContent(toolCalls)
+      let planContent: string | null = null
+      if (toolCalls) {
+        planContent = findPlanContent(toolCalls)
+        if (!planContent) {
+          const planFilePath = findPlanFilePath(toolCalls)
+          if (planFilePath) {
+            try {
+              planContent = await readPlanFile(planFilePath)
+            } catch {
+              // Fall through to content blocks
+            }
+          }
+        }
+      }
+
+      if (!planContent && contentBlocks) {
+        for (const block of contentBlocks) {
+          if ('text' in block && block.text) {
+            planContent = block.text
+            break
+          }
+        }
+      }
+
       if (!planContent) {
-        const planFilePath = findPlanFilePath(toolCalls)
-        if (planFilePath) {
-          try {
-            planContent = await readPlanFile(planFilePath)
-          } catch {
-            // Fall through to content blocks
-          }
-        }
+        toast.error('No plan content available')
+        return
       }
-    }
 
-    if (!planContent && contentBlocks) {
-      for (const block of contentBlocks) {
-        if ('text' in block && block.text) {
-          planContent = block.text
-          break
-        }
+      const toastId = toast.loading('Creating worktree...')
+
+      // Mark as approved in streaming state
+      store.setStreamingPlanApproved(sessionId, true)
+      store.clearToolCalls(sessionId)
+      store.clearStreamingContentBlocks(sessionId)
+      store.setSessionReviewing(sessionId, false)
+      store.setWaitingForInput(sessionId, false)
+
+      // Create new worktree
+      let pendingWorktree: Worktree
+      try {
+        pendingWorktree = await invoke<Worktree>('create_worktree', {
+          projectId,
+        })
+      } catch (err) {
+        toast.error(`Failed to create worktree: ${err}`, { id: toastId })
+        return
       }
-    }
 
-    if (!planContent) {
-      toast.error('No plan content available')
-      return
-    }
-
-    const toastId = toast.loading('Creating worktree...')
-
-    // Mark as approved in streaming state
-    store.setStreamingPlanApproved(sessionId, true)
-    store.clearToolCalls(sessionId)
-    store.clearStreamingContentBlocks(sessionId)
-    store.setSessionReviewing(sessionId, false)
-    store.setWaitingForInput(sessionId, false)
-
-    // Create new worktree
-    let pendingWorktree: Worktree
-    try {
-      pendingWorktree = await invoke<Worktree>('create_worktree', { projectId })
-    } catch (err) {
-      toast.error(`Failed to create worktree: ${err}`, { id: toastId })
-      return
-    }
-
-    // Wait for worktree to be ready
-    let readyWorktree: Worktree
-    try {
-      readyWorktree = await new Promise<Worktree>((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          void unlistenCreated.then(fn => fn())
-          void unlistenError.then(fn => fn())
-          reject(new Error('Worktree creation timed out'))
-        }, 120_000)
-
-        const unlistenCreated = listen<WorktreeCreatedEvent>('worktree:created', event => {
-          if (event.payload.worktree.id === pendingWorktree.id) {
-            clearTimeout(timeout)
+      // Wait for worktree to be ready
+      let readyWorktree: Worktree
+      try {
+        readyWorktree = await new Promise<Worktree>((resolve, reject) => {
+          const timeout = setTimeout(() => {
             void unlistenCreated.then(fn => fn())
             void unlistenError.then(fn => fn())
-            resolve(event.payload.worktree)
-          }
+            reject(new Error('Worktree creation timed out'))
+          }, 120_000)
+
+          const unlistenCreated = listen<WorktreeCreatedEvent>(
+            'worktree:created',
+            event => {
+              if (event.payload.worktree.id === pendingWorktree.id) {
+                clearTimeout(timeout)
+                void unlistenCreated.then(fn => fn())
+                void unlistenError.then(fn => fn())
+                resolve(event.payload.worktree)
+              }
+            }
+          )
+
+          const unlistenError = listen<WorktreeCreateErrorEvent>(
+            'worktree:error',
+            event => {
+              if (event.payload.id === pendingWorktree.id) {
+                clearTimeout(timeout)
+                void unlistenCreated.then(fn => fn())
+                void unlistenError.then(fn => fn())
+                reject(new Error(event.payload.error))
+              }
+            }
+          )
         })
+      } catch (err) {
+        toast.error(`Worktree creation failed: ${err}`, { id: toastId })
+        return
+      }
 
-        const unlistenError = listen<WorktreeCreateErrorEvent>('worktree:error', event => {
-          if (event.payload.id === pendingWorktree.id) {
-            clearTimeout(timeout)
-            void unlistenCreated.then(fn => fn())
-            void unlistenError.then(fn => fn())
-            reject(new Error(event.payload.error))
-          }
-        })
-      })
-    } catch (err) {
-      toast.error(`Worktree creation failed: ${err}`, { id: toastId })
-      return
-    }
+      toast.loading('Sending plan...', { id: toastId })
 
-    toast.loading('Sending plan...', { id: toastId })
+      // Navigate to new worktree
+      const projectsStore = useProjectsStore.getState()
+      projectsStore.expandProject(readyWorktree.project_id)
+      projectsStore.selectWorktree(readyWorktree.id)
+      store.registerWorktreePath(readyWorktree.id, readyWorktree.path)
+      store.setActiveWorktree(readyWorktree.id, readyWorktree.path)
 
-    // Navigate to new worktree
-    const projectsStore = useProjectsStore.getState()
-    projectsStore.expandProject(readyWorktree.project_id)
-    projectsStore.selectWorktree(readyWorktree.id)
-    store.registerWorktreePath(readyWorktree.id, readyWorktree.path)
-    store.setActiveWorktree(readyWorktree.id, readyWorktree.path)
-
-    // Use the default session auto-created by the backend, or create one if none exists
-    let newSession: Session
-    try {
-      const sessionsData = await invoke<WorktreeSessions>('get_sessions', {
-        worktreeId: readyWorktree.id,
-        worktreePath: readyWorktree.path,
-      })
-      if (sessionsData.sessions.length > 0 && sessionsData.sessions[0]) {
-        newSession = sessionsData.sessions[0]
-      } else {
-        newSession = await invoke<Session>('create_session', {
+      // Use the default session auto-created by the backend, or create one if none exists
+      let newSession: Session
+      try {
+        const sessionsData = await invoke<WorktreeSessions>('get_sessions', {
           worktreeId: readyWorktree.id,
           worktreePath: readyWorktree.path,
         })
+        if (sessionsData.sessions.length > 0 && sessionsData.sessions[0]) {
+          newSession = sessionsData.sessions[0]
+        } else {
+          newSession = await invoke<Session>('create_session', {
+            worktreeId: readyWorktree.id,
+            worktreePath: readyWorktree.path,
+          })
+        }
+      } catch (err) {
+        toast.error(`Failed to get session: ${err}`, { id: toastId })
+        return
       }
-    } catch (err) {
-      toast.error(`Failed to get session: ${err}`, { id: toastId })
-      return
-    }
 
-    store.setActiveSession(readyWorktree.id, newSession.id)
-    store.addUserInitiatedSession(newSession.id)
+      store.setActiveSession(readyWorktree.id, newSession.id)
+      store.addUserInitiatedSession(newSession.id)
 
-    // Resolve model/backend/thinking based on mode
-    const isYolo = mode === 'yolo'
-    const modeModelRef = isYolo ? yoloModelRef : buildModelRef
-    const modeBackendRef = isYolo ? yoloBackendRef : buildBackendRef
-    const modeThinkingRef = isYolo ? yoloThinkingLevelRef : buildThinkingLevelRef
-    const modeLabel = isYolo ? 'Yolo' : 'Build'
+      // Resolve model/backend/thinking based on mode
+      const isYolo = mode === 'yolo'
+      const modeModelRef = isYolo ? yoloModelRef : buildModelRef
+      const modeBackendRef = isYolo ? yoloBackendRef : buildBackendRef
+      const modeThinkingRef = isYolo
+        ? yoloThinkingLevelRef
+        : buildThinkingLevelRef
+      const modeLabel = isYolo ? 'Yolo' : 'Build'
 
-    const currentSessionBackend = queryClient.getQueryData<Session>(
-      chatQueryKeys.session(sessionId)
-    )?.backend
-    const prefs = queryClient.getQueryData<AppPreferences>(
-      preferencesQueryKeys.preferences()
-    )
-    const modeBackendOverride = (modeBackendRef.current as Session['backend']) ?? null
-    const resolvedBackend = modeBackendOverride ?? undefined
-    const modelBackend = resolvedBackend ?? currentSessionBackend
-    const resolvedModel =
-      modeModelRef.current ??
-      (modeBackendOverride
-        ? getDefaultModelForBackend(modelBackend, prefs)
-        : selectedModelRef.current)
-    const modeOverride = (modeModelRef.current || modeBackendOverride)
-      ? [resolvedBackend, resolvedModel].filter(Boolean).join(' / ')
-      : ''
-    if (modeOverride) toast.info(`${modeLabel}: ${modeOverride}`)
-    const planMessage = modeOverride
-      ? `[${modeLabel}: ${modeOverride}]\nExecute this plan. Implement all changes described.\n\n<plan>\n${planContent}\n</plan>`
-      : `Execute this plan. Implement all changes described.\n\n<plan>\n${planContent}\n</plan>`
-    store.setExecutionMode(newSession.id, mode)
-    store.setLastSentMessage(newSession.id, planMessage)
-    store.setError(newSession.id, null)
-    store.addSendingSession(newSession.id)
-    store.setSelectedModel(newSession.id, resolvedModel)
-    store.setExecutingMode(newSession.id, mode)
-    if (resolvedBackend) {
-      store.setSelectedBackend(
-        newSession.id,
-        resolvedBackend as 'claude' | 'codex' | 'opencode'
+      const currentSessionBackend = queryClient.getQueryData<Session>(
+        chatQueryKeys.session(sessionId)
+      )?.backend
+      const prefs = queryClient.getQueryData<AppPreferences>(
+        preferencesQueryKeys.preferences()
       )
-    }
-    queryClient.setQueryData<Session>(
-      chatQueryKeys.session(newSession.id),
-      old => old ? { ...old, backend: resolvedBackend ?? old.backend, selected_model: resolvedModel } : old
-    )
+      const modeBackendOverride =
+        (modeBackendRef.current as Session['backend']) ?? null
+      const resolvedBackend = modeBackendOverride ?? undefined
+      const modelBackend = resolvedBackend ?? currentSessionBackend
+      const resolvedModel =
+        modeModelRef.current ??
+        (modeBackendOverride
+          ? getDefaultModelForBackend(modelBackend, prefs)
+          : selectedModelRef.current)
+      const modeOverride =
+        modeModelRef.current || modeBackendOverride
+          ? [resolvedBackend, resolvedModel].filter(Boolean).join(' / ')
+          : ''
+      if (modeOverride) toast.info(`${modeLabel}: ${modeOverride}`)
+      const planMessage = modeOverride
+        ? `[${modeLabel}: ${modeOverride}]\nExecute this plan. Implement all changes described.\n\n<plan>\n${planContent}\n</plan>`
+        : `Execute this plan. Implement all changes described.\n\n<plan>\n${planContent}\n</plan>`
+      store.setExecutionMode(newSession.id, mode)
+      store.setLastSentMessage(newSession.id, planMessage)
+      store.setError(newSession.id, null)
+      store.addSendingSession(newSession.id)
+      store.setSelectedModel(newSession.id, resolvedModel)
+      store.setExecutingMode(newSession.id, mode)
+      if (resolvedBackend) {
+        store.setSelectedBackend(
+          newSession.id,
+          resolvedBackend as 'claude' | 'codex' | 'opencode'
+        )
+      }
+      queryClient.setQueryData<Session>(
+        chatQueryKeys.session(newSession.id),
+        old =>
+          old
+            ? {
+                ...old,
+                backend: resolvedBackend ?? old.backend,
+                selected_model: resolvedModel,
+              }
+            : old
+      )
 
-    await invoke('set_session_model', {
-      worktreeId: readyWorktree.id, worktreePath: readyWorktree.path,
-      sessionId: newSession.id, model: resolvedModel,
-    }).catch(err => console.error('[streamingWorktreeApproval] Failed to persist model:', err))
-    if (resolvedBackend) {
-      await invoke('set_session_backend', {
-        worktreeId: readyWorktree.id, worktreePath: readyWorktree.path,
-        sessionId: newSession.id, backend: resolvedBackend,
-      }).catch(err => console.error('[streamingWorktreeApproval] Failed to persist backend:', err))
-    }
+      await invoke('set_session_model', {
+        worktreeId: readyWorktree.id,
+        worktreePath: readyWorktree.path,
+        sessionId: newSession.id,
+        model: resolvedModel,
+      }).catch(err =>
+        logger.error(
+          '[streamingWorktreeApproval] Failed to persist model:',
+          err
+        )
+      )
+      if (resolvedBackend) {
+        await invoke('set_session_backend', {
+          worktreeId: readyWorktree.id,
+          worktreePath: readyWorktree.path,
+          sessionId: newSession.id,
+          backend: resolvedBackend,
+        }).catch(err =>
+          logger.error(
+            '[streamingWorktreeApproval] Failed to persist backend:',
+            err
+          )
+        )
+      }
 
-    const effectiveBackend = resolvedBackend ?? currentSessionBackend
-    let resolvedThinkingLevel: ThinkingLevel = selectedThinkingLevelRef.current
-    let resolvedEffortLevel: EffortLevel | undefined = useAdaptiveThinkingRef.current
-      ? selectedEffortLevelRef.current
-      : undefined
-    if (effectiveBackend === 'codex') {
-      resolvedThinkingLevel = 'off'
-      resolvedEffortLevel =
-        mapCodexReasoningToEffort(modeThinkingRef.current) ?? selectedEffortLevelRef.current
-    } else if (isThinkingLevel(modeThinkingRef.current)) {
-      resolvedThinkingLevel = modeThinkingRef.current
-    }
-    sendMessage.mutate({
-      sessionId: newSession.id,
-      worktreeId: readyWorktree.id,
-      worktreePath: readyWorktree.path,
-      message: planMessage,
-      model: resolvedModel,
-      executionMode: mode,
-      thinkingLevel: resolvedThinkingLevel,
-      effortLevel: resolvedEffortLevel,
-      mcpConfig: getMcpConfig(),
-      customProfileName: getCustomProfileName(),
-      backend: resolvedBackend,
-    })
+      const effectiveBackend = resolvedBackend ?? currentSessionBackend
+      let resolvedThinkingLevel: ThinkingLevel =
+        selectedThinkingLevelRef.current
+      let resolvedEffortLevel: EffortLevel | undefined =
+        useAdaptiveThinkingRef.current
+          ? selectedEffortLevelRef.current
+          : undefined
+      if (effectiveBackend === 'codex') {
+        resolvedThinkingLevel = 'off'
+        resolvedEffortLevel =
+          mapCodexReasoningToEffort(modeThinkingRef.current) ??
+          selectedEffortLevelRef.current
+      } else if (isThinkingLevel(modeThinkingRef.current)) {
+        resolvedThinkingLevel = modeThinkingRef.current
+      }
+      sendMessage.mutate({
+        sessionId: newSession.id,
+        worktreeId: readyWorktree.id,
+        worktreePath: readyWorktree.path,
+        message: planMessage,
+        model: resolvedModel,
+        executionMode: mode,
+        thinkingLevel: resolvedThinkingLevel,
+        effortLevel: resolvedEffortLevel,
+        mcpConfig: getMcpConfig(),
+        customProfileName: getCustomProfileName(),
+        backend: resolvedBackend,
+      })
 
-    toast.success(`Plan sent to new worktree (${modeLabel})`, { id: toastId })
-  }, [
-    activeSessionIdRef,
-    activeWorktreeIdRef,
-    activeWorktreePathRef,
-    projectIdRef,
-    selectedModelRef,
-    buildModelRef,
-    buildBackendRef,
-    buildThinkingLevelRef,
-    yoloModelRef,
-    yoloBackendRef,
-    yoloThinkingLevelRef,
-    selectedThinkingLevelRef,
-    selectedEffortLevelRef,
-    useAdaptiveThinkingRef,
-    getMcpConfig,
-    getCustomProfileName,
-    sendMessage,
-    queryClient,
-  ])
+      toast.success(`Plan sent to new worktree (${modeLabel})`, { id: toastId })
+    },
+    [
+      activeSessionIdRef,
+      activeWorktreeIdRef,
+      activeWorktreePathRef,
+      projectIdRef,
+      selectedModelRef,
+      buildModelRef,
+      buildBackendRef,
+      buildThinkingLevelRef,
+      yoloModelRef,
+      yoloBackendRef,
+      yoloThinkingLevelRef,
+      selectedThinkingLevelRef,
+      selectedEffortLevelRef,
+      useAdaptiveThinkingRef,
+      getMcpConfig,
+      getCustomProfileName,
+      sendMessage,
+      queryClient,
+    ]
+  )
 
   const handleWorktreeBuildApproval = useCallback(
     (messageId: string) => handleWorktreeApproval(messageId, 'build'),
@@ -1729,7 +1857,11 @@ export function useMessageHandlers({
   // PERFORMANCE: Uses refs for session/worktree IDs to keep callback stable across session switches
   const handlePermissionApproval = useCallback(
     (sessionId: string, approvedPatterns: string[]) => {
-      console.warn('[useMessageHandlers] handlePermissionApproval CALLED', sessionId, approvedPatterns)
+      logger.warn(
+        '[useMessageHandlers] handlePermissionApproval CALLED',
+        sessionId,
+        approvedPatterns
+      )
       const worktreeId = activeWorktreeIdRef.current
       const worktreePath = activeWorktreePathRef.current
       if (!worktreeId || !worktreePath) return
@@ -1759,15 +1891,15 @@ export function useMessageHandlers({
         setWaitingForInput(sessionId, false)
         addSendingSession(sessionId)
         setExecutionMode(sessionId, 'build')
-        console.log('[useMessageHandlers] Codex path: Broadcasting executionMode=build for session', sessionId)
         invoke('broadcast_session_setting', {
           sessionId,
           key: 'executionMode',
           value: 'build',
-        }).then(() => {
-          console.log('[useMessageHandlers] Codex broadcast executionMode=build succeeded')
         }).catch(err => {
-          console.error('[useMessageHandlers] Codex broadcast executionMode=build failed:', err)
+          logger.error(
+            '[useMessageHandlers] Codex broadcast executionMode=build failed:',
+            err
+          )
         })
         invoke('update_session_state', {
           worktreeId,
@@ -1788,10 +1920,7 @@ export function useMessageHandlers({
               rpcId: denial.rpc_id,
               decision: 'accept',
             }).catch(err => {
-              console.error(
-                '[ChatWindow] Failed to approve Codex command:',
-                err
-              )
+              logger.error('[ChatWindow] Failed to approve Codex command:', err)
               toast.error(`Failed to approve command: ${err}`)
             })
           }
@@ -1808,9 +1937,7 @@ export function useMessageHandlers({
 
       const context = getDeniedMessageContext(sessionId)
       if (!context) {
-        console.error(
-          '[ChatWindow] No denied message context found for re-send'
-        )
+        logger.error('[ChatWindow] No denied message context found for re-send')
         clearPendingDenials(sessionId)
         return
       }
@@ -1819,15 +1946,15 @@ export function useMessageHandlers({
       clearDeniedMessageContext(sessionId)
       setWaitingForInput(sessionId, false)
       setExecutionMode(sessionId, 'build')
-      console.log('[useMessageHandlers] Claude path: Broadcasting executionMode=build for session', sessionId)
       invoke('broadcast_session_setting', {
         sessionId,
         key: 'executionMode',
         value: 'build',
-      }).then(() => {
-        console.log('[useMessageHandlers] Claude broadcast executionMode=build succeeded')
       }).catch(err => {
-        console.error('[useMessageHandlers] Claude broadcast executionMode=build failed:', err)
+        logger.error(
+          '[useMessageHandlers] Claude broadcast executionMode=build failed:',
+          err
+        )
       })
       invoke('update_session_state', {
         worktreeId,
@@ -1956,10 +2083,7 @@ export function useMessageHandlers({
               rpcId: denial.rpc_id,
               decision: 'accept',
             }).catch(err => {
-              console.error(
-                '[ChatWindow] Failed to approve Codex command:',
-                err
-              )
+              logger.error('[ChatWindow] Failed to approve Codex command:', err)
             })
           }
         }
@@ -1973,9 +2097,7 @@ export function useMessageHandlers({
 
       const context = getDeniedMessageContext(sessionId)
       if (!context) {
-        console.error(
-          '[ChatWindow] No denied message context found for re-send'
-        )
+        logger.error('[ChatWindow] No denied message context found for re-send')
         clearPendingDenials(sessionId)
         return
       }
@@ -2089,7 +2211,7 @@ export function useMessageHandlers({
             rpcId: denial.rpc_id,
             decision: 'decline',
           }).catch(err => {
-            console.error('[ChatWindow] Failed to decline Codex command:', err)
+            logger.error('[ChatWindow] Failed to decline Codex command:', err)
           })
         }
       }

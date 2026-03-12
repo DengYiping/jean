@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
+import { logger } from '@/lib/logger'
 import {
   isAskUserQuestion,
   type ToolCall,
@@ -633,9 +634,7 @@ export const useChatStore = create<ChatUIState>()(
         if (options?.markOpened !== false) {
           // Fire-and-forget: update last_opened_at on the backend
           invoke('set_session_last_opened', { sessionId })
-            .then(() =>
-              window.dispatchEvent(new CustomEvent('session-opened'))
-            )
+            .then(() => window.dispatchEvent(new CustomEvent('session-opened')))
             .catch(() => undefined)
         }
       },
@@ -829,7 +828,9 @@ export const useChatStore = create<ChatUIState>()(
 
         // Fire-and-forget: update last_opened_at on the backend
         if (id) {
-          invoke('set_worktree_last_opened', { worktreeId: id }).catch(() => undefined)
+          invoke('set_worktree_last_opened', { worktreeId: id }).catch(
+            () => undefined
+          )
         }
       },
 
@@ -896,7 +897,6 @@ export const useChatStore = create<ChatUIState>()(
       removeSendingSession: sessionId =>
         set(
           state => {
-            console.log(`[Store] removeSendingSession id=${sessionId}`, { wasSending: !!state.sendingSessionIds[sessionId], currentSending: Object.keys(state.sendingSessionIds) })
             const { [sessionId]: _, ...rest } = state.sendingSessionIds
             return { sendingSessionIds: rest }
           },
@@ -1408,15 +1408,24 @@ export const useChatStore = create<ChatUIState>()(
             }
             const sb = state.selectedBackends[fromId]
             if (sb !== undefined) {
-              updates.selectedBackends = { ...state.selectedBackends, [toId]: sb }
+              updates.selectedBackends = {
+                ...state.selectedBackends,
+                [toId]: sb,
+              }
             }
             const sp = state.selectedProviders[fromId]
             if (sp !== undefined) {
-              updates.selectedProviders = { ...state.selectedProviders, [toId]: sp }
+              updates.selectedProviders = {
+                ...state.selectedProviders,
+                [toId]: sp,
+              }
             }
             const ms = state.enabledMcpServers[fromId]
             if (ms !== undefined) {
-              updates.enabledMcpServers = { ...state.enabledMcpServers, [toId]: ms }
+              updates.enabledMcpServers = {
+                ...state.enabledMcpServers,
+                [toId]: ms,
+              }
             }
             if (Object.keys(updates).length === 0) return state
             return updates
@@ -2112,16 +2121,11 @@ export const useChatStore = create<ChatUIState>()(
             const elapsed = Date.now() - sendStarted
             const hasStreamingState = hasActiveStreamingState(state, sessionId)
             if (sendStarted > 0 && elapsed < 500 && !hasStreamingState) {
-              console.warn(
-                `[Store] completeSession BLOCKED for session=${sessionId} — send started ${elapsed}ms ago with no current streaming state (stale event from previous run)`
+              logger.warn(
+                `completeSession BLOCKED for session=${sessionId} — send started ${elapsed}ms ago with no streaming state`
               )
               return state
             }
-            console.log(`[Store] completeSession id=${sessionId}`, {
-              wasSending: !!state.sendingSessionIds[sessionId],
-              elapsed: sendStarted > 0 ? elapsed : 'n/a',
-              hasStreamingState,
-            })
             const { [sessionId]: _sc, ...streamingContents } =
               state.streamingContents
             const { [sessionId]: _sb, ...streamingContentBlocks } =
@@ -2134,8 +2138,7 @@ export const useChatStore = create<ChatUIState>()(
               state.waitingForInputSessionIds
             const { [sessionId]: _sp, ...streamingPlanApprovals } =
               state.streamingPlanApprovals
-            const { [sessionId]: _em, ...executingModes } =
-              state.executingModes
+            const { [sessionId]: _em, ...executingModes } = state.executingModes
             const { [sessionId]: _sa, ...sendStartedAtRest } =
               state.sendStartedAt
             return {
@@ -2166,8 +2169,8 @@ export const useChatStore = create<ChatUIState>()(
             const elapsed = Date.now() - sendStarted
             const hasStreamingState = hasActiveStreamingState(state, sessionId)
             if (sendStarted > 0 && elapsed < 500 && !hasStreamingState) {
-              console.warn(
-                `[Store] pauseSession BLOCKED for session=${sessionId} — send started ${elapsed}ms ago with no current streaming state`
+              logger.warn(
+                `pauseSession BLOCKED for session=${sessionId} — send started ${elapsed}ms ago with no streaming state`
               )
               return state
             }
@@ -2175,8 +2178,7 @@ export const useChatStore = create<ChatUIState>()(
               state.streamingContents
             const { [sessionId]: _ss, ...sendingSessionIds } =
               state.sendingSessionIds
-            const { [sessionId]: _em, ...executingModes } =
-              state.executingModes
+            const { [sessionId]: _em, ...executingModes } = state.executingModes
             const { [sessionId]: _sa, ...sendStartedAtRest } =
               state.sendStartedAt
             return {
@@ -2200,8 +2202,8 @@ export const useChatStore = create<ChatUIState>()(
             const sendStarted = state.sendStartedAt[sessionId] ?? 0
             const elapsed = Date.now() - sendStarted
             if (sendStarted > 0 && elapsed < 500) {
-              console.warn(
-                `[Store] failSession BLOCKED for session=${sessionId} — send started ${elapsed}ms ago (stale event from previous run)`
+              logger.warn(
+                `failSession BLOCKED for session=${sessionId} — send started ${elapsed}ms ago (stale event)`
               )
               return state
             }

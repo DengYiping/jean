@@ -14,6 +14,9 @@ interface Logger {
   tag: (name: string) => Logger
 }
 
+const isDev = import.meta.env.DEV
+const noop = (() => {}) as (...args: LogArgs) => void // eslint-disable-line @typescript-eslint/no-empty-function
+
 function createLogger(tagName?: string): Logger {
   const prefix = tagName ? `[${tagName}]` : ''
 
@@ -23,14 +26,21 @@ function createLogger(tagName?: string): Logger {
   }
 
   return {
-    // eslint-disable-next-line @typescript-eslint/no-empty-function
-    debug: () => {},
+    debug: isDev
+      ? (...args: LogArgs) => {
+          console.debug(...formatArgs('DEBUG', args))
+        }
+      : noop,
 
-    // eslint-disable-next-line @typescript-eslint/no-empty-function
-    info: () => {},
+    info: isDev
+      ? (...args: LogArgs) => {
+          console.info(...formatArgs('INFO', args))
+        }
+      : noop,
 
-    // eslint-disable-next-line @typescript-eslint/no-empty-function
-    warn: () => {},
+    warn: (...args: LogArgs) => {
+      console.warn(...formatArgs('WARN', args))
+    },
 
     error: (...args: LogArgs) => {
       console.error(...formatArgs('ERROR', args))

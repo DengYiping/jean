@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { invoke } from '@/lib/transport'
 import { toast } from 'sonner'
 import { useChatStore } from '@/store/chat-store'
+import { logger } from '@/lib/logger'
 import type { SaveImageResponse, SaveTextResponse } from '@/types/chat'
 import { MAX_IMAGE_SIZE } from '../image-constants'
 import { isNativeApp } from '@/lib/environment'
@@ -71,8 +72,7 @@ export function useDragAndDropImages(
 
           if (imagePaths.length === 0 && svgPaths.length === 0) {
             toast.error('No image detected', {
-              description:
-                'Only PNG, JPEG, GIF, WebP, SVG files are accepted',
+              description: 'Only PNG, JPEG, GIF, WebP, SVG files are accepted',
             })
             return
           }
@@ -143,7 +143,7 @@ async function processDroppedSvg(
       content: svgText,
     })
   } catch (error) {
-    console.error('Failed to save dropped SVG:', error)
+    logger.error('Failed to save dropped SVG:', error)
     toast.error('Failed to save SVG', {
       description: String(error),
     })
@@ -180,7 +180,7 @@ async function processDroppedImage(
       loading: false,
     })
   } catch (error) {
-    console.error('Failed to save dropped image:', error)
+    logger.error('Failed to save dropped image:', error)
     removePendingImage(sessionId, placeholderId)
 
     // Parse error message for user-friendly display

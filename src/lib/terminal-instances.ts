@@ -15,6 +15,7 @@ import { openExternal } from '@/lib/platform'
 import { invoke } from '@/lib/transport'
 import { listen, type UnlistenFn } from '@/lib/transport'
 import { useTerminalStore } from '@/store/terminal-store'
+import { logger } from '@/lib/logger'
 import type {
   TerminalOutputEvent,
   TerminalStartedEvent,
@@ -58,7 +59,12 @@ export function getOrCreateTerminal(
     return existing
   }
 
-  const { worktreeId, worktreePath, command = null, commandArgs = null } = options
+  const {
+    worktreeId,
+    worktreePath,
+    command = null,
+    commandArgs = null,
+  } = options
   const { setTerminalRunning } = useTerminalStore.getState()
 
   // Create xterm.js Terminal instance
@@ -97,7 +103,7 @@ export function getOrCreateTerminal(
 
   // Handle user input - forward to PTY
   terminal.onData(data => {
-    invoke('terminal_write', { terminalId, data }).catch(console.error)
+    invoke('terminal_write', { terminalId, data }).catch(logger.error)
   })
 
   const listeners: UnlistenFn[] = []
@@ -122,9 +128,7 @@ export function getOrCreateTerminal(
       const exitCode = event.payload.exit_code
       const signal = event.payload.signal
       const exitLabel =
-        signal != null
-          ? `signal ${signal}`
-          : `code ${exitCode ?? 'unknown'}`
+        signal != null ? `signal ${signal}` : `code ${exitCode ?? 'unknown'}`
       terminal.writeln(`\r\n\x1b[90m[Process exited with ${exitLabel}]\x1b[0m`)
       const inst = instances.get(terminalId)
       inst?.onStopped?.(exitCode, signal)
@@ -197,14 +201,21 @@ export async function attachToContainer(
 ): Promise<void> {
   const instance = instances.get(terminalId)
   if (!instance) {
-    console.error(
+    logger.error(
       '[terminal-instances] attachToContainer: instance not found:',
       terminalId
     )
     return
   }
 
-  const { terminal, fitAddon, worktreePath, command, commandArgs, initialized } = instance
+  const {
+    terminal,
+    fitAddon,
+    worktreePath,
+    command,
+    commandArgs,
+    initialized,
+  } = instance
   const terminalElement = terminal.element
 
   if (!terminalElement) {
@@ -230,7 +241,7 @@ export async function attachToContainer(
         // PTY exists - just resize and mark as running
         useTerminalStore.getState().setTerminalRunning(terminalId, true)
         await invoke('terminal_resize', { terminalId, cols, rows }).catch(
-          console.error
+          logger.error
         )
       } else {
         // Start new PTY process
@@ -242,7 +253,7 @@ export async function attachToContainer(
           command,
           commandArgs,
         }).catch(error => {
-          console.error('[terminal-instances] start_terminal failed:', error)
+          logger.error('[terminal-instances] start_terminal failed:', error)
           terminal.writeln(`\x1b[31mFailed to start terminal: ${error}\x1b[0m`)
         })
       }
@@ -251,7 +262,7 @@ export async function attachToContainer(
     } else {
       // Already initialized - just resize
       await invoke('terminal_resize', { terminalId, cols, rows }).catch(
-        console.error
+        logger.error
       )
     }
 
@@ -267,7 +278,12 @@ export async function attachToContainer(
  */
 export function startHeadless(
   terminalId: string,
-  options: { worktreeId: string; worktreePath: string; command: string; commandArgs?: string[] | null }
+  options: {
+    worktreeId: string
+    worktreePath: string
+    command: string
+    commandArgs?: string[] | null
+  }
 ): void {
   const instance = getOrCreateTerminal(terminalId, options)
   if (instance.initialized) return // Already started
@@ -281,7 +297,7 @@ export function startHeadless(
     command: options.command,
     commandArgs: options.commandArgs ?? null,
   }).catch(error => {
-    console.error('[terminal-instances] headless start_terminal failed:', error)
+    logger.error('[terminal-instances] headless start_terminal failed:', error)
   })
 }
 
@@ -308,7 +324,7 @@ export function fitTerminal(terminalId: string): void {
 
   instance.fitAddon.fit()
   const { cols, rows } = instance.terminal
-  invoke('terminal_resize', { terminalId, cols, rows }).catch(console.error)
+  invoke('terminal_resize', { terminalId, cols, rows }).catch(logger.error)
 }
 
 /**
@@ -382,9 +398,7 @@ const pendingOnStopped = new Map<
  */
 export function setOnStopped(
   terminalId: string,
-  cb:
-    | ((exitCode: number | null, signal: string | null) => void)
-    | undefined
+  cb: ((exitCode: number | null, signal: string | null) => void) | undefined
 ): void {
   const instance = instances.get(terminalId)
   if (instance) {

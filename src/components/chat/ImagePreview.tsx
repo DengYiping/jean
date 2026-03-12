@@ -2,6 +2,7 @@ import { useCallback } from 'react'
 import { X, Loader2 } from 'lucide-react'
 import { invoke } from '@/lib/transport'
 import type { PendingImage } from '@/types/chat'
+import { logger } from '@/lib/logger'
 import { ImageLightbox } from './ImageLightbox'
 import {
   Tooltip,
@@ -38,7 +39,7 @@ export function ImagePreview({
       try {
         await invoke('delete_pasted_image', { path: image.path })
       } catch (error) {
-        console.error('Failed to delete image:', error)
+        logger.error('Failed to delete image:', error)
         // Still remove from UI even if delete fails
       }
 

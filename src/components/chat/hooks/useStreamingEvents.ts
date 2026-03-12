@@ -36,6 +36,7 @@ import {
   applySessionSettingToSession,
   type SessionSettingKey,
 } from '@/components/chat/hooks/session-setting-sync'
+import { logger } from '@/lib/logger'
 
 interface UseStreamingEventsParams {
   queryClient: QueryClient
@@ -335,8 +336,6 @@ export default function useStreamingEvents({
         flushChunkBuffer()
       }
 
-      console.log(`[Done] chat:done received session=${sessionId}`, { currentSending: Object.keys(useChatStore.getState().sendingSessionIds) })
-
       const {
         streamingContents,
         activeToolCalls,
@@ -376,9 +375,7 @@ export default function useStreamingEvents({
       if (isCurrentlyViewing || isUserInitiated) {
         if (isUserInitiated) removeUserInitiatedSession(sessionId)
         invoke('set_session_last_opened', { sessionId })
-          .then(() =>
-            window.dispatchEvent(new CustomEvent('session-opened'))
-          )
+          .then(() => window.dispatchEvent(new CustomEvent('session-opened')))
           .catch(() => undefined)
       }
 
@@ -393,7 +390,12 @@ export default function useStreamingEvents({
       const wasAlreadyReviewing =
         useChatStore.getState().reviewingSessions[sessionId] ?? false
 
-      if (!isCurrentlyViewing && !isUserInitiated && sessionRecapEnabled && !wasAlreadyReviewing) {
+      if (
+        !isCurrentlyViewing &&
+        !isUserInitiated &&
+        sessionRecapEnabled &&
+        !wasAlreadyReviewing
+      ) {
         // Mark for digest and generate it in the background immediately
         markSessionNeedsDigest(sessionId)
 
@@ -404,7 +406,7 @@ export default function useStreamingEvents({
             // Persist digest to disk so it survives app reload
             invoke('update_session_digest', { sessionId, digest }).catch(
               err => {
-                console.error(
+                logger.error(
                   '[useStreamingEvents] Failed to persist digest:',
                   err
                 )
@@ -412,10 +414,7 @@ export default function useStreamingEvents({
             )
           })
           .catch(err => {
-            console.error(
-              '[useStreamingEvents] Failed to generate digest:',
-              err
-            )
+            logger.error('[useStreamingEvents] Failed to generate digest:', err)
           })
       }
 
@@ -471,9 +470,9 @@ export default function useStreamingEvents({
         // before StreamingMessage unmounts (isSending becomes false).
         if (content || (effectiveToolCalls && effectiveToolCalls.length > 0)) {
           const pendingIdKey = `__pendingMessageId_${sessionId}`
-          const preGeneratedId = (
-            window as unknown as Record<string, string>
-          )[pendingIdKey]
+          const preGeneratedId = (window as unknown as Record<string, string>)[
+            pendingIdKey
+          ]
           const messageId = preGeneratedId ?? generateId()
           if (preGeneratedId) {
             // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
@@ -538,7 +537,9 @@ export default function useStreamingEvents({
 
             // Check if there's an ExitPlanMode tool call - if so, use the message ID
             // from the optimistic message (already added above) and persist it
-            const hasExitPlanModeCall = effectiveToolCalls.some(tc => isExitPlanMode(tc))
+            const hasExitPlanModeCall = effectiveToolCalls.some(tc =>
+              isExitPlanMode(tc)
+            )
             if (hasExitPlanModeCall) {
               const pendingIdKey = `__pendingMessageId_${sessionId}`
               const pendingMessageId =
@@ -561,7 +562,7 @@ export default function useStreamingEvents({
                   waitingForInput: true,
                   waitingForInputType: waitingType,
                 }).catch(err => {
-                  console.error(
+                  logger.error(
                     '[useStreamingEvents] Failed to persist plan state:',
                     err
                   )
@@ -579,7 +580,7 @@ export default function useStreamingEvents({
                   waitingForInput: true,
                   waitingForInputType: waitingType,
                 }).catch(err => {
-                  console.error(
+                  logger.error(
                     '[useStreamingEvents] Failed to persist question state:',
                     err
                   )
@@ -604,9 +605,9 @@ export default function useStreamingEvents({
         let planMessageId: string | undefined
         if (content || (effectiveToolCalls && effectiveToolCalls.length > 0)) {
           const pendingIdKey = `__pendingMessageId_${sessionId}`
-          const preGeneratedId = (
-            window as unknown as Record<string, string>
-          )[pendingIdKey]
+          const preGeneratedId = (window as unknown as Record<string, string>)[
+            pendingIdKey
+          ]
           planMessageId = preGeneratedId ?? generateId()
           if (preGeneratedId) {
             // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
@@ -691,7 +692,7 @@ export default function useStreamingEvents({
             waitingForInputType: 'plan',
             pendingPlanMessageId: planMessageId ?? null,
           }).catch(err =>
-            console.error(
+            logger.error(
               '[useStreamingEvents] Failed to persist plan-waiting state:',
               err
             )
@@ -713,9 +714,9 @@ export default function useStreamingEvents({
         // 1. Add optimistic assistant message to cache
         if (content || (effectiveToolCalls && effectiveToolCalls.length > 0)) {
           const pendingIdKey = `__pendingMessageId_${sessionId}`
-          const preGeneratedId = (
-            window as unknown as Record<string, string>
-          )[pendingIdKey]
+          const preGeneratedId = (window as unknown as Record<string, string>)[
+            pendingIdKey
+          ]
           const messageId = preGeneratedId ?? generateId()
           if (preGeneratedId) {
             // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
@@ -778,7 +779,6 @@ export default function useStreamingEvents({
         )
 
         // 3. Batch-clear all streaming state in a single Zustand set() — one notification to subscribers
-        console.log(`[Done] about to completeSession session=${sessionId}`, { currentSending: Object.keys(useChatStore.getState().sendingSessionIds) })
         completeSession(sessionId)
 
         // Persist reviewing state to disk BEFORE invalidating queries.
@@ -794,7 +794,7 @@ export default function useStreamingEvents({
             isReviewing: true,
             waitingForInput: false,
           }).catch(err =>
-            console.error(
+            logger.error(
               '[useStreamingEvents] Failed to persist reviewing state:',
               err
             )
@@ -863,14 +863,14 @@ export default function useStreamingEvents({
               })
             })
             .catch(err => {
-              console.error('[ChatWindow] Failed to save PR info:', err)
+              logger.error('[ChatWindow] Failed to save PR info:', err)
             })
         }
       }
 
       // Trigger git status poll after prompt completes (Claude may have made changes)
       triggerImmediateGitPoll().catch(err =>
-        console.error('[ChatWindow] Failed to trigger git poll:', err)
+        logger.error('[ChatWindow] Failed to trigger git poll:', err)
       )
 
       // Invalidate sessions list to update metadata.
@@ -934,15 +934,15 @@ export default function useStreamingEvents({
       // If user is currently viewing this session, bump last_opened_at so it
       // doesn't appear as "unread" (updated_at will be newer after the run ends).
       // Also auto-mark user-initiated sessions (e.g. Clear Context & YOLO) as opened.
-      const { userInitiatedSessionIds: uisErr, removeUserInitiatedSession: rusErr } =
-        useChatStore.getState()
+      const {
+        userInitiatedSessionIds: uisErr,
+        removeUserInitiatedSession: rusErr,
+      } = useChatStore.getState()
       const isUserInitiatedErr = !!uisErr[session_id]
       if (isCurrentlyViewing || isUserInitiatedErr) {
         if (isUserInitiatedErr) rusErr(session_id)
         invoke('set_session_last_opened', { sessionId: session_id })
-          .then(() =>
-            window.dispatchEvent(new CustomEvent('session-opened'))
-          )
+          .then(() => window.dispatchEvent(new CustomEvent('session-opened')))
           .catch(() => undefined)
       }
 
@@ -956,7 +956,12 @@ export default function useStreamingEvents({
       const wasAlreadyReviewing =
         useChatStore.getState().reviewingSessions[session_id] ?? false
 
-      if (!isCurrentlyViewing && !isUserInitiatedErr && sessionRecapEnabled && !wasAlreadyReviewing) {
+      if (
+        !isCurrentlyViewing &&
+        !isUserInitiatedErr &&
+        sessionRecapEnabled &&
+        !wasAlreadyReviewing
+      ) {
         // Mark for digest and generate it in the background immediately
         markSessionNeedsDigest(session_id)
 
@@ -970,17 +975,14 @@ export default function useStreamingEvents({
               sessionId: session_id,
               digest,
             }).catch(err => {
-              console.error(
+              logger.error(
                 '[useStreamingEvents] Failed to persist digest:',
                 err
               )
             })
           })
           .catch(err => {
-            console.error(
-              '[useStreamingEvents] Failed to generate digest:',
-              err
-            )
+            logger.error('[useStreamingEvents] Failed to generate digest:', err)
           })
       }
 
@@ -1015,7 +1017,6 @@ export default function useStreamingEvents({
             return { ...old, messages: newMessages }
           }
         )
-
       }
 
       // Restore attachments that were cleared on send
@@ -1073,8 +1074,6 @@ export default function useStreamingEvents({
           flushChunkBuffer()
         }
 
-        console.log(`[Cancelled] chat:cancelled received session=${session_id} undo_send=${undo_send}`, { currentSending: Object.keys(useChatStore.getState().sendingSessionIds) })
-
         // Capture streaming state BEFORE clearing (like chat:done does)
         const {
           streamingContents,
@@ -1110,15 +1109,15 @@ export default function useStreamingEvents({
         // If user is currently viewing this session, bump last_opened_at so it
         // doesn't appear as "unread" (updated_at will be newer after the run ends).
         // Also auto-mark user-initiated sessions (e.g. Clear Context & YOLO) as opened.
-        const { userInitiatedSessionIds: uisCan, removeUserInitiatedSession: rusCan } =
-          useChatStore.getState()
+        const {
+          userInitiatedSessionIds: uisCan,
+          removeUserInitiatedSession: rusCan,
+        } = useChatStore.getState()
         const isUserInitiatedCan = !!uisCan[session_id]
         if (isCurrentlyViewing || isUserInitiatedCan) {
           if (isUserInitiatedCan) rusCan(session_id)
           invoke('set_session_last_opened', { sessionId: session_id })
-            .then(() =>
-              window.dispatchEvent(new CustomEvent('session-opened'))
-            )
+            .then(() => window.dispatchEvent(new CustomEvent('session-opened')))
             .catch(() => undefined)
         }
 
@@ -1151,14 +1150,14 @@ export default function useStreamingEvents({
                 sessionId: session_id,
                 digest,
               }).catch(err => {
-                console.error(
+                logger.error(
                   '[useStreamingEvents] Failed to persist digest:',
                   err
                 )
               })
             })
             .catch(err => {
-              console.error(
+              logger.error(
                 '[useStreamingEvents] Failed to generate digest:',
                 err
               )
@@ -1284,14 +1283,16 @@ export default function useStreamingEvents({
             toolCalls: toolCalls ?? [],
             contentBlocks: contentBlocks ?? [],
           }).catch(err =>
-            console.debug('[useStreamingEvents] Failed to persist partial cancelled content:', err)
+            logger.debug(
+              '[useStreamingEvents] Failed to persist partial cancelled content:',
+              err
+            )
           )
           toast.info('Request cancelled')
         }
 
         // NOW batch-clear all streaming state in a single Zustand set()
         // This happens AFTER optimistic messages are in the cache, preventing flicker
-        console.log(`[Cancelled] about to completeSession session=${session_id} shouldRestore=${shouldRestoreMessage}`, { currentSending: Object.keys(useChatStore.getState().sendingSessionIds) })
         useChatStore.getState().completeSession(session_id)
 
         // For restore path: override reviewing state based on whether messages remain
@@ -1338,7 +1339,7 @@ export default function useStreamingEvents({
             isReviewing: isNowReviewing,
           })
             .catch(err =>
-              console.debug(
+              logger.debug(
                 '[useStreamingEvents] Failed to persist cancel state:',
                 err
               )
@@ -1358,7 +1359,9 @@ export default function useStreamingEvents({
         const { setCompacting } = useChatStore.getState()
         setCompacting(session_id, true)
         const label = lookupSessionLabel(queryClient, session_id, worktree_id)
-        toast.info(label ? `Compacting context: ${label}...` : 'Compacting context...')
+        toast.info(
+          label ? `Compacting context: ${label}...` : 'Compacting context...'
+        )
       }
     )
 
@@ -1387,7 +1390,10 @@ export default function useStreamingEvents({
       const store = useChatStore.getState()
       switch (key as SessionSettingKey) {
         case 'backend':
-          store.setSelectedBackend(session_id, value as 'claude' | 'codex' | 'opencode')
+          store.setSelectedBackend(
+            session_id,
+            value as 'claude' | 'codex' | 'opencode'
+          )
           break
         case 'model':
           store.setSelectedModel(session_id, value)
@@ -1413,11 +1419,7 @@ export default function useStreamingEvents({
         chatQueryKeys.session(session_id),
         old =>
           old
-            ? applySessionSettingToSession(
-                old,
-                key as SessionSettingKey,
-                value
-              )
+            ? applySessionSettingToSession(old, key as SessionSettingKey, value)
             : old
       )
       queryClient.invalidateQueries({
@@ -1432,7 +1434,9 @@ export default function useStreamingEvents({
       'chat:thread_token_usage',
       event => {
         const { session_id, thread_token_usage } = event.payload
-        useChatStore.getState().setThreadTokenUsage(session_id, thread_token_usage)
+        useChatStore
+          .getState()
+          .setThreadTokenUsage(session_id, thread_token_usage)
       }
     )
 

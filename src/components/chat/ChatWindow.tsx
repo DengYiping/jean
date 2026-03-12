@@ -67,7 +67,7 @@ import type {
   PendingFile,
 } from '@/types/chat'
 import { isAskUserQuestion, isExitPlanMode } from '@/types/chat'
-import { getFilename, normalizePath } from '@/lib/path-utils'
+import { getSkillName } from '@/lib/path-utils'
 import { cn } from '@/lib/utils'
 import { PermissionApproval } from './PermissionApproval'
 import { SetupScriptOutput } from './SetupScriptOutput'
@@ -1740,13 +1740,7 @@ export function ChatWindow({
 
     // Build metadata for skill names
     const skills = skillPaths.map(path => {
-      const parts = normalizePath(path).split('/')
-      const skillsIdx = parts.findIndex(p => p === 'skills')
-      const name =
-        skillsIdx >= 0 && parts[skillsIdx + 1]
-          ? (parts[skillsIdx + 1] ?? getFilename(path))
-          : getFilename(path)
-      return { name, path }
+      return { name: getSkillName(path), path }
     })
 
     // Build JSON metadata for attachments

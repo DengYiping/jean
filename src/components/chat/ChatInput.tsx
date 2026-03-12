@@ -987,6 +987,7 @@ export const ChatInput = memo(function ChatInput({
         containerRef={formRef}
         isAtPromptStart={isSlashAtPromptStart}
         backend={backend}
+        worktreePath={activeWorktreePath ?? null}
         handleRef={slashPopoverHandleRef}
       />
     </div>

@@ -1,7 +1,7 @@
 import { memo, useCallback } from 'react'
 import { Copy } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { normalizePath } from '@/lib/path-utils'
+import { getSkillName } from '@/lib/path-utils'
 import { Markdown } from '@/components/ui/markdown'
 import type {
   ChatMessage,
@@ -273,19 +273,12 @@ export const MessageItem = memo(function MessageItem({
       {skillPaths.length > 0 && (
         <div className="flex flex-wrap gap-2 mb-2">
           {skillPaths.map((path, idx) => {
-            // Extract skill name from path (e.g., /Users/.../skills/react/SKILL.md -> react)
-            const parts = normalizePath(path).split('/')
-            const skillsIdx = parts.findIndex(p => p === 'skills')
-            const name =
-              skillsIdx >= 0 && parts[skillsIdx + 1]
-                ? parts[skillsIdx + 1]
-                : path
             return (
               <SkillBadge
                 key={`${message.id}-skill-${idx}`}
                 skill={{
                   id: `${message.id}-skill-${idx}`,
-                  name: name ?? path,
+                  name: getSkillName(path),
                   path,
                 }}
                 compact

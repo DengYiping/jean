@@ -62,3 +62,23 @@ export function getExtension(path: string): string {
   if (lastDot <= 0) return ''
   return filename.slice(lastDot)
 }
+
+/**
+ * Extract the skill name from a skill definition path.
+ *
+ * Skill paths point at a `SKILL.md` file, so the containing directory is the
+ * user-facing skill name. This works for both direct skills and nested groups
+ * like `.codex/skills/.system/skill-creator/SKILL.md`.
+ */
+export function getSkillName(path: string): string {
+  const normalized = normalizePath(path)
+  const parts = normalized.split('/').filter(Boolean)
+  const parent = parts.at(-2)
+  const filename = parts.at(-1)
+
+  if (filename === 'SKILL.md' && parent) {
+    return parent
+  }
+
+  return getFilename(path)
+}

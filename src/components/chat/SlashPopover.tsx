@@ -51,6 +51,8 @@ interface SlashPopoverProps {
   isAtPromptStart: boolean
   /** Active backend for this session */
   backend: Backend
+  /** Active worktree path for repo-local Codex skills */
+  worktreePath?: string | null
   /** Ref to expose navigation methods to parent */
   handleRef?: React.RefObject<SlashPopoverHandle | null>
 }
@@ -69,9 +71,10 @@ export function SlashPopover({
   containerRef,
   isAtPromptStart,
   backend,
+  worktreePath,
   handleRef,
 }: SlashPopoverProps) {
-  const { data: skills = [] } = useSkills(backend)
+  const { data: skills = [] } = useSkills(backend, worktreePath)
   const { data: commands = [] } = useClaudeCommands()
   const listRef = useRef<HTMLDivElement>(null)
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -264,9 +267,9 @@ export function SlashPopover({
                       const isSelected = globalIndex === clampedSelectedIndex
                       return (
                         <CommandItem
-                          key={`skill-${item.data.name}`}
+                          key={`skill-${item.data.path}`}
                           data-index={globalIndex}
-                          value={`skill-${item.data.name}`}
+                          value={`skill-${item.data.path}`}
                           onSelect={() => handleSelectSkill(item.data)}
                           className={cn(
                             'flex items-center gap-2 cursor-pointer',

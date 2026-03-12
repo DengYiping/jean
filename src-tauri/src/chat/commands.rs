@@ -1813,9 +1813,13 @@ pub async fn send_chat_message(
                     }
                 }
                 if let Some(home) = dirs::home_dir() {
-                    let codex_skills_dir = home.join(".codex").join("skills");
-                    if codex_skills_dir.exists() {
-                        codex_add_dirs.push(codex_skills_dir.to_string_lossy().to_string());
+                    for skills_dir in [
+                        home.join(".codex").join("skills"),
+                        home.join(".agents").join("skills"),
+                    ] {
+                        if skills_dir.exists() {
+                            codex_add_dirs.push(skills_dir.to_string_lossy().to_string());
+                        }
                     }
                 }
 

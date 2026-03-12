@@ -104,6 +104,7 @@ export const defaultResponses: Record<string, unknown> = {
 
   // Skills
   list_claude_skills: [],
+  list_codex_skills: [],
   list_claude_commands: [],
   resolve_claude_command: { content: '', allowed_tools: [] },
 

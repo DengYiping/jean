@@ -117,8 +117,14 @@ fn emit_progress(app: &AppHandle, stage: &str, message: &str, percent: u8) {
 pub async fn check_opencode_cli_installed(app: AppHandle) -> Result<OpenCodeCliStatus, String> {
     log::trace!("Checking OpenCode CLI installation status");
 
+    let has_custom_launcher = crate::load_preferences_sync(&app)
+        .ok()
+        .and_then(|prefs| prefs.opencode_launch_command)
+        .is_some();
+
     let cli = match resolve_cli_command(&app) {
         Ok(cli) => cli,
+        Err(err) if has_custom_launcher => return Err(err),
         Err(_) => {
             return Ok(OpenCodeCliStatus {
                 installed: false,
@@ -130,26 +136,51 @@ pub async fn check_opencode_cli_installed(app: AppHandle) -> Result<OpenCodeCliS
         }
     };
 
-    let version = match silent_command(&cli.program)
+    let output = silent_command(&cli.program)
         .args(&cli.args)
         .arg("--version")
         .output()
-    {
-        Ok(output) if output.status.success() => {
-            let version_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            let cleaned = version_str
-                .split_whitespace()
-                .last()
-                .unwrap_or(&version_str)
-                .trim_start_matches('v')
-                .to_string();
-            if cleaned.is_empty() {
-                None
-            } else {
-                Some(cleaned)
-            }
+        .map_err(|e| {
+            format!(
+                "Failed to execute OpenCode launcher command '{}': {e}",
+                cli.display
+            )
+        })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let detail = if !stderr.is_empty() {
+            stderr
+        } else if !stdout.is_empty() {
+            stdout
+        } else {
+            output
+                .status
+                .code()
+                .map(|code| format!("exit code {code}"))
+                .unwrap_or_else(|| "terminated by signal".to_string())
+        };
+
+        return Err(format!(
+            "OpenCode launcher command '{}' failed --version probe: {detail}",
+            cli.display
+        ));
+    }
+
+    let version = {
+        let version_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let cleaned = version_str
+            .split_whitespace()
+            .last()
+            .unwrap_or(&version_str)
+            .trim_start_matches('v')
+            .to_string();
+        if cleaned.is_empty() {
+            None
+        } else {
+            Some(cleaned)
         }
-        _ => None,
     };
 
     Ok(OpenCodeCliStatus {

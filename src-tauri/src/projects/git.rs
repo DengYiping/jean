@@ -1216,6 +1216,7 @@ pub fn checkout_branch(worktree_path: &str, branch: &str) -> Result<(), String> 
 pub fn gh_pr_checkout(
     app: &AppHandle,
     worktree_path: &str,
+    account_repo_path: &str,
     pr_number: u32,
     branch_name: Option<&str>,
     gh_binary: &std::path::Path,
@@ -1229,7 +1230,10 @@ pub fn gh_pr_checkout(
     }
 
     let mut gh_cmd = silent_command(gh_binary);
-    apply_gh_account_env(app, Some(worktree_path), &mut gh_cmd);
+    // Resolve GH account selection from the owning project repository path.
+    // New worktrees are not persisted yet, so looking them up by their path can
+    // miss the project-specific auth selection and fall back to the wrong account.
+    apply_gh_account_env(app, Some(account_repo_path), &mut gh_cmd);
     let output = gh_cmd
         .args(&args)
         .current_dir(worktree_path)

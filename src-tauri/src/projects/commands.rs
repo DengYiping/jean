@@ -924,6 +924,7 @@ pub async fn create_worktree(
                     git::gh_pr_checkout(
                         &app_clone,
                         &worktree_path_clone,
+                        &project_path,
                         ctx.number,
                         Some(&local_branch_name),
                         &resolve_gh_binary(&app_clone),
@@ -2029,6 +2030,7 @@ pub async fn checkout_pr(
                 match git::gh_pr_checkout(
                     &app_clone,
                     &worktree_path_clone,
+                    &project_path,
                     pr_number,
                     Some(&local_branch_name),
                     &resolve_gh_binary(&app_clone),

@@ -1045,10 +1045,45 @@ export const useChatStore = create<ChatUIState>()(
         set(
           state => {
             const existing = state.activeToolCalls[sessionId] ?? []
-            // Deduplicate by tool ID - NDJSON sync can emit same event multiple times
-            if (existing.some(tc => tc.id === toolCall.id)) {
-              return state
+            const existingIndex = existing.findIndex(
+              tc => tc.id === toolCall.id
+            )
+
+            // Repeated tool_use events for the same tool ID should update the
+            // existing entry in place so streaming plan/todo state stays fresh.
+            if (existingIndex !== -1) {
+              const existingToolCall = existing[existingIndex]
+              if (!existingToolCall) return state
+
+              const nextToolCall = {
+                ...existingToolCall,
+                ...toolCall,
+                output: toolCall.output ?? existingToolCall.output,
+              }
+
+              const hasChanged =
+                existingToolCall.name !== nextToolCall.name ||
+                existingToolCall.parent_tool_use_id !==
+                  nextToolCall.parent_tool_use_id ||
+                existingToolCall.output !== nextToolCall.output ||
+                JSON.stringify(existingToolCall.input) !==
+                  JSON.stringify(nextToolCall.input)
+
+              if (!hasChanged) {
+                return state
+              }
+
+              const updatedToolCalls = [...existing]
+              updatedToolCalls[existingIndex] = nextToolCall
+
+              return {
+                activeToolCalls: {
+                  ...state.activeToolCalls,
+                  [sessionId]: updatedToolCalls,
+                },
+              }
             }
+
             return {
               activeToolCalls: {
                 ...state.activeToolCalls,

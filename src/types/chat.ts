@@ -528,6 +528,70 @@ export function isTodoWrite(
 }
 
 /**
+ * A single todo item synthesized from Codex plan updates
+ */
+export interface CodexTodoListItem {
+  text: string
+  completed?: boolean
+  status?: Todo['status']
+  activeForm?: string
+}
+
+/**
+ * Input structure for synthetic Codex todo list tool calls
+ */
+export interface CodexTodoListInput {
+  items: CodexTodoListItem[]
+}
+
+/**
+ * Type guard to check if a tool call is a synthetic Codex todo list
+ */
+export function isCodexTodoList(
+  toolCall: ToolCall
+): toolCall is ToolCall & { input: CodexTodoListInput } {
+  return (
+    toolCall.name === 'CodexTodoList' &&
+    typeof toolCall.input === 'object' &&
+    toolCall.input !== null &&
+    'items' in toolCall.input &&
+    Array.isArray((toolCall.input as CodexTodoListInput).items)
+  )
+}
+
+/**
+ * Normalize synthetic Codex todo items into the shared widget Todo shape
+ */
+export function codexTodoListToTodos(input: CodexTodoListInput): Todo[] {
+  return input.items
+    .filter(item => typeof item.text === 'string' && item.text.length > 0)
+    .map(item => {
+      const status = item.status ?? (item.completed ? 'completed' : 'pending')
+
+      return {
+        content: item.text,
+        activeForm: item.activeForm ?? item.text,
+        status,
+      }
+    })
+}
+
+/**
+ * Normalize any supported todo-producing tool call to widget todos
+ */
+export function getTodosFromToolCall(toolCall: ToolCall): Todo[] | null {
+  if (isTodoWrite(toolCall)) {
+    return toolCall.input.todos
+  }
+
+  if (isCodexTodoList(toolCall)) {
+    return codexTodoListToTodos(toolCall.input)
+  }
+
+  return null
+}
+
+/**
  * A Codex multi-agent entry extracted from collab_tool_call events
  */
 export interface CodexAgent {
@@ -630,7 +694,6 @@ export interface SaveTextResponse {
   /** Size in bytes */
   size: number
 }
-
 
 /**
  * Response from the read_pasted_text Tauri command

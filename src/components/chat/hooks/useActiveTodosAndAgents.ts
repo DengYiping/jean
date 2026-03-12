@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { isTodoWrite } from '@/types/chat'
+import { getTodosFromToolCall } from '@/types/chat'
 import type { ToolCall, ChatMessage, CodexAgent } from '@/types/chat'
 
 interface UseActiveTodosAndAgentsParams {
@@ -36,9 +36,10 @@ export function useActiveTodosAndAgents({
     if (isSending && currentToolCalls.length > 0) {
       for (let i = currentToolCalls.length - 1; i >= 0; i--) {
         const tc = currentToolCalls[i]
-        if (tc && isTodoWrite(tc)) {
+        const todos = tc ? getTodosFromToolCall(tc) : null
+        if (todos) {
           return {
-            todos: tc.input.todos,
+            todos,
             sourceMessageId: null,
             isFromStreaming: true,
           }
@@ -49,9 +50,10 @@ export function useActiveTodosAndAgents({
     if (lastAssistantMessage?.tool_calls) {
       for (let i = lastAssistantMessage.tool_calls.length - 1; i >= 0; i--) {
         const tc = lastAssistantMessage.tool_calls[i]
-        if (tc && isTodoWrite(tc)) {
+        const todos = tc ? getTodosFromToolCall(tc) : null
+        if (todos) {
           return {
-            todos: tc.input.todos,
+            todos,
             sourceMessageId: lastAssistantMessage.id,
             isFromStreaming: false,
           }

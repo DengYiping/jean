@@ -1,6 +1,8 @@
 {
   "scripts": {
     "setup": "bun install",
-    "run": "bun run tauri:dev"
+    "teardown": null,
+    "run": "bun run tauri:dev",
+    "build": "bun run tauri:build -- --no-sign"
   }
 }

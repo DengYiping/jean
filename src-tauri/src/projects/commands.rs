@@ -5102,7 +5102,10 @@ pub async fn create_pr_with_ai_content(
             Ok(response.message)
         })() {
             Ok(msg) => {
-                log::trace!("Generated commit message: {}", msg.lines().next().unwrap_or(""));
+                log::trace!(
+                    "Generated commit message: {}",
+                    msg.lines().next().unwrap_or("")
+                );
                 msg
             }
             Err(e) => {
@@ -8787,7 +8790,12 @@ Body
                 .iter()
                 .map(|skill| skill.name.as_str())
                 .collect::<Vec<_>>(),
-            vec!["frontend-design", "repo-agent", "repo-skill", "skill-creator"]
+            vec![
+                "frontend-design",
+                "repo-agent",
+                "repo-skill",
+                "skill-creator"
+            ]
         );
     }
 }

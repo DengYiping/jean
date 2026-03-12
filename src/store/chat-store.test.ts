@@ -240,6 +240,45 @@ describe('ChatStore', () => {
       )
     })
 
+    it('replaces tool call input when the same tool ID is emitted again', () => {
+      const { addToolCall } = useChatStore.getState()
+
+      addToolCall('session-1', {
+        id: 'tool-1',
+        name: 'CodexTodoList',
+        input: {
+          items: [
+            { text: 'Inspect files', status: 'pending', completed: false },
+          ],
+        },
+      })
+      addToolCall('session-1', {
+        id: 'tool-1',
+        name: 'CodexTodoList',
+        input: {
+          items: [
+            { text: 'Inspect files', status: 'completed', completed: true },
+          ],
+        },
+      })
+
+      expect(useChatStore.getState().activeToolCalls['session-1']).toEqual([
+        {
+          id: 'tool-1',
+          name: 'CodexTodoList',
+          input: {
+            items: [
+              {
+                text: 'Inspect files',
+                status: 'completed',
+                completed: true,
+              },
+            ],
+          },
+        },
+      ])
+    })
+
     it('updates tool call output', () => {
       const { addToolCall, updateToolCallOutput } = useChatStore.getState()
 
@@ -385,7 +424,6 @@ describe('ChatStore', () => {
       setThinkingLevel('session-1', 'think')
       expect(getThinkingLevel('session-1')).toBe('think')
     })
-
   })
 
   describe('question answering', () => {
@@ -758,11 +796,8 @@ describe('ChatStore', () => {
     })
 
     it('clears pending text files', () => {
-      const {
-        addPendingTextFile,
-        clearPendingTextFiles,
-        getPendingTextFiles,
-      } = useChatStore.getState()
+      const { addPendingTextFile, clearPendingTextFiles, getPendingTextFiles } =
+        useChatStore.getState()
 
       addPendingTextFile('session-1', mockTextFile)
       clearPendingTextFiles('session-1')

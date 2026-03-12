@@ -18,6 +18,7 @@ import {
   type ExecutionMode,
   type SessionDigest,
   type LabelData,
+  type ThreadTokenUsage,
   EXECUTION_MODE_CYCLE,
   isExitPlanMode,
 } from '@/types/chat'
@@ -201,6 +202,10 @@ interface ChatUIState {
 
   // Last compaction timestamp and trigger per session
   lastCompaction: Record<string, { timestamp: number; trigger: string }>
+
+  // Thread-level token usage per session (from Codex app-server v2 protocol)
+  // Contains cumulative totals, last-turn breakdown, and model context window size
+  threadTokenUsage: Record<string, ThreadTokenUsage>
 
   // Sessions currently compacting context
   compactingSessions: Record<string, boolean>
@@ -510,6 +515,9 @@ interface ChatUIState {
   // Actions - Unified session state cleanup (for close/archive)
   clearSessionState: (sessionId: string) => void
 
+  // Actions - Thread token usage (Codex context meter)
+  setThreadTokenUsage: (sessionId: string, usage: ThreadTokenUsage) => void
+
   // Actions - Compaction tracking
   setCompacting: (sessionId: string, compacting: boolean) => void
   setLastCompaction: (sessionId: string, trigger: string) => void
@@ -591,6 +599,7 @@ export const useChatStore = create<ChatUIState>()(
       pendingPermissionDenials: {},
       deniedMessageContext: {},
       lastCompaction: {},
+      threadTokenUsage: {},
       compactingSessions: {},
       reviewingSessions: {},
       planFilePaths: {},
@@ -2247,6 +2256,8 @@ export const useChatStore = create<ChatUIState>()(
             const { [sessionId]: _effort, ...restEffort } = state.effortLevels
             const { [sessionId]: _mcp, ...restMcp } = state.enabledMcpServers
             const { [sessionId]: _label, ...restLabels } = state.sessionLabels
+            const { [sessionId]: _ttu, ...restThreadTokenUsage } =
+              state.threadTokenUsage
 
             return {
               approvedTools: restApproved,
@@ -2260,6 +2271,7 @@ export const useChatStore = create<ChatUIState>()(
               effortLevels: restEffort,
               enabledMcpServers: restMcp,
               sessionLabels: restLabels,
+              threadTokenUsage: restThreadTokenUsage,
             }
           },
           undefined,
@@ -2282,6 +2294,18 @@ export const useChatStore = create<ChatUIState>()(
           }),
           undefined,
           'setCompacting'
+        ),
+
+      setThreadTokenUsage: (sessionId, usage) =>
+        set(
+          state => ({
+            threadTokenUsage: {
+              ...state.threadTokenUsage,
+              [sessionId]: usage,
+            },
+          }),
+          undefined,
+          'setThreadTokenUsage'
         ),
 
       setLastCompaction: (sessionId, trigger) =>

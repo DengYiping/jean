@@ -90,6 +90,39 @@ pub struct UsageData {
 }
 
 // ============================================================================
+// Thread Token Usage Types (Codex app-server v2 protocol)
+// ============================================================================
+
+/// Detailed token usage breakdown (matches Codex TokenUsageBreakdown)
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct TokenUsageBreakdown {
+    pub total_tokens: u64,
+    pub input_tokens: u64,
+    pub cached_input_tokens: u64,
+    pub output_tokens: u64,
+    pub reasoning_output_tokens: u64,
+}
+
+/// Thread-level token usage snapshot from Codex app-server
+/// Contains cumulative totals, last-turn breakdown, and model context window size
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadTokenUsage {
+    pub total: TokenUsageBreakdown,
+    pub last: TokenUsageBreakdown,
+    pub model_context_window: Option<i64>,
+}
+
+/// Tauri event payload for thread-level token usage updates
+#[derive(Debug, Clone, Serialize)]
+pub struct ThreadTokenUsageEvent {
+    pub session_id: String,
+    pub worktree_id: String,
+    pub thread_token_usage: ThreadTokenUsage,
+}
+
+// ============================================================================
 // Message Types
 // ============================================================================
 

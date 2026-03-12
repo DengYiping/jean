@@ -27,6 +27,7 @@ import type {
   PermissionDeniedEvent,
   CompactingEvent,
   CompactedEvent,
+  ThreadTokenUsageEvent,
   Session,
   SessionDigest,
   WorktreeSessions,
@@ -1427,6 +1428,14 @@ export default function useStreamingEvents({
       })
     })
 
+    const unlistenThreadTokenUsage = listen<ThreadTokenUsageEvent>(
+      'chat:thread_token_usage',
+      event => {
+        const { session_id, thread_token_usage } = event.payload
+        useChatStore.getState().setThreadTokenUsage(session_id, thread_token_usage)
+      }
+    )
+
     return () => {
       // Flush any buffered chunks before tearing down
       if (chunkRafId !== null) {
@@ -1446,6 +1455,7 @@ export default function useStreamingEvents({
       unlistenCompacting.then(f => f())
       unlistenCompacted.then(f => f())
       unlistenSettingChanged.then(f => f())
+      unlistenThreadTokenUsage.then(f => f())
     }
   }, [queryClient, wsConnected])
 }

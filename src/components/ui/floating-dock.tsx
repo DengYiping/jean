@@ -1,4 +1,4 @@
-import { Fragment, useState, useEffect, useCallback, useMemo } from 'react'
+import { Fragment, useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   LayoutDashboard,
   Command,
@@ -140,9 +140,13 @@ export function FloatingDock() {
   const selectedBackend = useChatStore(state =>
     activeSessionId ? state.selectedBackends[activeSessionId] : undefined
   )
+  const threadTokenUsage = useChatStore(state =>
+    activeSessionId ? state.threadTokenUsage[activeSessionId] : undefined
+  )
   const [menuOpen, setMenuOpen] = useState(false)
   const [usageMenuOpen, setUsageMenuOpen] = useState(false)
   const [resumeCommand, setResumeCommand] = useState<string | null>(null)
+  const usageTriggerRef = useRef<HTMLButtonElement>(null)
 
   const activeBackend = (selectedBackend ??
     preferences?.default_backend ??
@@ -167,7 +171,11 @@ export function FloatingDock() {
       { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 }
     )
 
-    const total = usageTotals.input + usageTotals.output
+    const total =
+      usageTotals.input +
+      usageTotals.output +
+      usageTotals.cacheRead +
+      usageTotals.cacheCreation
     const iconMap = {
       claude: Sparkles,
       codex: CodexIcon,
@@ -189,14 +197,28 @@ export function FloatingDock() {
     }
   }, [activeBackend, activeSession?.messages, activeSessionId])
 
+  const contextMeter = useMemo(() => {
+    if (!threadTokenUsage?.modelContextWindow) return null
+    const pct = computeContextPercent(
+      threadTokenUsage.total.totalTokens,
+      threadTokenUsage.modelContextWindow
+    )
+    return {
+      percent: pct,
+      used: threadTokenUsage.total.totalTokens,
+      window: threadTokenUsage.modelContextWindow,
+    }
+  }, [threadTokenUsage])
+
   const usageBadge = useMemo(
     () => ({
-      text:
-        activeUsageEntry.totalTokens > 0
+      text: contextMeter
+        ? `${contextMeter.percent}%`
+        : activeUsageEntry.totalTokens > 0
           ? `${formatTokens(activeUsageEntry.totalTokens)} tok`
           : '-- tok',
     }),
-    [activeUsageEntry.totalTokens]
+    [activeUsageEntry.totalTokens, contextMeter]
   )
 
   const getActiveResumeCommand = useCallback(() => {
@@ -256,6 +278,13 @@ export function FloatingDock() {
 
   const toggleUsageMenu = useCallback(() => {
     setUsageMenuOpen(prev => !prev)
+  }, [])
+
+  const handleUsageMenuCloseAutoFocus = useCallback((event: Event) => {
+    event.preventDefault()
+    requestAnimationFrame(() => {
+      usageTriggerRef.current?.blur()
+    })
   }, [])
 
   useEffect(() => {
@@ -367,6 +396,7 @@ export function FloatingDock() {
             <TooltipTrigger asChild>
               <DropdownMenuTrigger asChild>
                 <Button
+                  ref={usageTriggerRef}
                   variant="ghost"
                   size="sm"
                   className="h-7 min-w-[88px] justify-center rounded-full px-2 text-muted-foreground hover:text-foreground"
@@ -377,7 +407,9 @@ export function FloatingDock() {
               </DropdownMenuTrigger>
             </TooltipTrigger>
             <TooltipContent side="top">
-              {activeUsageEntry.label} current session tokens{' '}
+              {contextMeter
+                ? `${contextMeter.percent}% context remaining`
+                : `${activeUsageEntry.label} current session tokens`}{' '}
               <kbd className="ml-1 text-[0.625rem] opacity-60">{usageShortcut}</kbd>
             </TooltipContent>
           </Tooltip>
@@ -386,6 +418,7 @@ export function FloatingDock() {
             align="start"
             className="min-w-[240px]"
             onEscapeKeyDown={e => e.stopPropagation()}
+            onCloseAutoFocus={handleUsageMenuCloseAutoFocus}
           >
             <DropdownMenuItem disabled>
               <activeUsageEntry.Icon className="mr-2 h-4 w-4 shrink-0" />
@@ -399,6 +432,31 @@ export function FloatingDock() {
                 {usageBadge.text}
               </DropdownMenuShortcut>
             </DropdownMenuItem>
+            {contextMeter && (
+              <DropdownMenuItem disabled>
+                <div className="flex min-w-0 flex-col gap-1.5 w-full">
+                  <div className="flex justify-between text-[11px] text-muted-foreground">
+                    <span>Context window</span>
+                    <span className="tabular-nums">{contextMeter.percent}% remaining</span>
+                  </div>
+                  <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${
+                        contextMeter.percent > 30
+                          ? 'bg-primary/60'
+                          : contextMeter.percent > 10
+                            ? 'bg-yellow-500/60'
+                            : 'bg-red-500/60'
+                      }`}
+                      style={{ width: `${100 - contextMeter.percent}%` }}
+                    />
+                  </div>
+                  <span className="text-[10px] text-muted-foreground/70 tabular-nums">
+                    {formatTokens(contextMeter.used)} / {formatTokens(contextMeter.window)} tokens
+                  </span>
+                </div>
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem disabled>
               <div className="flex min-w-0 flex-col text-[11px] text-muted-foreground">
                 <span>In: {formatTokens(activeUsageEntry.input)}</span>
@@ -426,4 +484,17 @@ function formatTokens(tokens: number): string {
   if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`
   if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}k`
   return tokens.toString()
+}
+
+const BASELINE_TOKENS = 12_000
+
+function computeContextPercent(
+  totalTokens: number,
+  contextWindow: number
+): number {
+  if (contextWindow <= BASELINE_TOKENS) return 0
+  const effectiveWindow = contextWindow - BASELINE_TOKENS
+  const used = Math.max(totalTokens - BASELINE_TOKENS, 0)
+  const remaining = Math.max(effectiveWindow - used, 0)
+  return Math.round(Math.min(Math.max((remaining / effectiveWindow) * 100, 0), 100))
 }

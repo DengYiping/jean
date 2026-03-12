@@ -5271,14 +5271,15 @@ fn check_mcp_health_codex(app: &AppHandle) -> Result<McpHealthResult, String> {
 }
 
 fn check_mcp_health_opencode(app: &AppHandle) -> Result<McpHealthResult, String> {
-    let cli_path = crate::opencode_cli::resolve_cli_binary(app);
-    if !cli_path.exists() {
+    let cli = crate::opencode_cli::resolve_cli_command(app)?;
+    if !cli.program.exists() {
         return Err("OpenCode CLI not installed".to_string());
     }
 
-    log::debug!("Running: opencode mcp list");
+    log::debug!("Running OpenCode MCP health check via {}", cli.display);
 
-    let output = silent_command(&cli_path)
+    let output = silent_command(&cli.program)
+        .args(&cli.args)
         .args(["mcp", "list"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

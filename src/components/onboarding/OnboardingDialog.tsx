@@ -694,8 +694,12 @@ function OnboardingDialogContent() {
   const claudeLoginArgs = claudeSetup.status?.supports_auth_command ? ['auth', 'login'] : ['login']
   const codexLoginCommand = codexSetup.status?.path ?? ''
   const codexLoginArgs = ['login']
-  const opencodeLoginCommand = opencodeSetup.status?.path ?? ''
-  const opencodeLoginArgs = ['auth', 'login']
+  const opencodeLoginCommand = opencodeSetup.status?.command ?? ''
+  const opencodeLoginArgs = [
+    ...(opencodeSetup.status?.command_args ?? []),
+    'auth',
+    'login',
+  ]
   const ghLoginCommand = ghSetup.status?.path ?? ''
   const ghLoginArgs = ['auth', 'login']
 

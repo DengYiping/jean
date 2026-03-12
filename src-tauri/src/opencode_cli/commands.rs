@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
-use super::config::resolve_cli_binary;
+use super::config::resolve_cli_command;
 use crate::http_server::EmitExt;
 use crate::platform::silent_command;
 
@@ -16,6 +16,8 @@ pub struct OpenCodeCliStatus {
     pub installed: bool,
     pub version: Option<String>,
     pub path: Option<String>,
+    pub command: Option<String>,
+    pub command_args: Option<Vec<String>>,
 }
 
 /// Auth status of the OpenCode CLI
@@ -67,15 +69,9 @@ enum ArchiveFormat {
 /// List available OpenCode models by refreshing from the OpenCode CLI cache source.
 #[tauri::command]
 pub async fn list_opencode_models(app: AppHandle) -> Result<Vec<String>, String> {
-    let binary_path = resolve_cli_binary(&app);
-    if !binary_path.exists() {
-        return Err(format!(
-            "OpenCode CLI not found at {}. Install it in Settings > General.",
-            binary_path.display()
-        ));
-    }
-
-    let output = silent_command(&binary_path)
+    let cli = resolve_cli_command(&app)?;
+    let output = silent_command(&cli.program)
+        .args(&cli.args)
         .args(["models", "--refresh", "--verbose"])
         .output()
         .map_err(|e| format!("Failed to execute OpenCode CLI models command: {e}"))?;
@@ -121,38 +117,82 @@ fn emit_progress(app: &AppHandle, stage: &str, message: &str, percent: u8) {
 pub async fn check_opencode_cli_installed(app: AppHandle) -> Result<OpenCodeCliStatus, String> {
     log::trace!("Checking OpenCode CLI installation status");
 
-    let binary_path = resolve_cli_binary(&app);
+    let has_custom_launcher = crate::load_preferences_sync(&app)
+        .ok()
+        .and_then(|prefs| prefs.opencode_launch_command)
+        .is_some();
 
-    if !binary_path.exists() {
-        return Ok(OpenCodeCliStatus {
-            installed: false,
-            version: None,
-            path: None,
-        });
+    let cli = match resolve_cli_command(&app) {
+        Ok(cli) => cli,
+        Err(err) if has_custom_launcher => return Err(err),
+        Err(_) => {
+            return Ok(OpenCodeCliStatus {
+                installed: false,
+                version: None,
+                path: None,
+                command: None,
+                command_args: None,
+            });
+        }
+    };
+
+    let output = silent_command(&cli.program)
+        .args(&cli.args)
+        .arg("--version")
+        .output()
+        .map_err(|e| {
+            format!(
+                "Failed to execute OpenCode launcher command '{}': {e}",
+                cli.display
+            )
+        })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let detail = if !stderr.is_empty() {
+            stderr
+        } else if !stdout.is_empty() {
+            stdout
+        } else {
+            output
+                .status
+                .code()
+                .map(|code| format!("exit code {code}"))
+                .unwrap_or_else(|| "terminated by signal".to_string())
+        };
+
+        return Err(format!(
+            "OpenCode launcher command '{}' failed --version probe: {detail}",
+            cli.display
+        ));
     }
 
-    let version = match silent_command(&binary_path).arg("--version").output() {
-        Ok(output) if output.status.success() => {
-            let version_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            let cleaned = version_str
-                .split_whitespace()
-                .last()
-                .unwrap_or(&version_str)
-                .trim_start_matches('v')
-                .to_string();
-            if cleaned.is_empty() {
-                None
-            } else {
-                Some(cleaned)
-            }
+    let version = {
+        let version_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let cleaned = version_str
+            .split_whitespace()
+            .last()
+            .unwrap_or(&version_str)
+            .trim_start_matches('v')
+            .to_string();
+        if cleaned.is_empty() {
+            None
+        } else {
+            Some(cleaned)
         }
-        _ => None,
     };
 
     Ok(OpenCodeCliStatus {
         installed: true,
         version,
-        path: Some(binary_path.to_string_lossy().to_string()),
+        path: Some(cli.display.clone()),
+        command: Some(cli.program.to_string_lossy().to_string()),
+        command_args: if cli.args.is_empty() {
+            None
+        } else {
+            Some(cli.args)
+        },
     })
 }
 
@@ -192,8 +232,12 @@ fn model_list_has_entries(stdout: &str) -> bool {
     })
 }
 
-fn check_opencode_has_available_models(binary_path: &std::path::Path) -> Result<bool, String> {
+fn check_opencode_has_available_models(
+    binary_path: &std::path::Path,
+    base_args: &[String],
+) -> Result<bool, String> {
     let output = silent_command(binary_path)
+        .args(base_args)
         .arg("models")
         .output()
         .map_err(|e| format!("Failed to execute OpenCode CLI models command: {e}"))?;
@@ -240,16 +284,18 @@ fn is_model_identifier(value: &str) -> bool {
 pub async fn check_opencode_cli_auth(app: AppHandle) -> Result<OpenCodeAuthStatus, String> {
     log::trace!("Checking OpenCode CLI authentication status");
 
-    let binary_path = resolve_cli_binary(&app);
+    let cli = match resolve_cli_command(&app) {
+        Ok(cli) => cli,
+        Err(_) => {
+            return Ok(OpenCodeAuthStatus {
+                authenticated: false,
+                error: Some("OpenCode CLI not installed".to_string()),
+            });
+        }
+    };
 
-    if !binary_path.exists() {
-        return Ok(OpenCodeAuthStatus {
-            authenticated: false,
-            error: Some("OpenCode CLI not installed".to_string()),
-        });
-    }
-
-    let output = silent_command(&binary_path)
+    let output = silent_command(&cli.program)
+        .args(&cli.args)
         .args(["auth", "list"])
         .output()
         .map_err(|e| format!("Failed to execute OpenCode CLI: {e}"))?;
@@ -273,7 +319,7 @@ pub async fn check_opencode_cli_auth(app: AppHandle) -> Result<OpenCodeAuthStatu
         });
     }
 
-    match check_opencode_has_available_models(&binary_path) {
+    match check_opencode_has_available_models(&cli.program, &cli.args) {
         Ok(true) => Ok(OpenCodeAuthStatus {
             authenticated: true,
             error: None,

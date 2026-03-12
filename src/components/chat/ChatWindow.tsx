@@ -1384,7 +1384,7 @@ export function ChatWindow({
 
   // Opens a new session and sends the review fix message there
   const handleReviewFix = useCallback(
-    async (message: string, executionMode: 'plan' | 'yolo') => {
+    async (message: string, executionMode: 'build' | 'yolo') => {
       if (!activeSessionId || !activeWorktreeId || !activeWorktreePath) return
 
       // Mark the current session as no longer reviewing
@@ -1413,6 +1413,28 @@ export function ChatWindow({
       store.addSendingSession(newSession.id)
       store.setSelectedModel(newSession.id, model)
       store.setExecutingMode(newSession.id, executionMode)
+      queryClient.setQueryData<Session>(
+        chatQueryKeys.session(newSession.id),
+        old =>
+          old
+            ? {
+                ...old,
+                selected_execution_mode: executionMode,
+                selected_model: model,
+              }
+            : old
+      )
+
+      // Persist the selected mode immediately so the newly created session does
+      // not refetch back to the default plan mode before or during execution.
+      await invoke('update_session_state', {
+        worktreeId: activeWorktreeId,
+        worktreePath: activeWorktreePath,
+        sessionId: newSession.id,
+        selectedExecutionMode: executionMode,
+      }).catch(err =>
+        console.error('[review fix] Failed to persist execution mode:', err)
+      )
 
       sendMessage.mutate({
         sessionId: newSession.id,

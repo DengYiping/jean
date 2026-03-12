@@ -7,9 +7,11 @@ import {
   markPlanApproved as markPlanApprovedService,
   readPlanFile,
   persistEnqueue,
+  formatAnswersForCodexRequestUserInput,
 } from '@/services/chat'
 import { useChatStore } from '@/store/chat-store'
 import type {
+  AskUserQuestionInput,
   ChatMessage,
   EffortLevel,
   ExecutionMode,
@@ -302,6 +304,29 @@ export function useMessageHandlers({
       } = useChatStore.getState()
       markQuestionAnswered(sessionId, toolCallId, answers)
 
+      const activeQuestionTool = useChatStore
+        .getState()
+        .activeToolCalls[sessionId]?.find(tc => tc.id === toolCallId)
+      const questionInput = activeQuestionTool?.input as
+        | AskUserQuestionInput
+        | undefined
+      const rpcId = questionInput?.rpcId
+
+      if (typeof rpcId === 'number') {
+        invoke('answer_codex_user_input', {
+          sessionId,
+          rpcId,
+          answers: formatAnswersForCodexRequestUserInput(questions, answers),
+        }).catch(err => {
+          logger.error(
+            '[useMessageHandlers] Failed to answer Codex user-input request:',
+            err
+          )
+          toast.error('Failed to answer Codex question')
+        })
+        return
+      }
+
       // Clear the preserved tool calls and review state since we're sending a response
       clearToolCalls(sessionId)
       clearStreamingContentBlocks(sessionId)
@@ -402,6 +427,32 @@ export function useMessageHandlers({
 
       // Mark this question as answered (empty answers = skipped)
       markQuestionAnswered(sessionId, toolCallId, [])
+
+      const activeQuestionTool = useChatStore
+        .getState()
+        .activeToolCalls[sessionId]?.find(tc => tc.id === toolCallId)
+      const questionInput = activeQuestionTool?.input as
+        | AskUserQuestionInput
+        | undefined
+      const rpcId = questionInput?.rpcId
+
+      if (typeof rpcId === 'number') {
+        invoke('answer_codex_user_input', {
+          sessionId,
+          rpcId,
+          answers: formatAnswersForCodexRequestUserInput(
+            questionInput?.questions ?? [],
+            []
+          ),
+        }).catch(err => {
+          logger.error(
+            '[useMessageHandlers] Failed to skip Codex user-input request:',
+            err
+          )
+          toast.error('Failed to skip Codex question')
+        })
+        return
+      }
 
       // Set session-level skip state to auto-skip all subsequent questions
       // No message is sent to Claude - the flow is simply cancelled

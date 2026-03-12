@@ -2701,6 +2701,7 @@ pub fn run() {
             chat::save_cancelled_message,
             chat::mark_plan_approved,
             chat::approve_codex_command,
+            chat::answer_codex_user_input,
             // Chat commands - Queue management (cross-client sync)
             chat::enqueue_message,
             chat::dequeue_message,

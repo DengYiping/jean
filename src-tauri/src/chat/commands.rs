@@ -5350,6 +5350,16 @@ pub fn approve_codex_command(
     super::codex_server::send_response(rpc_id, serde_json::json!({"decision": decision}))
 }
 
+/// Answer a Codex request_user_input server request.
+#[tauri::command]
+pub fn answer_codex_user_input(
+    _session_id: String,
+    rpc_id: u64,
+    answers: serde_json::Value,
+) -> Result<(), String> {
+    super::codex_server::send_response(rpc_id, serde_json::json!({ "answers": answers }))
+}
+
 // =============================================================================
 // Queue management commands (atomic operations for cross-client sync)
 // =============================================================================

@@ -613,6 +613,8 @@ fn process_turn_events(
                     &method,
                     &params,
                     is_build_mode,
+                    &mut tool_calls,
+                    &mut content_blocks,
                 );
             }
             ServerEvent::ServerDied => {
@@ -1237,6 +1239,8 @@ fn handle_approval_request(
     method: &str,
     params: &serde_json::Value,
     is_build_mode: bool,
+    tool_calls: &mut Vec<ToolCall>,
+    content_blocks: &mut Vec<ContentBlock>,
 ) {
     match method {
         "item/fileChange/requestApproval" => {
@@ -1287,6 +1291,68 @@ fn handle_approval_request(
                 },
             );
             // Response will come from approve_codex_command Tauri command
+        }
+        "item/tool/requestUserInput" => {
+            let item_id = params
+                .get("itemId")
+                .and_then(|v| v.as_str())
+                .filter(|value| !value.is_empty())
+                .map(ToString::to_string)
+                .unwrap_or_else(|| format!("codex-request-user-input-{rpc_id}"));
+            let mut input = serde_json::json!({
+                "questions": params
+                    .get("questions")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Array(Vec::new())),
+                "rpcId": rpc_id,
+            });
+            if let Some(questions) = input.get_mut("questions").and_then(|v| v.as_array_mut()) {
+                for question in questions {
+                    if let Some(obj) = question.as_object_mut() {
+                        obj.entry("multiSelect".to_string())
+                            .or_insert(serde_json::Value::Bool(false));
+                        if !obj.contains_key("options") || obj["options"].is_null() {
+                            obj.insert("options".to_string(), serde_json::Value::Array(Vec::new()));
+                        }
+                    }
+                }
+            }
+
+            if let Some(existing_tool) = tool_calls.iter_mut().find(|tool| tool.id == item_id) {
+                existing_tool.name = "AskUserQuestion".to_string();
+                existing_tool.input = input.clone();
+            } else {
+                tool_calls.push(ToolCall {
+                    id: item_id.clone(),
+                    name: "AskUserQuestion".to_string(),
+                    input: input.clone(),
+                    output: None,
+                    parent_tool_use_id: None,
+                });
+                content_blocks.push(ContentBlock::ToolUse {
+                    tool_call_id: item_id.clone(),
+                });
+                let _ = app.emit_all(
+                    "chat:tool_block",
+                    &ToolBlockEvent {
+                        session_id: session_id.to_string(),
+                        worktree_id: worktree_id.to_string(),
+                        tool_call_id: item_id.clone(),
+                    },
+                );
+            }
+
+            let _ = app.emit_all(
+                "chat:tool_use",
+                &ToolUseEvent {
+                    session_id: session_id.to_string(),
+                    worktree_id: worktree_id.to_string(),
+                    id: item_id,
+                    name: "AskUserQuestion".to_string(),
+                    input,
+                    parent_tool_use_id: None,
+                },
+            );
         }
         _ => {
             log::debug!("Unknown approval request method: {method}");

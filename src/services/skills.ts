@@ -7,8 +7,8 @@ import { isTauri } from '@/services/projects'
 // Query keys for Claude CLI skills and commands
 export const skillQueryKeys = {
   all: ['claude-cli'] as const,
-  skills: (backend: Backend) =>
-    [...skillQueryKeys.all, 'skills', backend] as const,
+  skills: (backend: Backend, worktreePath?: string | null) =>
+    [...skillQueryKeys.all, 'skills', backend, worktreePath ?? null] as const,
   commands: () => [...skillQueryKeys.all, 'commands'] as const,
 }
 
@@ -17,9 +17,9 @@ export const skillQueryKeys = {
  * Skills can be attached anywhere in a prompt as context
  * Results are cached for 5 minutes (skills rarely change)
  */
-export function useSkills(backend: Backend) {
+export function useSkills(backend: Backend, worktreePath?: string | null) {
   return useQuery({
-    queryKey: skillQueryKeys.skills(backend),
+    queryKey: skillQueryKeys.skills(backend, worktreePath),
     queryFn: async (): Promise<ClaudeSkill[]> => {
       if (!isTauri()) {
         return []
@@ -29,7 +29,10 @@ export function useSkills(backend: Backend) {
         const command =
           backend === 'codex' ? 'list_codex_skills' : 'list_claude_skills'
         logger.debug('Loading backend skills', { backend, command })
-        const skills = await invoke<ClaudeSkill[]>(command)
+        const skills =
+          backend === 'codex'
+            ? await invoke<ClaudeSkill[]>(command, { worktreePath })
+            : await invoke<ClaudeSkill[]>(command)
         logger.info('Backend skills loaded', { backend, count: skills.length })
         return skills
       } catch (error) {

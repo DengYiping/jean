@@ -27,7 +27,7 @@ import { cn } from '@/lib/utils'
 
 interface ReviewResultsPanelProps {
   sessionId: string
-  onSendFix?: (message: string, executionMode: 'plan' | 'yolo') => void
+  onSendFix?: (message: string, executionMode: 'build' | 'yolo') => void
 }
 
 /** Generate a unique key for a review finding */
@@ -135,7 +135,7 @@ interface FindingCardProps {
     finding: ReviewFinding,
     index: number,
     customSuggestion?: string,
-    executionMode?: 'plan' | 'yolo'
+    executionMode?: 'build' | 'yolo'
   ) => void
 }
 
@@ -157,7 +157,7 @@ const FindingCard = memo(function FindingCard({
   const canFix = finding.severity !== 'praise'
 
   const handleFix = useCallback(
-    (executionMode: 'plan' | 'yolo') => {
+    (executionMode: 'build' | 'yolo') => {
       onFix(finding, index, customSuggestion.trim() || undefined, executionMode)
       setIsExpanded(false)
     },
@@ -254,7 +254,7 @@ const FindingCard = memo(function FindingCard({
                     </Badge>
                   )}
                   <Button
-                    onClick={() => handleFix('plan')}
+                    onClick={() => handleFix('build')}
                     disabled={isFixing}
                     size="sm"
                   >
@@ -334,7 +334,7 @@ export function ReviewResultsPanel({ sessionId, onSendFix }: ReviewResultsPanelP
       finding: ReviewFinding,
       index: number,
       customSuggestion?: string,
-      executionMode?: 'plan' | 'yolo'
+      executionMode?: 'build' | 'yolo'
     ) => {
       if (!onSendFix) return
 
@@ -360,7 +360,7 @@ Please apply this fix to the file.`
         const findingKey = getReviewFindingKey(finding, index)
         useChatStore.getState().markReviewFindingFixed(sessionId, findingKey)
 
-        onSendFix(message, executionMode ?? 'plan')
+        onSendFix(message, executionMode ?? 'build')
       } finally {
         setFixingIndices(prev => {
           const next = new Set(prev)
@@ -374,7 +374,7 @@ Please apply this fix to the file.`
 
   // Handle fixing all unfixed findings - auto-sends fix message in same session
   const handleFixAll = useCallback(
-    (executionMode: 'plan' | 'yolo') => {
+    (executionMode: 'build' | 'yolo') => {
       if (!reviewResults || !onSendFix) return
 
       setIsFixingAll(true)
@@ -507,7 +507,7 @@ Please apply all these fixes to the codebase.`
           {unfixedCount > 0 && (
             <div className="grid grid-cols-1 gap-2">
               <Button
-                onClick={() => handleFixAll('plan')}
+                onClick={() => handleFixAll('build')}
                 disabled={isFixingAll}
                 size="sm"
                 className="justify-start"

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { logger } from '@/lib/logger'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
@@ -94,7 +95,7 @@ export function ReviewFindingBlock({
       // Collapse the finding after fixing
       setIsExpanded(false)
     } catch (error) {
-      console.error('Failed to fix finding:', error)
+      logger.error('Failed to fix finding:', error)
     } finally {
       setIsFixing(false)
     }

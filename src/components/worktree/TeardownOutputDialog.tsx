@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { CheckCircle2, Copy, XCircle } from 'lucide-react'
 import { toast } from 'sonner'
+import { logger } from '@/lib/logger'
 import {
   Dialog,
   DialogContent,
@@ -51,7 +52,7 @@ export function TeardownOutputDialog() {
       toast.success('Output copied to clipboard')
       window.setTimeout(() => setCopied(false), 1500)
     } catch (error) {
-      console.error('Failed to copy teardown output:', error)
+      logger.error('Failed to copy teardown output:', error)
       toast.error('Failed to copy output')
     }
   }

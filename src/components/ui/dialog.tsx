@@ -76,12 +76,6 @@ const DialogContent = React.forwardRef<
           // Stop ESC from reaching window-level handlers (e.g. SessionChatModal)
           // Radix listens on document, so stopPropagation prevents bubbling to window
           e.stopPropagation()
-          console.log('[ESC-DEBUG] DialogContent onEscapeKeyDown', {
-            preventClose,
-            hasPopover: !!document.querySelector('[data-slot="popover-content"]'),
-            hasSelect: !!document.querySelector('[data-slot="select-content"]'),
-            hasCustomHandler: !!onEscapeKeyDownProp,
-          })
           if (preventClose) {
             e.preventDefault()
             return
@@ -92,7 +86,6 @@ const DialogContent = React.forwardRef<
               '[data-slot="popover-content"], [data-slot="select-content"]'
             )
           ) {
-            console.log('[ESC-DEBUG] DialogContent: BLOCKED (child popup open)')
             e.preventDefault()
             return
           }

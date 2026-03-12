@@ -7,6 +7,7 @@ import {
   memo,
   useTransition,
 } from 'react'
+import { logger } from '@/lib/logger'
 import {
   FileText,
   Loader2,
@@ -465,7 +466,7 @@ export function GitDiffModal({
     try {
       return parsePatchFiles(diff.raw_patch)
     } catch (e) {
-      console.error('Failed to parse patch:', e)
+      logger.error('Failed to parse patch:', e)
       return []
     }
   }, [diff?.raw_patch])
@@ -854,7 +855,8 @@ export function GitDiffModal({
                       className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 bg-black text-white dark:bg-yellow-500 dark:text-black hover:bg-black/80 dark:hover:bg-yellow-400 rounded-md text-xs font-medium transition-colors"
                     >
                       <Play className="h-3.5 w-3.5" />
-                      <span className="hidden sm:inline">Execute</span> ({comments.length})
+                      <span className="hidden sm:inline">Execute</span> (
+                      {comments.length})
                     </button>
                   )}
                   {onAddToPrompt && (
@@ -982,10 +984,7 @@ export function GitDiffModal({
                   {/* Mobile: file selector overlay */}
                   {isMobile && showMobileSidebar && (
                     <div className="absolute inset-0 z-20 bg-background flex flex-col">
-                      <div
-                        ref={fileListRef}
-                        className="flex-1 overflow-y-auto"
-                      >
+                      <div ref={fileListRef} className="flex-1 overflow-y-auto">
                         {flattenedFiles.length > 0 && (
                           <div className="sticky top-0 z-10 bg-background border-b border-border pb-2">
                             <div className="relative">
@@ -1099,10 +1098,12 @@ export function GitDiffModal({
                               }
                               themeType={resolvedThemeType}
                               syntaxThemeDark={
-                                preferences?.syntax_theme_dark ?? 'vitesse-black'
+                                preferences?.syntax_theme_dark ??
+                                'vitesse-black'
                               }
                               syntaxThemeLight={
-                                preferences?.syntax_theme_light ?? 'github-light'
+                                preferences?.syntax_theme_light ??
+                                'github-light'
                               }
                               diffStyle={diffStyle}
                               onLineSelected={getLineSelectedCallback(
@@ -1127,7 +1128,11 @@ export function GitDiffModal({
                       className="flex-1 min-h-0"
                     >
                       {/* File sidebar */}
-                      <ResizablePanel defaultSize={25} minSize={15} maxSize={50}>
+                      <ResizablePanel
+                        defaultSize={25}
+                        minSize={15}
+                        maxSize={50}
+                      >
                         <div
                           ref={fileListRef}
                           className={cn(
@@ -1202,7 +1207,9 @@ export function GitDiffModal({
                                         {fileButton}
                                       </TooltipTrigger>
                                     </ContextMenuTrigger>
-                                    <TooltipContent>{file.fileName}</TooltipContent>
+                                    <TooltipContent>
+                                      {file.fileName}
+                                    </TooltipContent>
                                   </Tooltip>
                                   <ContextMenuContent className="w-48">
                                     <ContextMenuItem
@@ -1226,7 +1233,9 @@ export function GitDiffModal({
                                   <TooltipTrigger asChild>
                                     {fileButton}
                                   </TooltipTrigger>
-                                  <TooltipContent>{file.fileName}</TooltipContent>
+                                  <TooltipContent>
+                                    {file.fileName}
+                                  </TooltipContent>
                                 </Tooltip>
                               )
                             })}
@@ -1261,10 +1270,12 @@ export function GitDiffModal({
                                 }
                                 themeType={resolvedThemeType}
                                 syntaxThemeDark={
-                                  preferences?.syntax_theme_dark ?? 'vitesse-black'
+                                  preferences?.syntax_theme_dark ??
+                                  'vitesse-black'
                                 }
                                 syntaxThemeLight={
-                                  preferences?.syntax_theme_light ?? 'github-light'
+                                  preferences?.syntax_theme_light ??
+                                  'github-light'
                                 }
                                 diffStyle={diffStyle}
                                 onLineSelected={getLineSelectedCallback(

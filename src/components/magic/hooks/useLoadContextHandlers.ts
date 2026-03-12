@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react'
 import { invoke } from '@/lib/transport'
 import { toast } from 'sonner'
+import { logger } from '@/lib/logger'
 import {
   loadIssueContext,
   removeIssueContext,
@@ -549,7 +550,7 @@ export function useLoadContextHandlers({
         await invoke('delete_context_file', { path: context.path })
         refetchContexts()
       } catch (err) {
-        console.error('Failed to delete context:', err)
+        logger.error('Failed to delete context:', err)
       }
     },
     [refetchContexts]
@@ -727,7 +728,7 @@ export function useLoadContextHandlers({
         toast.success(`Context ${verb} and attached: ${result.filename}`)
         onClearSearch()
       } catch (err) {
-        console.error('Failed to generate context:', err)
+        logger.error('Failed to generate context:', err)
         toast.error(`Failed to generate context: ${err}`)
       } finally {
         setGeneratingSessionId(null)

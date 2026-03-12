@@ -2,6 +2,7 @@ import { useState, useCallback, useRef } from 'react'
 import { X, FileText, Copy, Pencil, Check } from 'lucide-react'
 import { invoke } from '@/lib/transport'
 import { toast } from 'sonner'
+import { logger } from '@/lib/logger'
 import type { PendingTextFile } from '@/types/chat'
 import {
   Dialog,
@@ -68,7 +69,7 @@ export function TextFilePreview({
       try {
         await invoke('delete_pasted_text', { path: textFile.path })
       } catch (error) {
-        console.error('Failed to delete text file:', error)
+        logger.error('Failed to delete text file:', error)
         // Still remove from UI even if delete fails
       }
 
@@ -115,7 +116,7 @@ export function TextFilePreview({
         setEditContent('')
         toast.success('Text file updated')
       } catch (error) {
-        console.error('Failed to update text file:', error)
+        logger.error('Failed to update text file:', error)
         toast.error('Failed to update text file', {
           description: String(error),
         })

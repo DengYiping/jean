@@ -1,6 +1,7 @@
 import { useCallback } from 'react'
 import { invoke } from '@/lib/transport'
 import { useUIStore } from '@/store/ui-store'
+import { logger } from '@/lib/logger'
 import type { QueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import type { SaveContextResponse, SavedContextsResponse } from '@/types/chat'
@@ -86,7 +87,8 @@ export function useContextOperations({
             'context_summary_provider',
             preferences?.default_provider
           ),
-          reasoningEffort: preferences?.magic_prompt_efforts?.context_summary_effort ?? null,
+          reasoningEffort:
+            preferences?.magic_prompt_efforts?.context_summary_effort ?? null,
         }
       )
 
@@ -96,7 +98,7 @@ export function useContextOperations({
       // Invalidate saved contexts query so Load Context modal shows the new context
       queryClient.invalidateQueries({ queryKey: ['session-context'] })
     } catch (err) {
-      console.error('Failed to save context:', err)
+      logger.error('Failed to save context:', err)
       toast.error(`Failed to save context: ${err}`, { id: toastId })
     }
   }, [

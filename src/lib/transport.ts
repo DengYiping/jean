@@ -8,6 +8,7 @@
 
 import { useSyncExternalStore } from 'react'
 import { isNativeApp, setWsConnected } from './environment'
+import { logger } from '@/lib/logger'
 import { generateId } from './uuid'
 
 // ---------------------------------------------------------------------------
@@ -83,7 +84,7 @@ export async function invoke<T>(
   if (e2eMock) {
     const handler = e2eMock.invokeHandlers[command]
     if (handler) return handler(args) as T
-    console.warn(`[E2E] No mock for command: ${command}`)
+    logger.warn(`[E2E] No mock for command: ${command}`)
     return null as T
   }
 
@@ -368,7 +369,7 @@ class WsTransport {
     this.clearConnectWatchdog()
     this.connectWatchdog = setTimeout(() => {
       if (this.ws?.readyState === WebSocket.CONNECTING) {
-        console.warn(
+        logger.warn(
           '[WsTransport] WebSocket connect watchdog fired, forcing reconnect'
         )
         try {
@@ -471,7 +472,9 @@ class WsTransport {
 
       const timeout = setTimeout(() => {
         this.pending.delete(id)
-        reject(new Error(`Command '${command}' timed out after ${timeoutMs / 1000}s`))
+        reject(
+          new Error(`Command '${command}' timed out after ${timeoutMs / 1000}s`)
+        )
       }, timeoutMs)
 
       this.pending.set(id, {
@@ -530,7 +533,7 @@ class WsTransport {
         try {
           typedHandler({ payload: msg.payload })
         } catch (e) {
-          console.error(`[WsTransport] Error draining buffered '${event}':`, e)
+          logger.error(`[WsTransport] Error draining buffered '${event}':`, e)
         }
       }
     }
@@ -568,7 +571,7 @@ class WsTransport {
           try {
             handler({ payload: msg.payload })
           } catch (e) {
-            console.error(`[WsTransport] Error in '${msg.event}' handler:`, e)
+            logger.error(`[WsTransport] Error in '${msg.event}' handler:`, e)
           }
         }
       } else {

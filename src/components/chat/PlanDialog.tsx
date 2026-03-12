@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { FileText, Pencil, RotateCcw } from 'lucide-react'
 import { invoke } from '@tauri-apps/api/core'
+import { logger } from '@/lib/logger'
 import { readPlanFile } from '@/services/chat'
 import { usePreferences } from '@/services/preferences'
 import { getFilename } from '@/lib/path-utils'
@@ -117,7 +118,8 @@ export function PlanDialog({
 
   const hasChanges = editedContent !== originalContent
   // Enable approve buttons when callbacks are provided and not disabled (session still running)
-  const canApprove = !hideApproveButtons && !!onApprove && !!onApproveYolo && !disabled
+  const canApprove =
+    !hideApproveButtons && !!onApprove && !!onApproveYolo && !disabled
 
   // Auto-save plan file with debounce when content changes
   useEffect(() => {
@@ -131,7 +133,7 @@ export function PlanDialog({
         })
         queryClient.invalidateQueries({ queryKey: ['planFile', filePath] })
       } catch (err) {
-        console.error('[PlanDialog] Auto-save failed:', err)
+        logger.error('[PlanDialog] Auto-save failed:', err)
       }
     }, 500)
 
@@ -240,7 +242,21 @@ export function PlanDialog({
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, editable, canApprove, handleApprove, handleApproveYolo, onClearContextApprove, handleClearContextApprove, onClearContextBuildApprove, handleClearContextBuildApprove, onWorktreeBuildApprove, handleWorktreeBuildApprove, onWorktreeYoloApprove, handleWorktreeYoloApprove])
+  }, [
+    isOpen,
+    editable,
+    canApprove,
+    handleApprove,
+    handleApproveYolo,
+    onClearContextApprove,
+    handleClearContextApprove,
+    onClearContextBuildApprove,
+    handleClearContextBuildApprove,
+    onWorktreeBuildApprove,
+    handleWorktreeBuildApprove,
+    onWorktreeYoloApprove,
+    handleWorktreeYoloApprove,
+  ])
 
   return (
     <Dialog open={isOpen} onOpenChange={open => !open && onClose()}>
@@ -317,28 +333,42 @@ export function PlanDialog({
                 disabled={!canApprove}
               >
                 {onClearContextBuildApprove && (
-                  <DropdownMenuItem onClick={handleClearContextBuildApprove} disabled={!canApprove}>
+                  <DropdownMenuItem
+                    onClick={handleClearContextBuildApprove}
+                    disabled={!canApprove}
+                  >
                     <span className="flex flex-col">
                       <span>New Session</span>
                       {buildLabel && (
-                        <span className="text-[10px] text-muted-foreground">{buildLabel}</span>
+                        <span className="text-[10px] text-muted-foreground">
+                          {buildLabel}
+                        </span>
                       )}
                     </span>
                     <DropdownMenuShortcut>
-                      {formatShortcutDisplay(DEFAULT_KEYBINDINGS.approve_plan_clear_context_build)}
+                      {formatShortcutDisplay(
+                        DEFAULT_KEYBINDINGS.approve_plan_clear_context_build
+                      )}
                     </DropdownMenuShortcut>
                   </DropdownMenuItem>
                 )}
                 {onWorktreeBuildApprove && (
-                  <DropdownMenuItem onClick={handleWorktreeBuildApprove} disabled={!canApprove}>
+                  <DropdownMenuItem
+                    onClick={handleWorktreeBuildApprove}
+                    disabled={!canApprove}
+                  >
                     <span className="flex flex-col">
                       <span>New Worktree</span>
                       {buildLabel && (
-                        <span className="text-[10px] text-muted-foreground">{buildLabel}</span>
+                        <span className="text-[10px] text-muted-foreground">
+                          {buildLabel}
+                        </span>
                       )}
                     </span>
                     <DropdownMenuShortcut>
-                      {formatShortcutDisplay(DEFAULT_KEYBINDINGS.approve_plan_worktree_build)}
+                      {formatShortcutDisplay(
+                        DEFAULT_KEYBINDINGS.approve_plan_worktree_build
+                      )}
                     </DropdownMenuShortcut>
                   </DropdownMenuItem>
                 )}
@@ -351,28 +381,42 @@ export function PlanDialog({
                 disabled={!canApprove}
               >
                 {onClearContextApprove && (
-                  <DropdownMenuItem onClick={handleClearContextApprove} disabled={!canApprove}>
+                  <DropdownMenuItem
+                    onClick={handleClearContextApprove}
+                    disabled={!canApprove}
+                  >
                     <span className="flex flex-col">
                       <span>New Session (YOLO)</span>
                       {yoloLabel && (
-                        <span className="text-[10px] text-muted-foreground">{yoloLabel}</span>
+                        <span className="text-[10px] text-muted-foreground">
+                          {yoloLabel}
+                        </span>
                       )}
                     </span>
                     <DropdownMenuShortcut>
-                      {formatShortcutDisplay(DEFAULT_KEYBINDINGS.approve_plan_clear_context)}
+                      {formatShortcutDisplay(
+                        DEFAULT_KEYBINDINGS.approve_plan_clear_context
+                      )}
                     </DropdownMenuShortcut>
                   </DropdownMenuItem>
                 )}
                 {onWorktreeYoloApprove && (
-                  <DropdownMenuItem onClick={handleWorktreeYoloApprove} disabled={!canApprove}>
+                  <DropdownMenuItem
+                    onClick={handleWorktreeYoloApprove}
+                    disabled={!canApprove}
+                  >
                     <span className="flex flex-col">
                       <span>New Worktree (YOLO)</span>
                       {yoloLabel && (
-                        <span className="text-[10px] text-muted-foreground">{yoloLabel}</span>
+                        <span className="text-[10px] text-muted-foreground">
+                          {yoloLabel}
+                        </span>
                       )}
                     </span>
                     <DropdownMenuShortcut>
-                      {formatShortcutDisplay(DEFAULT_KEYBINDINGS.approve_plan_worktree_yolo)}
+                      {formatShortcutDisplay(
+                        DEFAULT_KEYBINDINGS.approve_plan_worktree_yolo
+                      )}
                     </DropdownMenuShortcut>
                   </DropdownMenuItem>
                 )}

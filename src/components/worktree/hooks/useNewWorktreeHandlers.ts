@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react'
 import { invoke } from '@/lib/transport'
 import { toast } from 'sonner'
+import { logger } from '@/lib/logger'
 import { useUIStore } from '@/store/ui-store'
 import { useProjectsStore } from '@/store/projects-store'
 import { useChatStore } from '@/store/chat-store'
@@ -41,16 +42,20 @@ export function useNewWorktreeHandlers(data: Data, setters: Setters) {
     createWorktreeFromBranch,
   } = data
 
-  const { setActiveTab, setSearchQuery, setSelectedItemIndex, setIncludeClosed } =
-    setters
+  const {
+    setActiveTab,
+    setSearchQuery,
+    setSelectedItemIndex,
+    setIncludeClosed,
+  } = setters
 
   // In-flight state
   const [creatingFromNumber, setCreatingFromNumber] = useState<number | null>(
     null
   )
-  const [creatingFromLinearId, setCreatingFromLinearId] = useState<string | null>(
-    null
-  )
+  const [creatingFromLinearId, setCreatingFromLinearId] = useState<
+    string | null
+  >(null)
   const [creatingFromBranch, setCreatingFromBranch] = useState<string | null>(
     null
   )
@@ -545,7 +550,9 @@ export function useNewWorktreeHandlers(data: Data, setters: Setters) {
           securityContext,
           background,
         })
-        useUIStore.getState().markWorktreeForAutoInvestigateSecurityAlert(worktree.id)
+        useUIStore
+          .getState()
+          .markWorktreeForAutoInvestigateSecurityAlert(worktree.id)
 
         if (background) {
           setCreatingFromNumber(null)
@@ -655,7 +662,9 @@ export function useNewWorktreeHandlers(data: Data, setters: Setters) {
           advisoryContext,
           background,
         })
-        useUIStore.getState().markWorktreeForAutoInvestigateAdvisory(worktree.id)
+        useUIStore
+          .getState()
+          .markWorktreeForAutoInvestigateAdvisory(worktree.id)
 
         if (background) {
           setCreatingFromGhsaId(null)
@@ -768,9 +777,14 @@ export function useNewWorktreeHandlers(data: Data, setters: Setters) {
             projectId: selectedProjectId,
             issueId: issue.id,
           }).catch(err => {
-            console.warn('Failed to save Linear issue context for investigation:', err)
+            logger.warn(
+              'Failed to save Linear issue context for investigation:',
+              err
+            )
           })
-          useUIStore.getState().markWorktreeForAutoInvestigateLinearIssue(worktree.id)
+          useUIStore
+            .getState()
+            .markWorktreeForAutoInvestigateLinearIssue(worktree.id)
         }
 
         if (background) {

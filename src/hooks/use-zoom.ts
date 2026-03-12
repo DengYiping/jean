@@ -3,6 +3,7 @@ import { usePreferences, usePatchPreferences } from '@/services/preferences'
 import { isNativeApp } from '@/lib/environment'
 import { ZOOM_LEVEL_DEFAULT, zoomLevelTicks } from '@/types/preferences'
 import { isMacOS } from '@/lib/platform'
+import { logger } from '@/lib/logger'
 
 const tickValues = zoomLevelTicks.map(t => t.value)
 
@@ -27,7 +28,7 @@ async function applyZoom(scaleFactor: number) {
     const { getCurrentWebview } = await import('@tauri-apps/api/webview')
     await getCurrentWebview().setZoom(scaleFactor)
   } catch (error) {
-    console.error('Failed to set zoom:', error)
+    logger.error('Failed to set zoom:', error)
   }
 }
 

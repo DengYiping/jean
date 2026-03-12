@@ -1,5 +1,6 @@
 import { useCallback } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { logger } from '@/lib/logger'
 import { useChatStore } from '@/store/chat-store'
 import { usePreferences } from '@/services/preferences'
 import {
@@ -63,7 +64,6 @@ export function usePlanApproval({
 
   const handlePlanApproval = useCallback(
     (card: SessionCardData, updatedPlan?: string) => {
-      console.warn('[usePlanApproval] handlePlanApproval (BUILD) CALLED', card.session.id)
       const sessionId = card.session.id
       const messageId = card.pendingPlanMessageId
       const originalPlan = card.planContent
@@ -114,14 +114,20 @@ export function usePlanApproval({
         key: 'executionMode',
         value: 'build',
       }).catch(err => {
-        console.error('[usePlanApproval] Broadcast executionMode=build failed:', err)
+        logger.error(
+          '[usePlanApproval] Broadcast executionMode=build failed:',
+          err
+        )
       })
       invoke('broadcast_session_setting', {
         sessionId,
         key: 'waitingForInput',
         value: 'false',
       }).catch(err => {
-        console.error('[usePlanApproval] Broadcast waitingForInput=false failed:', err)
+        logger.error(
+          '[usePlanApproval] Broadcast waitingForInput=false failed:',
+          err
+        )
       })
       clearToolCalls(sessionId)
       clearStreamingContentBlocks(sessionId)
@@ -141,7 +147,9 @@ export function usePlanApproval({
         ? formatApprovalMessage(baseMsg, updatedPlan, originalPlan)
         : `I've updated the plan. Please review and execute:\n\n<updated-plan>\n${updatedPlan}\n</updated-plan>`
       const buildInfo = [sessionBackend, model].filter(Boolean).join(' / ')
-      const message = buildInfo ? `[Build: ${buildInfo}]\n${rawMessage}` : rawMessage
+      const message = buildInfo
+        ? `[Build: ${buildInfo}]\n${rawMessage}`
+        : rawMessage
 
       // Chain: mark_plan_approved → update_session_state → sendMessage
       // On WebSocket, commands dispatch concurrently via tokio::spawn.
@@ -149,21 +157,29 @@ export function usePlanApproval({
       // other clients. mark_plan_approved must complete first so the refetch
       // includes plan_approved=true (from approved_plan_message_ids).
       const markPromise = messageId
-        ? markPlanApproved(worktreeId, worktreePath, sessionId, messageId)
-            .catch(err => { console.error('[usePlanApproval] markPlanApproved failed:', err) })
+        ? markPlanApproved(
+            worktreeId,
+            worktreePath,
+            sessionId,
+            messageId
+          ).catch(err => {
+            logger.error('[usePlanApproval] markPlanApproved failed:', err)
+          })
         : Promise.resolve()
 
       markPromise
-        .then(() => invoke('update_session_state', {
-          worktreeId,
-          worktreePath,
-          sessionId,
-          waitingForInput: false,
-          waitingForInputType: null,
-          selectedExecutionMode: 'build',
-        }))
+        .then(() =>
+          invoke('update_session_state', {
+            worktreeId,
+            worktreePath,
+            sessionId,
+            waitingForInput: false,
+            waitingForInputType: null,
+            selectedExecutionMode: 'build',
+          })
+        )
         .catch(err => {
-          console.error('[usePlanApproval] Failed to clear waiting state:', err)
+          logger.error('[usePlanApproval] Failed to clear waiting state:', err)
         })
         .finally(() => {
           setLastSentMessage(sessionId, message)
@@ -206,7 +222,6 @@ export function usePlanApproval({
 
   const handlePlanApprovalYolo = useCallback(
     (card: SessionCardData, updatedPlan?: string) => {
-      console.warn('[usePlanApproval] handlePlanApprovalYolo (YOLO) CALLED', card.session.id)
       const sessionId = card.session.id
       const messageId = card.pendingPlanMessageId
       const originalPlan = card.planContent
@@ -257,14 +272,20 @@ export function usePlanApproval({
         key: 'executionMode',
         value: 'yolo',
       }).catch(err => {
-        console.error('[usePlanApproval] Broadcast executionMode=yolo failed:', err)
+        logger.error(
+          '[usePlanApproval] Broadcast executionMode=yolo failed:',
+          err
+        )
       })
       invoke('broadcast_session_setting', {
         sessionId,
         key: 'waitingForInput',
         value: 'false',
       }).catch(err => {
-        console.error('[usePlanApproval] Broadcast waitingForInput=false failed:', err)
+        logger.error(
+          '[usePlanApproval] Broadcast waitingForInput=false failed:',
+          err
+        )
       })
       clearToolCalls(sessionId)
       clearStreamingContentBlocks(sessionId)
@@ -284,26 +305,36 @@ export function usePlanApproval({
         ? formatApprovalMessage(baseMsgYolo, updatedPlan, originalPlan)
         : `I've updated the plan. Please review and execute:\n\n<updated-plan>\n${updatedPlan}\n</updated-plan>`
       const yoloInfo = [sessionBackend, model].filter(Boolean).join(' / ')
-      const message = yoloInfo ? `[Yolo: ${yoloInfo}]\n${rawMessage}` : rawMessage
+      const message = yoloInfo
+        ? `[Yolo: ${yoloInfo}]\n${rawMessage}`
+        : rawMessage
 
       // Chain: mark_plan_approved → update_session_state → sendMessage
       // See handlePlanApproval comment for why sequencing matters.
       const markPromise = messageId
-        ? markPlanApproved(worktreeId, worktreePath, sessionId, messageId)
-            .catch(err => { console.error('[usePlanApproval] markPlanApproved failed:', err) })
+        ? markPlanApproved(
+            worktreeId,
+            worktreePath,
+            sessionId,
+            messageId
+          ).catch(err => {
+            logger.error('[usePlanApproval] markPlanApproved failed:', err)
+          })
         : Promise.resolve()
 
       markPromise
-        .then(() => invoke('update_session_state', {
-          worktreeId,
-          worktreePath,
-          sessionId,
-          waitingForInput: false,
-          waitingForInputType: null,
-          selectedExecutionMode: 'yolo',
-        }))
+        .then(() =>
+          invoke('update_session_state', {
+            worktreeId,
+            worktreePath,
+            sessionId,
+            waitingForInput: false,
+            waitingForInputType: null,
+            selectedExecutionMode: 'yolo',
+          })
+        )
         .catch(err => {
-          console.error('[usePlanApproval] Failed to clear waiting state:', err)
+          logger.error('[usePlanApproval] Failed to clear waiting state:', err)
         })
         .finally(() => {
           setLastSentMessage(sessionId, message)

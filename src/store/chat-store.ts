@@ -1046,30 +1046,44 @@ export const useChatStore = create<ChatUIState>()(
           state => {
             const existing = state.activeToolCalls[sessionId] ?? []
             const existingIndex = existing.findIndex(tc => tc.id === toolCall.id)
-            // Upsert by tool ID so repeated events can refresh structured input
-            // (for example Codex todo/collab progress) without duplicating rows.
+            // Repeated tool_use events for the same tool ID should update the
+            // existing entry in place so streaming plan/todo/collab state stays fresh.
             if (existingIndex !== -1) {
-              const previous = existing[existingIndex]
-              if (!previous) return state
-              const next = {
-                ...previous,
+              const existingToolCall = existing[existingIndex]
+              if (!existingToolCall) return state
+
+              const nextToolCall = {
+                ...existingToolCall,
                 ...toolCall,
-                output: toolCall.output ?? previous.output,
+                output: toolCall.output ?? existingToolCall.output,
                 parent_tool_use_id:
-                  toolCall.parent_tool_use_id ?? previous.parent_tool_use_id,
+                  toolCall.parent_tool_use_id ??
+                  existingToolCall.parent_tool_use_id,
               }
-              if (JSON.stringify(previous) === JSON.stringify(next)) {
+
+              const hasChanged =
+                existingToolCall.name !== nextToolCall.name ||
+                existingToolCall.parent_tool_use_id !==
+                  nextToolCall.parent_tool_use_id ||
+                existingToolCall.output !== nextToolCall.output ||
+                JSON.stringify(existingToolCall.input) !==
+                  JSON.stringify(nextToolCall.input)
+
+              if (!hasChanged) {
                 return state
               }
-              const updated = [...existing]
-              updated[existingIndex] = next
+
+              const updatedToolCalls = [...existing]
+              updatedToolCalls[existingIndex] = nextToolCall
+
               return {
                 activeToolCalls: {
                   ...state.activeToolCalls,
-                  [sessionId]: updated,
+                  [sessionId]: updatedToolCalls,
                 },
               }
             }
+
             return {
               activeToolCalls: {
                 ...state.activeToolCalls,

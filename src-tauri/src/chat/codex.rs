@@ -10,7 +10,7 @@
 use super::types::{ContentBlock, PermissionDenial, PermissionDeniedEvent, ToolCall, UsageData};
 use crate::http_server::EmitExt;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 // =============================================================================
 // Response type (same shape as ClaudeResponse)
@@ -441,6 +441,7 @@ fn process_turn_events(
     let mut tool_calls: Vec<ToolCall> = Vec::new();
     let mut content_blocks: Vec<ContentBlock> = Vec::new();
     let mut pending_tool_ids: HashMap<String, String> = HashMap::new();
+    let mut seen_plan_ids_for_history: HashSet<String> = HashSet::new();
     let mut completed = false;
     let mut cancelled = false;
     let mut error_emitted = false;
@@ -529,7 +530,11 @@ fn process_turn_events(
                 // Write to output file for history replay
                 if let Some(ref mut writer) = output_writer {
                     // Convert to old-format JSONL for backward-compatible history
-                    if let Some(line) = notification_to_history_line(&method, &params) {
+                    if let Some(line) = notification_to_history_line(
+                        &method,
+                        &params,
+                        &mut seen_plan_ids_for_history,
+                    ) {
                         let _ = writeln!(writer, "{line}");
                     }
                 }
@@ -666,7 +671,11 @@ fn process_turn_events(
 }
 
 /// Convert a server notification to old-format JSONL line for history compatibility.
-fn notification_to_history_line(method: &str, params: &serde_json::Value) -> Option<String> {
+fn notification_to_history_line(
+    method: &str,
+    params: &serde_json::Value,
+    seen_plan_ids: &mut HashSet<String>,
+) -> Option<String> {
     // Map app-server notification methods to old exec JSONL format
     let event_type = match method {
         "thread/started" => {
@@ -723,6 +732,17 @@ fn notification_to_history_line(method: &str, params: &serde_json::Value) -> Opt
         "item/agentMessage/delta" => {
             // Delta events don't have a direct old-format equivalent; skip for history
             return None;
+        }
+        "turn/plan/updated" => {
+            let item = synthetic_todo_list_item_from_plan_update(params)?;
+            let item_id = item.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            let event_type = if seen_plan_ids.insert(item_id.to_string()) {
+                "item.started"
+            } else {
+                "item.updated"
+            };
+            let line = serde_json::json!({ "type": event_type, "item": item });
+            return Some(serde_json::to_string(&line).ok()?);
         }
         _ => return None,
     };
@@ -845,6 +865,32 @@ fn process_server_notification(
                 usage,
                 error_emitted,
             );
+        }
+        "turn/plan/updated" => {
+            if let Some(item) = synthetic_todo_list_item_from_plan_update(params) {
+                let item_id = item.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                let event_type = if pending_tool_ids.contains_key(item_id) {
+                    "item.updated"
+                } else {
+                    "item.started"
+                };
+                let event_msg = serde_json::json!({ "type": event_type, "item": item });
+                process_codex_event(
+                    app,
+                    session_id,
+                    worktree_id,
+                    &event_msg,
+                    event_type,
+                    full_content,
+                    thread_id,
+                    tool_calls,
+                    content_blocks,
+                    pending_tool_ids,
+                    completed,
+                    usage,
+                    error_emitted,
+                );
+            }
         }
         "item/commandExecution/outputDelta" | "item/fileChange/outputDelta" => {
             // Streaming tool output — we could stream this but for now
@@ -992,6 +1038,95 @@ fn process_server_notification(
             log::trace!("Unhandled app-server notification: {method}");
         }
     }
+}
+
+fn synthetic_todo_list_item_from_plan_update(
+    params: &serde_json::Value,
+) -> Option<serde_json::Value> {
+    let plan = params.get("plan").unwrap_or(params);
+    let item_id = plan
+        .get("id")
+        .or_else(|| params.get("planId"))
+        .or_else(|| params.get("id"))
+        .and_then(|v| v.as_str())
+        .filter(|value| !value.is_empty())
+        .unwrap_or("__codex_plan__");
+
+    let items = if let Some(items) = plan.get("items").and_then(|v| v.as_array()) {
+        items
+    } else if let Some(steps) = plan.get("steps").and_then(|v| v.as_array()) {
+        steps
+    } else if let Some(items) = params.get("items").and_then(|v| v.as_array()) {
+        items
+    } else if let Some(steps) = params.get("steps").and_then(|v| v.as_array()) {
+        steps
+    } else if let Some(plan_array) = plan.as_array() {
+        plan_array
+    } else if let Some(params_array) = params.as_array() {
+        params_array
+    } else {
+        return None;
+    };
+
+    let normalized_items: Vec<serde_json::Value> = items
+        .iter()
+        .filter_map(normalize_plan_step_to_todo_item)
+        .collect();
+
+    Some(serde_json::json!({
+        "id": item_id,
+        "type": "todo_list",
+        "items": normalized_items,
+    }))
+}
+
+fn normalize_plan_step_to_todo_item(step: &serde_json::Value) -> Option<serde_json::Value> {
+    let text = step
+        .get("text")
+        .or_else(|| step.get("content"))
+        .or_else(|| step.get("step"))
+        .or_else(|| step.get("title"))
+        .and_then(|v| v.as_str())?
+        .trim()
+        .to_string();
+
+    if text.is_empty() {
+        return None;
+    }
+
+    let status = match step
+        .get("status")
+        .or_else(|| step.get("state"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+    {
+        "completed" => "completed",
+        "in_progress" | "inProgress" | "active" => "in_progress",
+        "cancelled" | "canceled" => "cancelled",
+        _ if step
+            .get("completed")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false) =>
+        {
+            "completed"
+        }
+        _ => "pending",
+    };
+
+    let completed = status == "completed";
+    let active_form = step
+        .get("activeForm")
+        .or_else(|| step.get("active_form"))
+        .and_then(|v| v.as_str())
+        .filter(|value| !value.is_empty())
+        .unwrap_or(&text);
+
+    Some(serde_json::json!({
+        "text": text,
+        "status": status,
+        "activeForm": active_form,
+        "completed": completed,
+    }))
 }
 
 /// Normalize app-server camelCase item types to snake_case for backward compatibility
@@ -1593,8 +1728,8 @@ fn process_codex_event(
                 }
             }
         }
-        // item.updated refreshes tool inputs in-place so the UI can reflect
-        // evolving todo and sub-agent state without waiting for the final message.
+        // item.updated refreshes tool inputs in-place for todo/plan state and
+        // evolving collab state without waiting for the final message.
         "item.updated" => {
             let item = msg.get("item").unwrap_or(&serde_json::Value::Null);
             let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
@@ -1976,7 +2111,8 @@ pub fn parse_codex_run_to_message(
                     _ => {}
                 }
             }
-            // item.updated refreshes tool inputs in-place for history replay too.
+            // item.updated refreshes todo/collab inputs in-place for history
+            // replay too.
             "item.updated" => {
                 let item = msg.get("item").unwrap_or(&serde_json::Value::Null);
                 let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
@@ -2207,6 +2343,55 @@ mod tests {
         );
         assert_eq!(params["model"], "gpt-5.3");
         assert!(params.get("serviceTier").is_none());
+    }
+
+    #[test]
+    fn turn_plan_updated_is_persisted_as_started_then_updated() {
+        let params = serde_json::json!({
+            "plan": {
+                "id": "plan-1",
+                "steps": [
+                    { "step": "Inspect bridge", "status": "completed" },
+                    {
+                        "step": "Patch widget",
+                        "status": "in_progress",
+                        "activeForm": "Patching widget"
+                    }
+                ]
+            }
+        });
+        let mut seen_plan_ids = HashSet::new();
+
+        let first = notification_to_history_line("turn/plan/updated", &params, &mut seen_plan_ids)
+            .expect("first plan update should persist");
+        let second = notification_to_history_line("turn/plan/updated", &params, &mut seen_plan_ids)
+            .expect("second plan update should persist");
+
+        let first: serde_json::Value = serde_json::from_str(&first).unwrap();
+        let second: serde_json::Value = serde_json::from_str(&second).unwrap();
+
+        assert_eq!(first["type"], "item.started");
+        assert_eq!(second["type"], "item.updated");
+        assert_eq!(first["item"]["type"], "todo_list");
+        assert_eq!(first["item"]["items"][0]["text"], "Inspect bridge");
+        assert_eq!(first["item"]["items"][0]["completed"], true);
+        assert_eq!(first["item"]["items"][1]["status"], "in_progress");
+        assert_eq!(first["item"]["items"][1]["activeForm"], "Patching widget");
+    }
+
+    #[test]
+    fn plan_updates_without_ids_fall_back_to_stable_synthetic_id() {
+        let params = serde_json::json!({
+            "steps": [{ "text": "Run tests", "completed": false }]
+        });
+
+        let item = synthetic_todo_list_item_from_plan_update(&params)
+            .expect("plan update should normalize");
+
+        assert_eq!(item["id"], "__codex_plan__");
+        assert_eq!(item["type"], "todo_list");
+        assert_eq!(item["items"][0]["text"], "Run tests");
+        assert_eq!(item["items"][0]["status"], "pending");
     }
 }
 

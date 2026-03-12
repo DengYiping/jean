@@ -894,7 +894,8 @@ pub fn persist_partial_cancelled_content(
             .map_err(|e| format!("Failed to write partial content: {e}"))?;
     }
 
-    file.flush().map_err(|e| format!("Failed to flush partial content: {e}"))?;
+    file.flush()
+        .map_err(|e| format!("Failed to flush partial content: {e}"))?;
 
     log::trace!(
         "Persisted partial cancelled content ({} chars, {} blocks, {} tool calls) for session {session_id}",

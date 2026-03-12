@@ -220,6 +220,66 @@ export function useMessageHandlers({
 }: UseMessageHandlersParams): MessageHandlers {
   'use no memo'
 
+  const clearCachedWaitingState = useCallback(
+    (
+      sessionId: string,
+      worktreeId: string,
+      worktreePath: string,
+      selectedExecutionMode?: ExecutionMode
+    ) => {
+      queryClient.setQueryData<Session>(chatQueryKeys.session(sessionId), old =>
+        old
+          ? {
+              ...old,
+              waiting_for_input: false,
+              waiting_for_input_type: null,
+              pending_plan_message_id: undefined,
+              ...(selectedExecutionMode
+                ? { selected_execution_mode: selectedExecutionMode }
+                : {}),
+            }
+          : old
+      )
+      queryClient.setQueryData<WorktreeSessions>(
+        chatQueryKeys.sessions(worktreeId),
+        old => {
+          if (!old) return old
+          return {
+            ...old,
+            sessions: old.sessions.map(session =>
+              session.id === sessionId
+                ? {
+                    ...session,
+                    waiting_for_input: false,
+                    waiting_for_input_type: null,
+                    pending_plan_message_id: undefined,
+                    ...(selectedExecutionMode
+                      ? { selected_execution_mode: selectedExecutionMode }
+                      : {}),
+                  }
+                : session
+            ),
+          }
+        }
+      )
+
+      invoke('update_session_state', {
+        worktreeId,
+        worktreePath,
+        sessionId,
+        waitingForInput: false,
+        waitingForInputType: null,
+        selectedExecutionMode,
+      }).catch(err => {
+        logger.error(
+          '[useMessageHandlers] Failed to persist cleared waiting state:',
+          err
+        )
+      })
+    },
+    [queryClient]
+  )
+
   // Handle answer submission for AskUserQuestion
   // PERFORMANCE: Uses refs for session/worktree IDs to keep callback stable across session switches
   const handleQuestionAnswer = useCallback(
@@ -1889,6 +1949,7 @@ export function useMessageHandlers({
         clearPendingDenials(sessionId)
         clearDeniedMessageContext(sessionId)
         setWaitingForInput(sessionId, false)
+        clearCachedWaitingState(sessionId, worktreeId, worktreePath, 'build')
         addSendingSession(sessionId)
         setExecutionMode(sessionId, 'build')
         invoke('broadcast_session_setting', {
@@ -1901,12 +1962,6 @@ export function useMessageHandlers({
             err
           )
         })
-        invoke('update_session_state', {
-          worktreeId,
-          worktreePath,
-          sessionId,
-          selectedExecutionMode: 'build',
-        }).catch(() => undefined)
 
         requestAnimationFrame(() => {
           scrollToBottom(true)
@@ -2036,6 +2091,7 @@ export function useMessageHandlers({
       scrollToBottom,
       sendMessage,
       inputRef,
+      clearCachedWaitingState,
     ]
   )
 
@@ -2069,6 +2125,7 @@ export function useMessageHandlers({
         clearPendingDenials(sessionId)
         clearDeniedMessageContext(sessionId)
         setWaitingForInput(sessionId, false)
+        clearCachedWaitingState(sessionId, worktreeId, worktreePath, 'yolo')
         addSendingSession(sessionId)
         setMode(sessionId, 'yolo')
 
@@ -2187,42 +2244,51 @@ export function useMessageHandlers({
       scrollToBottom,
       sendMessage,
       inputRef,
+      clearCachedWaitingState,
     ]
   )
 
   // Handle permission denial (user cancels approval request)
-  const handlePermissionDeny = useCallback((sessionId: string) => {
-    const {
-      clearPendingDenials,
-      clearDeniedMessageContext,
-      getPendingDenials,
-      setWaitingForInput,
-      removeSendingSession,
-    } = useChatStore.getState()
-    const denials = getPendingDenials(sessionId)
-    const isCodexApproval = denials.some(denial => denial.rpc_id != null)
+  const handlePermissionDeny = useCallback(
+    (sessionId: string) => {
+      const {
+        clearPendingDenials,
+        clearDeniedMessageContext,
+        getPendingDenials,
+        setWaitingForInput,
+        removeSendingSession,
+      } = useChatStore.getState()
+      const denials = getPendingDenials(sessionId)
+      const isCodexApproval = denials.some(denial => denial.rpc_id != null)
 
-    // For Codex: send decline response to unblock the attached process
-    if (isCodexApproval) {
-      for (const denial of denials) {
-        if (denial.rpc_id != null) {
-          invoke('approve_codex_command', {
-            sessionId,
-            rpcId: denial.rpc_id,
-            decision: 'decline',
-          }).catch(err => {
-            logger.error('[ChatWindow] Failed to decline Codex command:', err)
-          })
+      // For Codex: send decline response to unblock the attached process
+      if (isCodexApproval) {
+        for (const denial of denials) {
+          if (denial.rpc_id != null) {
+            invoke('approve_codex_command', {
+              sessionId,
+              rpcId: denial.rpc_id,
+              decision: 'decline',
+            }).catch(err => {
+              logger.error('[ChatWindow] Failed to decline Codex command:', err)
+            })
+          }
         }
       }
-    }
 
-    clearPendingDenials(sessionId)
-    clearDeniedMessageContext(sessionId)
-    setWaitingForInput(sessionId, false)
-    removeSendingSession(sessionId)
-    toast.info('Request cancelled')
-  }, [])
+      clearPendingDenials(sessionId)
+      clearDeniedMessageContext(sessionId)
+      setWaitingForInput(sessionId, false)
+      removeSendingSession(sessionId)
+      const worktreeId = activeWorktreeIdRef.current
+      const worktreePath = activeWorktreePathRef.current
+      if (worktreeId && worktreePath) {
+        clearCachedWaitingState(sessionId, worktreeId, worktreePath)
+      }
+      toast.info('Request cancelled')
+    },
+    [activeWorktreeIdRef, activeWorktreePathRef, clearCachedWaitingState]
+  )
 
   // Handle fixing a review finding
   // PERFORMANCE: Uses refs for session/worktree IDs to keep callback stable across session switches

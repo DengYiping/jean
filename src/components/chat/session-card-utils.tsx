@@ -143,6 +143,7 @@ export function computeSessionCardData(
   const sessionSending = sendingSessionIds[session.id] ?? false
   const toolCalls = activeToolCalls[session.id] ?? []
   const answeredSet = answeredQuestions[session.id]
+  const isStoreReviewing = reviewingSessions[session.id] ?? false
 
   // Check streaming tool calls for waiting state
   const hasStreamingQuestion = toolCalls.some(
@@ -237,11 +238,16 @@ export function computeSessionCardData(
     hasStreamingExitPlan ||
     hasPendingQuestion ||
     hasPendingExitPlan
+  // Once the local store has already moved the session into review, a stale
+  // sessions-list refetch should not pull it back into waiting.
+  const canUsePersistedWaitingFallback = !sessionSending && !isStoreReviewing
   // When sessionSending is true, persisted waiting_for_input from TanStack Query
   // may be stale (not yet refetched after approval). Only use it as fallback when idle.
   const isWaiting = sessionSending
     ? isWaitingFromMessages || isExplicitlyWaiting
-    : isWaitingFromMessages || isExplicitlyWaiting || persistedWaitingForInput
+    : isWaitingFromMessages ||
+      isExplicitlyWaiting ||
+      (canUsePersistedWaitingFallback && persistedWaitingForInput)
 
   // hasExitPlanMode should also consider persisted state
   // Use waiting_for_input_type to disambiguate when messages haven't loaded yet
@@ -262,6 +268,10 @@ export function computeSessionCardData(
     : hasStreamingQuestion ||
     hasPendingQuestion ||
     (persistedWaitingForInput && inferredWaitingType === 'question')
+
+  if (!hasExitPlanMode) {
+    pendingPlanMessageId = null
+  }
 
   // Check for pending permission denials
   const sessionDenials = pendingPermissionDenials[session.id] ?? []
@@ -292,7 +302,7 @@ export function computeSessionCardData(
     status = 'vibing'
   } else if (sessionSending && executionMode === 'yolo') {
     status = 'yoloing'
-  } else if (reviewingSessions[session.id] || session.review_results) {
+  } else if (isStoreReviewing || session.review_results) {
     status = 'review'
   } else if (
     !sessionSending &&

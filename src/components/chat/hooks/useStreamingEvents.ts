@@ -754,7 +754,9 @@ export default function useStreamingEvents({
                   ...old,
                   last_run_status: 'completed',
                   waiting_for_input: false,
+                  waiting_for_input_type: null,
                   is_reviewing: true,
+                  pending_plan_message_id: undefined,
                 }
               : old
         )
@@ -770,7 +772,9 @@ export default function useStreamingEvents({
                       ...s,
                       last_run_status: 'completed' as const,
                       waiting_for_input: false,
+                      waiting_for_input_type: null,
                       is_reviewing: true,
+                      pending_plan_message_id: undefined,
                     }
                   : s
               ),

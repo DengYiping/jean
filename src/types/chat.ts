@@ -531,22 +531,30 @@ export function isTodoWrite(
  * A Codex multi-agent entry extracted from collab_tool_call events
  */
 export interface CodexAgent {
-  /** Tool call ID of the SpawnAgent collab_tool_call */
+  /** Stable agent identifier (receiver thread when known, otherwise provisional tool id) */
   id: string
-  /** The prompt given to the agent (truncated for display) */
+  /** Compact display name for the agent */
+  name: string
+  /** The task prompt or best available label for this agent */
   prompt: string
   /** Agent lifecycle status */
   status: 'in_progress' | 'completed' | 'errored'
-  /** Completion message from agents_states */
+  /** Current progress text derived from agents_states / collab lifecycle */
   message?: string
 }
 
 /** Names of collab tool calls that should be shown in the AgentWidget, not the timeline */
 const COLLAB_TOOL_NAMES = new Set([
   'SpawnAgent',
+  'spawnAgent',
   'WaitForAgents',
+  'wait',
   'CloseAgent',
+  'closeAgent',
+  'ResumeAgent',
+  'resumeAgent',
   'SendInput',
+  'sendInput',
 ])
 
 /**

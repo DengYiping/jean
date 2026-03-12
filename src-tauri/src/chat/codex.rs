@@ -714,6 +714,12 @@ fn notification_to_history_line(method: &str, params: &serde_json::Value) -> Opt
             let line = serde_json::json!({ "type": "item.completed", "item": normalized });
             return Some(serde_json::to_string(&line).ok()?);
         }
+        "item/updated" => {
+            let item = params.get("item")?;
+            let normalized = normalize_item_types(item);
+            let line = serde_json::json!({ "type": "item.updated", "item": normalized });
+            return Some(serde_json::to_string(&line).ok()?);
+        }
         "item/agentMessage/delta" => {
             // Delta events don't have a direct old-format equivalent; skip for history
             return None;
@@ -802,6 +808,27 @@ fn process_server_notification(
             let item = params.get("item").unwrap_or(&serde_json::Value::Null);
             let event_item = normalize_item_types(item);
             let event_type = "item.completed";
+            let event_msg = serde_json::json!({ "type": event_type, "item": event_item });
+            process_codex_event(
+                app,
+                session_id,
+                worktree_id,
+                &event_msg,
+                event_type,
+                full_content,
+                thread_id,
+                tool_calls,
+                content_blocks,
+                pending_tool_ids,
+                completed,
+                usage,
+                error_emitted,
+            );
+        }
+        "item/updated" => {
+            let item = params.get("item").unwrap_or(&serde_json::Value::Null);
+            let event_item = normalize_item_types(item);
+            let event_type = "item.updated";
             let event_msg = serde_json::json!({ "type": event_type, "item": event_item });
             process_codex_event(
                 app,
@@ -992,11 +1019,28 @@ fn normalize_item_types(item: &serde_json::Value) -> serde_json::Value {
         if let Some(output) = obj.remove("aggregatedOutput") {
             obj.insert("aggregated_output".to_string(), output);
         }
+        if let Some(sender_thread_id) = obj.remove("senderThreadId") {
+            obj.insert("sender_thread_id".to_string(), sender_thread_id);
+        }
+        if let Some(receiver_thread_ids) = obj.remove("receiverThreadIds") {
+            obj.insert("receiver_thread_ids".to_string(), receiver_thread_ids);
+        }
         if let Some(states) = obj.remove("agentsStates") {
             obj.insert("agents_states".to_string(), states);
         }
     }
     item
+}
+
+fn collab_tool_display_name(collab_tool: &str) -> &str {
+    match collab_tool {
+        "spawn_agent" | "spawnAgent" => "SpawnAgent",
+        "send_input" | "sendInput" => "SendInput",
+        "wait" => "WaitForAgents",
+        "close_agent" | "closeAgent" => "CloseAgent",
+        "resume_agent" | "resumeAgent" => "ResumeAgent",
+        _ => collab_tool,
+    }
 }
 
 /// Handle an approval request from the app-server.
@@ -1274,13 +1318,7 @@ fn process_codex_event(
                         .get("tool")
                         .and_then(|v| v.as_str())
                         .unwrap_or("unknown");
-                    let tool_name = match collab_tool {
-                        "spawn_agent" => "SpawnAgent",
-                        "send_input" => "SendInput",
-                        "wait" => "WaitForAgents",
-                        "close_agent" => "CloseAgent",
-                        _ => collab_tool,
-                    };
+                    let tool_name = collab_tool_display_name(collab_tool);
                     let tool_id = if item_id.is_empty() {
                         uuid::Uuid::new_v4().to_string()
                     } else {
@@ -1519,10 +1557,26 @@ fn process_codex_event(
                     };
                     let tool_id = pending_tool_ids.remove(item_id).unwrap_or_default();
                     if !tool_id.is_empty() {
+                        let tool_name = item
+                            .get("tool")
+                            .and_then(|v| v.as_str())
+                            .map(collab_tool_display_name)
+                            .unwrap_or("SpawnAgent");
                         if let Some(tc) = tool_calls.iter_mut().find(|t| t.id == tool_id) {
                             tc.output = Some(output.clone());
                             tc.input = item.clone();
                         }
+                        let _ = app.emit_all(
+                            "chat:tool_use",
+                            &ToolUseEvent {
+                                session_id: session_id.to_string(),
+                                worktree_id: worktree_id.to_string(),
+                                id: tool_id.clone(),
+                                name: tool_name.to_string(),
+                                input: item.clone(),
+                                parent_tool_use_id: None,
+                            },
+                        );
                         let _ = app.emit_all(
                             "chat:tool_result",
                             &ToolResultEvent {
@@ -1539,14 +1593,25 @@ fn process_codex_event(
                 }
             }
         }
-        // item.updated — only emitted for todo_list per Codex source
+        // item.updated refreshes tool inputs in-place so the UI can reflect
+        // evolving todo and sub-agent state without waiting for the final message.
         "item.updated" => {
             let item = msg.get("item").unwrap_or(&serde_json::Value::Null);
             let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
             let item_id = item.get("id").and_then(|v| v.as_str()).unwrap_or("");
 
-            if item_type == "todo_list" {
-                if let Some(tool_id) = pending_tool_ids.get(item_id) {
+            if let Some(tool_id) = pending_tool_ids.get(item_id) {
+                let tool_name = match item_type {
+                    "todo_list" => Some("CodexTodoList".to_string()),
+                    "collab_tool_call" => item
+                        .get("tool")
+                        .and_then(|v| v.as_str())
+                        .map(collab_tool_display_name)
+                        .map(ToString::to_string),
+                    _ => None,
+                };
+
+                if let Some(tool_name) = tool_name {
                     let updated_input = item.clone();
                     if let Some(tc) = tool_calls.iter_mut().find(|t| t.id == *tool_id) {
                         tc.input = updated_input.clone();
@@ -1557,7 +1622,7 @@ fn process_codex_event(
                             session_id: session_id.to_string(),
                             worktree_id: worktree_id.to_string(),
                             id: tool_id.clone(),
-                            name: "CodexTodoList".to_string(),
+                            name: tool_name,
                             input: updated_input,
                             parent_tool_use_id: None,
                         },
@@ -1759,13 +1824,7 @@ pub fn parse_codex_run_to_message(
                             .get("tool")
                             .and_then(|v| v.as_str())
                             .unwrap_or("unknown");
-                        let tool_name = match collab_tool {
-                            "spawn_agent" => "SpawnAgent",
-                            "send_input" => "SendInput",
-                            "wait" => "WaitForAgents",
-                            "close_agent" => "CloseAgent",
-                            _ => collab_tool,
-                        };
+                        let tool_name = collab_tool_display_name(collab_tool);
                         let tool_id = if item_id.is_empty() {
                             Uuid::new_v4().to_string()
                         } else {
@@ -1917,13 +1976,13 @@ pub fn parse_codex_run_to_message(
                     _ => {}
                 }
             }
-            // item.updated — only for todo_list (history)
+            // item.updated refreshes tool inputs in-place for history replay too.
             "item.updated" => {
                 let item = msg.get("item").unwrap_or(&serde_json::Value::Null);
                 let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
                 let item_id = item.get("id").and_then(|v| v.as_str()).unwrap_or("");
 
-                if item_type == "todo_list" {
+                if item_type == "todo_list" || item_type == "collab_tool_call" {
                     if let Some(tool_id) = pending_tool_ids.get(item_id) {
                         if let Some(tc) = tool_calls.iter_mut().find(|t| t.id == *tool_id) {
                             tc.input = item.clone();

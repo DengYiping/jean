@@ -105,4 +105,50 @@ describe('ToolCallInline', () => {
     expect(screen.queryByText('loading')).not.toBeInTheDocument()
     expect(screen.queryByText('Output:')).not.toBeInTheDocument()
   })
+
+  it('renders spawnAgent calls with structured agent status instead of raw output', () => {
+    render(
+      <ToolCallInline
+        toolCall={{
+          id: 'tool-4',
+          name: 'spawnAgent',
+          input: {
+            agents_states: {
+              '019ce313-f81b-76a0-ae2e-831ce6cc72f9': {
+                message: null,
+                status: 'pendingInit',
+              },
+            },
+            prompt:
+              'Explore the repository at /Users/ydeng/jean/ml-opt-out/vast-camel.',
+            receiver_thread_ids: ['019ce313-f81b-76a0-ae2e-831ce6cc72f9'],
+            sender_thread_id: '019ce313-ad50-7ab2-8ec5-60bda25bb737',
+            status: 'completed',
+            tool: 'spawnAgent',
+            type: 'collab_tool_call',
+          },
+          output: '019ce313-f81b-76a0-ae2e-831ce6cc72f9: pendingInit',
+        }}
+      />
+    )
+
+    expect(screen.getByText('Spawn Agent')).toBeInTheDocument()
+    expect(screen.getByText('1 agent')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button'))
+
+    expect(
+      screen.getByText(
+        'Explore the repository at /Users/ydeng/jean/ml-opt-out/vast-camel.'
+      )
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('019ce313-f81b-76a0-ae2e-831ce6cc72f9')
+    ).toBeInTheDocument()
+    expect(screen.getByText('Starting')).toBeInTheDocument()
+    expect(screen.queryByText('Output:')).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('019ce313-f81b-76a0-ae2e-831ce6cc72f9: pendingInit')
+    ).not.toBeInTheDocument()
+  })
 })

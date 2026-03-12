@@ -229,15 +229,40 @@ describe('ChatStore', () => {
       ).toContainEqual(mockToolCall)
     })
 
-    it('deduplicates tool calls by ID', () => {
+    it('upserts tool calls by ID', () => {
       const { addToolCall } = useChatStore.getState()
 
       addToolCall('session-1', mockToolCall)
-      addToolCall('session-1', mockToolCall)
+      addToolCall('session-1', {
+        ...mockToolCall,
+        input: { file_path: '/updated.txt' },
+      })
 
-      expect(useChatStore.getState().activeToolCalls['session-1']).toHaveLength(
-        1
-      )
+      expect(useChatStore.getState().activeToolCalls['session-1']).toEqual([
+        {
+          ...mockToolCall,
+          input: { file_path: '/updated.txt' },
+        },
+      ])
+    })
+
+    it('preserves output when refreshing a tool call by ID', () => {
+      const { addToolCall, updateToolCallOutput } = useChatStore.getState()
+
+      addToolCall('session-1', mockToolCall)
+      updateToolCallOutput('session-1', 'tool-1', 'file contents')
+      addToolCall('session-1', {
+        ...mockToolCall,
+        input: { file_path: '/updated.txt' },
+      })
+
+      expect(useChatStore.getState().activeToolCalls['session-1']).toEqual([
+        {
+          ...mockToolCall,
+          input: { file_path: '/updated.txt' },
+          output: 'file contents',
+        },
+      ])
     })
 
     it('updates tool call output', () => {

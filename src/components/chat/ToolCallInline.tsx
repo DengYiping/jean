@@ -623,6 +623,155 @@ function BashCommandView({
   )
 }
 
+type SpawnAgentState = {
+  status?: string | null
+  message?: string | null
+}
+
+type SpawnAgentInput = {
+  prompt?: string
+  receiver_thread_ids?: unknown
+  receiverThreadIds?: unknown
+  agents_states?: unknown
+  agentsStates?: unknown
+}
+
+function getSpawnAgentReceiverIds(input: SpawnAgentInput): string[] {
+  const receiverIds = Array.isArray(input.receiver_thread_ids)
+    ? input.receiver_thread_ids
+    : Array.isArray(input.receiverThreadIds)
+      ? input.receiverThreadIds
+      : []
+  return receiverIds.filter(
+    (receiverId): receiverId is string => typeof receiverId === 'string'
+  )
+}
+
+function getSpawnAgentStates(
+  input: SpawnAgentInput
+): Record<string, SpawnAgentState> {
+  const states = input.agents_states ?? input.agentsStates
+  if (!states || typeof states !== 'object' || Array.isArray(states)) {
+    return {}
+  }
+  return states as Record<string, SpawnAgentState>
+}
+
+function normalizeSpawnAgentStatus(status?: string | null): {
+  badgeClassName: string
+  label: string
+} {
+  switch (status) {
+    case 'completed':
+      return {
+        label: 'Completed',
+        badgeClassName: 'bg-green-500/15 text-green-600 dark:text-green-400',
+      }
+    case 'errored':
+      return {
+        label: 'Errored',
+        badgeClassName: 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
+      }
+    case 'shutdown':
+      return {
+        label: 'Closed',
+        badgeClassName: 'bg-muted text-muted-foreground',
+      }
+    case 'notFound':
+    case 'not_found':
+      return {
+        label: 'Not found',
+        badgeClassName: 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
+      }
+    case 'pendingInit':
+    case 'pending_init':
+      return {
+        label: 'Starting',
+        badgeClassName: 'bg-blue-500/15 text-blue-600 dark:text-blue-400',
+      }
+    case 'running':
+      return {
+        label: 'Running',
+        badgeClassName: 'bg-blue-500/15 text-blue-600 dark:text-blue-400',
+      }
+    default:
+      return {
+        label: status ?? 'Unknown',
+        badgeClassName: 'bg-muted text-muted-foreground',
+      }
+  }
+}
+
+function SpawnAgentView({
+  prompt,
+  receiverIds,
+  agentStates,
+}: {
+  prompt?: string
+  receiverIds: string[]
+  agentStates: Record<string, SpawnAgentState>
+}) {
+  const agentIds = receiverIds.length > 0 ? receiverIds : Object.keys(agentStates)
+
+  return (
+    <div className="space-y-3">
+      {prompt && (
+        <div className="rounded border border-border/40 bg-muted/40 p-2">
+          <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground/70">
+            Prompt
+          </div>
+          <div className="whitespace-pre-wrap break-words text-xs text-foreground/90">
+            {prompt}
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-2">
+        <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground/70">
+          Agents
+        </div>
+        {agentIds.length > 0 ? (
+          <div className="space-y-2">
+            {agentIds.map(agentId => {
+              const agentState = agentStates[agentId]
+              const { label, badgeClassName } = normalizeSpawnAgentStatus(
+                agentState?.status
+              )
+              return (
+                <div
+                  key={agentId}
+                  className="rounded border border-border/40 bg-muted/20 p-2"
+                >
+                  <div className="flex items-center gap-2">
+                    <code className="min-w-0 flex-1 truncate rounded bg-muted/50 px-1.5 py-0.5 text-[11px]">
+                      {agentId}
+                    </code>
+                    <span
+                      className={cn(
+                        'rounded px-1.5 py-0.5 text-[11px] font-medium',
+                        badgeClassName
+                      )}
+                    >
+                      {label}
+                    </span>
+                  </div>
+                  {agentState?.message && (
+                    <div className="mt-2 whitespace-pre-wrap break-words text-xs text-muted-foreground">
+                      {agentState.message}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="text-xs text-muted-foreground">No agent state reported.</div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function getToolDisplay(toolCall: ToolCall): ToolDisplay {
   const input = toolCall.input as Record<string, unknown>
 
@@ -772,15 +921,30 @@ function getToolDisplay(toolCall: ToolCall): ToolDisplay {
     }
 
     // Codex multi-agent tools
-    case 'SpawnAgent': {
-      const prompt = input.prompt as string | undefined
-      const truncatedPrompt =
-        prompt && prompt.length > 60 ? prompt.substring(0, 60) + '...' : prompt
+    case 'SpawnAgent':
+    case 'spawnAgent': {
+      const spawnAgentInput = input as SpawnAgentInput
+      const prompt = spawnAgentInput.prompt
+      const receiverIds = getSpawnAgentReceiverIds(spawnAgentInput)
+      const agentStates = getSpawnAgentStates(spawnAgentInput)
+      const stateEntries =
+        receiverIds.length > 0 ? receiverIds : Object.keys(agentStates)
+      const detail =
+        stateEntries.length > 0
+          ? `${stateEntries.length} agent${stateEntries.length === 1 ? '' : 's'}`
+          : 'sub-agent'
       return {
         icon: <Users className="h-4 w-4 shrink-0" />,
         label: 'Spawn Agent',
-        detail: truncatedPrompt ?? 'sub-agent',
-        expandedContent: prompt ?? JSON.stringify(input, null, 2),
+        detail,
+        expandedContent: (
+          <SpawnAgentView
+            prompt={prompt}
+            receiverIds={receiverIds}
+            agentStates={agentStates}
+          />
+        ),
+        suppressDefaultOutput: true,
       }
     }
 

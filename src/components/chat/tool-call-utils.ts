@@ -336,7 +336,7 @@ export function buildTimeline(
         continue
       }
       if (isCollabToolCall(toolCall)) {
-        // Collab tools shown in AgentWidget panel, not timeline
+        // Collab tools are not rendered in the main timeline.
         continue
       }
 

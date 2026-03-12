@@ -14,6 +14,7 @@ import { logger } from '@/lib/logger'
 import type {
   GhCliStatus,
   GhAuthStatus,
+  GhCliAccount,
   GhReleaseInfo,
   GhInstallProgress,
 } from '@/types/gh-cli'
@@ -27,6 +28,7 @@ export const ghCliQueryKeys = {
   all: ['gh-cli'] as const,
   status: () => [...ghCliQueryKeys.all, 'status'] as const,
   auth: () => [...ghCliQueryKeys.all, 'auth'] as const,
+  accounts: () => [...ghCliQueryKeys.all, 'accounts'] as const,
   versions: () => [...ghCliQueryKeys.all, 'versions'] as const,
 }
 
@@ -87,6 +89,50 @@ export function useGhCliAuth(options?: { enabled?: boolean }) {
     enabled: options?.enabled ?? true,
     staleTime: 1000 * 60 * 5, // 5 minutes
     gcTime: 1000 * 60 * 10, // 10 minutes
+  })
+}
+
+/**
+ * Hook to list all locally authenticated GitHub CLI accounts.
+ */
+export function useGhCliAccounts(options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: ghCliQueryKeys.accounts(),
+    queryFn: async (): Promise<GhCliAccount[]> => {
+      if (!isTauri()) {
+        logger.debug('Not in Tauri context, returning empty gh account list')
+        return []
+      }
+
+      try {
+        logger.debug('Listing GitHub CLI accounts')
+        const accounts = await invoke<
+          {
+            host: string
+            user: string
+            active: boolean
+            git_protocol?: string | null
+            credential_source?: string | null
+            token_scopes?: string[]
+          }[]
+        >('list_gh_cli_accounts')
+
+        return accounts.map(account => ({
+          host: account.host,
+          user: account.user,
+          active: account.active,
+          gitProtocol: account.git_protocol ?? null,
+          credentialSource: account.credential_source ?? null,
+          tokenScopes: account.token_scopes ?? [],
+        }))
+      } catch (error) {
+        logger.error('Failed to list gh CLI accounts', { error })
+        return []
+      }
+    },
+    enabled: options?.enabled ?? true,
+    staleTime: Infinity,
+    gcTime: 1000 * 60 * 30,
   })
 }
 

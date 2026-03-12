@@ -2313,6 +2313,8 @@ export function useUpdateProjectSettings() {
       customSystemPrompt,
       defaultProvider,
       defaultBackend,
+      githubAccountHost,
+      githubAccountUser,
       worktreesDir,
       linearApiKey,
       linearTeamId,
@@ -2324,6 +2326,8 @@ export function useUpdateProjectSettings() {
       customSystemPrompt?: string
       defaultProvider?: string | null
       defaultBackend?: string | null
+      githubAccountHost?: string
+      githubAccountUser?: string
       worktreesDir?: string
       linearApiKey?: string
       linearTeamId?: string
@@ -2341,6 +2345,8 @@ export function useUpdateProjectSettings() {
         customSystemPrompt,
         defaultProvider,
         defaultBackend,
+        githubAccountHost,
+        githubAccountUser,
         worktreesDir,
         linearApiKey,
         linearTeamId,

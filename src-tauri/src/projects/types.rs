@@ -85,6 +85,12 @@ pub struct Project {
     /// Default CLI backend for sessions in this project (None = use global default)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_backend: Option<String>,
+    /// GitHub host to target for this project's gh commands (None = use gh active account)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub github_account_host: Option<String>,
+    /// GitHub user to target for this project's gh commands (None = use gh active account)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub github_account_user: Option<String>,
     /// Custom base directory for worktrees (None = use default ~/jean).
     /// When set, worktrees go to <worktrees_dir>/<project-name>/<worktree-name>.
     #[serde(default, skip_serializing_if = "Option::is_none")]

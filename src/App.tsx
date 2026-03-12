@@ -24,7 +24,11 @@ import { ThemeProvider } from './components/ThemeProvider'
 import ErrorBoundary from './components/ErrorBoundary'
 import { useClaudeCliStatus, useClaudeCliAuth } from './services/claude-cli'
 import { useCodexCliStatus, useCodexCliAuth } from './services/codex-cli'
-import { useGhCliStatus, useGhCliAuth } from './services/gh-cli'
+import {
+  useGhCliStatus,
+  useGhCliAuth,
+  useGhCliAccounts,
+} from './services/gh-cli'
 import { useOpencodeCliStatus, useOpencodeCliAuth } from './services/opencode-cli'
 import { useUIStore } from './store/ui-store'
 import type { AppPreferences } from './types/preferences'
@@ -457,6 +461,9 @@ function App() {
       enabled: cliCheckReady && !!opencodeStatus?.installed && isNativeApp(),
     })
   const { data: ghAuth, isLoading: isGhAuthLoading } = useGhCliAuth({
+    enabled: cliCheckReady && !!ghStatus?.installed && isNativeApp(),
+  })
+  useGhCliAccounts({
     enabled: cliCheckReady && !!ghStatus?.installed && isNativeApp(),
   })
 

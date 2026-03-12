@@ -37,7 +37,7 @@ use super::types::{
 };
 use crate::claude_cli::resolve_cli_binary;
 use crate::codex_cli::resolve_cli_binary as resolve_codex_cli_binary;
-use crate::gh_cli::config::resolve_gh_binary;
+use crate::gh_cli::{build_gh_command, config::resolve_gh_binary};
 use crate::http_server::EmitExt;
 use crate::platform::silent_command;
 
@@ -210,6 +210,8 @@ pub async fn add_project(
         custom_system_prompt: None,
         default_provider: None,
         default_backend: None,
+        github_account_host: None,
+        github_account_user: None,
         worktrees_dir: None,
         linear_api_key: None,
         linear_team_id: None,
@@ -369,6 +371,8 @@ pub async fn init_project(
         custom_system_prompt: None,
         default_provider: None,
         default_backend: None,
+        github_account_host: None,
+        github_account_user: None,
         worktrees_dir: None,
         linear_api_key: None,
         linear_team_id: None,
@@ -422,6 +426,8 @@ pub async fn clone_project(
         custom_system_prompt: None,
         default_provider: None,
         default_backend: None,
+        github_account_host: None,
+        github_account_user: None,
         worktrees_dir: None,
         linear_api_key: None,
         linear_team_id: None,
@@ -916,6 +922,7 @@ pub async fn create_worktree(
                     )
                 } else {
                     git::gh_pr_checkout(
+                        &app_clone,
                         &worktree_path_clone,
                         ctx.number,
                         Some(&local_branch_name),
@@ -1010,10 +1017,9 @@ pub async fn create_worktree(
                             log::warn!("Background: Failed to create git-context directory: {e}");
                         } else {
                             // Fetch the diff if not already present
-                            let gh = resolve_gh_binary(&app_clone);
                             let ctx_with_diff = if ctx.diff.is_none() {
                                 log::debug!("Background: Fetching diff for PR #{}", ctx.number);
-                                let diff = get_pr_diff(&project_path, ctx.number, &gh).ok();
+                                let diff = get_pr_diff(&app_clone, &project_path, ctx.number).ok();
                                 PullRequestContext {
                                     number: ctx.number,
                                     title: ctx.title.clone(),
@@ -1483,10 +1489,9 @@ pub async fn create_worktree_from_existing_branch(
                             log::warn!("Background: Failed to create git-context directory: {e}");
                         } else {
                             // Fetch the diff if not already present
-                            let gh = resolve_gh_binary(&app_clone);
                             let ctx_with_diff = if ctx.diff.is_none() {
                                 log::debug!("Background: Fetching diff for PR #{}", ctx.number);
-                                let diff = get_pr_diff(&project_path, ctx.number, &gh).ok();
+                                let diff = get_pr_diff(&app_clone, &project_path, ctx.number).ok();
                                 PullRequestContext {
                                     number: ctx.number,
                                     title: ctx.title.clone(),
@@ -2022,6 +2027,7 @@ pub async fn checkout_pr(
             } else {
                 // No collision - use gh pr checkout which sets up tracking nicely
                 match git::gh_pr_checkout(
+                    &app_clone,
                     &worktree_path_clone,
                     pr_number,
                     Some(&local_branch_name),
@@ -2118,12 +2124,7 @@ pub async fn checkout_pr(
                                     submitted_at: r.submitted_at,
                                 })
                                 .collect(),
-                            diff: get_pr_diff(
-                                &project_path,
-                                pr_number,
-                                &resolve_gh_binary(&app_clone),
-                            )
-                            .ok(),
+                            diff: get_pr_diff(&app_clone, &project_path, pr_number).ok(),
                         };
 
                         let context_file =
@@ -3706,6 +3707,7 @@ pub async fn open_pull_request(
     // Use the worktree path for the PR creation
     let gh = resolve_gh_binary(&app);
     let result = git::open_pull_request(
+        &app,
         &worktree.path,
         title.as_deref(),
         body.as_deref(),
@@ -3880,6 +3882,8 @@ pub async fn update_project_settings(
     custom_system_prompt: Option<String>,
     default_provider: Option<Option<String>>,
     default_backend: Option<Option<String>>,
+    github_account_host: Option<String>,
+    github_account_user: Option<String>,
     worktrees_dir: Option<String>,
     linear_api_key: Option<String>,
     linear_team_id: Option<String>,
@@ -3929,6 +3933,18 @@ pub async fn update_project_settings(
     if let Some(backend) = default_backend {
         log::trace!("Updating default backend: {backend:?}");
         project.default_backend = backend.filter(|b| b != "__none__");
+    }
+
+    if let Some(host) = github_account_host {
+        let host = host.trim().to_string();
+        log::trace!("Updating GitHub account host: {host:?}");
+        project.github_account_host = if host.is_empty() { None } else { Some(host) };
+    }
+
+    if let Some(user) = github_account_user {
+        let user = user.trim().to_string();
+        log::trace!("Updating GitHub account user: {user:?}");
+        project.github_account_user = if user.is_empty() { None } else { Some(user) };
     }
 
     if let Some(dir) = worktrees_dir {
@@ -5093,8 +5109,7 @@ pub async fn create_pr_with_ai_content(
     }
 
     // Check if a PR already exists for this branch before spending time/tokens on AI generation
-    let gh = resolve_gh_binary(&app);
-    let view_output = silent_command(&gh)
+    let view_output = build_gh_command(&app, Some(&worktree_path))
         .args(["pr", "view", "--json", "number,url,title"])
         .current_dir(&worktree_path)
         .output();
@@ -5203,7 +5218,7 @@ pub async fn create_pr_with_ai_content(
 
     // Create the PR using gh CLI
     log::trace!("Creating PR with gh CLI");
-    let output = silent_command(&gh)
+    let output = build_gh_command(&app, Some(&worktree_path))
         .args([
             "pr",
             "create",
@@ -5222,7 +5237,7 @@ pub async fn create_pr_with_ai_content(
         let stderr = String::from_utf8_lossy(&output.stderr);
         if stderr.contains("already exists") {
             // Try to look up the existing PR and link it to the worktree
-            let view_output = silent_command(&gh)
+            let view_output = build_gh_command(&app, Some(&worktree_path))
                 .args(["pr", "view", "--json", "number,url,title"])
                 .current_dir(&worktree_path)
                 .output();
@@ -5399,8 +5414,7 @@ pub async fn update_pr_description(
 ) -> Result<(), String> {
     log::trace!("Updating PR #{pr_number} description");
 
-    let gh = resolve_gh_binary(&app);
-    let output = silent_command(&gh)
+    let output = build_gh_command(&app, Some(&worktree_path))
         .args([
             "pr",
             "edit",
@@ -5612,7 +5626,7 @@ fn push_for_commit(
 ) -> Result<(bool, bool), String> {
     match pr_number {
         Some(pr) => {
-            let result = git::git_push_to_pr(repo_path, pr, &resolve_gh_binary(app))?;
+            let result = git::git_push_to_pr(app, repo_path, pr, &resolve_gh_binary(app))?;
             Ok((result.fell_back, result.permission_denied))
         }
         None => {
@@ -6526,7 +6540,7 @@ pub async fn git_push(
     log::trace!("Pushing changes for worktree: {worktree_path}, pr_number: {pr_number:?}, remote: {remote:?}");
     match pr_number {
         Some(pr) => {
-            let result = git::git_push_to_pr(&worktree_path, pr, &resolve_gh_binary(&app))?;
+            let result = git::git_push_to_pr(&app, &worktree_path, pr, &resolve_gh_binary(&app))?;
             Ok(GitPushResponse {
                 output: result.output,
                 fell_back: result.fell_back,
@@ -6568,8 +6582,7 @@ pub async fn list_github_releases(
 ) -> Result<Vec<GitHubRelease>, String> {
     log::trace!("Listing GitHub releases for: {project_path}");
 
-    let gh = resolve_gh_binary(&app);
-    let output = silent_command(&gh)
+    let output = build_gh_command(&app, Some(&project_path))
         .args([
             "release",
             "list",
@@ -7608,6 +7621,8 @@ pub async fn create_folder(
         custom_system_prompt: None,
         default_provider: None,
         default_backend: None,
+        github_account_host: None,
+        github_account_user: None,
         worktrees_dir: None,
         linear_api_key: None,
         linear_team_id: None,

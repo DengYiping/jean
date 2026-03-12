@@ -25,6 +25,24 @@ export interface GhAuthStatus {
 }
 
 /**
+ * A locally authenticated GitHub CLI account discovered from `gh auth status`.
+ */
+export interface GhCliAccount {
+  /** Host for this account (for example github.com or git.hubteam.com) */
+  host: string
+  /** Login/user name for the account */
+  user: string
+  /** Whether this is the active account for the host */
+  active: boolean
+  /** Git protocol reported by gh */
+  gitProtocol: string | null
+  /** Where gh stores credentials for this account */
+  credentialSource: string | null
+  /** Token scopes reported by gh */
+  tokenScopes: string[]
+}
+
+/**
  * Information about a GitHub CLI release
  */
 export interface GhReleaseInfo {

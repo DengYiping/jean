@@ -2756,6 +2756,7 @@ pub fn run() {
             // GitHub CLI management commands
             gh_cli::check_gh_cli_installed,
             gh_cli::check_gh_cli_auth,
+            gh_cli::list_gh_cli_accounts,
             gh_cli::get_available_gh_versions,
             gh_cli::install_gh_cli,
             // Background task commands

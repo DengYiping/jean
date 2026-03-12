@@ -1,7 +1,9 @@
+use crate::gh_cli::apply_gh_account_env;
 use crate::platform::silent_command;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+use tauri::AppHandle;
 
 use super::types::{JeanConfig, MergeType};
 
@@ -772,6 +774,7 @@ fn is_permission_error(stderr: &str) -> bool {
 /// 3. Fork PR: add fork remote if needed, fetch, push
 /// 4. On failure: fall back to regular push (git push -u origin HEAD)
 pub fn git_push_to_pr(
+    app: &AppHandle,
     repo_path: &str,
     pr_number: u32,
     gh_binary: &std::path::Path,
@@ -779,7 +782,9 @@ pub fn git_push_to_pr(
     log::trace!("Pushing to PR #{pr_number} remote branch in {repo_path}");
 
     // 1. Query PR info from GitHub
-    let gh_output = silent_command(gh_binary)
+    let mut gh_cmd = silent_command(gh_binary);
+    apply_gh_account_env(app, Some(repo_path), &mut gh_cmd);
+    let gh_output = gh_cmd
         .args([
             "pr",
             "view",
@@ -1209,6 +1214,7 @@ pub fn checkout_branch(worktree_path: &str, branch: &str) -> Result<(), String> 
 /// * `pr_number` - The PR number to checkout
 /// * `branch_name` - Optional local branch name to use (ensures local matches remote)
 pub fn gh_pr_checkout(
+    app: &AppHandle,
     worktree_path: &str,
     pr_number: u32,
     branch_name: Option<&str>,
@@ -1222,7 +1228,9 @@ pub fn gh_pr_checkout(
         args.extend(["-b", name]);
     }
 
-    let output = silent_command(gh_binary)
+    let mut gh_cmd = silent_command(gh_binary);
+    apply_gh_account_env(app, Some(worktree_path), &mut gh_cmd);
+    let output = gh_cmd
         .args(&args)
         .current_dir(worktree_path)
         .output()
@@ -1522,6 +1530,7 @@ pub fn commit_changes(repo_path: &str, message: &str, stage_all: bool) -> Result
 ///
 /// Returns the PR URL on success
 pub fn open_pull_request(
+    app: &AppHandle,
     repo_path: &str,
     title: Option<&str>,
     body: Option<&str>,
@@ -1569,7 +1578,9 @@ pub fn open_pull_request(
 
     log::trace!("Running gh command with args: {:?}", args);
 
-    let output = silent_command(gh_binary)
+    let mut gh_cmd = silent_command(gh_binary);
+    apply_gh_account_env(app, Some(repo_path), &mut gh_cmd);
+    let output = gh_cmd
         .args(&args)
         .current_dir(repo_path)
         .output()

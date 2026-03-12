@@ -1,8 +1,13 @@
 //! Tauri commands for GitHub CLI management
 
 use crate::platform::silent_command;
+use crate::projects::storage::{find_project_for_repo_path, load_projects_data};
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::process::Command;
+use std::sync::RwLock;
 use tauri::AppHandle;
 
 use super::config::{ensure_gh_cli_dir, get_gh_cli_binary_path, resolve_gh_binary};
@@ -48,6 +53,38 @@ pub struct GhInstallProgress {
     pub percent: u8,
 }
 
+/// A GitHub CLI account discovered from `gh auth status`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GhCliAccount {
+    /// Host for this account (for example github.com or git.hubteam.com)
+    pub host: String,
+    /// Login/user name for the account
+    pub user: String,
+    /// Whether this is the currently active account for the host
+    pub active: bool,
+    /// Git operations protocol reported by gh
+    pub git_protocol: Option<String>,
+    /// Where gh stores the credentials (for example keyring or hosts.yml path)
+    pub credential_source: Option<String>,
+    /// Token scopes reported by gh auth status
+    pub token_scopes: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+struct ParsedGhCliAccount {
+    account: GhCliAccount,
+    token: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct GhAccountSelection {
+    host: String,
+    user: String,
+}
+
+static GH_ACCOUNT_TOKENS: Lazy<RwLock<HashMap<(String, String), String>>> =
+    Lazy::new(|| RwLock::new(HashMap::new()));
+
 /// GitHub API release response structure
 #[derive(Debug, Deserialize)]
 struct GitHubRelease {
@@ -62,6 +99,218 @@ struct GitHubRelease {
 struct GitHubAsset {
     name: String,
     browser_download_url: String,
+}
+
+fn parse_gh_auth_status_output(output: &str) -> Vec<ParsedGhCliAccount> {
+    let mut accounts = Vec::new();
+    let mut current_host: Option<String> = None;
+    let mut current_account: Option<ParsedGhCliAccount> = None;
+
+    for raw_line in output.lines() {
+        let line = raw_line.trim_end();
+        let trimmed = line.trim();
+
+        if trimmed.is_empty() {
+            if let Some(account) = current_account.take() {
+                accounts.push(account);
+            }
+            continue;
+        }
+
+        if !line.starts_with(' ') && !line.starts_with('\t') {
+            if let Some(account) = current_account.take() {
+                accounts.push(account);
+            }
+            current_host = Some(trimmed.to_string());
+            continue;
+        }
+
+        if let Some(rest) = trimmed.strip_prefix("✓ Logged in to ") {
+            if let Some(account) = current_account.take() {
+                accounts.push(account);
+            }
+
+            let (prefix, credential_source) = match rest.rsplit_once(" (") {
+                Some((prefix, suffix)) if suffix.ends_with(')') => {
+                    (prefix, Some(suffix.trim_end_matches(')').to_string()))
+                }
+                _ => (rest, None),
+            };
+
+            let user = prefix
+                .split_once(" account ")
+                .map(|(_, user)| user.trim().to_string())
+                .unwrap_or_default();
+            let host = current_host.clone().unwrap_or_default();
+
+            current_account = Some(ParsedGhCliAccount {
+                account: GhCliAccount {
+                    host,
+                    user,
+                    active: false,
+                    git_protocol: None,
+                    credential_source,
+                    token_scopes: Vec::new(),
+                },
+                token: None,
+            });
+            continue;
+        }
+
+        let Some(account) = current_account.as_mut() else {
+            continue;
+        };
+
+        if let Some(value) = trimmed.strip_prefix("- Active account: ") {
+            account.account.active = value.trim().eq_ignore_ascii_case("true");
+            continue;
+        }
+
+        if let Some(value) = trimmed.strip_prefix("- Git operations protocol: ") {
+            let value = value.trim();
+            account.account.git_protocol = if value.is_empty() {
+                None
+            } else {
+                Some(value.to_string())
+            };
+            continue;
+        }
+
+        if let Some(value) = trimmed.strip_prefix("- Token: ") {
+            let value = value.trim();
+            account.token = if value.is_empty() {
+                None
+            } else {
+                Some(value.to_string())
+            };
+            continue;
+        }
+
+        if let Some(value) = trimmed.strip_prefix("- Token scopes: ") {
+            account.account.token_scopes = value
+                .split(',')
+                .map(|scope| scope.trim().trim_matches('\''))
+                .filter(|scope| !scope.is_empty())
+                .map(ToString::to_string)
+                .collect();
+        }
+    }
+
+    if let Some(account) = current_account.take() {
+        accounts.push(account);
+    }
+
+    accounts
+}
+
+fn refresh_gh_account_cache(app: &AppHandle) -> Result<Vec<GhCliAccount>, String> {
+    let gh = resolve_gh_binary(app);
+    let output = silent_command(&gh)
+        .args(["auth", "status", "--show-token"])
+        .output()
+        .map_err(|e| format!("Failed to run gh auth status: {e}"))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let combined_output = if stdout.trim().is_empty() {
+        stderr.to_string()
+    } else if stderr.trim().is_empty() {
+        stdout.to_string()
+    } else {
+        format!("{stdout}\n{stderr}")
+    };
+
+    let parsed = parse_gh_auth_status_output(&combined_output);
+
+    if parsed.is_empty() {
+        if output.status.success() {
+            return Ok(Vec::new());
+        }
+        return Err(stderr.trim().to_string());
+    }
+
+    {
+        let mut cache = GH_ACCOUNT_TOKENS
+            .write()
+            .expect("gh account token cache lock poisoned");
+        cache.clear();
+        for account in &parsed {
+            if let Some(token) = &account.token {
+                cache.insert(
+                    (account.account.host.clone(), account.account.user.clone()),
+                    token.clone(),
+                );
+            }
+        }
+    }
+
+    let accounts = parsed.into_iter().map(|account| account.account).collect();
+    Ok(accounts)
+}
+
+fn resolve_repo_gh_account(app: &AppHandle, repo_path: &str) -> Option<GhAccountSelection> {
+    let data = load_projects_data(app).ok()?;
+    let project = find_project_for_repo_path(&data, repo_path)?;
+    let host = project.github_account_host.clone()?;
+    let user = project.github_account_user.clone()?;
+    if host.trim().is_empty() || user.trim().is_empty() {
+        return None;
+    }
+
+    Some(GhAccountSelection { host, user })
+}
+
+fn cached_gh_account_token(host: &str, user: &str) -> Option<String> {
+    GH_ACCOUNT_TOKENS
+        .read()
+        .expect("gh account token cache lock poisoned")
+        .get(&(host.to_string(), user.to_string()))
+        .cloned()
+}
+
+fn is_public_github_host(host: &str) -> bool {
+    host.eq_ignore_ascii_case("github.com") || host.ends_with(".ghe.com")
+}
+
+pub fn apply_gh_account_env(app: &AppHandle, repo_path: Option<&str>, cmd: &mut Command) {
+    let Some(repo_path) = repo_path else {
+        return;
+    };
+    let Some(account) = resolve_repo_gh_account(app, repo_path) else {
+        return;
+    };
+
+    cmd.env("GH_HOST", &account.host);
+    cmd.env("GH_USER", &account.user);
+    cmd.env("JEAN_GH_HOST", &account.host);
+    cmd.env("JEAN_GH_USER", &account.user);
+
+    let token = cached_gh_account_token(&account.host, &account.user).or_else(|| {
+        refresh_gh_account_cache(app)
+            .ok()
+            .and_then(|_| cached_gh_account_token(&account.host, &account.user))
+    });
+
+    if let Some(token) = token {
+        if is_public_github_host(&account.host) {
+            cmd.env("GH_TOKEN", token);
+        } else {
+            cmd.env("GH_ENTERPRISE_TOKEN", token);
+        }
+    }
+}
+
+pub fn build_gh_command(app: &AppHandle, repo_path: Option<&str>) -> Command {
+    let gh = resolve_gh_binary(app);
+    let mut cmd = silent_command(&gh);
+    apply_gh_account_env(app, repo_path, &mut cmd);
+    cmd
+}
+
+/// List all locally authenticated GitHub CLI accounts.
+#[tauri::command]
+pub async fn list_gh_cli_accounts(app: AppHandle) -> Result<Vec<GhCliAccount>, String> {
+    refresh_gh_account_cache(&app)
 }
 
 /// Check if GitHub CLI is installed and get its status
@@ -600,5 +849,63 @@ fn emit_progress(app: &AppHandle, stage: &str, message: &str, percent: u8) {
 
     if let Err(e) = app.emit_all("gh-cli:install-progress", &progress) {
         log::warn!("Failed to emit install progress: {}", e);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_multiple_gh_accounts_from_auth_status() {
+        let output = r#"github.com
+  ✓ Logged in to github.com account DengYiping (/Users/test/.config/gh/hosts.yml)
+  - Active account: true
+  - Git operations protocol: ssh
+  - Token: gho_one
+  - Token scopes: 'gist', 'repo'
+
+  ✓ Logged in to github.com account ydeng_hubspot (keyring)
+  - Active account: false
+  - Git operations protocol: ssh
+  - Token: gho_two
+  - Token scopes: 'gist', 'project', 'repo'
+
+git.hubteam.com
+  ✓ Logged in to git.hubteam.com account ydeng (/Users/test/.config/gh/hosts.yml)
+  - Active account: true
+  - Git operations protocol: ssh
+  - Token: ghe_three
+  - Token scopes: 'read:org', 'repo'
+"#;
+
+        let parsed = parse_gh_auth_status_output(output);
+        assert_eq!(parsed.len(), 3);
+
+        assert_eq!(parsed[0].account.host, "github.com");
+        assert_eq!(parsed[0].account.user, "DengYiping");
+        assert!(parsed[0].account.active);
+        assert_eq!(parsed[0].account.git_protocol.as_deref(), Some("ssh"));
+        assert_eq!(
+            parsed[0].account.credential_source.as_deref(),
+            Some("/Users/test/.config/gh/hosts.yml")
+        );
+        assert_eq!(parsed[0].token.as_deref(), Some("gho_one"));
+        assert_eq!(parsed[0].account.token_scopes, vec!["gist", "repo"]);
+
+        assert_eq!(parsed[1].account.user, "ydeng_hubspot");
+        assert!(!parsed[1].account.active);
+        assert_eq!(
+            parsed[1].account.credential_source.as_deref(),
+            Some("keyring")
+        );
+        assert_eq!(
+            parsed[1].account.token_scopes,
+            vec!["gist", "project", "repo"]
+        );
+
+        assert_eq!(parsed[2].account.host, "git.hubteam.com");
+        assert_eq!(parsed[2].account.user, "ydeng");
+        assert_eq!(parsed[2].token.as_deref(), Some("ghe_three"));
     }
 }

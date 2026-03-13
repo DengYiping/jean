@@ -1050,11 +1050,9 @@ fn jsonl_has_result_line(app: &tauri::AppHandle, session_id: &str, run_id: &str)
         BufReader::new(file)
     };
 
-    for line in reader.lines() {
-        if let Ok(line) = line {
-            if line.contains("\"type\":\"result\"") {
-                return true;
-            }
+    for line in reader.lines().map_while(Result::ok) {
+        if line.contains("\"type\":\"result\"") {
+            return true;
         }
     }
     false

@@ -49,8 +49,9 @@ export function useCliVersionCheck() {
   const { isLoading: claudeLoading } = useClaudeCliStatus({
     enabled: shouldCheck && versionCheckReady,
   })
-  const { data: ghStatus, isLoading: ghLoading } =
-    useGhCliStatus({ enabled: shouldCheck && versionCheckReady })
+  const { data: ghStatus, isLoading: ghLoading } = useGhCliStatus({
+    enabled: shouldCheck && versionCheckReady,
+  })
   const { isLoading: codexLoading } = useCodexCliStatus({
     enabled: shouldCheck && versionCheckReady,
   })

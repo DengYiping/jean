@@ -148,7 +148,8 @@ export function ReleaseNotesDialog() {
               'release_notes_provider',
               preferences?.default_provider
             ),
-            reasoningEffort: preferences?.magic_prompt_efforts?.release_notes_effort ?? null,
+            reasoningEffort:
+              preferences?.magic_prompt_efforts?.release_notes_effort ?? null,
           }
         )
         setGeneratedTitle(result.title)

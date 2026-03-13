@@ -611,7 +611,7 @@ async fn sse_listener_loop(
                     );
                     break;
                 }
-                if !draining && poll_count % 4 == 0 {
+                if !draining && poll_count.is_multiple_of(4) {
                     log::info!(
                         "OpenCode SSE: poll #{poll_count} (no data), chunks={total_chunks}, \
                          events={total_events_emitted}, buffer_len={}",
@@ -1521,7 +1521,7 @@ pub fn execute_one_shot_opencode(
     let reasoning = reasoning_effort.map(|s| s.to_string());
     // Parse the JSON schema string into a Value for the native `format` field
     let schema_value: Option<serde_json::Value> = json_schema
-        .map(|s| serde_json::from_str(s))
+        .map(serde_json::from_str)
         .transpose()
         .map_err(|e| format!("Invalid JSON schema: {e}"))?;
     let dir = working_dir

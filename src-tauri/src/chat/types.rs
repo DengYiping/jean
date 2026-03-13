@@ -627,6 +627,7 @@ impl WorktreeIndex {
     /// Create an empty WorktreeIndex with no default session.
     /// Use this for programmatically-created worktrees where sessions are added explicitly.
     /// Sets `branch_naming_completed = true` to prevent auto-renaming.
+    #[allow(dead_code)] // Used by backend-only worktree bootstrap paths.
     pub fn new_empty(worktree_id: String) -> Self {
         Self {
             worktree_id,

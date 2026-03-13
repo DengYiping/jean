@@ -279,60 +279,60 @@ pub fn execute_codex_via_server(
     // Start or resume thread
     // Wrapped in a closure so we can decrement USAGE_COUNT on failure
     // (ensure_running incremented it, but no session is registered yet)
-    let thread_id = match (|| -> Result<String, String> {
-        if let Some(tid) = existing_thread_id {
-            // Resume existing thread
-            let resume_params = build_thread_start_params(
-                working_dir,
-                model,
-                execution_mode,
-                search_enabled,
-                instructions_file,
-                multi_agent_enabled,
-                max_agent_threads,
-            );
-            let mut full_params =
-                serde_json::json!({ "threadId": tid, "persistExtendedHistory": true });
-            // Copy overridable fields
-            for key in &[
-                "model",
-                "cwd",
-                "approvalPolicy",
-                "sandbox",
-                "config",
-                "serviceTier",
-            ] {
-                if let Some(v) = resume_params.get(key) {
-                    full_params[key] = v.clone();
-                }
+    let thread_result = if let Some(tid) = existing_thread_id {
+        // Resume existing thread
+        let resume_params = build_thread_start_params(
+            working_dir,
+            model,
+            execution_mode,
+            search_enabled,
+            instructions_file,
+            multi_agent_enabled,
+            max_agent_threads,
+        );
+        let mut full_params =
+            serde_json::json!({ "threadId": tid, "persistExtendedHistory": true });
+        // Copy overridable fields
+        for key in &[
+            "model",
+            "cwd",
+            "approvalPolicy",
+            "sandbox",
+            "config",
+            "serviceTier",
+        ] {
+            if let Some(v) = resume_params.get(key) {
+                full_params[key] = v.clone();
             }
-            match codex_server::send_request("thread/resume", full_params) {
-                Ok(_) => Ok(tid.to_string()),
-                Err(e) => {
-                    log::warn!("Failed to resume thread {tid}: {e}, starting new thread");
-                    start_new_thread(
-                        working_dir,
-                        model,
-                        execution_mode,
-                        search_enabled,
-                        instructions_file,
-                        multi_agent_enabled,
-                        max_agent_threads,
-                    )
-                }
-            }
-        } else {
-            start_new_thread(
-                working_dir,
-                model,
-                execution_mode,
-                search_enabled,
-                instructions_file,
-                multi_agent_enabled,
-                max_agent_threads,
-            )
         }
-    })() {
+        match codex_server::send_request("thread/resume", full_params) {
+            Ok(_) => Ok(tid.to_string()),
+            Err(e) => {
+                log::warn!("Failed to resume thread {tid}: {e}, starting new thread");
+                start_new_thread(
+                    working_dir,
+                    model,
+                    execution_mode,
+                    search_enabled,
+                    instructions_file,
+                    multi_agent_enabled,
+                    max_agent_threads,
+                )
+            }
+        }
+    } else {
+        start_new_thread(
+            working_dir,
+            model,
+            execution_mode,
+            search_enabled,
+            instructions_file,
+            multi_agent_enabled,
+            max_agent_threads,
+        )
+    };
+
+    let thread_id = match thread_result {
         Ok(tid) => tid,
         Err(e) => {
             // ensure_running incremented USAGE_COUNT but no session was registered
@@ -713,7 +713,7 @@ fn notification_to_history_line(
                 "type": "thread.started",
                 "thread_id": tid,
             });
-            return Some(serde_json::to_string(&line).ok()?);
+            return serde_json::to_string(&line).ok();
         }
         "turn/started" => "turn.started",
         "turn/completed" => {
@@ -732,28 +732,28 @@ fn notification_to_history_line(
                     "type": "turn.failed",
                     "error": error,
                 });
-                return Some(serde_json::to_string(&line).ok()?);
+                return serde_json::to_string(&line).ok();
             }
             let line = serde_json::json!({ "type": "turn.completed" });
-            return Some(serde_json::to_string(&line).ok()?);
+            return serde_json::to_string(&line).ok();
         }
         "item/started" => {
             let item = params.get("item")?;
             let normalized = normalize_item_types(item);
             let line = serde_json::json!({ "type": "item.started", "item": normalized });
-            return Some(serde_json::to_string(&line).ok()?);
+            return serde_json::to_string(&line).ok();
         }
         "item/completed" => {
             let item = params.get("item")?;
             let normalized = normalize_item_types(item);
             let line = serde_json::json!({ "type": "item.completed", "item": normalized });
-            return Some(serde_json::to_string(&line).ok()?);
+            return serde_json::to_string(&line).ok();
         }
         "item/updated" => {
             let item = params.get("item")?;
             let normalized = normalize_item_types(item);
             let line = serde_json::json!({ "type": "item.updated", "item": normalized });
-            return Some(serde_json::to_string(&line).ok()?);
+            return serde_json::to_string(&line).ok();
         }
         "item/agentMessage/delta" => {
             // Delta events don't have a direct old-format equivalent; skip for history
@@ -768,13 +768,13 @@ fn notification_to_history_line(
                 "item.updated"
             };
             let line = serde_json::json!({ "type": event_type, "item": item });
-            return Some(serde_json::to_string(&line).ok()?);
+            return serde_json::to_string(&line).ok();
         }
         _ => return None,
     };
 
     let line = serde_json::json!({ "type": event_type });
-    Some(serde_json::to_string(&line).ok()?)
+    serde_json::to_string(&line).ok()
 }
 
 /// Process a server notification, emitting Tauri events.
@@ -899,11 +899,9 @@ fn process_server_notification(
         "item/plan/delta" => {
             let item_id = params.get("itemId").and_then(|v| v.as_str()).unwrap_or("");
             let delta = params.get("delta").and_then(|v| v.as_str()).unwrap_or("");
-            if !delta.is_empty() {
-                if !item_id.is_empty() {
-                    let plan = pending_plan_texts.entry(item_id.to_string()).or_default();
-                    plan.push_str(delta);
-                }
+            if !delta.is_empty() && !item_id.is_empty() {
+                let plan = pending_plan_texts.entry(item_id.to_string()).or_default();
+                plan.push_str(delta);
             }
         }
         "turn/plan/updated" => {
@@ -1275,6 +1273,7 @@ fn upsert_history_tool_call(
 }
 
 /// Handle an approval request from the app-server.
+#[allow(clippy::too_many_arguments)]
 fn handle_approval_request(
     app: &tauri::AppHandle,
     session_id: &str,

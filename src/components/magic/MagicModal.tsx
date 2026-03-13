@@ -271,7 +271,8 @@ export function MagicModal() {
 
   const sessionModalOpen = useUIStore(state => state.sessionChatModalOpen)
   // Whether MagicModal was opened from ProjectCanvasView (no active chat session)
-  const isOnCanvas = !useChatStore(state => state.activeWorktreePath) && !sessionModalOpen
+  const isOnCanvas =
+    !useChatStore(state => state.activeWorktreePath) && !sessionModalOpen
   const pickRemoteOrRun = useRemotePicker(worktree?.path)
 
   // Build columns dynamically based on PR state
@@ -342,15 +343,20 @@ export function MagicModal() {
                 'commit_message_provider',
                 preferences?.default_provider
               ),
-              reasoningEffort: preferences?.magic_prompt_efforts?.commit_message_effort ?? null,
+              reasoningEffort:
+                preferences?.magic_prompt_efforts?.commit_message_effort ??
+                null,
             }
           )
           triggerImmediateGitPoll()
           if (worktree.project_id) fetchWorktreesStatus(worktree.project_id)
           if (result.push_fell_back) {
-            toast.warning('Could not push to PR branch, pushed to new branch instead', {
-              id: toastId,
-            })
+            toast.warning(
+              'Could not push to PR branch, pushed to new branch instead',
+              {
+                id: toastId,
+              }
+            )
           } else if (result.commit_hash) {
             const prefix = isPush ? 'Committed and pushed' : 'Committed'
             toast.success(`${prefix}: ${result.message.split('\n')[0]}`, {
@@ -397,11 +403,18 @@ export function MagicModal() {
           const doPush = async (remote?: string) => {
             const toastId = toast.loading(`Pushing ${worktree.branch}...`)
             try {
-              const result = await gitPush(worktree.path, worktree.pr_number, remote)
+              const result = await gitPush(
+                worktree.path,
+                worktree.pr_number,
+                remote
+              )
               triggerImmediateGitPoll()
               if (worktree.project_id) fetchWorktreesStatus(worktree.project_id)
               if (result.fellBack) {
-                toast.warning('Could not push to PR branch, pushed to new branch instead', { id: toastId })
+                toast.warning(
+                  'Could not push to PR branch, pushed to new branch instead',
+                  { id: toastId }
+                )
               } else {
                 toast.success('Changes pushed', { id: toastId })
               }
@@ -436,7 +449,8 @@ export function MagicModal() {
                   'pr_content_provider',
                   preferences?.default_provider
                 ),
-                reasoningEffort: preferences?.magic_prompt_efforts?.pr_content_effort ?? null,
+                reasoningEffort:
+                  preferences?.magic_prompt_efforts?.pr_content_effort ?? null,
               }
             )
             if (!result.existing) {
@@ -514,7 +528,8 @@ export function MagicModal() {
             })
 
             // Inherit model/mode/thinking settings from current session
-            if (currentSessionId) copySessionSettings(currentSessionId, newSession.id)
+            if (currentSessionId)
+              copySessionSettings(currentSessionId, newSession.id)
 
             // Navigate to session in chat view
             useProjectsStore.getState().selectWorktree(selectedWorktreeId)
@@ -593,7 +608,8 @@ ${resolveInstructions}`
                 'code_review_provider',
                 preferences?.default_provider
               ),
-              reasoningEffort: preferences?.magic_prompt_efforts?.code_review_effort ?? null,
+              reasoningEffort:
+                preferences?.magic_prompt_efforts?.code_review_effort ?? null,
               reviewRunId,
             })
 
@@ -614,7 +630,8 @@ ${resolveInstructions}`
             setReviewResults(newSession.id, result)
 
             // Inherit model/mode/thinking settings from current session
-            if (currentReviewSessionId) copySessionSettings(currentReviewSessionId, newSession.id)
+            if (currentReviewSessionId)
+              copySessionSettings(currentReviewSessionId, newSession.id)
 
             // Navigate to ProjectCanvasView and auto-open session modal
             setActiveSession(selectedWorktreeId, newSession.id)
@@ -622,10 +639,7 @@ ${resolveInstructions}`
             clearActiveWorktree()
             useUIStore
               .getState()
-              .markWorktreeForAutoOpenSession(
-                selectedWorktreeId,
-                newSession.id
-              )
+              .markWorktreeForAutoOpenSession(selectedWorktreeId, newSession.id)
 
             // Persist review results to session file
             invoke('update_session_state', {
@@ -644,31 +658,32 @@ ${resolveInstructions}`
             toast.success(
               `Review done on ${reviewTarget} (${findingCount} findings)`,
               {
-              id: toastId,
-              action: {
-                label: 'Open',
-                onClick: () => {
-                  const {
-                    setActiveSession,
-                    clearActiveWorktree,
-                  } = useChatStore.getState()
-                  useProjectsStore.getState().selectWorktree(selectedWorktreeId)
-                  clearActiveWorktree()
-                  setActiveSession(selectedWorktreeId, newSession.id)
-                  setTimeout(() => {
-                    window.dispatchEvent(
-                      new CustomEvent('open-session-modal', {
-                        detail: {
-                          sessionId: newSession.id,
-                          worktreeId: selectedWorktreeId,
-                          worktreePath: worktree.path,
-                        },
-                      })
-                    )
-                  }, 50)
+                id: toastId,
+                action: {
+                  label: 'Open',
+                  onClick: () => {
+                    const { setActiveSession, clearActiveWorktree } =
+                      useChatStore.getState()
+                    useProjectsStore
+                      .getState()
+                      .selectWorktree(selectedWorktreeId)
+                    clearActiveWorktree()
+                    setActiveSession(selectedWorktreeId, newSession.id)
+                    setTimeout(() => {
+                      window.dispatchEvent(
+                        new CustomEvent('open-session-modal', {
+                          detail: {
+                            sessionId: newSession.id,
+                            worktreeId: selectedWorktreeId,
+                            worktreePath: worktree.path,
+                          },
+                        })
+                      )
+                    }, 50)
+                  },
                 },
-              },
-            })
+              }
+            )
           } catch (error) {
             const errorString = String(error)
             const cancelled =

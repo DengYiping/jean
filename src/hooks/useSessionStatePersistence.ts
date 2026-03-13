@@ -201,7 +201,7 @@ export function useSessionStatePersistence() {
         waitingForInput: waitingForInputSessionIds[sessionId] ?? false,
         planFilePath: planFilePaths[sessionId] ?? null,
         pendingPlanMessageId:
-          waitingForInputSessionIds[sessionId] ?? false
+          (waitingForInputSessionIds[sessionId] ?? false)
             ? (pendingPlanMessageIds[sessionId] ?? null)
             : null,
         enabledMcpServers: enabledMcpServers[sessionId] ?? null,
@@ -239,7 +239,9 @@ export function useSessionStatePersistence() {
         // which persists directly via invoke(). Persisting true here risks
         // cross-client overwrites: native client's pauseSession sets true in its
         // Zustand, then this debounced save writes it to disk after web cleared it.
-        waitingForInput: state.waitingForInput ? undefined : state.waitingForInput,
+        waitingForInput: state.waitingForInput
+          ? undefined
+          : state.waitingForInput,
         planFilePath: state.planFilePath,
         pendingPlanMessageId: state.pendingPlanMessageId,
         enabledMcpServers: state.enabledMcpServers,
@@ -562,16 +564,16 @@ export function useSessionStatePersistence() {
     // Update TanStack Query cache immediately to prevent timing gap
     queryClient.setQueryData<Session>(
       chatQueryKeys.session(activeSessionId),
-        old =>
-          old
-            ? {
-                ...old,
-                waiting_for_input: false,
-                is_reviewing: true,
-                waiting_for_input_type: null,
-                pending_plan_message_id: undefined,
-              }
-            : old
+      old =>
+        old
+          ? {
+              ...old,
+              waiting_for_input: false,
+              is_reviewing: true,
+              waiting_for_input_type: null,
+              pending_plan_message_id: undefined,
+            }
+          : old
     )
     queryClient.setQueryData<WorktreeSessions>(
       chatQueryKeys.sessions(effectiveWorktreeId),

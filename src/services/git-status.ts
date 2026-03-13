@@ -9,12 +9,14 @@ import { invoke, useWsConnectionStatus } from '@/lib/transport'
 import { listen, type UnlistenFn } from '@/lib/transport'
 import { useEffect, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 
 import {
   isTauri,
   updateWorktreeCachedStatus,
   projectsQueryKeys,
 } from '@/services/projects'
+import { useChatStore } from '@/store/chat-store'
 import type { GitPushResponse, Worktree } from '@/types/projects'
 import type { GitDiff, CommitHistoryResult } from '@/types/git-diff'
 
@@ -208,9 +210,6 @@ export async function performGitPull(opts: GitPullOptions): Promise<void> {
     remote,
     onMergeConflict,
   } = opts
-  const { toast } = await import('sonner')
-  const { useChatStore } = await import('@/store/chat-store')
-
   const { setWorktreeLoading, clearWorktreeLoading } = useChatStore.getState()
 
   if (worktreeId) {

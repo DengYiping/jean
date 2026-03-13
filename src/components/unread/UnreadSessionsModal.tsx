@@ -51,8 +51,7 @@ function isUnread(session: Session): boolean {
 
 /** Format a unix timestamp (seconds) to relative time like "2h ago" */
 function formatRelativeTime(timestamp: number): string {
-  const ms =
-    timestamp < 1_000_000_000_000 ? timestamp * 1000 : timestamp
+  const ms = timestamp < 1_000_000_000_000 ? timestamp * 1000 : timestamp
   const diffMs = Date.now() - ms
   if (diffMs < 0) return 'just now'
   const minuteMs = 60_000
@@ -126,9 +125,7 @@ export function UnreadSessionsDrawer({
   const panelRef = useRef<HTMLDivElement>(null)
   const [focusedIndex, setFocusedIndex] = useState(-1)
   const { data: allSessions, isLoading } = useAllSessions(open)
-  const selectedProjectId = useProjectsStore(
-    state => state.selectedProjectId
-  )
+  const selectedProjectId = useProjectsStore(state => state.selectedProjectId)
 
   // Invalidate cached data each time panel opens so manually-read sessions disappear
   useEffect(() => {
@@ -246,12 +243,8 @@ export function UnreadSessionsDrawer({
 
   const handleSelect = useCallback(
     (item: UnreadItem) => {
-      const { selectedProjectId, selectProject } =
-        useProjectsStore.getState()
-      const {
-        setActiveSession,
-        clearActiveWorktree,
-      } = useChatStore.getState()
+      const { selectedProjectId, selectProject } = useProjectsStore.getState()
+      const { setActiveSession, clearActiveWorktree } = useChatStore.getState()
 
       const crossProject = selectedProjectId !== item.projectId
       if (crossProject) {
@@ -268,10 +261,7 @@ export function UnreadSessionsDrawer({
         // Component remounts with new projectId key — use store-based auto-open
         useUIStore
           .getState()
-          .markWorktreeForAutoOpenSession(
-            item.worktreeId,
-            item.session.id
-          )
+          .markWorktreeForAutoOpenSession(item.worktreeId, item.session.id)
       } else {
         // Same project, component stays mounted — use event
         setTimeout(() => {

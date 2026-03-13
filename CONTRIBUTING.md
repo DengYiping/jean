@@ -67,19 +67,19 @@ jean/
 
 ## Development Commands
 
-| Command                 | Description                                       |
-| ----------------------- | ------------------------------------------------- |
+| Command                 | Description                                        |
+| ----------------------- | -------------------------------------------------- |
 | `bun run tauri:dev`     | Start app in development mode and rebuild web dist |
-| `bun run tauri:dev:rdp` | Start in dev mode with RDP/remote desktop support |
-| `bun run check:all`     | **Run all quality checks (must pass before PR)**  |
-| `bun run typecheck`     | TypeScript type checking                          |
-| `bun run lint`          | ESLint (zero warnings enforced)                   |
-| `bun run lint:fix`      | Auto-fix lint issues                              |
-| `bun run format`        | Format code with Prettier                         |
-| `bun run test`          | Run Vitest in watch mode                          |
-| `bun run test:run`      | Run tests once                                    |
-| `bun run rust:clippy`   | Rust linting (warnings = errors)                  |
-| `bun run rust:fmt`      | Format Rust code                                  |
+| `bun run tauri:dev:rdp` | Start in dev mode with RDP/remote desktop support  |
+| `bun run check:all`     | **Run all quality checks (must pass before PR)**   |
+| `bun run typecheck`     | TypeScript type checking                           |
+| `bun run lint`          | ESLint (zero warnings enforced)                    |
+| `bun run lint:fix`      | Auto-fix lint issues                               |
+| `bun run format`        | Format code with Prettier                          |
+| `bun run test`          | Run Vitest in watch mode                           |
+| `bun run test:run`      | Run tests once                                     |
+| `bun run rust:clippy`   | Rust linting (warnings = errors)                   |
+| `bun run rust:fmt`      | Format Rust code                                   |
 
 ## Code Style
 

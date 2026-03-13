@@ -9,14 +9,14 @@ interface UseActiveTodosAndAgentsParams {
   lastAssistantMessage: ChatMessage | undefined
 }
 
-type CollabAgentState = {
+interface CollabAgentState {
   status?: string | null
   message?: string | null
   agent_nickname?: string | null
   agentNickname?: string | null
 }
 
-type CollabToolCallInput = {
+interface CollabToolCallInput {
   prompt?: string
   status?: string | null
   receiver_thread_ids?: unknown
@@ -35,9 +35,10 @@ function truncateAgentPrompt(prompt?: string): string {
   return trimmed.length > 80 ? `${trimmed.slice(0, 80)}...` : trimmed
 }
 
-function normalizeAgentStatus(
-  status?: string | null
-): { status: CodexAgent['status']; label: string } {
+function normalizeAgentStatus(status?: string | null): {
+  status: CodexAgent['status']
+  label: string
+} {
   switch (status) {
     case 'completed':
       return { status: 'completed', label: 'Completed' }
@@ -88,11 +89,7 @@ function getCollabAgentStates(
   input: CollabToolCallInput
 ): Record<string, CollabAgentState> {
   const states = input.agents_states ?? input.agentsStates
-  if (
-    !states ||
-    typeof states !== 'object' ||
-    Array.isArray(states)
-  ) {
+  if (!states || typeof states !== 'object' || Array.isArray(states)) {
     return {}
   }
   return states as Record<string, CollabAgentState>
@@ -267,7 +264,10 @@ export function useActiveTodosAndAgents({
         : undefined
       const toolStatus = normalizeToolStatus(input.status)
 
-      if ((tc.name === 'SpawnAgent' || tc.name === 'spawnAgent') && receiverIds.length === 0) {
+      if (
+        (tc.name === 'SpawnAgent' || tc.name === 'spawnAgent') &&
+        receiverIds.length === 0
+      ) {
         upsertAgent(agents, tc.id, {
           name: getAgentNickname(input),
           prompt: prompt ?? 'Sub-agent',

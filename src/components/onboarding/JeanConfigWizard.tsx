@@ -107,8 +107,8 @@ function JeanConfigWizardContent() {
                   is created (e.g. installing dependencies)
                 </li>
                 <li>
-                  <strong>Teardown</strong> runs before a worktree is deleted/archived
-                  (e.g. stopping services)
+                  <strong>Teardown</strong> runs before a worktree is
+                  deleted/archived (e.g. stopping services)
                 </li>
                 <li>
                   <strong>Run</strong> launches your dev server via the run
@@ -120,7 +120,9 @@ function JeanConfigWizardContent() {
               </ul>
               <div className="space-y-0.5 pt-1">
                 <p>
-                  <code className="text-foreground/80">$JEAN_WORKSPACE_PATH</code>
+                  <code className="text-foreground/80">
+                    $JEAN_WORKSPACE_PATH
+                  </code>
                   {' — worktree directory'}
                 </p>
                 <p>

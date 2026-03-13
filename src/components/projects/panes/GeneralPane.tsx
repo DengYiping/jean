@@ -240,8 +240,7 @@ export function GeneralPane({
   const selectedGitHubAccountValue =
     storedGitHubAccountValue &&
     githubAccounts.some(
-      account =>
-        `${account.host}::${account.user}` === storedGitHubAccountValue
+      account => `${account.host}::${account.user}` === storedGitHubAccountValue
     )
       ? storedGitHubAccountValue
       : 'cli-default'
@@ -271,8 +270,12 @@ export function GeneralPane({
         { projectId, linearTeamId: value === 'all' ? '' : value },
         {
           onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: linearQueryKeys.issues(projectId) })
-            queryClient.invalidateQueries({ queryKey: ['linear', 'issue-search', projectId] })
+            queryClient.invalidateQueries({
+              queryKey: linearQueryKeys.issues(projectId),
+            })
+            queryClient.invalidateQueries({
+              queryKey: ['linear', 'issue-search', projectId],
+            })
           },
         }
       )
@@ -491,9 +494,7 @@ export function GeneralPane({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="cli-default">
-                Use gh active account
-              </SelectItem>
+              <SelectItem value="cli-default">Use gh active account</SelectItem>
               {githubAccounts.map(account => {
                 const value = `${account.host}::${account.user}`
                 const status = account.active
@@ -644,10 +645,7 @@ export function GeneralPane({
                 disabled={teamsLoading}
               >
                 <RefreshCw
-                  className={cn(
-                    'h-4 w-4',
-                    teamsLoading && 'animate-spin'
-                  )}
+                  className={cn('h-4 w-4', teamsLoading && 'animate-spin')}
                 />
               </Button>
             </div>

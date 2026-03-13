@@ -261,7 +261,10 @@ export const VirtualizedMessageList = memo(
             rect.top < containerRect.bottom && rect.bottom > containerRect.top
           )
         },
-        getVisibleRange: () => ({ start: startIndex, end: messages.length - 1 }),
+        getVisibleRange: () => ({
+          start: startIndex,
+          end: messages.length - 1,
+        }),
       }))
 
       // Handle scroll-to-bottom when new messages arrive
@@ -320,7 +323,9 @@ export const VirtualizedMessageList = memo(
                   approveShortcut={approveShortcut}
                   approveShortcutYolo={approveShortcutYolo}
                   approveShortcutClearContext={approveShortcutClearContext}
-                  approveShortcutClearContextBuild={approveShortcutClearContextBuild}
+                  approveShortcutClearContextBuild={
+                    approveShortcutClearContextBuild
+                  }
                   approveButtonRef={
                     globalIndex === lastPlanMessageIndex
                       ? approveButtonRef

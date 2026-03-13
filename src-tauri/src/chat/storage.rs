@@ -199,6 +199,7 @@ fn save_index_internal(app: &AppHandle, index: &WorktreeIndex) -> Result<(), Str
 
 /// Save an empty worktree index (no default session, auto-naming disabled).
 /// Use this to pre-initialize a worktree created programmatically from the backend.
+#[allow(dead_code)] // Backend-created worktree initialization still depends on this helper.
 pub fn save_empty_index(app: &AppHandle, worktree_id: &str) -> Result<(), String> {
     let lock = get_index_lock(worktree_id);
     let _guard = lock.lock().unwrap();
@@ -224,6 +225,7 @@ pub fn load_index(app: &AppHandle, worktree_id: &str) -> Result<WorktreeIndex, S
 
 /// Atomically load, modify, and save a worktree index.
 /// This prevents race conditions by holding a lock for the entire operation.
+#[allow(dead_code)] // Kept for atomic index updates used by backend-only flows.
 pub fn with_index_mut<F, T>(app: &AppHandle, worktree_id: &str, f: F) -> Result<T, String>
 where
     F: FnOnce(&mut WorktreeIndex) -> Result<T, String>,

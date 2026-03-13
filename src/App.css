@@ -310,7 +310,9 @@
 
 /* Bell ring animation for unread notifications */
 @keyframes bell-ring {
-  0%, 70%, 100% {
+  0%,
+  70%,
+  100% {
     transform: rotate(0deg);
   }
   5% {
@@ -484,8 +486,13 @@ kbd {
 }
 
 /* Hidden scrollbar for horizontally scrollable tab bars */
-.scrollbar-hide::-webkit-scrollbar { display: none; }
-.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
 
 /* Custom scrollbar styling to match Radix ScrollArea */
 .custom-scrollbar::-webkit-scrollbar {

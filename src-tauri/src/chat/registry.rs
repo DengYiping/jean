@@ -24,7 +24,9 @@ static PENDING_CANCELS: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| Mutex::new(H
 /// When cancel is requested, the flag is set so the blocking HTTP thread can detect it.
 /// Stores (cancel_flag, optional_opencode_session_id) — the session ID is set after
 /// the OpenCode session is created, enabling server-side interrupt on cancel.
-static CANCEL_FLAGS: Lazy<Mutex<HashMap<String, (Arc<AtomicBool>, Option<String>)>>> =
+type CancelFlagEntry = (Arc<AtomicBool>, Option<String>);
+
+static CANCEL_FLAGS: Lazy<Mutex<HashMap<String, CancelFlagEntry>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
 /// Codex app-server turn registry: maps session_id → (thread_id, turn_id).

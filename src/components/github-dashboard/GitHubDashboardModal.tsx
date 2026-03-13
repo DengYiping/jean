@@ -1,4 +1,10 @@
-import { useState, useMemo, useCallback, useEffect, type ElementType } from 'react'
+import {
+  useState,
+  useMemo,
+  useCallback,
+  useEffect,
+  type ElementType,
+} from 'react'
 import { useQueries } from '@tanstack/react-query'
 import {
   CircleDot,
@@ -38,7 +44,11 @@ import { useUIStore } from '@/store/ui-store'
 import { useProjects, isTauri, useCreateWorktree } from '@/services/projects'
 import { usePreferences } from '@/services/preferences'
 import { isFolder } from '@/types/projects'
-import { isGhAuthError, githubQueryKeys, parseLabelQuery } from '@/services/github'
+import {
+  isGhAuthError,
+  githubQueryKeys,
+  parseLabelQuery,
+} from '@/services/github'
 import { GhAuthError } from '@/components/shared/GhAuthError'
 import { IssuePreviewModal } from '@/components/worktree/IssuePreviewModal'
 import { useGhLogin } from '@/hooks/useGhLogin'
@@ -109,7 +119,8 @@ function DashboardTabBar({
           <tab.icon className="h-4 w-4" />
           <span className="hidden sm:inline">{tab.label}</span>
           <kbd className="ml-1 hidden sm:inline-flex h-4 items-center justify-center rounded border border-border bg-muted px-1 text-[10px] text-muted-foreground">
-            {getModifierSymbol()}{idx + 1}
+            {getModifierSymbol()}
+            {idx + 1}
           </kbd>
         </button>
       ))}
@@ -207,14 +218,22 @@ function IssueRow({
                 key={label.name}
                 className={cn(
                   'px-1.5 py-0.5 text-xs rounded-full',
-                  onLabelClick && 'cursor-pointer hover:opacity-75 transition-opacity'
+                  onLabelClick &&
+                    'cursor-pointer hover:opacity-75 transition-opacity'
                 )}
                 style={{
                   backgroundColor: `#${label.color}20`,
                   color: `#${label.color}`,
                   border: `1px solid #${label.color}40`,
                 }}
-                onClick={onLabelClick ? e => { e.stopPropagation(); onLabelClick(label.name) } : undefined}
+                onClick={
+                  onLabelClick
+                    ? e => {
+                        e.stopPropagation()
+                        onLabelClick(label.name)
+                      }
+                    : undefined
+                }
               >
                 {label.name}
               </span>
@@ -360,14 +379,22 @@ function PRRow({
                 key={label.name}
                 className={cn(
                   'px-1.5 py-0.5 text-xs rounded-full',
-                  onLabelClick && 'cursor-pointer hover:opacity-75 transition-opacity'
+                  onLabelClick &&
+                    'cursor-pointer hover:opacity-75 transition-opacity'
                 )}
                 style={{
                   backgroundColor: `#${label.color}20`,
                   color: `#${label.color}`,
                   border: `1px solid #${label.color}40`,
                 }}
-                onClick={onLabelClick ? e => { e.stopPropagation(); onLabelClick(label.name) } : undefined}
+                onClick={
+                  onLabelClick
+                    ? e => {
+                        e.stopPropagation()
+                        onLabelClick(label.name)
+                      }
+                    : undefined
+                }
               >
                 {label.name}
               </span>
@@ -450,7 +477,9 @@ function SecurityAlertRow({
             {alert.severity}
           </span>
           <span className="text-xs text-muted-foreground">#{alert.number}</span>
-          <span className="text-sm font-medium truncate">{alert.packageName}</span>
+          <span className="text-sm font-medium truncate">
+            {alert.packageName}
+          </span>
         </div>
         <span className="text-xs text-muted-foreground truncate block">
           {alert.summary}
@@ -518,7 +547,9 @@ function AdvisoryRow({
           >
             {advisory.severity}
           </span>
-          <span className="text-sm font-medium truncate">{advisory.summary}</span>
+          <span className="text-sm font-medium truncate">
+            {advisory.summary}
+          </span>
         </div>
         <span className="text-xs text-muted-foreground/60">
           {advisory.ghsaId}
@@ -572,7 +603,9 @@ function ProjectSection({
 
 export function GitHubDashboardModal() {
   const githubDashboardOpen = useUIStore(state => state.githubDashboardOpen)
-  const setGitHubDashboardOpen = useUIStore(state => state.setGitHubDashboardOpen)
+  const setGitHubDashboardOpen = useUIStore(
+    state => state.setGitHubDashboardOpen
+  )
   const { data: preferences } = usePreferences()
   const showIssueSources = preferences?.show_create_page_issue_sources ?? true
   const [activeTab, setActiveTab] = useState<DashboardTab>(
@@ -587,7 +620,9 @@ export function GitHubDashboardModal() {
 
   const handleLabelClick = useCallback((labelName: string) => {
     const token = `label:"${labelName}"`
-    setSearchQuery(prev => (prev.includes(token) ? prev : prev ? `${prev} ${token}` : token))
+    setSearchQuery(prev =>
+      prev.includes(token) ? prev : prev ? `${prev} ${token}` : token
+    )
   }, [])
   const [preview, setPreview] = useState<PreviewState | null>(null)
   // Track which item is being created (number for issues/prs/alerts, ghsaId for advisories)
@@ -699,10 +734,13 @@ export function GitHubDashboardModal() {
       queryFn: async (): Promise<RepositoryAdvisory[]> => {
         if (!isTauri()) return []
         try {
-          return await invoke<RepositoryAdvisory[]>('list_repository_advisories', {
-            projectPath: p.path,
-            state: null,
-          })
+          return await invoke<RepositoryAdvisory[]>(
+            'list_repository_advisories',
+            {
+              projectPath: p.path,
+              state: null,
+            }
+          )
         } catch (error) {
           if (isGhAuthError(error)) throw error
           return []
@@ -720,11 +758,22 @@ export function GitHubDashboardModal() {
   // ==========================================================================
 
   const handleInvestigateIssue = useCallback(
-    async (issue: GitHubIssue, projectId: string, projectPath: string, background: boolean) => {
+    async (
+      issue: GitHubIssue,
+      projectId: string,
+      projectPath: string,
+      background: boolean
+    ) => {
       setCreatingId(`issue-${issue.number}`)
       try {
         const detail = await invoke<
-          GitHubIssue & { comments: { body: string; author: { login: string }; created_at: string }[] }
+          GitHubIssue & {
+            comments: {
+              body: string
+              author: { login: string }
+              created_at: string
+            }[]
+          }
         >('get_github_issue', { projectPath, issueNumber: issue.number })
 
         const issueContext: IssueContext = {
@@ -733,11 +782,20 @@ export function GitHubDashboardModal() {
           body: detail.body,
           comments: (detail.comments ?? [])
             .filter(c => c && c.created_at && c.author)
-            .map(c => ({ body: c.body ?? '', author: { login: c.author.login ?? '' }, createdAt: c.created_at })),
+            .map(c => ({
+              body: c.body ?? '',
+              author: { login: c.author.login ?? '' },
+              createdAt: c.created_at,
+            })),
         }
 
-        if (background) useUIStore.getState().incrementPendingBackgroundCreations()
-        const worktree = await createWorktree.mutateAsync({ projectId, issueContext, background })
+        if (background)
+          useUIStore.getState().incrementPendingBackgroundCreations()
+        const worktree = await createWorktree.mutateAsync({
+          projectId,
+          issueContext,
+          background,
+        })
         useUIStore.getState().markWorktreeForAutoInvestigate(worktree.id)
       } catch (error) {
         toast.error(`Failed: ${error}`)
@@ -749,13 +807,27 @@ export function GitHubDashboardModal() {
   )
 
   const handleInvestigatePR = useCallback(
-    async (pr: GitHubPullRequest, projectId: string, projectPath: string, background: boolean) => {
+    async (
+      pr: GitHubPullRequest,
+      projectId: string,
+      projectPath: string,
+      background: boolean
+    ) => {
       setCreatingId(`pr-${pr.number}`)
       try {
         const detail = await invoke<
           GitHubPullRequest & {
-            comments: { body: string; author: { login: string }; created_at: string }[]
-            reviews: { body: string; state: string; author: { login: string }; submittedAt?: string }[]
+            comments: {
+              body: string
+              author: { login: string }
+              created_at: string
+            }[]
+            reviews: {
+              body: string
+              state: string
+              author: { login: string }
+              submittedAt?: string
+            }[]
           }
         >('get_github_pr', { projectPath, prNumber: pr.number })
 
@@ -767,14 +839,28 @@ export function GitHubDashboardModal() {
           baseRefName: detail.baseRefName,
           comments: (detail.comments ?? [])
             .filter(c => c && c.created_at && c.author)
-            .map(c => ({ body: c.body ?? '', author: { login: c.author.login ?? '' }, createdAt: c.created_at })),
+            .map(c => ({
+              body: c.body ?? '',
+              author: { login: c.author.login ?? '' },
+              createdAt: c.created_at,
+            })),
           reviews: (detail.reviews ?? [])
             .filter(r => r && r.author)
-            .map(r => ({ body: r.body ?? '', state: r.state, author: { login: r.author.login ?? '' }, submittedAt: r.submittedAt })),
+            .map(r => ({
+              body: r.body ?? '',
+              state: r.state,
+              author: { login: r.author.login ?? '' },
+              submittedAt: r.submittedAt,
+            })),
         }
 
-        if (background) useUIStore.getState().incrementPendingBackgroundCreations()
-        const worktree = await createWorktree.mutateAsync({ projectId, prContext, background })
+        if (background)
+          useUIStore.getState().incrementPendingBackgroundCreations()
+        const worktree = await createWorktree.mutateAsync({
+          projectId,
+          prContext,
+          background,
+        })
         useUIStore.getState().markWorktreeForAutoInvestigatePR(worktree.id)
       } catch (error) {
         toast.error(`Failed: ${error}`)
@@ -796,8 +882,17 @@ export function GitHubDashboardModal() {
       try {
         const detail = await invoke<
           GitHubPullRequest & {
-            comments: { body: string; author: { login: string }; created_at: string }[]
-            reviews: { body: string; state: string; author: { login: string }; submittedAt?: string }[]
+            comments: {
+              body: string
+              author: { login: string }
+              created_at: string
+            }[]
+            reviews: {
+              body: string
+              state: string
+              author: { login: string }
+              submittedAt?: string
+            }[]
           }
         >('get_github_pr', { projectPath, prNumber: pr.number })
 
@@ -809,13 +904,23 @@ export function GitHubDashboardModal() {
           baseRefName: detail.baseRefName,
           comments: (detail.comments ?? [])
             .filter(c => c && c.created_at && c.author)
-            .map(c => ({ body: c.body ?? '', author: { login: c.author.login ?? '' }, createdAt: c.created_at })),
+            .map(c => ({
+              body: c.body ?? '',
+              author: { login: c.author.login ?? '' },
+              createdAt: c.created_at,
+            })),
           reviews: (detail.reviews ?? [])
             .filter(r => r && r.author)
-            .map(r => ({ body: r.body ?? '', state: r.state, author: { login: r.author.login ?? '' }, submittedAt: r.submittedAt })),
+            .map(r => ({
+              body: r.body ?? '',
+              state: r.state,
+              author: { login: r.author.login ?? '' },
+              submittedAt: r.submittedAt,
+            })),
         }
 
-        if (background) useUIStore.getState().incrementPendingBackgroundCreations()
+        if (background)
+          useUIStore.getState().incrementPendingBackgroundCreations()
         await createWorktree.mutateAsync({ projectId, prContext, background })
         if (!background) {
           setGitHubDashboardOpen(false)
@@ -830,10 +935,18 @@ export function GitHubDashboardModal() {
   )
 
   const handleInvestigateSecurityAlert = useCallback(
-    async (alert: DependabotAlert, projectId: string, projectPath: string, background: boolean) => {
+    async (
+      alert: DependabotAlert,
+      projectId: string,
+      projectPath: string,
+      background: boolean
+    ) => {
       setCreatingId(`security-${alert.number}`)
       try {
-        const detail = await invoke<DependabotAlert>('get_dependabot_alert', { projectPath, alertNumber: alert.number })
+        const detail = await invoke<DependabotAlert>('get_dependabot_alert', {
+          projectPath,
+          alertNumber: alert.number,
+        })
 
         const securityContext: SecurityAlertContext = {
           number: detail.number,
@@ -847,9 +960,16 @@ export function GitHubDashboardModal() {
           manifestPath: detail.manifestPath,
         }
 
-        if (background) useUIStore.getState().incrementPendingBackgroundCreations()
-        const worktree = await createWorktree.mutateAsync({ projectId, securityContext, background })
-        useUIStore.getState().markWorktreeForAutoInvestigateSecurityAlert(worktree.id)
+        if (background)
+          useUIStore.getState().incrementPendingBackgroundCreations()
+        const worktree = await createWorktree.mutateAsync({
+          projectId,
+          securityContext,
+          background,
+        })
+        useUIStore
+          .getState()
+          .markWorktreeForAutoInvestigateSecurityAlert(worktree.id)
       } catch (error) {
         toast.error(`Failed: ${error}`)
       } finally {
@@ -860,10 +980,18 @@ export function GitHubDashboardModal() {
   )
 
   const handleInvestigateAdvisory = useCallback(
-    async (advisory: RepositoryAdvisory, projectId: string, projectPath: string, background: boolean) => {
+    async (
+      advisory: RepositoryAdvisory,
+      projectId: string,
+      projectPath: string,
+      background: boolean
+    ) => {
       setCreatingId(`advisory-${advisory.ghsaId}`)
       try {
-        const detail = await invoke<RepositoryAdvisory>('get_repository_advisory', { projectPath, ghsaId: advisory.ghsaId })
+        const detail = await invoke<RepositoryAdvisory>(
+          'get_repository_advisory',
+          { projectPath, ghsaId: advisory.ghsaId }
+        )
 
         const advisoryContext: AdvisoryContext = {
           ghsaId: detail.ghsaId,
@@ -879,9 +1007,16 @@ export function GitHubDashboardModal() {
           })),
         }
 
-        if (background) useUIStore.getState().incrementPendingBackgroundCreations()
-        const worktree = await createWorktree.mutateAsync({ projectId, advisoryContext, background })
-        useUIStore.getState().markWorktreeForAutoInvestigateAdvisory(worktree.id)
+        if (background)
+          useUIStore.getState().incrementPendingBackgroundCreations()
+        const worktree = await createWorktree.mutateAsync({
+          projectId,
+          advisoryContext,
+          background,
+        })
+        useUIStore
+          .getState()
+          .markWorktreeForAutoInvestigateAdvisory(worktree.id)
       } catch (error) {
         toast.error(`Failed: ${error}`)
       } finally {
@@ -928,11 +1063,14 @@ export function GitHubDashboardModal() {
 
       if (activeTab === 'issues') {
         const issueData = issueResults[projectIdx]?.data
-        const issues = (Array.isArray(issueData) ? issueData : issueData?.issues ?? []) as GitHubIssue[]
+        const issues = (
+          Array.isArray(issueData) ? issueData : (issueData?.issues ?? [])
+        ) as GitHubIssue[]
         const filtered = issues.filter(i => {
           if (labelFilters.length > 0) {
             const iLabels = i.labels.map(l => l.name.toLowerCase())
-            if (!labelFilters.every(l => iLabels.some(il => il.includes(l)))) return false
+            if (!labelFilters.every(l => iLabels.some(il => il.includes(l))))
+              return false
           }
           if (!q) return true
           return (
@@ -949,7 +1087,8 @@ export function GitHubDashboardModal() {
         const filtered = prs.filter(p => {
           if (labelFilters.length > 0) {
             const pLabels = p.labels.map(l => l.name.toLowerCase())
-            if (!labelFilters.every(l => pLabels.some(pl => pl.includes(l)))) return false
+            if (!labelFilters.every(l => pLabels.some(pl => pl.includes(l))))
+              return false
           }
           if (!q) return true
           return (
@@ -962,22 +1101,46 @@ export function GitHubDashboardModal() {
       }
 
       if (activeTab === 'security') {
-        const alerts = (securityResults[projectIdx]?.data ?? []) as DependabotAlert[]
+        const alerts = (securityResults[projectIdx]?.data ??
+          []) as DependabotAlert[]
         const filtered = q
-          ? alerts.filter(a => a.packageName.toLowerCase().includes(q) || a.summary.toLowerCase().includes(q) || a.number.toString().includes(q))
+          ? alerts.filter(
+              a =>
+                a.packageName.toLowerCase().includes(q) ||
+                a.summary.toLowerCase().includes(q) ||
+                a.number.toString().includes(q)
+            )
           : alerts
         return { project, items: filtered }
       }
 
-      const advisories = (advisoryResults[projectIdx]?.data ?? []) as RepositoryAdvisory[]
+      const advisories = (advisoryResults[projectIdx]?.data ??
+        []) as RepositoryAdvisory[]
       const filtered = q
-        ? advisories.filter(a => a.summary.toLowerCase().includes(q) || a.ghsaId.toLowerCase().includes(q))
+        ? advisories.filter(
+            a =>
+              a.summary.toLowerCase().includes(q) ||
+              a.ghsaId.toLowerCase().includes(q)
+          )
         : advisories
       return { project, items: filtered }
     })
-  }, [filteredProjects, projects, activeTab, issueResults, prResults, securityResults, advisoryResults, q, labelFilters])
+  }, [
+    filteredProjects,
+    projects,
+    activeTab,
+    issueResults,
+    prResults,
+    securityResults,
+    advisoryResults,
+    q,
+    labelFilters,
+  ])
 
-  const totalCount = projectData.reduce((sum, { items }) => sum + items.length, 0)
+  const totalCount = projectData.reduce(
+    (sum, { items }) => sum + items.length,
+    0
+  )
 
   return (
     <Dialog open={githubDashboardOpen} onOpenChange={setGitHubDashboardOpen}>
@@ -1053,10 +1216,19 @@ export function GitHubDashboardModal() {
                           issue={issue}
                           isCreating={creatingId === `issue-${issue.number}`}
                           onClick={() =>
-                            setPreview({ projectPath: project.path, type: 'issue', number: issue.number })
+                            setPreview({
+                              projectPath: project.path,
+                              type: 'issue',
+                              number: issue.number,
+                            })
                           }
                           onInvestigate={bg =>
-                            handleInvestigateIssue(issue, project.id, project.path, bg)
+                            handleInvestigateIssue(
+                              issue,
+                              project.id,
+                              project.path,
+                              bg
+                            )
                           }
                           onLabelClick={handleLabelClick}
                         />
@@ -1078,7 +1250,12 @@ export function GitHubDashboardModal() {
                             })
                           }
                           onInvestigate={bg =>
-                            handleInvestigatePR(pr, project.id, project.path, bg)
+                            handleInvestigatePR(
+                              pr,
+                              project.id,
+                              project.path,
+                              bg
+                            )
                           }
                           onLabelClick={handleLabelClick}
                         />
@@ -1090,10 +1267,19 @@ export function GitHubDashboardModal() {
                           alert={alert}
                           isCreating={creatingId === `security-${alert.number}`}
                           onClick={() =>
-                            setPreview({ projectPath: project.path, type: 'security', number: alert.number })
+                            setPreview({
+                              projectPath: project.path,
+                              type: 'security',
+                              number: alert.number,
+                            })
                           }
                           onInvestigate={bg =>
-                            handleInvestigateSecurityAlert(alert, project.id, project.path, bg)
+                            handleInvestigateSecurityAlert(
+                              alert,
+                              project.id,
+                              project.path,
+                              bg
+                            )
                           }
                         />
                       ))}
@@ -1102,12 +1288,24 @@ export function GitHubDashboardModal() {
                         <AdvisoryRow
                           key={advisory.ghsaId}
                           advisory={advisory}
-                          isCreating={creatingId === `advisory-${advisory.ghsaId}`}
+                          isCreating={
+                            creatingId === `advisory-${advisory.ghsaId}`
+                          }
                           onClick={() =>
-                            setPreview({ projectPath: project.path, type: 'advisory', number: 0, ghsaId: advisory.ghsaId })
+                            setPreview({
+                              projectPath: project.path,
+                              type: 'advisory',
+                              number: 0,
+                              ghsaId: advisory.ghsaId,
+                            })
                           }
                           onInvestigate={bg =>
-                            handleInvestigateAdvisory(advisory, project.id, project.path, bg)
+                            handleInvestigateAdvisory(
+                              advisory,
+                              project.id,
+                              project.path,
+                              bg
+                            )
                           }
                         />
                       ))}

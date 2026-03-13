@@ -40,7 +40,7 @@ import { useChatStore } from '@/store/chat-store'
 import { useProjectsStore } from '@/store/projects-store'
 import { chatQueryKeys, useSession } from '@/services/chat'
 import { usePreferences } from '@/services/preferences'
-import type { WorktreeSessions } from '@/types/chat'
+import type { ThreadTokenUsage, WorktreeSessions } from '@/types/chat'
 import { DEFAULT_KEYBINDINGS, formatShortcutDisplay } from '@/types/keybindings'
 import type { KeybindingHint } from '@/components/ui/keybinding-hints'
 import { getResumeCommand } from '@/components/chat/session-card-utils'
@@ -55,6 +55,14 @@ const CANVAS_HINTS: KeybindingHint[] = [
   { shortcut: DEFAULT_KEYBINDINGS.open_magic_modal as string, label: 'magic' },
   { shortcut: DEFAULT_KEYBINDINGS.close_session_or_worktree as string, label: 'close' },
 ]
+
+type UsageTotals = {
+  input: number
+  output: number
+  cacheRead: number
+  cacheCreation: number
+  totalTokens: number
+}
 
 function KeybindingHintsButton({ hints }: { hints: KeybindingHint[] }) {
   return (
@@ -159,23 +167,11 @@ export function FloatingDock() {
   )
 
   const activeUsageEntry = useMemo(() => {
-    const usageTotals = (activeSession?.messages ?? []).reduce(
-      (totals, message) => {
-        if (!message.usage) return totals
-        totals.input += message.usage.input_tokens
-        totals.output += message.usage.output_tokens
-        totals.cacheRead += message.usage.cache_read_input_tokens ?? 0
-        totals.cacheCreation += message.usage.cache_creation_input_tokens ?? 0
-        return totals
-      },
-      { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 }
+    const usageTotals = getFloatingDockUsageTotals(
+      activeBackend,
+      activeSession?.messages,
+      threadTokenUsage
     )
-
-    const total =
-      usageTotals.input +
-      usageTotals.output +
-      usageTotals.cacheRead +
-      usageTotals.cacheCreation
     const iconMap = {
       claude: Sparkles,
       codex: CodexIcon,
@@ -192,23 +188,20 @@ export function FloatingDock() {
       label: labelMap[activeBackend],
       Icon: iconMap[activeBackend],
       sessionId: activeSessionId ?? null,
-      totalTokens: total,
       ...usageTotals,
     }
-  }, [activeBackend, activeSession?.messages, activeSessionId])
+  }, [activeBackend, activeSession?.messages, activeSessionId, threadTokenUsage])
 
   const contextMeter = useMemo(() => {
     if (!threadTokenUsage?.modelContextWindow) return null
-    const pct = computeContextPercent(
-      threadTokenUsage.total.totalTokens,
-      threadTokenUsage.modelContextWindow
-    )
+    const usedTokens = activeUsageEntry.input + activeUsageEntry.output
+    const pct = computeContextPercent(usedTokens, threadTokenUsage.modelContextWindow)
     return {
       percent: pct,
-      used: threadTokenUsage.total.totalTokens,
+      used: usedTokens,
       window: threadTokenUsage.modelContextWindow,
     }
-  }, [threadTokenUsage])
+  }, [activeUsageEntry.input, activeUsageEntry.output, threadTokenUsage])
 
   const usageBadge = useMemo(
     () => ({
@@ -486,15 +479,55 @@ function formatTokens(tokens: number): string {
   return tokens.toString()
 }
 
-const BASELINE_TOKENS = 12_000
+export function getFloatingDockUsageTotals(
+  backend: 'claude' | 'codex' | 'opencode',
+  messages: Array<{
+    usage?: {
+      input_tokens: number
+      output_tokens: number
+      cache_read_input_tokens?: number
+      cache_creation_input_tokens?: number
+    }
+  }> = [],
+  threadTokenUsage?: ThreadTokenUsage
+): UsageTotals {
+  if (backend === 'codex' && threadTokenUsage) {
+    const input = threadTokenUsage.last.inputTokens
+    const output = threadTokenUsage.last.outputTokens
+    const cacheRead = threadTokenUsage.last.cachedInputTokens
+    const cacheCreation = 0
+    return {
+      input,
+      output,
+      cacheRead,
+      cacheCreation,
+      totalTokens: input + output + cacheRead + cacheCreation,
+    }
+  }
 
-function computeContextPercent(
-  totalTokens: number,
+  const sessionTotals = messages.reduce<UsageTotals>(
+    (totals, message) => {
+      if (!message.usage) return totals
+      totals.input += message.usage.input_tokens
+      totals.output += message.usage.output_tokens
+      totals.cacheRead += message.usage.cache_read_input_tokens ?? 0
+      totals.cacheCreation += message.usage.cache_creation_input_tokens ?? 0
+      totals.totalTokens =
+        totals.input + totals.output + totals.cacheRead + totals.cacheCreation
+      return totals
+    },
+    { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, totalTokens: 0 }
+  )
+
+  return sessionTotals
+}
+
+export function computeContextPercent(
+  usedTokens: number,
   contextWindow: number
 ): number {
-  if (contextWindow <= BASELINE_TOKENS) return 0
-  const effectiveWindow = contextWindow - BASELINE_TOKENS
-  const used = Math.max(totalTokens - BASELINE_TOKENS, 0)
-  const remaining = Math.max(effectiveWindow - used, 0)
-  return Math.round(Math.min(Math.max((remaining / effectiveWindow) * 100, 0), 100))
+  if (contextWindow <= 0) return 0
+  const used = Math.max(usedTokens, 0)
+  const remaining = Math.max(contextWindow - used, 0)
+  return Math.round(Math.min(Math.max((remaining / contextWindow) * 100, 0), 100))
 }

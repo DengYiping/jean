@@ -8,13 +8,15 @@ Tauri v2 · React 19 · Rust · TypeScript · Tailwind CSS v4 · shadcn/ui v4 ·
 
 </div>
 
+> This repository is a fork of the upstream [coollabsio/jean](https://github.com/coollabsio/jean). It stays close to upstream Jean while carrying fork-specific changes focused on Codex collaboration workflows, local skills, usage telemetry, and developer ergonomics.
+
 ## About the Project
 
 Jean is an opinionated native desktop app built with Tauri that gives you a powerful interface for working with Claude CLI, Codex CLI, and OpenCode across multiple projects. It has strong opinions about how AI-assisted development should work — managing git worktrees, chat sessions, terminals, and GitHub integrations in one cohesive workflow.
 
 No vendor lock-in. Everything runs locally on your machine with your own Claude CLI, Codex CLI, or OpenCode installation.
 
-For more information, take a look at [jean.build](https://jean.build).
+For upstream project information, take a look at [jean.build](https://jean.build).
 
 ## Screenshots
 
@@ -48,11 +50,19 @@ For more information, take a look at [jean.build](https://jean.build).
 - **Remote Access** — Built-in HTTP server with WebSocket support, token-based auth, web browser access
 - **Customization** — Themes (light/dark/system), custom fonts, customizable AI prompts, configurable keybindings
 
+### Fork-specific additions
+
+- **Codex plan mode parity** — plan approval dialogs, `request_user_input` flows, and restoration of plan/question state from Codex run history
+- **Live Codex execution visibility** — streamed todo updates, sub-agent progress, improved file change rendering, and local link handling
+- **Skills & usage telemetry** — repo-local Codex skill discovery, a context meter, floating session usage tracking, and corrected token/cache accounting
+- **Local tooling flexibility** — custom git executable override, custom OpenCode launcher commands, host-installed AI CLI support, and IntelliJ editor support
+- **Worktree/session ergonomics** — shortcuts for creating build/yolo sessions and worktrees, better PR preview/checkout flows, waiting-state cleanup, and improved diff controls
+
 ## Installation
 
-Download the latest version from the [GitHub Releases](https://github.com/coollabsio/jean/releases) page or visit [jean.build](https://jean.build).
+If you want the upstream distribution, download the latest version from the [GitHub Releases](https://github.com/coollabsio/jean/releases) page or visit [jean.build](https://jean.build). If you want the fork-specific behavior documented above, build from source from this repository.
 
-### Homebrew (macOS)
+### Upstream Homebrew (macOS)
 
 ```bash
 brew tap coollabsio/jean
@@ -85,17 +95,17 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for full development setup and guidelines
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
 
-## Core Maintainer
+## Upstream Maintainer
 
 |                                                                                                                                                                            Andras Bacsai                                                                                                                                                                             |
 | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------: |
 |                                                                                                                                         <img src="https://github.com/andrasbacsai.png" width="200px" alt="Andras Bacsai" />                                                                                                                                          |
 | <a href="https://github.com/andrasbacsai"><img src="https://api.iconify.design/devicon:github.svg" width="25px"></a> <a href="https://x.com/heyandras"><img src="https://api.iconify.design/devicon:twitter.svg" width="25px"></a> <a href="https://bsky.app/profile/heyandras.dev"><img src="https://api.iconify.design/simple-icons:bluesky.svg" width="25px"></a> |
 
-## Philosophy
+## Upstream Philosophy
 
 Learn more about our approach: [Philosophy](https://coollabs.io/philosophy/)
 
-## Star History
+## Upstream Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=coollabsio/jean&type=Date)](https://star-history.com/#coollabsio/jean&Date)

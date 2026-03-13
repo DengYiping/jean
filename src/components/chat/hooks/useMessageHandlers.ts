@@ -300,6 +300,7 @@ export function useMessageHandlers({
       const {
         markQuestionAnswered,
         addSendingSession,
+        removeSendingSession,
         setSelectedModel,
         setExecutingMode,
         setSessionReviewing,
@@ -318,16 +319,33 @@ export function useMessageHandlers({
       const rpcId = questionInput?.rpcId
 
       if (typeof rpcId === 'number') {
+        setSessionReviewing(sessionId, false)
+        setWaitingForInput(sessionId, false)
+        addSendingSession(sessionId)
         invoke('answer_codex_user_input', {
           sessionId,
           rpcId,
           answers: formatAnswersForCodexRequestUserInput(questions, answers),
         }).catch(err => {
+          removeSendingSession(sessionId)
+          setWaitingForInput(sessionId, true)
           logger.error(
             '[useMessageHandlers] Failed to answer Codex user-input request:',
             err
           )
           toast.error('Failed to answer Codex question')
+        })
+        invoke('update_session_state', {
+          worktreeId,
+          worktreePath,
+          sessionId,
+          waitingForInput: false,
+          waitingForInputType: null,
+        }).catch(err => {
+          logger.error(
+            '[useMessageHandlers] Failed to clear waiting state:',
+            err
+          )
         })
         return
       }
@@ -423,6 +441,7 @@ export function useMessageHandlers({
       const {
         markQuestionAnswered,
         setQuestionsSkipped,
+        addSendingSession,
         clearToolCalls,
         clearStreamingContentBlocks,
         removeSendingSession,
@@ -442,6 +461,9 @@ export function useMessageHandlers({
       const rpcId = questionInput?.rpcId
 
       if (typeof rpcId === 'number') {
+        setSessionReviewing(sessionId, false)
+        setWaitingForInput(sessionId, false)
+        addSendingSession(sessionId)
         invoke('answer_codex_user_input', {
           sessionId,
           rpcId,
@@ -450,11 +472,25 @@ export function useMessageHandlers({
             []
           ),
         }).catch(err => {
+          removeSendingSession(sessionId)
+          setWaitingForInput(sessionId, true)
           logger.error(
             '[useMessageHandlers] Failed to skip Codex user-input request:',
             err
           )
           toast.error('Failed to skip Codex question')
+        })
+        invoke('update_session_state', {
+          worktreeId,
+          worktreePath,
+          sessionId,
+          waitingForInput: false,
+          waitingForInputType: null,
+        }).catch(err => {
+          logger.error(
+            '[useMessageHandlers] Failed to clear waiting state:',
+            err
+          )
         })
         return
       }

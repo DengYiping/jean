@@ -44,4 +44,22 @@ describe('StreamingMessage', () => {
     ).not.toBeInTheDocument()
     expect(screen.getByText('Working on it...')).toBeVisible()
   })
+
+  it('shows plan approval controls for an ExitPlanMode tool', () => {
+    render(
+      <StreamingMessage
+        {...baseProps}
+        contentBlocks={[{ type: 'tool_use', tool_call_id: 'plan-1' }]}
+        toolCalls={[
+          {
+            id: 'plan-1',
+            name: 'ExitPlanMode',
+            input: { plan: '- [ ] Investigate regression' },
+          },
+        ]}
+      />
+    )
+
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeVisible()
+  })
 })

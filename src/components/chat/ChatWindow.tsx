@@ -2784,7 +2784,6 @@ export function ChatWindow({
                               areQuestionsSkipped={areQuestionsSkipped}
                               isFindingFixed={isFindingFixed}
                               onCopyToInput={handleCopyToInput}
-                              hideApproveButtons={isCodexBackend}
                               shouldScrollToBottom={isAtBottom}
                               onScrollToBottomHandled={
                                 handleScrollToBottomHandled
@@ -2837,7 +2836,6 @@ export function ChatWindow({
                                   ? handleStreamingWorktreeYoloApproval
                                   : undefined
                               }
-                              hideApproveButtons={isCodexBackend}
                             />
                           )}
 
@@ -2858,8 +2856,7 @@ export function ChatWindow({
                     {/* Floating scroll buttons */}
                     <FloatingButtons
                       showApproveButton={
-                        !isCodexBackend &&
-                        (!!pendingPlanMessage || hasStreamingPlan)
+                        !!pendingPlanMessage || hasStreamingPlan
                       }
                       showFindingsButton={!areFindingsVisible}
                       isAtBottom={isAtBottom}

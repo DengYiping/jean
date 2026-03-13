@@ -202,19 +202,21 @@ pub fn build_turn_start_params(
         params["effort"] = serde_json::json!(effort);
     }
 
-    if execution_mode.unwrap_or("plan") == "plan" {
-        let plan_model = model.unwrap_or("gpt-5.4");
-        let mut settings = serde_json::json!({
-            "model": plan_model,
-        });
-        if let Some(effort) = reasoning_effort {
-            settings["reasoningEffort"] = serde_json::json!(effort);
-        }
-        params["collaborationMode"] = serde_json::json!({
-            "mode": "plan",
-            "settings": settings,
-        });
+    let collaboration_model = model.unwrap_or("gpt-5.4");
+    let mut settings = serde_json::json!({
+        "model": collaboration_model,
+    });
+    if let Some(effort) = reasoning_effort {
+        settings["reasoningEffort"] = serde_json::json!(effort);
     }
+    params["collaborationMode"] = serde_json::json!({
+        "mode": if execution_mode.unwrap_or("plan") == "plan" {
+            "plan"
+        } else {
+            "default"
+        },
+        "settings": settings,
+    });
 
     // Sandbox policy with writable roots (for build/yolo modes with add_dirs)
     let mode = execution_mode.unwrap_or("plan");
@@ -1217,6 +1219,61 @@ fn collab_tool_display_name(collab_tool: &str) -> &str {
     }
 }
 
+fn normalize_history_request_questions(questions: &[serde_json::Value]) -> serde_json::Value {
+    serde_json::Value::Array(
+        questions
+            .iter()
+            .map(|question| {
+                let mut question = question.clone();
+                if let Some(obj) = question.as_object_mut() {
+                    obj.entry("multiSelect".to_string())
+                        .or_insert(serde_json::Value::Bool(false));
+                    if !obj.contains_key("options") || obj["options"].is_null() {
+                        obj.insert("options".to_string(), serde_json::Value::Array(Vec::new()));
+                    }
+                }
+                question
+            })
+            .collect(),
+    )
+}
+
+fn upsert_history_tool_call(
+    tool_calls: &mut Vec<ToolCall>,
+    content_blocks: &mut Vec<ContentBlock>,
+    pending_tool_ids: &mut HashMap<String, String>,
+    item_id: &str,
+    tool_name: &str,
+    input: serde_json::Value,
+) {
+    let tool_id = if let Some(existing) = pending_tool_ids.get(item_id) {
+        existing.clone()
+    } else if item_id.is_empty() {
+        uuid::Uuid::new_v4().to_string()
+    } else {
+        item_id.to_string()
+    };
+
+    if let Some(existing_tool) = tool_calls.iter_mut().find(|tool| tool.id == tool_id) {
+        existing_tool.name = tool_name.to_string();
+        existing_tool.input = input;
+    } else {
+        tool_calls.push(ToolCall {
+            id: tool_id.clone(),
+            name: tool_name.to_string(),
+            input,
+            output: None,
+            parent_tool_use_id: None,
+        });
+        content_blocks.push(ContentBlock::ToolUse {
+            tool_call_id: tool_id.clone(),
+        });
+        if !item_id.is_empty() {
+            pending_tool_ids.insert(item_id.to_string(), tool_id);
+        }
+    }
+}
+
 /// Handle an approval request from the app-server.
 fn handle_approval_request(
     app: &tauri::AppHandle,
@@ -2059,6 +2116,8 @@ pub fn parse_codex_run_to_message(
     let mut content_blocks: Vec<ContentBlock> = Vec::new();
     let mut pending_tool_ids: std::collections::HashMap<String, String> =
         std::collections::HashMap::new();
+    let mut pending_plan_texts: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
 
     for line in lines {
         if line.trim().is_empty() {
@@ -2076,6 +2135,36 @@ pub fn parse_codex_run_to_message(
             .unwrap_or(false)
         {
             continue;
+        }
+
+        if let Some(method) = msg.get("method").and_then(|v| v.as_str()) {
+            if method == "item/tool/requestUserInput" {
+                let params = msg.get("params").unwrap_or(&serde_json::Value::Null);
+                let item_id = params
+                    .get("itemId")
+                    .and_then(|v| v.as_str())
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or("");
+                let rpc_id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+                let questions = params
+                    .get("questions")
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                let input = serde_json::json!({
+                    "questions": normalize_history_request_questions(&questions),
+                    "rpcId": rpc_id,
+                });
+                upsert_history_tool_call(
+                    &mut tool_calls,
+                    &mut content_blocks,
+                    &mut pending_tool_ids,
+                    item_id,
+                    "AskUserQuestion",
+                    input,
+                );
+                continue;
+            }
         }
 
         let event_type = msg.get("type").and_then(|v| v.as_str()).unwrap_or("");
@@ -2132,6 +2221,26 @@ pub fn parse_codex_run_to_message(
                         });
                         if !item_id.is_empty() {
                             pending_tool_ids.insert(item_id.to_string(), tool_id);
+                        }
+                    }
+                    "plan" => {
+                        let plan_text = item
+                            .get("text")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        if !item_id.is_empty() && !plan_text.is_empty() {
+                            pending_plan_texts.insert(item_id.to_string(), plan_text.clone());
+                        }
+                        if !plan_text.is_empty() {
+                            upsert_history_tool_call(
+                                &mut tool_calls,
+                                &mut content_blocks,
+                                &mut pending_tool_ids,
+                                item_id,
+                                "ExitPlanMode",
+                                serde_json::json!({ "plan": plan_text }),
+                            );
                         }
                     }
                     "mcp_tool_call" => {
@@ -2263,6 +2372,31 @@ pub fn parse_codex_run_to_message(
                             });
                         }
                     }
+                    "plan" => {
+                        let item_text = item
+                            .get("text")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let plan_text = if item_text.is_empty() && !item_id.is_empty() {
+                            pending_plan_texts.remove(item_id).unwrap_or_default()
+                        } else {
+                            if !item_id.is_empty() {
+                                pending_plan_texts.remove(item_id);
+                            }
+                            item_text
+                        };
+                        if !plan_text.is_empty() {
+                            upsert_history_tool_call(
+                                &mut tool_calls,
+                                &mut content_blocks,
+                                &mut pending_tool_ids,
+                                item_id,
+                                "ExitPlanMode",
+                                serde_json::json!({ "plan": plan_text }),
+                            );
+                        }
+                    }
                     "mcp_tool_call" => {
                         let output = item
                             .get("output")
@@ -2332,7 +2466,18 @@ pub fn parse_codex_run_to_message(
                 let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
                 let item_id = item.get("id").and_then(|v| v.as_str()).unwrap_or("");
 
-                if item_type == "todo_list" || item_type == "collab_tool_call" {
+                if item_type == "plan" {
+                    if let Some(plan_text) = item.get("text").and_then(|v| v.as_str()) {
+                        upsert_history_tool_call(
+                            &mut tool_calls,
+                            &mut content_blocks,
+                            &mut pending_tool_ids,
+                            item_id,
+                            "ExitPlanMode",
+                            serde_json::json!({ "plan": plan_text }),
+                        );
+                    }
+                } else if item_type == "todo_list" || item_type == "collab_tool_call" {
                     if let Some(tool_id) = pending_tool_ids.get(item_id) {
                         if let Some(tc) = tool_calls.iter_mut().find(|t| t.id == *tool_id) {
                             tc.input = item.clone();
@@ -2583,7 +2728,7 @@ mod tests {
     }
 
     #[test]
-    fn non_plan_turns_do_not_set_collaboration_mode() {
+    fn non_plan_turns_reset_to_default_collaboration_mode() {
         let params = build_turn_start_params(
             "thread-1",
             "Build this",
@@ -2594,7 +2739,12 @@ mod tests {
             &[],
         );
 
-        assert!(params.get("collaborationMode").is_none());
+        assert_eq!(params["collaborationMode"]["mode"], "default");
+        assert_eq!(params["collaborationMode"]["settings"]["model"], "gpt-5.4");
+        assert_eq!(
+            params["collaborationMode"]["settings"]["reasoningEffort"],
+            "medium"
+        );
     }
 
     #[test]
@@ -2644,6 +2794,103 @@ mod tests {
         assert_eq!(item["type"], "todo_list");
         assert_eq!(item["items"][0]["text"], "Run tests");
         assert_eq!(item["items"][0]["status"], "pending");
+    }
+
+    #[test]
+    fn parse_codex_run_restores_plan_tools_from_history() {
+        let run = crate::chat::types::RunEntry {
+            run_id: "run-1".to_string(),
+            started_at: 1,
+            ended_at: Some(2),
+            status: crate::chat::types::RunStatus::Completed,
+            user_message_id: "user-1".to_string(),
+            assistant_message_id: Some("assistant-1".to_string()),
+            user_message: "Plan this".to_string(),
+            model: None,
+            execution_mode: Some("plan".to_string()),
+            thinking_level: None,
+            effort_level: None,
+            claude_session_id: None,
+            pid: None,
+            cancelled: false,
+            recovered: false,
+            usage: None,
+        };
+
+        let lines = vec![
+            serde_json::json!({
+                "type": "item.started",
+                "item": { "type": "plan", "id": "plan-1", "text": "" }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "item.completed",
+                "item": { "type": "plan", "id": "plan-1", "text": "# Plan\n- one\n" }
+            })
+            .to_string(),
+        ];
+
+        let message = parse_codex_run_to_message(&lines, &run).expect("message should parse");
+        let plan_tool = message
+            .tool_calls
+            .iter()
+            .find(|tool| tool.name == "ExitPlanMode")
+            .expect("plan tool should be restored");
+
+        assert_eq!(plan_tool.input["plan"], "# Plan\n- one\n");
+    }
+
+    #[test]
+    fn parse_codex_run_restores_request_user_input_tools_from_history() {
+        let run = crate::chat::types::RunEntry {
+            run_id: "run-2".to_string(),
+            started_at: 1,
+            ended_at: Some(2),
+            status: crate::chat::types::RunStatus::Completed,
+            user_message_id: "user-2".to_string(),
+            assistant_message_id: Some("assistant-2".to_string()),
+            user_message: "Question".to_string(),
+            model: None,
+            execution_mode: Some("plan".to_string()),
+            thinking_level: None,
+            effort_level: None,
+            claude_session_id: None,
+            pid: None,
+            cancelled: false,
+            recovered: false,
+            usage: None,
+        };
+
+        let lines = vec![serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "item/tool/requestUserInput",
+            "id": 42,
+            "params": {
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "itemId": "question-1",
+                "questions": [{
+                    "id": "q1",
+                    "header": "Scope",
+                    "question": "Choose one",
+                    "isOther": false,
+                    "isSecret": false,
+                    "options": [{ "label": "A", "description": "opt A" }]
+                }]
+            }
+        })
+        .to_string()];
+
+        let message = parse_codex_run_to_message(&lines, &run).expect("message should parse");
+        let question_tool = message
+            .tool_calls
+            .iter()
+            .find(|tool| tool.name == "AskUserQuestion")
+            .expect("question tool should be restored");
+
+        assert_eq!(question_tool.id, "question-1");
+        assert_eq!(question_tool.input["rpcId"], 42);
+        assert_eq!(question_tool.input["questions"][0]["id"], "q1");
     }
 }
 

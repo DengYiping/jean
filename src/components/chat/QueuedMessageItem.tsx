@@ -17,24 +17,15 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import {
-  Brain,
   ClipboardList,
-  Clock,
   GripVertical,
   Hammer,
-  Sparkles,
   Trash2,
   WandSparkles,
   Zap,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { ImageLightbox } from '@/components/chat/ImageLightbox'
 import type { QueuedMessage } from '@/types/chat'
-import {
-  MODEL_OPTIONS,
-  THINKING_LEVEL_OPTIONS,
-  EFFORT_LEVEL_OPTIONS,
-} from '@/components/chat/ChatToolbar'
 
 interface SortableQueuedMessageItemProps {
   message: QueuedMessage
@@ -80,124 +71,79 @@ const SortableQueuedMessageItem = memo(function SortableQueuedMessageItem({
     <div ref={setNodeRef} style={style}>
       <div
         className={cn(
-          'rounded-2xl border border-border/70 bg-background/85 px-3 py-2.5 shadow-sm transition-shadow',
+          'rounded-xl border border-border/70 bg-background/85 px-2.5 py-1.5 shadow-sm transition-shadow',
           isDragging && 'shadow-lg'
         )}
       >
-        <div className="flex items-start gap-3">
+        <div className="flex items-center gap-2">
           <button
             type="button"
-            className="mt-0.5 shrink-0 text-muted-foreground transition-colors hover:text-foreground"
+            className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
             aria-label={`Reorder queued message ${index + 1}`}
             {...attributes}
             {...listeners}
           >
-            <GripVertical className="h-4 w-4" />
+            <GripVertical className="h-3.5 w-3.5" />
           </button>
 
+          <span
+            className={cn(
+              'inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[10px]',
+              message.executionMode === 'plan' &&
+                'bg-yellow-500/20 text-yellow-700 dark:text-yellow-300',
+              message.executionMode === 'build' &&
+                'bg-muted/80 text-muted-foreground',
+              message.executionMode === 'yolo' &&
+                'bg-red-500/20 text-red-700 dark:text-red-300'
+            )}
+          >
+            {message.executionMode === 'plan' && (
+              <ClipboardList className="h-2.5 w-2.5" />
+            )}
+            {message.executionMode === 'build' && (
+              <Hammer className="h-2.5 w-2.5" />
+            )}
+            {message.executionMode === 'yolo' && (
+              <Zap className="h-2.5 w-2.5" />
+            )}
+            <span className="capitalize">{message.executionMode}</span>
+          </span>
+
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-              <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5">
-                <Clock className="h-3 w-3" />
-                <span>Queued #{index + 1}</span>
-              </span>
-            </div>
-
-            <div className="mt-2 text-sm break-words">
-              {message.message.length > 240
-                ? `${message.message.slice(0, 240)}...`
-                : message.message}
-            </div>
-
-            {message.pendingImages.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {message.pendingImages.map((image, imageIndex) => (
-                  <ImageLightbox
-                    key={`${message.id}-img-${imageIndex}`}
-                    src={image.path}
-                    alt={`Attached image ${imageIndex + 1}`}
-                    thumbnailClassName="h-16 max-w-28 rounded border border-border/60 object-contain"
-                  />
-                ))}
-              </div>
-            )}
-
-            {(message.pendingFiles.length > 0 ||
-              message.pendingSkills.length > 0 ||
-              message.pendingTextFiles.length > 0) && (
-              <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                {message.pendingFiles.length > 0 && (
-                  <span>{message.pendingFiles.length} file(s)</span>
-                )}
-                {message.pendingSkills.length > 0 && (
-                  <span>{message.pendingSkills.length} skill(s)</span>
-                )}
-                {message.pendingTextFiles.length > 0 && (
-                  <span>{message.pendingTextFiles.length} text file(s)</span>
-                )}
-              </div>
-            )}
-
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              <span className="inline-flex items-center gap-1 rounded bg-muted/80 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                <Sparkles className="h-2.5 w-2.5" />
-                {MODEL_OPTIONS.find(option => option.value === message.model)
-                  ?.label ?? message.model}
+            <div className="flex items-center gap-2">
+              <span className="truncate text-sm">
+                {message.message.length > 120
+                  ? `${message.message.slice(0, 120)}...`
+                  : message.message}
               </span>
 
-              <span
-                className={cn(
-                  'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px]',
-                  message.executionMode === 'plan' &&
-                    'bg-yellow-500/20 text-yellow-700 dark:text-yellow-300',
-                  message.executionMode === 'build' &&
-                    'bg-muted/80 text-muted-foreground',
-                  message.executionMode === 'yolo' &&
-                    'bg-red-500/20 text-red-700 dark:text-red-300'
-                )}
-              >
-                {message.executionMode === 'plan' && (
-                  <ClipboardList className="h-2.5 w-2.5" />
-                )}
-                {message.executionMode === 'build' && (
-                  <Hammer className="h-2.5 w-2.5" />
-                )}
-                {message.executionMode === 'yolo' && (
-                  <Zap className="h-2.5 w-2.5" />
-                )}
-                <span className="capitalize">{message.executionMode}</span>
-              </span>
-
-              {message.effortLevel ? (
-                <span className="inline-flex items-center gap-1 rounded bg-muted/80 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                  <Brain className="h-2.5 w-2.5" />
-                  {
-                    EFFORT_LEVEL_OPTIONS.find(
-                      option => option.value === message.effortLevel
-                    )?.label
-                  }
+              {message.pendingImages.length > 0 && (
+                <span className="shrink-0 text-[10px] text-muted-foreground">
+                  {message.pendingImages.length} img
                 </span>
-              ) : message.thinkingLevel !== 'off' ? (
-                <span className="inline-flex items-center gap-1 rounded bg-muted/80 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                  <Brain className="h-2.5 w-2.5" />
-                  {
-                    THINKING_LEVEL_OPTIONS.find(
-                      option => option.value === message.thinkingLevel
-                    )?.label
-                  }
+              )}
+
+              {(message.pendingFiles.length > 0 ||
+                message.pendingSkills.length > 0 ||
+                message.pendingTextFiles.length > 0) && (
+                <span className="shrink-0 text-[10px] text-muted-foreground">
+                  {message.pendingFiles.length +
+                    message.pendingSkills.length +
+                    message.pendingTextFiles.length}{' '}
+                  file(s)
                 </span>
-              ) : null}
+              )}
             </div>
           </div>
 
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1.5">
             <button
               type="button"
               onClick={handleSteer}
-              className="rounded-full bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+              className="rounded-full bg-primary px-2.5 py-1 text-[11px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
             >
               <span className="inline-flex items-center gap-1">
-                <WandSparkles className="h-3.5 w-3.5" />
+                <WandSparkles className="h-3 w-3" />
                 <span>Steer</span>
               </span>
             </button>
@@ -205,10 +151,10 @@ const SortableQueuedMessageItem = memo(function SortableQueuedMessageItem({
             <button
               type="button"
               onClick={handleRemove}
-              className="rounded-full p-2 text-muted-foreground transition-colors hover:bg-destructive hover:text-destructive-foreground"
+              className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-destructive hover:text-destructive-foreground"
               aria-label={`Delete queued message ${index + 1}`}
             >
-              <Trash2 className="h-4 w-4" />
+              <Trash2 className="h-3.5 w-3.5" />
             </button>
           </div>
         </div>
@@ -260,16 +206,7 @@ export const QueuedMessagesList = memo(function QueuedMessagesList({
   if (messages.length === 0) return null
 
   return (
-    <div className="border-b border-border/70 bg-muted/20 px-4 py-3 md:px-6">
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-          Queued Messages
-        </div>
-        <div className="text-xs text-muted-foreground">
-          Drag to reorder. Steer sends this next.
-        </div>
-      </div>
-
+    <div className="border-b border-border/70 bg-muted/20 px-4 py-2 md:px-6">
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
@@ -279,7 +216,7 @@ export const QueuedMessagesList = memo(function QueuedMessagesList({
           items={messages.map(message => message.id)}
           strategy={verticalListSortingStrategy}
         >
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             {messages.map((message, index) => (
               <SortableQueuedMessageItem
                 key={message.id}

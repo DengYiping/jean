@@ -5368,6 +5368,19 @@ pub fn answer_codex_user_input(
     super::codex_server::send_response(rpc_id, serde_json::json!({ "answers": answers }))
 }
 
+/// Steer an in-progress Codex turn with additional input.
+#[tauri::command]
+pub fn steer_codex_turn(session_id: String, input: String) -> Result<String, String> {
+    if input.trim().is_empty() {
+        return Err("Steer input cannot be empty".to_string());
+    }
+
+    let (thread_id, turn_id) = super::registry::get_codex_turn(&session_id)
+        .ok_or_else(|| format!("No active Codex turn for session {session_id}"))?;
+
+    super::codex_server::steer_turn(&thread_id, &turn_id, &input)
+}
+
 // =============================================================================
 // Queue management commands (atomic operations for cross-client sync)
 // =============================================================================
@@ -5449,6 +5462,29 @@ pub async fn remove_queued_message(
     .ok();
 
     Ok(())
+}
+
+/// Replace a session queue with a newly reordered list of messages.
+#[tauri::command]
+pub async fn reorder_queued_messages(
+    app: AppHandle,
+    _worktree_id: String,
+    _worktree_path: String,
+    session_id: String,
+    queue: Vec<serde_json::Value>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let queue = with_existing_metadata_mut(&app, &session_id, |metadata| {
+        metadata.queued_messages = queue.clone();
+        metadata.queued_messages.clone()
+    })?;
+
+    app.emit_all(
+        "queue:updated",
+        &serde_json::json!({ "sessionId": session_id, "queue": queue }),
+    )
+    .ok();
+
+    Ok(queue)
 }
 
 /// Clear all queued messages for a session.

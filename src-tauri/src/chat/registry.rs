@@ -138,6 +138,13 @@ pub fn unregister_codex_turn(session_id: &str) {
     lock_recover(&CODEX_TURN_REGISTRY, "CODEX_TURN_REGISTRY").remove(session_id);
 }
 
+/// Get the active Codex turn for a session, if one is registered.
+pub fn get_codex_turn(session_id: &str) -> Option<(String, String)> {
+    lock_recover(&CODEX_TURN_REGISTRY, "CODEX_TURN_REGISTRY")
+        .get(session_id)
+        .cloned()
+}
+
 /// Remove all registry state for a session after a backend crash or thread panic.
 pub fn cleanup_session_registrations(session_id: &str) {
     let removed_pid = lock_recover(&PROCESS_REGISTRY, "PROCESS_REGISTRY").remove(session_id);

@@ -166,6 +166,7 @@ import { useMessageSending } from './hooks/useMessageSending'
 import { usePlanState } from './hooks/usePlanState'
 import { useActiveTodosAndAgents } from './hooks/useActiveTodosAndAgents'
 import { usePendingAttachments } from './hooks/usePendingAttachments'
+import { useQueuedMessages } from './hooks/useQueuedMessages'
 import { dedupeInFlightAssistantMessage } from './in-flight-message-dedupe'
 
 // PERFORMANCE: Stable empty array references to prevent infinite render loops
@@ -2507,15 +2508,13 @@ export function ChatWindow({
     handleWorktreeYoloApproval,
   ])
 
-  // Pending attachment removal, slash command execution, queue management
+  // Pending attachment removal and slash command execution
   const {
     handleRemovePendingImage,
     handleRemovePendingTextFile,
     handleRemovePendingSkill,
     handleRemovePendingFile,
     handleCommandExecute,
-    handleRemoveQueuedMessage,
-    handleForceSendQueued,
   } = usePendingAttachments({
     activeSessionId,
     activeWorktreeId,
@@ -2531,6 +2530,17 @@ export function ChatWindow({
     enabledMcpServersRef,
     setInputDraft,
     sendMessageNow,
+  })
+
+  const {
+    handleRemoveQueuedMessage,
+    handleReorderQueuedMessages,
+    handleSteerQueuedMessage,
+  } = useQueuedMessages({
+    activeSessionId,
+    activeWorktreeId,
+    activeWorktreePath,
+    selectedBackend,
   })
 
   // Pre-calculate last plan message index for approve button logic
@@ -2819,17 +2829,6 @@ export function ChatWindow({
                                 onDeny={handlePermissionDeny}
                               />
                             )}
-
-                          {/* Queued messages - shown inline after streaming/messages */}
-                          {activeSessionId && (
-                            <QueuedMessagesList
-                              messages={currentQueuedMessages}
-                              sessionId={activeSessionId}
-                              onRemove={handleRemoveQueuedMessage}
-                              onForceSend={handleForceSendQueued}
-                              isSessionIdle={!isSending}
-                            />
-                          )}
                         </div>
                       </div>
                     </ScrollArea>
@@ -2887,6 +2886,16 @@ export function ChatWindow({
                               'ring-2 ring-primary ring-inset bg-primary/5'
                           )}
                         >
+                          {activeSessionId && (
+                            <QueuedMessagesList
+                              messages={currentQueuedMessages}
+                              sessionId={activeSessionId}
+                              onRemove={handleRemoveQueuedMessage}
+                              onReorder={handleReorderQueuedMessages}
+                              onSteer={handleSteerQueuedMessage}
+                            />
+                          )}
+
                           {/* Pending file preview (@ mentions) */}
                           <FilePreview
                             files={currentPendingFiles}

@@ -557,6 +557,28 @@ pub fn interrupt_turn(thread_id: &str, turn_id: &str) -> Result<(), String> {
     send_request("turn/interrupt", params).map(|_| ())
 }
 
+/// Send a `turn/steer` request to append user input to the active turn.
+pub fn steer_turn(thread_id: &str, turn_id: &str, input: &str) -> Result<String, String> {
+    let params = serde_json::json!({
+        "threadId": thread_id,
+        "expectedTurnId": turn_id,
+        "input": [
+            {
+                "type": "text",
+                "text": input,
+                "text_elements": [],
+            }
+        ],
+    });
+
+    let response = send_request("turn/steer", params)?;
+    response
+        .get("turnId")
+        .and_then(|value| value.as_str())
+        .map(|value| value.to_string())
+        .ok_or_else(|| "Codex steer response missing turnId".to_string())
+}
+
 /// Check if the server is alive.
 #[allow(dead_code)] // Useful for diagnostics and future health checks.
 pub fn is_server_alive() -> bool {

@@ -2083,6 +2083,25 @@ export function persistRemoveQueued(
 }
 
 /**
+ * Persist a queue reorder for a session.
+ */
+export function persistReorderQueued(
+  worktreeId: string,
+  worktreePath: string,
+  sessionId: string,
+  queue: QueuedMessage[]
+): void {
+  invoke('reorder_queued_messages', {
+    worktreeId,
+    worktreePath,
+    sessionId,
+    queue,
+  }).catch(err => {
+    logger.error('Failed to persist reorder queued', { err, sessionId })
+  })
+}
+
+/**
  * Persist clearing the entire queue for a session.
  */
 export function persistClearQueue(
@@ -2095,4 +2114,17 @@ export function persistClearQueue(
       logger.error('Failed to persist clear queue', { err, sessionId })
     }
   )
+}
+
+/**
+ * Steer the active Codex turn with additional input.
+ */
+export async function steerCodexTurn(
+  sessionId: string,
+  input: string
+): Promise<string> {
+  return invoke<string>('steer_codex_turn', {
+    sessionId,
+    input,
+  })
 }

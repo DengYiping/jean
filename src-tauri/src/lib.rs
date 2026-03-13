@@ -2702,10 +2702,12 @@ pub fn run() {
             chat::mark_plan_approved,
             chat::approve_codex_command,
             chat::answer_codex_user_input,
+            chat::steer_codex_turn,
             // Chat commands - Queue management (cross-client sync)
             chat::enqueue_message,
             chat::dequeue_message,
             chat::remove_queued_message,
+            chat::reorder_queued_messages,
             chat::clear_message_queue,
             // Chat commands - Image handling
             chat::read_clipboard_image,

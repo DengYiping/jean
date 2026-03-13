@@ -87,6 +87,14 @@ interface UseChatWindowEventsParams {
   handleStreamingClearContextApproval: () => void
   handleClearContextApprovalBuild: (messageId: string) => void
   handleStreamingClearContextApprovalBuild: () => void
+  handleWorktreeBuildApproval: (messageId: string) => void
+  handleStreamingWorktreeBuildApproval: () => void
+  handleWorktreeYoloApproval: (messageId: string) => void
+  handleStreamingWorktreeYoloApproval: () => void
+  handleInputNewSessionYolo: () => void
+  handleInputNewSessionBuild: () => void
+  handleInputNewWorktreeBuild: () => void
+  handleInputNewWorktreeYolo: () => void
   /** Ref to the chat scroll viewport for keyboard scrolling */
   scrollViewportRef: RefObject<HTMLDivElement | null>
   /** Begin a user-initiated keyboard scroll: cancels auto-scroll, blocks handleScroll */
@@ -139,6 +147,14 @@ export function useChatWindowEvents({
   handleStreamingClearContextApproval,
   handleClearContextApprovalBuild,
   handleStreamingClearContextApprovalBuild,
+  handleWorktreeBuildApproval,
+  handleStreamingWorktreeBuildApproval,
+  handleWorktreeYoloApproval,
+  handleStreamingWorktreeYoloApproval,
+  handleInputNewSessionYolo,
+  handleInputNewSessionBuild,
+  handleInputNewWorktreeBuild,
+  handleInputNewWorktreeYolo,
   scrollViewportRef,
   beginKeyboardScroll,
   endKeyboardScroll,
@@ -520,7 +536,9 @@ export function useChatWindowEvents({
       }
       if (pendingPlanMessage) {
         handlePlanApprovalYolo(pendingPlanMessage.id)
+        return
       }
+      handleInputNewSessionYolo()
     }
     window.addEventListener('approve-plan-yolo', handler)
     return () => window.removeEventListener('approve-plan-yolo', handler)
@@ -530,6 +548,7 @@ export function useChatWindowEvents({
     pendingPlanMessage,
     handleStreamingPlanApprovalYolo,
     handlePlanApprovalYolo,
+    handleInputNewSessionYolo,
   ])
 
   // Clear context and yolo keyboard shortcut
@@ -541,7 +560,9 @@ export function useChatWindowEvents({
       }
       if (pendingPlanMessage) {
         handleClearContextApproval(pendingPlanMessage.id)
+        return
       }
+      handleInputNewSessionYolo()
     }
     window.addEventListener('approve-plan-clear-context', handler)
     return () =>
@@ -552,6 +573,7 @@ export function useChatWindowEvents({
     pendingPlanMessage,
     handleStreamingClearContextApproval,
     handleClearContextApproval,
+    handleInputNewSessionYolo,
   ])
 
   // Clear context and build keyboard shortcut
@@ -563,7 +585,9 @@ export function useChatWindowEvents({
       }
       if (pendingPlanMessage) {
         handleClearContextApprovalBuild(pendingPlanMessage.id)
+        return
       }
+      handleInputNewSessionBuild()
     }
     window.addEventListener('approve-plan-clear-context-build', handler)
     return () =>
@@ -574,5 +598,54 @@ export function useChatWindowEvents({
     pendingPlanMessage,
     handleStreamingClearContextApprovalBuild,
     handleClearContextApprovalBuild,
+    handleInputNewSessionBuild,
+  ])
+
+  // Worktree build keyboard shortcut
+  useEffect(() => {
+    const handler = () => {
+      if (hasStreamingPlan) {
+        handleStreamingWorktreeBuildApproval()
+        return
+      }
+      if (pendingPlanMessage) {
+        handleWorktreeBuildApproval(pendingPlanMessage.id)
+        return
+      }
+      handleInputNewWorktreeBuild()
+    }
+    window.addEventListener('approve-plan-worktree-build', handler)
+    return () =>
+      window.removeEventListener('approve-plan-worktree-build', handler)
+  }, [
+    hasStreamingPlan,
+    pendingPlanMessage,
+    handleStreamingWorktreeBuildApproval,
+    handleWorktreeBuildApproval,
+    handleInputNewWorktreeBuild,
+  ])
+
+  // Worktree yolo keyboard shortcut
+  useEffect(() => {
+    const handler = () => {
+      if (hasStreamingPlan) {
+        handleStreamingWorktreeYoloApproval()
+        return
+      }
+      if (pendingPlanMessage) {
+        handleWorktreeYoloApproval(pendingPlanMessage.id)
+        return
+      }
+      handleInputNewWorktreeYolo()
+    }
+    window.addEventListener('approve-plan-worktree-yolo', handler)
+    return () =>
+      window.removeEventListener('approve-plan-worktree-yolo', handler)
+  }, [
+    hasStreamingPlan,
+    pendingPlanMessage,
+    handleStreamingWorktreeYoloApproval,
+    handleWorktreeYoloApproval,
+    handleInputNewWorktreeYolo,
   ])
 }

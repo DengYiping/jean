@@ -57,7 +57,11 @@ import {
 } from '@/store/chat-store'
 import { usePreferences, usePatchPreferences } from '@/services/preferences'
 import { getLabelTextColor } from '@/lib/label-colors'
-import { PREDEFINED_CLI_PROFILES, type CliBackend } from '@/types/preferences'
+import {
+  DEFAULT_PARALLEL_EXECUTION_PROMPT,
+  PREDEFINED_CLI_PROFILES,
+  type CliBackend,
+} from '@/types/preferences'
 import type {
   ChatMessage,
   ToolCall,
@@ -175,6 +179,15 @@ const EMPTY_PENDING_FILES: PendingFile[] = []
 const EMPTY_PENDING_SKILLS: PendingSkill[] = []
 const EMPTY_QUEUED_MESSAGES: QueuedMessage[] = []
 const EMPTY_PERMISSION_DENIALS: PermissionDenial[] = []
+
+interface PendingInputSnapshot {
+  sourceSessionId: string
+  message: string
+  images: PendingImage[]
+  files: PendingFile[]
+  skills: PendingSkill[]
+  textFiles: PendingTextFile[]
+}
 
 interface ChatWindowProps {
   /** When true, hides terminal panel and other elements not needed in modal */
@@ -1593,6 +1606,498 @@ export function ChatWindow({
     clearChatInputState: () => clearChatInputStateRef.current?.(),
   })
 
+  const getPendingInputSnapshot = useCallback((): PendingInputSnapshot | null => {
+    if (!activeSessionId) return null
+
+    const store = useChatStore.getState()
+    const liveInputValue = inputRef.current?.value
+    const textMessage = (
+      liveInputValue ??
+      store.inputDrafts[activeSessionId] ??
+      ''
+    ).trim()
+    const images = [...store.getPendingImages(activeSessionId)]
+    const files = [...store.getPendingFiles(activeSessionId)]
+    const skills = [...store.getPendingSkills(activeSessionId)]
+    const textFiles = [...store.getPendingTextFiles(activeSessionId)]
+
+    if (
+      !textMessage &&
+      images.length === 0 &&
+      files.length === 0 &&
+      textFiles.length === 0 &&
+      skills.length === 0
+    ) {
+      return null
+    }
+
+    return {
+      sourceSessionId: activeSessionId,
+      message: textMessage,
+      images,
+      files,
+      skills,
+      textFiles,
+    }
+  }, [activeSessionId, inputRef])
+
+  const clearPendingInputSnapshot = useCallback(
+    (snapshot: PendingInputSnapshot) => {
+      const store = useChatStore.getState()
+
+      clearInputDraft(snapshot.sourceSessionId)
+      store.clearPendingImages(snapshot.sourceSessionId)
+      store.clearPendingFiles(snapshot.sourceSessionId)
+      store.clearPendingSkills(snapshot.sourceSessionId)
+      store.clearPendingTextFiles(snapshot.sourceSessionId)
+      store.setSessionReviewing(snapshot.sourceSessionId, false)
+
+      if (activeSessionId === snapshot.sourceSessionId) {
+        clearChatInputStateRef.current?.()
+      }
+    },
+    [activeSessionId, clearInputDraft]
+  )
+
+  const buildMessageWithPendingRefs = useCallback(
+    (snapshot: PendingInputSnapshot): string => {
+      let message = snapshot.message
+
+      if (snapshot.files.length > 0) {
+        const fileRefs = snapshot.files
+          .map(file =>
+            file.isDirectory
+              ? `[Directory: ${file.relativePath} - Use Glob and Read tools to explore this directory]`
+              : `[File: ${file.relativePath} - Use the Read tool to view this file]`
+          )
+          .join('\n')
+        message = message ? `${message}\n\n${fileRefs}` : fileRefs
+      }
+
+      if (snapshot.skills.length > 0) {
+        const skillRefs = snapshot.skills
+          .map(
+            skill =>
+              `[Skill: ${skill.path} - Read and use this skill to guide your response]`
+          )
+          .join('\n')
+        message = message ? `${message}\n\n${skillRefs}` : skillRefs
+      }
+
+      if (snapshot.images.length > 0) {
+        const imageRefs = snapshot.images
+          .map(
+            image =>
+              `[Image attached: ${image.path} - Use the Read tool to view this image]`
+          )
+          .join('\n')
+        message = message ? `${message}\n\n${imageRefs}` : imageRefs
+      }
+
+      if (snapshot.textFiles.length > 0) {
+        const textFileRefs = snapshot.textFiles
+          .map(
+            textFile =>
+              `[Text file attached: ${textFile.path} - Use the Read tool to view this file]`
+          )
+          .join('\n')
+        message = message ? `${message}\n\n${textFileRefs}` : textFileRefs
+      }
+
+      return message
+    },
+    []
+  )
+
+  const resolveShortcutExecutionConfig = useCallback(
+    (mode: 'build' | 'yolo') => {
+      const isYolo = mode === 'yolo'
+      const modeLabel = isYolo ? 'Yolo' : 'Build'
+      const modeBackendOverride = (
+        isYolo ? yoloBackendRef.current : buildBackendRef.current
+      ) as Session['backend'] | null
+      const modeModelOverride = isYolo
+        ? yoloModelRef.current
+        : buildModelRef.current
+      const modeThinkingOverride = isYolo
+        ? yoloThinkingLevelRef.current
+        : buildThinkingLevelRef.current
+      const targetBackend = (modeBackendOverride ??
+        selectedBackendRef.current ??
+        session?.backend ??
+        'claude') as 'claude' | 'codex' | 'opencode'
+
+      const model =
+        modeModelOverride ??
+        (modeBackendOverride === 'codex'
+          ? (preferences?.selected_codex_model ?? 'gpt-5.4')
+          : modeBackendOverride === 'opencode'
+            ? (preferences?.selected_opencode_model ??
+              'opencode/gpt-5.3-codex')
+            : selectedModelRef.current)
+
+      const overrideStr =
+        modeModelOverride || modeBackendOverride
+          ? [modeBackendOverride, model].filter(Boolean).join(' / ')
+          : ''
+      const thinkingLevel: ThinkingLevel =
+        targetBackend === 'codex'
+          ? 'off'
+          : ((modeThinkingOverride ??
+              selectedThinkingLevelRef.current) as ThinkingLevel)
+      const effortLevel: EffortLevel | undefined =
+        targetBackend === 'codex'
+          ? ((
+              {
+                low: 'low',
+                medium: 'medium',
+                high: 'high',
+                xhigh: 'max',
+                max: 'max',
+              } as Record<string, EffortLevel>
+            )[modeThinkingOverride ?? ''] ?? selectedEffortLevelRef.current)
+          : undefined
+      const provider =
+        selectedProviderRef.current === '__anthropic__'
+          ? null
+          : selectedProviderRef.current
+      const { customProfileName } = resolveCustomProfile(model, provider)
+
+      return {
+        modeLabel,
+        targetBackend,
+        model,
+        thinkingLevel,
+        effortLevel,
+        overrideStr,
+        provider,
+        customProfileName,
+      }
+    },
+    [
+      buildBackendRef,
+      yoloBackendRef,
+      buildModelRef,
+      yoloModelRef,
+      buildThinkingLevelRef,
+      yoloThinkingLevelRef,
+      selectedBackendRef,
+      session?.backend,
+      preferences?.selected_codex_model,
+      preferences?.selected_opencode_model,
+      selectedModelRef,
+      selectedThinkingLevelRef,
+      selectedEffortLevelRef,
+      selectedProviderRef,
+      resolveCustomProfile,
+    ]
+  )
+
+  const sendShortcutInputToSession = useCallback(
+    async ({
+      snapshot,
+      targetSessionId,
+      targetWorktreeId,
+      targetWorktreePath,
+      mode,
+    }: {
+      snapshot: PendingInputSnapshot
+      targetSessionId: string
+      targetWorktreeId: string
+      targetWorktreePath: string
+      mode: 'build' | 'yolo'
+    }) => {
+      const store = useChatStore.getState()
+      const {
+        modeLabel,
+        targetBackend,
+        model,
+        thinkingLevel,
+        effortLevel,
+        overrideStr,
+        provider,
+        customProfileName,
+      } = resolveShortcutExecutionConfig(mode)
+
+      if (overrideStr) {
+        toast.info(`${modeLabel}: ${overrideStr}`)
+      }
+
+      const message = buildMessageWithPendingRefs(snapshot)
+      clearPendingInputSnapshot(snapshot)
+
+      store.setExecutionMode(targetSessionId, mode)
+      store.setLastSentMessage(targetSessionId, message)
+      store.setError(targetSessionId, null)
+      store.addSendingSession(targetSessionId)
+      store.setSelectedModel(targetSessionId, model)
+      store.setExecutingMode(targetSessionId, mode)
+      store.setSelectedBackend(targetSessionId, targetBackend)
+      store.setSelectedProvider(targetSessionId, provider)
+
+      if (
+        snapshot.images.length > 0 ||
+        snapshot.files.length > 0 ||
+        snapshot.skills.length > 0 ||
+        snapshot.textFiles.length > 0
+      ) {
+        store.setLastSentAttachments(targetSessionId, {
+          images: snapshot.images,
+          files: snapshot.files,
+          textFiles: snapshot.textFiles,
+          skills: snapshot.skills,
+        })
+      }
+
+      queryClient.setQueryData<Session>(
+        chatQueryKeys.session(targetSessionId),
+        old =>
+          old
+            ? {
+                ...old,
+                backend: targetBackend,
+                selected_execution_mode: mode,
+                selected_model: model,
+                selected_provider: provider ?? undefined,
+              }
+            : old
+      )
+
+      await invoke('update_session_state', {
+        worktreeId: targetWorktreeId,
+        worktreePath: targetWorktreePath,
+        sessionId: targetSessionId,
+        selectedExecutionMode: mode,
+      }).catch(err =>
+        logger.error('[shortcut send] Failed to persist execution mode:', err)
+      )
+
+      await invoke('set_session_model', {
+        worktreeId: targetWorktreeId,
+        worktreePath: targetWorktreePath,
+        sessionId: targetSessionId,
+        model,
+      }).catch(err =>
+        logger.error('[shortcut send] Failed to persist model:', err)
+      )
+
+      await invoke('set_session_backend', {
+        worktreeId: targetWorktreeId,
+        worktreePath: targetWorktreePath,
+        sessionId: targetSessionId,
+        backend: targetBackend,
+      }).catch(err =>
+        logger.error('[shortcut send] Failed to persist backend:', err)
+      )
+
+      await invoke('set_session_provider', {
+        worktreeId: targetWorktreeId,
+        worktreePath: targetWorktreePath,
+        sessionId: targetSessionId,
+        provider,
+      }).catch(err =>
+        logger.error('[shortcut send] Failed to persist provider:', err)
+      )
+
+      sendMessage.mutate({
+        sessionId: targetSessionId,
+        worktreeId: targetWorktreeId,
+        worktreePath: targetWorktreePath,
+        message,
+        model,
+        executionMode: mode,
+        thinkingLevel,
+        effortLevel,
+        parallelExecutionPrompt:
+          preferences?.parallel_execution_prompt_enabled
+            ? (preferences.magic_prompts?.parallel_execution ??
+              DEFAULT_PARALLEL_EXECUTION_PROMPT)
+            : undefined,
+        aiLanguage: preferences?.ai_language,
+        mcpConfig: buildMcpConfigJson(
+          mcpServersDataRef.current ?? [],
+          enabledMcpServersRef.current
+        ),
+        chromeEnabled: preferences?.chrome_enabled ?? false,
+        customProfileName,
+        backend: targetBackend,
+      })
+    },
+    [
+      resolveShortcutExecutionConfig,
+      buildMessageWithPendingRefs,
+      clearPendingInputSnapshot,
+      queryClient,
+      preferences?.parallel_execution_prompt_enabled,
+      preferences?.magic_prompts?.parallel_execution,
+      preferences?.ai_language,
+      preferences?.chrome_enabled,
+      mcpServersDataRef,
+      enabledMcpServersRef,
+      sendMessage,
+    ]
+  )
+
+  const handleInputNewSessionShortcut = useCallback(
+    async (mode: 'build' | 'yolo') => {
+      if (!activeWorktreeId || !activeWorktreePath) return
+
+      const snapshot = getPendingInputSnapshot()
+      if (!snapshot) return
+
+      let newSession: Session
+      try {
+        newSession = await createSession.mutateAsync({
+          worktreeId: activeWorktreeId,
+          worktreePath: activeWorktreePath,
+        })
+      } catch (err) {
+        toast.error(`Failed to create session: ${err}`)
+        return
+      }
+
+      const store = useChatStore.getState()
+      store.setActiveSession(activeWorktreeId, newSession.id)
+      store.addUserInitiatedSession(newSession.id)
+
+      await sendShortcutInputToSession({
+        snapshot,
+        targetSessionId: newSession.id,
+        targetWorktreeId: activeWorktreeId,
+        targetWorktreePath: activeWorktreePath,
+        mode,
+      })
+    },
+    [
+      activeWorktreeId,
+      activeWorktreePath,
+      getPendingInputSnapshot,
+      createSession,
+      clearPendingInputSnapshot,
+      sendShortcutInputToSession,
+    ]
+  )
+
+  const handleInputNewWorktreeShortcut = useCallback(
+    async (mode: 'build' | 'yolo') => {
+      const projectId = worktree?.project_id
+      if (!projectId) return
+
+      const snapshot = getPendingInputSnapshot()
+      if (!snapshot) return
+
+      const toastId = toast.loading('Creating worktree...')
+
+      let pendingWorktree: Worktree
+      try {
+        pendingWorktree = await invoke<Worktree>('create_worktree', {
+          projectId,
+        })
+      } catch (err) {
+        toast.error(`Failed to create worktree: ${err}`, { id: toastId })
+        return
+      }
+
+      let readyWorktree: Worktree
+      try {
+        readyWorktree = await new Promise<Worktree>((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            void unlistenCreated.then(fn => fn())
+            void unlistenError.then(fn => fn())
+            reject(new Error('Worktree creation timed out'))
+          }, 120_000)
+
+          const unlistenCreated = listen<WorktreeCreatedEvent>(
+            'worktree:created',
+            event => {
+              if (event.payload.worktree.id === pendingWorktree.id) {
+                clearTimeout(timeout)
+                void unlistenCreated.then(fn => fn())
+                void unlistenError.then(fn => fn())
+                resolve(event.payload.worktree)
+              }
+            }
+          )
+
+          const unlistenError = listen<WorktreeCreateErrorEvent>(
+            'worktree:error',
+            event => {
+              if (event.payload.id === pendingWorktree.id) {
+                clearTimeout(timeout)
+                void unlistenCreated.then(fn => fn())
+                void unlistenError.then(fn => fn())
+                reject(new Error(event.payload.error))
+              }
+            }
+          )
+        })
+      } catch (err) {
+        toast.error(`Worktree creation failed: ${err}`, { id: toastId })
+        return
+      }
+
+      let newSession: Session
+      try {
+        const readySessions = await invoke<WorktreeSessions>('get_sessions', {
+          worktreeId: readyWorktree.id,
+          worktreePath: readyWorktree.path,
+        })
+        if (readySessions.sessions.length > 0 && readySessions.sessions[0]) {
+          newSession = readySessions.sessions[0]
+        } else {
+          newSession = await invoke<Session>('create_session', {
+            worktreeId: readyWorktree.id,
+            worktreePath: readyWorktree.path,
+          })
+        }
+      } catch (err) {
+        toast.error(`Failed to get session: ${err}`, { id: toastId })
+        return
+      }
+
+      const store = useChatStore.getState()
+      const projectsStore = useProjectsStore.getState()
+      projectsStore.expandProject(readyWorktree.project_id)
+      projectsStore.selectWorktree(readyWorktree.id)
+      store.registerWorktreePath(readyWorktree.id, readyWorktree.path)
+      store.setActiveWorktree(readyWorktree.id, readyWorktree.path)
+      store.setActiveSession(readyWorktree.id, newSession.id)
+      store.addUserInitiatedSession(newSession.id)
+
+      await sendShortcutInputToSession({
+        snapshot,
+        targetSessionId: newSession.id,
+        targetWorktreeId: readyWorktree.id,
+        targetWorktreePath: readyWorktree.path,
+        mode,
+      })
+
+      toast.success(`Prompt sent to new worktree (${mode})`, { id: toastId })
+    },
+    [
+      worktree?.project_id,
+      getPendingInputSnapshot,
+      clearPendingInputSnapshot,
+      sendShortcutInputToSession,
+    ]
+  )
+
+  const handleInputNewBuildSession = useCallback(() => {
+    void handleInputNewSessionShortcut('build')
+  }, [handleInputNewSessionShortcut])
+
+  const handleInputNewYoloSession = useCallback(() => {
+    void handleInputNewSessionShortcut('yolo')
+  }, [handleInputNewSessionShortcut])
+
+  const handleInputNewBuildWorktree = useCallback(() => {
+    void handleInputNewWorktreeShortcut('build')
+  }, [handleInputNewWorktreeShortcut])
+
+  const handleInputNewYoloWorktree = useCallback(() => {
+    void handleInputNewWorktreeShortcut('yolo')
+  }, [handleInputNewWorktreeShortcut])
+
   // Note: Queue processing moved to useQueueProcessor hook in App.tsx
   // This ensures queued messages execute even when the worktree is unfocused
 
@@ -1925,6 +2430,14 @@ export function ChatWindow({
     handleStreamingClearContextApproval,
     handleClearContextApprovalBuild,
     handleStreamingClearContextApprovalBuild,
+    handleWorktreeBuildApproval,
+    handleStreamingWorktreeBuildApproval,
+    handleWorktreeYoloApproval,
+    handleStreamingWorktreeYoloApproval,
+    handleInputNewSessionYolo: handleInputNewYoloSession,
+    handleInputNewSessionBuild: handleInputNewBuildSession,
+    handleInputNewWorktreeBuild: handleInputNewBuildWorktree,
+    handleInputNewWorktreeYolo: handleInputNewYoloWorktree,
     scrollViewportRef,
     beginKeyboardScroll,
     endKeyboardScroll,

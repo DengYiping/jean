@@ -49,6 +49,7 @@ import {
   useLoadedPRContexts,
   useAttachedSavedContexts,
 } from '@/services/github'
+import { useLoadedLinearIssueContexts } from '@/services/linear'
 import {
   useChatStore,
   DEFAULT_MODEL,
@@ -96,6 +97,7 @@ import { FloatingButtons } from './FloatingButtons'
 import { PlanDialog } from './PlanDialog'
 import { RecapDialog } from './RecapDialog'
 import { StreamingMessage } from './StreamingMessage'
+import { StreamingStatusBar } from './StreamingStatusBar'
 import { ChatErrorFallback } from './ChatErrorFallback'
 import { logger } from '@/lib/logger'
 import { saveCrashState } from '@/lib/recovery'
@@ -168,6 +170,7 @@ import { useActiveTodosAndAgents } from './hooks/useActiveTodosAndAgents'
 import { usePendingAttachments } from './hooks/usePendingAttachments'
 import { useQueuedMessages } from './hooks/useQueuedMessages'
 import { dedupeInFlightAssistantMessage } from './in-flight-message-dedupe'
+import { shouldShowPermissionApproval } from './permission-approval-utils'
 
 // PERFORMANCE: Stable empty array references to prevent infinite render loops
 // When Zustand selectors return [], a new reference is created each time
@@ -213,6 +216,16 @@ export function ChatWindow({
   const storeWorktreePath = useChatStore(state => state.activeWorktreePath)
   const activeWorktreeId = propWorktreeId ?? storeWorktreeId
   const activeWorktreePath = propWorktreePath ?? storeWorktreePath
+  const hasPendingAutoInvestigate = useUIStore(state => {
+    if (!activeWorktreeId) return false
+    return (
+      state.autoInvestigateWorktreeIds.has(activeWorktreeId) ||
+      state.autoInvestigatePRWorktreeIds.has(activeWorktreeId) ||
+      state.autoInvestigateSecurityAlertWorktreeIds.has(activeWorktreeId) ||
+      state.autoInvestigateAdvisoryWorktreeIds.has(activeWorktreeId) ||
+      state.autoInvestigateLinearIssueWorktreeIds.has(activeWorktreeId)
+    )
+  })
 
   // PERFORMANCE: Proper selector for activeSessionId - subscribes to changes
   // This triggers re-render when tabs are clicked (setActiveSession updates activeSessionIds)
@@ -227,6 +240,14 @@ export function ChatWindow({
     activeSessionId
       ? (state.sendingSessionIds[activeSessionId] ?? false)
       : false
+  )
+  // Timestamp when current send started (for elapsed timer)
+  const sendStartedAt = useChatStore(state =>
+    activeSessionId ? (state.sendStartedAt[activeSessionId] ?? null) : null
+  )
+  // Duration of last completed run (ms) — stored by completeSession
+  const completedDurationMs = useChatStore(state =>
+    activeSessionId ? (state.completedDurations[activeSessionId] ?? null) : null
   )
   // Session label for top-right badge
   const sessionLabel = useChatStore(state =>
@@ -425,6 +446,13 @@ export function ChatWindow({
   const { data: loadedPRContexts } = useLoadedPRContexts(
     activeSessionId ?? null,
     activeWorktreeId
+  )
+
+  // Loaded Linear issue contexts for indicator
+  const { data: loadedLinearContexts } = useLoadedLinearIssueContexts(
+    activeSessionId ?? null,
+    activeWorktreeId ?? null,
+    worktree?.project_id ?? null
   )
 
   // Attached saved contexts for indicator
@@ -676,6 +704,12 @@ export function ChatWindow({
         EMPTY_PERMISSION_DENIALS)
       : EMPTY_PERMISSION_DENIALS
   )
+  const showPermissionApproval = shouldShowPermissionApproval({
+    pendingDenialsCount: pendingDenials.length,
+    isSending,
+    executionMode,
+    isCodexBackend,
+  })
 
   // PERFORMANCE: Pre-compute last assistant message to avoid rescanning in multiple memos
   // This reference only changes when the actual last assistant message changes
@@ -2225,30 +2259,33 @@ export function ChatWindow({
   })
 
   // Investigate issue/PR and workflow run handlers
-  const { handleInvestigate, handleInvestigateWorkflowRun } =
-    useInvestigateHandlers({
-      activeSessionId,
-      activeWorktreeId,
-      activeWorktreePath,
-      inputRef,
-      preferences,
-      selectedModelRef,
-      selectedThinkingLevelRef,
-      selectedEffortLevelRef,
-      executionModeRef,
-      mcpServersDataRef,
-      enabledMcpServersRef,
-      activeWorktreeIdRef,
-      activeWorktreePathRef,
-      sendMessage,
-      setSessionProvider,
-      setSessionBackend,
-      setSessionModel,
-      createSession,
-      resolveCustomProfile,
-      cliVersion: cliStatus?.version ?? null,
-      worktreeProjectId: worktree?.project_id,
-    })
+  const {
+    handleInvestigate,
+    handleInvestigateWorkflowRun,
+    handleReviewComments,
+  } = useInvestigateHandlers({
+    activeSessionId,
+    activeWorktreeId,
+    activeWorktreePath,
+    inputRef,
+    preferences,
+    selectedModelRef,
+    selectedThinkingLevelRef,
+    selectedEffortLevelRef,
+    executionModeRef,
+    mcpServersDataRef,
+    enabledMcpServersRef,
+    activeWorktreeIdRef,
+    activeWorktreePathRef,
+    sendMessage,
+    setSessionProvider,
+    setSessionBackend,
+    setSessionModel,
+    createSession,
+    resolveCustomProfile,
+    cliVersion: cliStatus?.version ?? null,
+    worktreeProjectId: worktree?.project_id,
+  })
 
   // Listen for magic-command events from MagicModal
   useMagicCommands({
@@ -2264,6 +2301,7 @@ export function ChatWindow({
     handleResolveConflicts,
     handleInvestigateWorkflowRun,
     handleInvestigate,
+    handleReviewComments,
     isModal,
     sessionModalOpen,
   })
@@ -2277,6 +2315,7 @@ export function ChatWindow({
   useEffect(() => {
     if (!activeSessionId || !activeWorktreeId || !activeWorktreePath) return
     if (worktreeStatus !== 'ready') return
+    if (!hasPendingAutoInvestigate) return
     const uiStore = useUIStore.getState()
     if (uiStore.consumeAutoInvestigate(activeWorktreeId)) {
       handleInvestigate('issue')
@@ -2294,6 +2333,7 @@ export function ChatWindow({
     activeWorktreeId,
     activeWorktreePath,
     worktreeStatus,
+    hasPendingAutoInvestigate,
     handleInvestigate,
   ])
 
@@ -2662,7 +2702,7 @@ export function ChatWindow({
                       viewportRef={scrollViewportRef}
                       onScroll={handleScroll}
                     >
-                      <div className="mx-auto max-w-7xl px-4 pt-4 pb-8 md:px-6 min-w-0 w-full">
+                      <div className="mx-auto max-w-7xl px-4 pt-4 pb-6 md:px-6 min-w-0 w-full">
                         <div className="select-text space-y-4 font-mono text-sm min-w-0 break-words overflow-x-auto">
                           {/* Debug info (enabled via Settings → Experimental → Debug mode) */}
                           {preferences?.debug_mode_enabled &&
@@ -2748,6 +2788,7 @@ export function ChatWindow({
                               onScrollToBottomHandled={
                                 handleScrollToBottomHandled
                               }
+                              completedDurationMs={completedDurationMs}
                             />
                           )}
                           {isSending && activeSessionId && (
@@ -2756,7 +2797,6 @@ export function ChatWindow({
                               contentBlocks={currentStreamingContentBlocks}
                               toolCalls={currentToolCalls}
                               streamingContent={streamingContent}
-                              streamingExecutionMode={streamingExecutionMode}
                               selectedThinkingLevel={selectedThinkingLevel}
                               approveShortcut={approveShortcut}
                               approveShortcutYolo={approveShortcutYolo}
@@ -2799,36 +2839,16 @@ export function ChatWindow({
                             />
                           )}
 
-                          {/* Restored session status - shown when session was running but app restarted */}
-                          {!isSending &&
-                            !isWaitingForInput &&
-                            !hasPendingQuestions &&
-                            !isSessionReviewing &&
-                            session?.last_run_status === 'running' && (
-                              <div className="text-sm text-muted-foreground/60 mt-4">
-                                <span className="animate-dots">
-                                  {session.last_run_execution_mode === 'plan'
-                                    ? 'Planning'
-                                    : session.last_run_execution_mode === 'yolo'
-                                      ? 'Yoloing'
-                                      : 'Vibing'}
-                                </span>
-                              </div>
-                            )}
-
                           {/* Permission approval UI - shown when tools require approval (never in yolo mode) */}
-                          {pendingDenials.length > 0 &&
-                            activeSessionId &&
-                            !isSending &&
-                            executionMode !== 'yolo' && (
-                              <PermissionApproval
-                                sessionId={activeSessionId}
-                                denials={pendingDenials}
-                                onApprove={handlePermissionApproval}
-                                onApproveYolo={handlePermissionApprovalYolo}
-                                onDeny={handlePermissionDeny}
-                              />
-                            )}
+                          {showPermissionApproval && activeSessionId && (
+                            <PermissionApproval
+                              sessionId={activeSessionId}
+                              denials={pendingDenials}
+                              onApprove={handlePermissionApproval}
+                              onApproveYolo={handlePermissionApprovalYolo}
+                              onDeny={handlePermissionDeny}
+                            />
+                          )}
                         </div>
                       </div>
                     </ScrollArea>
@@ -2876,6 +2896,25 @@ export function ChatWindow({
                   <div>
                     <div className="mx-auto max-w-7xl">
                       <div className="relative sm:mx-auto sm:mb-3 sm:max-w-3xl">
+                        <div className="px-4 md:px-6">
+                          <StreamingStatusBar
+                            isSending={isSending}
+                            sendStartedAt={sendStartedAt}
+                            streamingExecutionMode={streamingExecutionMode}
+                            restoredRunStatus={
+                              !isSending &&
+                              !isWaitingForInput &&
+                              !hasPendingQuestions &&
+                              !isSessionReviewing
+                                ? session?.last_run_status
+                                : undefined
+                            }
+                            restoredExecutionMode={
+                              session?.last_run_execution_mode
+                            }
+                          />
+                        </div>
+
                         {/* Input area - unified container with textarea and toolbar */}
                         <form
                           ref={formRef}
@@ -3035,6 +3074,7 @@ export function ChatWindow({
                             projectId={worktree?.project_id}
                             loadedIssueContexts={loadedIssueContexts ?? []}
                             loadedPRContexts={loadedPRContexts ?? []}
+                            loadedLinearContexts={loadedLinearContexts ?? []}
                             attachedSavedContexts={attachedSavedContexts ?? []}
                             onOpenMagicModal={handleOpenMagicModal}
                             onSaveContext={handleSaveContext}

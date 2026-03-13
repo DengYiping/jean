@@ -835,6 +835,27 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
       )
   }, [selectedWorktreeModal?.worktreeId])
 
+  // Open modal from external triggers (e.g. base session switch)
+  useEffect(() => {
+    const handleOpenModal = (
+      e: CustomEvent<{ worktreeId: string; worktreePath: string }>
+    ) => {
+      setSelectedWorktreeModal({
+        worktreeId: e.detail.worktreeId,
+        worktreePath: e.detail.worktreePath,
+      })
+    }
+    window.addEventListener(
+      'open-worktree-modal',
+      handleOpenModal as EventListener
+    )
+    return () =>
+      window.removeEventListener(
+        'open-worktree-modal',
+        handleOpenModal as EventListener
+      )
+  }, [])
+
   // Record last opened worktree+session per project for restoration on project switch
   const activeSessionIdForModal = useChatStore(state =>
     selectedWorktreeModal
@@ -1907,7 +1928,6 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
         worktreePath={selectedWorktreeModal?.worktreePath ?? ''}
         isOpen={!!selectedWorktreeModal}
         onClose={() => setSelectedWorktreeModal(null)}
-        onCloseWorktree={() => setSelectedWorktreeModal(null)}
       />
 
       {/* Git Diff Modal (CMD+G on canvas) */}

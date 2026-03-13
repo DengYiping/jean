@@ -152,10 +152,25 @@ export function useNewWorktreeHandlers(data: Data, setters: Setters) {
 
     if (hasBaseSession && baseSession) {
       const { selectWorktree } = useProjectsStore.getState()
-      const { setActiveWorktree } = useChatStore.getState()
       selectWorktree(baseSession.id)
-      setActiveWorktree(baseSession.id, baseSession.path)
+      useChatStore
+        .getState()
+        .registerWorktreePath(baseSession.id, baseSession.path)
+
+      // Close NewWorktreeModal first
+      handleOpenChange(false)
+
+      // Open the base session in SessionChatModal via custom event
+      window.dispatchEvent(
+        new CustomEvent('open-worktree-modal', {
+          detail: {
+            worktreeId: baseSession.id,
+            worktreePath: baseSession.path,
+          },
+        })
+      )
       toast.success(`Switched to base session: ${baseSession.name}`)
+      return
     } else {
       createBaseSession.mutate(selectedProjectId)
     }
@@ -698,24 +713,19 @@ export function useNewWorktreeHandlers(data: Data, setters: Setters) {
           issueId: issue.id,
         })
 
-        const issueContext: IssueContext = {
-          number: parseInt(detail.identifier.split('-').pop() ?? '0', 10),
+        const linearContext = {
+          id: detail.id,
+          identifier: detail.identifier,
           title: detail.title,
-          body: detail.description,
-          comments: (detail.comments ?? []).map(c => ({
-            body: c.body ?? '',
-            author: {
-              login: c.user?.displayName ?? 'Unknown',
-            },
-            createdAt: c.createdAt,
-          })),
+          description: detail.description,
+          comments: detail.comments ?? [],
         }
 
         if (background)
           useUIStore.getState().incrementPendingBackgroundCreations()
         createWorktree.mutate({
           projectId: selectedProjectId,
-          issueContext,
+          linearContext,
           background,
         })
 
@@ -747,24 +757,19 @@ export function useNewWorktreeHandlers(data: Data, setters: Setters) {
           issueId: issue.id,
         })
 
-        const issueContext: IssueContext = {
-          number: parseInt(detail.identifier.split('-').pop() ?? '0', 10),
+        const linearContext = {
+          id: detail.id,
+          identifier: detail.identifier,
           title: detail.title,
-          body: detail.description,
-          comments: (detail.comments ?? []).map(c => ({
-            body: c.body ?? '',
-            author: {
-              login: c.user?.displayName ?? 'Unknown',
-            },
-            createdAt: c.createdAt,
-          })),
+          description: detail.description,
+          comments: detail.comments ?? [],
         }
 
         if (background)
           useUIStore.getState().incrementPendingBackgroundCreations()
         const worktree = await createWorktree.mutateAsync({
           projectId: selectedProjectId,
-          issueContext,
+          linearContext,
           background,
         })
 

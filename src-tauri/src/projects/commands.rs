@@ -27,6 +27,11 @@ use super::github_issues::{
     get_session_context_numbers, AdvisoryContext, IssueContext, PullRequestContext,
     SecurityAlertContext,
 };
+use super::linear_issues::{
+    add_linear_reference, format_linear_issue_context_markdown,
+    generate_branch_name_from_linear_issue, get_session_linear_identifiers,
+    linear_context_to_detail, LinearIssueContext,
+};
 use super::names::generate_unique_workspace_name;
 use super::storage::{get_project_worktrees_dir, load_projects_data, save_projects_data};
 use super::types::{
@@ -557,6 +562,7 @@ pub async fn create_worktree(
     pr_context: Option<PullRequestContext>,
     security_context: Option<SecurityAlertContext>,
     advisory_context: Option<AdvisoryContext>,
+    linear_context: Option<LinearIssueContext>,
     custom_name: Option<String>,
 ) -> Result<Worktree, String> {
     log::trace!("Creating worktree for project: {project_id}");
@@ -630,6 +636,20 @@ pub async fn create_worktree(
         } else {
             advisory_branch
         }
+    } else if let Some(ref ctx) = linear_context {
+        let linear_branch = generate_branch_name_from_linear_issue(&ctx.identifier, &ctx.title);
+        if data.worktree_name_exists(&project_id, &linear_branch) {
+            let mut counter = 2;
+            loop {
+                let candidate = format!("{linear_branch}-{counter}");
+                if !data.worktree_name_exists(&project_id, &candidate) {
+                    break candidate;
+                }
+                counter += 1;
+            }
+        } else {
+            linear_branch
+        }
     } else if let Some(ref ctx) = issue_context {
         let issue_branch = generate_branch_name_from_issue(ctx.number, &ctx.title);
         // Check if this branch name already exists, if so, add a suffix
@@ -697,6 +717,7 @@ pub async fn create_worktree(
         pr_number: pr_context.as_ref().map(|ctx| ctx.number),
         pr_url: None,
         issue_number: issue_context.as_ref().map(|ctx| ctx.number),
+        linear_issue_identifier: linear_context.as_ref().map(|ctx| ctx.identifier.clone()),
         cached_pr_status: None,
         cached_check_status: None,
         cached_behind_count: None,
@@ -719,6 +740,7 @@ pub async fn create_worktree(
     // Clone values for the background thread
     let app_clone = app.clone();
     let project_path = project.path.clone();
+    let project_name = project.name.clone();
     let worktree_id_clone = worktree_id.clone();
     let project_id_clone = project_id.clone();
     let name_clone = name.clone();
@@ -728,6 +750,7 @@ pub async fn create_worktree(
     let pr_context_clone = pr_context.clone();
     let security_context_clone = security_context.clone();
     let advisory_context_clone = advisory_context.clone();
+    let linear_context_clone = linear_context.clone();
 
     // Spawn background thread for git operations
     thread::spawn(move || {
@@ -1143,6 +1166,43 @@ pub async fn create_worktree(
                 }
             }
 
+            // Write Linear issue context file if provided
+            if let Some(ctx) = &linear_context_clone {
+                log::trace!(
+                    "Background: Writing Linear issue context file for {}",
+                    ctx.identifier
+                );
+                if let Ok(contexts_dir) = get_github_contexts_dir(&app_clone) {
+                    if let Err(e) = std::fs::create_dir_all(&contexts_dir) {
+                        log::warn!("Background: Failed to create git-context directory: {e}");
+                    } else {
+                        let identifier_lower = ctx.identifier.to_lowercase();
+                        let context_file = contexts_dir
+                            .join(format!("{project_name}-linear-{identifier_lower}.md"));
+                        let detail = linear_context_to_detail(ctx);
+                        let context_content = format_linear_issue_context_markdown(&detail);
+                        if let Err(e) = std::fs::write(&context_file, context_content) {
+                            log::warn!(
+                                "Background: Failed to write Linear issue context file: {e}"
+                            );
+                        } else {
+                            if let Err(e) = add_linear_reference(
+                                &app_clone,
+                                &project_name,
+                                &ctx.identifier,
+                                &worktree_id_clone,
+                            ) {
+                                log::warn!("Background: Failed to add Linear reference: {e}");
+                            }
+                            log::trace!(
+                                "Background: Linear issue context file written to {:?}",
+                                context_file
+                            );
+                        }
+                    }
+                }
+            }
+
             // Check for jean.json and run setup script
             let (setup_output, setup_script, setup_success) =
                 if let Some(config) = git::read_jean_config(&project_path) {
@@ -1193,6 +1253,9 @@ pub async fn create_worktree(
                     pr_number: pr_context_clone.as_ref().map(|ctx| ctx.number),
                     pr_url: None,
                     issue_number: issue_context_clone.as_ref().map(|ctx| ctx.number),
+                    linear_issue_identifier: linear_context_clone
+                        .as_ref()
+                        .map(|ctx| ctx.identifier.clone()),
                     cached_pr_status: None,
                     cached_check_status: None,
                     cached_behind_count: None,
@@ -1269,6 +1332,7 @@ pub async fn create_worktree(
 /// create a worktree for it instead of creating a new branch.
 /// The actual git worktree creation happens in a background thread.
 /// Events are emitted to notify the frontend of progress.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn create_worktree_from_existing_branch(
     app: AppHandle,
@@ -1278,6 +1342,7 @@ pub async fn create_worktree_from_existing_branch(
     pr_context: Option<PullRequestContext>,
     security_context: Option<SecurityAlertContext>,
     advisory_context: Option<AdvisoryContext>,
+    linear_context: Option<LinearIssueContext>,
 ) -> Result<Worktree, String> {
     log::trace!("Creating worktree from existing branch {branch_name} for project: {project_id}");
 
@@ -1333,6 +1398,7 @@ pub async fn create_worktree_from_existing_branch(
         pr_number: pr_context.as_ref().map(|ctx| ctx.number),
         pr_url: None,
         issue_number: issue_context.as_ref().map(|ctx| ctx.number),
+        linear_issue_identifier: linear_context.as_ref().map(|ctx| ctx.identifier.clone()),
         cached_pr_status: None,
         cached_check_status: None,
         cached_behind_count: None,
@@ -1355,6 +1421,7 @@ pub async fn create_worktree_from_existing_branch(
     // Clone values for the background thread
     let app_clone = app.clone();
     let project_path = project.path.clone();
+    let project_name = project.name.clone();
     let worktree_id_clone = worktree_id.clone();
     let project_id_clone = project_id.clone();
     let name_clone = name.clone();
@@ -1364,6 +1431,7 @@ pub async fn create_worktree_from_existing_branch(
     let pr_context_clone = pr_context.clone();
     let security_context_clone = security_context.clone();
     let advisory_context_clone = advisory_context.clone();
+    let linear_context_clone = linear_context.clone();
 
     // Spawn background thread for git operations
     thread::spawn(move || {
@@ -1612,6 +1680,43 @@ pub async fn create_worktree_from_existing_branch(
                 }
             }
 
+            // Write Linear issue context file if provided
+            if let Some(ctx) = &linear_context_clone {
+                log::trace!(
+                    "Background: Writing Linear issue context file for {}",
+                    ctx.identifier
+                );
+                if let Ok(contexts_dir) = get_github_contexts_dir(&app_clone) {
+                    if let Err(e) = std::fs::create_dir_all(&contexts_dir) {
+                        log::warn!("Background: Failed to create git-context directory: {e}");
+                    } else {
+                        let identifier_lower = ctx.identifier.to_lowercase();
+                        let context_file = contexts_dir
+                            .join(format!("{project_name}-linear-{identifier_lower}.md"));
+                        let detail = linear_context_to_detail(ctx);
+                        let context_content = format_linear_issue_context_markdown(&detail);
+                        if let Err(e) = std::fs::write(&context_file, context_content) {
+                            log::warn!(
+                                "Background: Failed to write Linear issue context file: {e}"
+                            );
+                        } else {
+                            if let Err(e) = add_linear_reference(
+                                &app_clone,
+                                &project_name,
+                                &ctx.identifier,
+                                &worktree_id_clone,
+                            ) {
+                                log::warn!("Background: Failed to add Linear reference: {e}");
+                            }
+                            log::trace!(
+                                "Background: Linear issue context file written to {:?}",
+                                context_file
+                            );
+                        }
+                    }
+                }
+            }
+
             // Check for jean.json and run setup script
             let (setup_output, setup_script, setup_success) =
                 if let Some(config) = git::read_jean_config(&project_path) {
@@ -1662,6 +1767,9 @@ pub async fn create_worktree_from_existing_branch(
                     pr_number: None,
                     pr_url: None,
                     issue_number: issue_context_clone.as_ref().map(|ctx| ctx.number),
+                    linear_issue_identifier: linear_context_clone
+                        .as_ref()
+                        .map(|ctx| ctx.identifier.clone()),
                     cached_pr_status: None,
                     cached_check_status: None,
                     cached_behind_count: None,
@@ -1882,6 +1990,7 @@ pub async fn checkout_pr(
         pr_number: Some(pr_number),
         pr_url: None,
         issue_number: None,
+        linear_issue_identifier: None,
         cached_pr_status: None,
         cached_check_status: None,
         cached_behind_count: None,
@@ -2180,6 +2289,7 @@ pub async fn checkout_pr(
                     pr_number: Some(pr_number),
                     pr_url: None,
                     issue_number: None,
+                    linear_issue_identifier: None,
                     cached_pr_status: None,
                     cached_check_status: None,
                     cached_behind_count: None,
@@ -2458,6 +2568,7 @@ pub async fn create_base_session(app: AppHandle, project_id: String) -> Result<W
         pr_number: None,
         pr_url: None,
         issue_number: None,
+        linear_issue_identifier: None,
         cached_pr_status: None,
         cached_check_status: None,
         cached_behind_count: None,
@@ -2848,6 +2959,7 @@ pub async fn import_worktree(
         pr_number: None,
         pr_url: None,
         issue_number: None,
+        linear_issue_identifier: None,
         cached_pr_status: None,
         cached_check_status: None,
         cached_behind_count: None,
@@ -5239,13 +5351,38 @@ pub async fn create_pr_with_ai_content(
         reasoning_effort.as_deref(),
     )?;
 
-    // Append unconditional issue/PR references to the body
+    // Gather Linear identifiers
+    let project_name = &project.name;
+    let mut linear_identifiers =
+        get_session_linear_identifiers(&app, effective_session_id, project_name)
+            .unwrap_or_default();
+    if worktree_id != effective_session_id {
+        let wt_linear =
+            get_session_linear_identifiers(&app, worktree_id, project_name).unwrap_or_default();
+        for id in wt_linear {
+            if !linear_identifiers.contains(&id) {
+                linear_identifiers.push(id);
+            }
+        }
+    }
+
+    // Also check worktree's linear_issue_identifier field
+    if let Some(ref lid) = worktree.linear_issue_identifier {
+        if !linear_identifiers.contains(lid) {
+            linear_identifiers.push(lid.clone());
+        }
+    }
+
+    // Append unconditional issue/PR/Linear references to the body
     let mut refs: Vec<String> = Vec::new();
     for num in &issue_nums {
         refs.push(format!("Fixes #{num}"));
     }
     for num in &pr_nums {
         refs.push(format!("Related to #{num}"));
+    }
+    for identifier in &linear_identifiers {
+        refs.push(format!("Addresses {identifier}"));
     }
     if !refs.is_empty() {
         pr_content.body = format!("{}\n\n---\n\n{}", pr_content.body, refs.join("\n"));
@@ -5326,6 +5463,86 @@ pub async fn create_pr_with_ai_content(
         pr_url,
         title: pr_content.title,
         existing: false,
+    })
+}
+
+// =============================================================================
+// Merge GitHub PR
+// =============================================================================
+
+/// Response from merging a GitHub PR
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MergePrResponse {
+    pub merged: bool,
+    pub message: String,
+}
+
+/// Merge the open GitHub PR for the current branch using `gh pr merge`.
+///
+/// Checks mergeability first via `gh pr view`, then merges with `--merge --delete-branch`.
+#[tauri::command]
+pub async fn merge_github_pr(
+    app: AppHandle,
+    worktree_path: String,
+) -> Result<MergePrResponse, String> {
+    let gh = resolve_gh_binary(&app);
+
+    // 1. Check PR status and mergeability
+    let view_output = silent_command(&gh)
+        .args([
+            "pr",
+            "view",
+            "--json",
+            "number,state,mergeable,mergeStateStatus,url,title",
+        ])
+        .current_dir(&worktree_path)
+        .output()
+        .map_err(|e| format!("Failed to run gh pr view: {e}"))?;
+
+    if !view_output.status.success() {
+        let stderr = String::from_utf8_lossy(&view_output.stderr);
+        return Err(format!("No PR found for this branch: {stderr}"));
+    }
+
+    let pr_info: serde_json::Value = serde_json::from_slice(&view_output.stdout)
+        .map_err(|e| format!("Failed to parse PR info: {e}"))?;
+
+    let state = pr_info["state"].as_str().unwrap_or("");
+    if state != "OPEN" {
+        return Err(format!("PR is not open (state: {state})"));
+    }
+
+    let mergeable = pr_info["mergeable"].as_str().unwrap_or("UNKNOWN");
+    let merge_state = pr_info["mergeStateStatus"].as_str().unwrap_or("UNKNOWN");
+
+    if mergeable == "CONFLICTING" {
+        return Err("PR has merge conflicts that must be resolved first".to_string());
+    }
+
+    if merge_state == "BLOCKED" {
+        return Err("PR is blocked (required checks or reviews may be pending)".to_string());
+    }
+
+    let title = pr_info["title"].as_str().unwrap_or("").to_string();
+
+    // 2. Merge the PR
+    let merge_output = silent_command(&gh)
+        .args(["pr", "merge", "--merge"])
+        .current_dir(&worktree_path)
+        .output()
+        .map_err(|e| format!("Failed to run gh pr merge: {e}"))?;
+
+    if !merge_output.status.success() {
+        let stderr = String::from_utf8_lossy(&merge_output.stderr);
+        return Err(format!("Failed to merge PR: {stderr}"));
+    }
+
+    log::info!("Merged PR: {title}");
+
+    Ok(MergePrResponse {
+        merged: true,
+        message: format!("Merged: {title}"),
     })
 }
 
@@ -5422,13 +5639,38 @@ pub async fn generate_pr_update_content(
         reasoning_effort.as_deref(),
     )?;
 
-    // Append unconditional issue/PR references to the body
+    // Gather Linear identifiers
+    let project_name = &project.name;
+    let mut linear_identifiers =
+        get_session_linear_identifiers(&app, effective_session_id, project_name)
+            .unwrap_or_default();
+    if worktree_id != effective_session_id {
+        let wt_linear =
+            get_session_linear_identifiers(&app, worktree_id, project_name).unwrap_or_default();
+        for id in wt_linear {
+            if !linear_identifiers.contains(&id) {
+                linear_identifiers.push(id);
+            }
+        }
+    }
+
+    // Also check worktree's linear_issue_identifier field
+    if let Some(ref lid) = worktree.linear_issue_identifier {
+        if !linear_identifiers.contains(lid) {
+            linear_identifiers.push(lid.clone());
+        }
+    }
+
+    // Append unconditional issue/PR/Linear references to the body
     let mut refs: Vec<String> = Vec::new();
     for num in &issue_nums {
         refs.push(format!("Fixes #{num}"));
     }
     for num in &pr_nums {
         refs.push(format!("Related to #{num}"));
+    }
+    for identifier in &linear_identifiers {
+        refs.push(format!("Addresses {identifier}"));
     }
     if !refs.is_empty() {
         pr_content.body = format!("{}\n\n---\n\n{}", pr_content.body, refs.join("\n"));

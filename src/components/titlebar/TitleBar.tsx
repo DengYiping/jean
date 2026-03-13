@@ -13,6 +13,8 @@ import { useUIStore } from '@/store/ui-store'
 import { useCommandContext } from '@/lib/commands'
 import {
   ArrowUpCircle,
+  Github,
+  Heart,
   PanelLeft,
   PanelLeftClose,
   Settings,
@@ -61,8 +63,8 @@ export function TitleBar({
       {...(native ? { 'data-tauri-drag-region': true } : {})}
       className={cn(
         'relative flex h-8 w-full shrink-0 items-center justify-between',
-        'bg-background md:px-2',
-        native && 'z-[60]',
+        'bg-background/80 backdrop-blur-md border-b border-border/50 md:px-2',
+        native ? 'z-[60]' : 'z-50',
         className
       )}
     >
@@ -74,7 +76,7 @@ export function TitleBar({
         {/* Left Action Buttons */}
         <div
           className={cn(
-            'flex items-center gap-1',
+            'relative z-10 flex items-center gap-1',
             native && isMacOS ? 'pl-[68px]' : 'pl-2'
           )}
         >
@@ -121,6 +123,36 @@ export function TitleBar({
               </kbd>
             </TooltipContent>
           </Tooltip>
+          {!isMobile && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  onClick={() =>
+                    openExternal('https://github.com/coollabsio/jean')
+                  }
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 rounded-none text-foreground/70 hover:text-foreground"
+                >
+                  <Github className="h-3 w-3" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>GitHub</TooltipContent>
+            </Tooltip>
+          )}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                onClick={() => openExternal('https://jean.build/sponsorships/')}
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 rounded-none text-pink-500 hover:text-pink-400"
+              >
+                <Heart className="h-3 w-3" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Sponsor</TooltipContent>
+          </Tooltip>
         </div>
       </div>
 
@@ -137,6 +169,23 @@ export function TitleBar({
         className={cn('flex items-center', isMobile && 'pr-2')}
         style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
       >
+        {isMobile && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                onClick={() =>
+                  openExternal('https://github.com/coollabsio/jean')
+                }
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 rounded-none text-foreground/70 hover:text-foreground"
+              >
+                <Github className="h-3 w-3" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>GitHub</TooltipContent>
+          </Tooltip>
+        )}
         {appVersion && <UpdateIndicator />}
         {appVersion && (
           <button

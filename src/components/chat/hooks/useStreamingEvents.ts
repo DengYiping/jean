@@ -424,6 +424,15 @@ export default function useStreamingEvents({
       const toolCalls = activeToolCalls[sessionId]
       const contentBlocks = streamingContentBlocks[sessionId]
 
+      if (!content && !toolCalls?.length) {
+        console.warn(
+          `[chat:done] No streaming content for session=${sessionId}. ` +
+            `Optimistic message will be empty; messages will load from JSONL on refetch.`
+        )
+      }
+
+      // Codex has no native plan approval flow — skip synthetic ExitPlanMode injection.
+      // Codex plan completions fall through to the "no blocking tools" path → status = "review".
       const effectiveToolCalls = toolCalls
       const effectiveContentBlocks = contentBlocks
 
@@ -724,7 +733,12 @@ export default function useStreamingEvents({
           queryClient.setQueryData<Session>(
             chatQueryKeys.session(sessionId),
             old => {
-              if (!old) return old
+              if (!old) {
+                console.warn(
+                  `[chat:done] Session ${sessionId} not in cache — optimistic assistant message skipped. Will recover from JSONL on next fetch.`
+                )
+                return old
+              }
               return {
                 ...old,
                 messages: upsertAssistantMessage(old.messages, {
@@ -1068,6 +1082,7 @@ export default function useStreamingEvents({
           session_id,
           worktree_id: eventWorktreeId,
           undo_send,
+          emitted_at_ms,
         } = event.payload
 
         // Flush any buffered chunks so streamingContents is up to date
@@ -1078,6 +1093,7 @@ export default function useStreamingEvents({
 
         // Capture streaming state BEFORE clearing (like chat:done does)
         const {
+          sendStartedAt,
           streamingContents,
           activeToolCalls,
           streamingContentBlocks,
@@ -1085,6 +1101,13 @@ export default function useStreamingEvents({
           activeSessionIds,
           markSessionNeedsDigest,
         } = useChatStore.getState()
+        const sendStarted = sendStartedAt[session_id] ?? 0
+        if (sendStarted > emitted_at_ms) {
+          console.warn(
+            `[Cancelled] Ignoring stale cancel event for session=${session_id} emitted_at_ms=${emitted_at_ms} send_started_at=${sendStarted}`
+          )
+          return
+        }
         const content = streamingContents[session_id]
         const toolCalls = activeToolCalls[session_id]
         const contentBlocks = streamingContentBlocks[session_id]
@@ -1295,7 +1318,7 @@ export default function useStreamingEvents({
 
         // NOW batch-clear all streaming state in a single Zustand set()
         // This happens AFTER optimistic messages are in the cache, preventing flicker
-        useChatStore.getState().completeSession(session_id)
+        useChatStore.getState().cancelSession(session_id)
 
         // For restore path: override reviewing state based on whether messages remain
         if (shouldRestoreMessage) {

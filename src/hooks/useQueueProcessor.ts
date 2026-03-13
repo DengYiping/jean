@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { useChatStore } from '@/store/chat-store'
 import { useSendMessage, persistDequeue } from '@/services/chat'
 import { usePreferences } from '@/services/preferences'
@@ -101,9 +101,8 @@ export function useQueueProcessor(): void {
     return false
   })
 
-  useEffect(() => {
-    if (!hasProcessableQueue || !isTauri()) return
-
+  const processQueues = useCallback(() => {
+    if (!isTauri()) return
     // Read fresh state inside effect to avoid subscribing to full records.
     // Store actions are accessed via getState() inside the async callback
     // to ensure fresh references after the await.
@@ -157,6 +156,7 @@ export function useQueueProcessor(): void {
             // entries from lingering (defense against stale state).
             useChatStore.getState().clearQueue(capturedSessionId)
             processingRef.current.delete(capturedSessionId)
+            queueMicrotask(processQueues)
             return
           }
 
@@ -220,6 +220,7 @@ export function useQueueProcessor(): void {
             {
               onSettled: () => {
                 processingRef.current.delete(capturedSessionId)
+                queueMicrotask(processQueues)
               },
             }
           )
@@ -230,14 +231,18 @@ export function useQueueProcessor(): void {
             err,
           })
           processingRef.current.delete(capturedSessionId)
+          queueMicrotask(processQueues)
         })
     }
   }, [
-    hasProcessableQueue,
     sendMessage,
     preferences?.parallel_execution_prompt_enabled,
     preferences?.magic_prompts?.parallel_execution,
     preferences?.chrome_enabled,
-    wsConnected,
   ])
+
+  useEffect(() => {
+    if (!hasProcessableQueue || !isTauri()) return
+    processQueues()
+  }, [hasProcessableQueue, processQueues, wsConnected])
 }

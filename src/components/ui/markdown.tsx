@@ -252,10 +252,25 @@ const Markdown = memo(function Markdown({
     [handleLocalLinkOpen]
   )
 
+  const renderComponents = useMemo<Components>(
+    () =>
+      streaming
+        ? {
+            ...components,
+            p: ({ children }) => (
+              <p className="my-0 leading-relaxed first:mt-0 last:mb-0">
+                {children}
+              </p>
+            ),
+          }
+        : components,
+    [components, streaming]
+  )
+
   return (
     <div className={cn('markdown leading-relaxed break-words', className)}>
       <ReactMarkdown
-        components={components}
+        components={renderComponents}
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeRaw]}
       >

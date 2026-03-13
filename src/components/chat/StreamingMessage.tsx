@@ -6,9 +6,7 @@ import type {
   Question,
   QuestionAnswer,
   ThinkingLevel,
-  ExecutionMode,
 } from '@/types/chat'
-import { isAskUserQuestion, isExitPlanMode } from '@/types/chat'
 import { AskUserQuestion } from './AskUserQuestion'
 import { ToolCallInline, TaskCallInline, StackedGroup } from './ToolCallInline'
 import { buildTimeline, findPlanFilePath } from './tool-call-utils'
@@ -30,8 +28,6 @@ interface StreamingMessageProps {
   toolCalls: ToolCall[]
   /** Raw streaming content (fallback for old format) */
   streamingContent: string
-  /** Execution mode that was active when message was sent */
-  streamingExecutionMode: ExecutionMode
   /** Current thinking level setting */
   selectedThinkingLevel: ThinkingLevel
   /** Keyboard shortcut for approve button */
@@ -90,7 +86,6 @@ export const StreamingMessage = memo(function StreamingMessage({
   contentBlocks,
   toolCalls,
   streamingContent,
-  streamingExecutionMode,
   approveShortcut,
   approveShortcutYolo,
   approveShortcutClearContext,
@@ -111,8 +106,22 @@ export const StreamingMessage = memo(function StreamingMessage({
   onStreamingWorktreeYoloApproval,
   hideApproveButtons,
 }: StreamingMessageProps) {
+  const hasVisibleStreamingContent =
+    contentBlocks.length > 0 ||
+    toolCalls.length > 0 ||
+    streamingContent.trim().length > 0
+
   return (
-    <div className="text-muted-foreground">
+    <div className="min-h-4 text-muted-foreground">
+      {!hasVisibleStreamingContent && (
+        <div
+          className="py-1"
+          aria-hidden="true"
+          data-testid="streaming-response-placeholder"
+        >
+          <div className="h-4 w-[min(20rem,52%)]" />
+        </div>
+      )}
       {/* Render streaming content blocks inline if available */}
       {contentBlocks.length > 0 ? (
         (() => {
@@ -350,23 +359,6 @@ export const StreamingMessage = memo(function StreamingMessage({
         toolCalls={toolCalls}
         onFileClick={onEditedFileClick}
       />
-
-      {/* Show status indicator - waiting when question pending, planning/vibing otherwise */}
-      <div className="text-sm text-muted-foreground/60 mt-4">
-        <span className="animate-dots">
-          {toolCalls.some(
-            tc =>
-              (isAskUserQuestion(tc) || isExitPlanMode(tc)) &&
-              !isQuestionAnswered(sessionId, tc.id)
-          )
-            ? 'Waiting for your input'
-            : streamingExecutionMode === 'plan'
-              ? 'Planning'
-              : streamingExecutionMode === 'yolo'
-                ? 'Yoloing'
-                : 'Vibing'}
-        </span>
-      </div>
     </div>
   )
 })

@@ -67,6 +67,7 @@ export function useBackgroundInvestigation(): void {
       autoInvestigateSecurityAlertWorktreeIds,
       autoInvestigateAdvisoryWorktreeIds,
       autoInvestigateLinearIssueWorktreeIds,
+      autoOpenSessionWorktreeIds,
     } = useUIStore.getState()
 
     const { worktreePaths, activeWorktreeId } = useChatStore.getState()
@@ -90,6 +91,8 @@ export function useBackgroundInvestigation(): void {
     for (const worktreeId of autoInvestigateWorktreeIds) {
       // Skip foreground worktrees — ChatWindow handles those
       if (worktreeId === activeWorktreeId) continue
+      // Skip worktrees about to open in foreground — ChatWindow will handle investigation
+      if (autoOpenSessionWorktreeIds.has(worktreeId)) continue
       // Skip if worktree path not yet registered (still pending)
       if (!worktreePaths[worktreeId]) continue
       // Skip if worktree directory not yet created (status !== 'ready')
@@ -101,6 +104,7 @@ export function useBackgroundInvestigation(): void {
 
     for (const worktreeId of autoInvestigatePRWorktreeIds) {
       if (worktreeId === activeWorktreeId) continue
+      if (autoOpenSessionWorktreeIds.has(worktreeId)) continue
       if (!worktreePaths[worktreeId]) continue
       if (!isWorktreeReady(worktreeId)) continue
       if (processingRef.current.has(worktreeId)) continue
@@ -110,6 +114,7 @@ export function useBackgroundInvestigation(): void {
 
     for (const worktreeId of autoInvestigateSecurityAlertWorktreeIds) {
       if (worktreeId === activeWorktreeId) continue
+      if (autoOpenSessionWorktreeIds.has(worktreeId)) continue
       if (!worktreePaths[worktreeId]) continue
       if (!isWorktreeReady(worktreeId)) continue
       if (processingRef.current.has(worktreeId)) continue
@@ -119,6 +124,7 @@ export function useBackgroundInvestigation(): void {
 
     for (const worktreeId of autoInvestigateAdvisoryWorktreeIds) {
       if (worktreeId === activeWorktreeId) continue
+      if (autoOpenSessionWorktreeIds.has(worktreeId)) continue
       if (!worktreePaths[worktreeId]) continue
       if (!isWorktreeReady(worktreeId)) continue
       if (processingRef.current.has(worktreeId)) continue
@@ -128,6 +134,7 @@ export function useBackgroundInvestigation(): void {
 
     for (const worktreeId of autoInvestigateLinearIssueWorktreeIds) {
       if (worktreeId === activeWorktreeId) continue
+      if (autoOpenSessionWorktreeIds.has(worktreeId)) continue
       if (!worktreePaths[worktreeId]) continue
       if (!isWorktreeReady(worktreeId)) continue
       if (processingRef.current.has(worktreeId)) continue

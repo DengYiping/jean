@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use once_cell::sync::Lazy;
 use tauri::AppHandle;
@@ -41,6 +42,23 @@ fn lock_recover<'a, T>(mutex: &'a Mutex<T>, name: &str) -> std::sync::MutexGuard
             log::error!("[Registry] recovering poisoned mutex: {name}");
             poisoned.into_inner()
         }
+    }
+}
+
+fn emit_cancelled_event(app: &AppHandle, session_id: &str, worktree_id: &str, undo_send: bool) {
+    let emitted_at_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(0);
+
+    let event = CancelledEvent {
+        session_id: session_id.to_string(),
+        worktree_id: worktree_id.to_string(),
+        undo_send,
+        emitted_at_ms,
+    };
+    if let Err(e) = app.emit_all("chat:cancelled", &event) {
+        log::error!("Failed to emit chat:cancelled event: {e}");
     }
 }
 
@@ -263,14 +281,7 @@ pub fn cancel_process(
         }
 
         // Emit cancelled event for responsive UI
-        let event = CancelledEvent {
-            session_id: session_id.to_string(),
-            worktree_id: worktree_id.to_string(),
-            undo_send: false, // Process was running, may have partial content
-        };
-        if let Err(e) = app.emit_all("chat:cancelled", &event) {
-            log::error!("Failed to emit chat:cancelled event: {e}");
-        }
+        emit_cancelled_event(app, session_id, worktree_id, false);
 
         return Ok(true);
     }
@@ -294,14 +305,7 @@ pub fn cancel_process(
             log::warn!("Failed to mark run as cancelled in manifest: {e}");
         }
 
-        let event = CancelledEvent {
-            session_id: session_id.to_string(),
-            worktree_id: worktree_id.to_string(),
-            undo_send: false,
-        };
-        if let Err(e) = app.emit_all("chat:cancelled", &event) {
-            log::error!("Failed to emit chat:cancelled event: {e}");
-        }
+        emit_cancelled_event(app, session_id, worktree_id, false);
 
         return Ok(true);
     }
@@ -349,14 +353,7 @@ pub fn cancel_process(
         // Emit cancelled event with undo_send=false — content may have already
         // streamed to the frontend via SSE events. The frontend will decide
         // based on actual streamed content whether to undo or preserve.
-        let event = CancelledEvent {
-            session_id: session_id.to_string(),
-            worktree_id: worktree_id.to_string(),
-            undo_send: false,
-        };
-        if let Err(e) = app.emit_all("chat:cancelled", &event) {
-            log::error!("Failed to emit chat:cancelled event: {e}");
-        }
+        emit_cancelled_event(app, session_id, worktree_id, false);
 
         return Ok(true);
     }
@@ -373,14 +370,7 @@ pub fn cancel_process(
     let _ = run_log::mark_running_run_cancelled(app, session_id);
 
     // Emit cancelled event so frontend handles it immediately
-    let event = CancelledEvent {
-        session_id: session_id.to_string(),
-        worktree_id: worktree_id.to_string(),
-        undo_send: true, // No content was streamed yet
-    };
-    if let Err(e) = app.emit_all("chat:cancelled", &event) {
-        log::error!("Failed to emit chat:cancelled event: {e}");
-    }
+    emit_cancelled_event(app, session_id, worktree_id, true);
 
     Ok(true)
 }
@@ -422,14 +412,7 @@ pub fn cancel_process_if_running(
             log::warn!("Failed to mark run as cancelled in manifest: {e}");
         }
 
-        let event = CancelledEvent {
-            session_id: session_id.to_string(),
-            worktree_id: worktree_id.to_string(),
-            undo_send: false,
-        };
-        if let Err(e) = app.emit_all("chat:cancelled", &event) {
-            log::error!("Failed to emit chat:cancelled event: {e}");
-        }
+        emit_cancelled_event(app, session_id, worktree_id, false);
 
         return Ok(true);
     }
@@ -455,14 +438,7 @@ pub fn cancel_process_if_running(
             log::warn!("Failed to mark run as cancelled in manifest: {e}");
         }
 
-        let event = CancelledEvent {
-            session_id: session_id.to_string(),
-            worktree_id: worktree_id.to_string(),
-            undo_send: false,
-        };
-        if let Err(e) = app.emit_all("chat:cancelled", &event) {
-            log::error!("Failed to emit chat:cancelled event: {e}");
-        }
+        emit_cancelled_event(app, session_id, worktree_id, false);
 
         return Ok(true);
     }
@@ -497,14 +473,7 @@ pub fn cancel_process_if_running(
             log::warn!("Failed to mark run as cancelled in manifest: {e}");
         }
 
-        let event = CancelledEvent {
-            session_id: session_id.to_string(),
-            worktree_id: worktree_id.to_string(),
-            undo_send: true,
-        };
-        if let Err(e) = app.emit_all("chat:cancelled", &event) {
-            log::error!("Failed to emit chat:cancelled event: {e}");
-        }
+        emit_cancelled_event(app, session_id, worktree_id, true);
 
         return Ok(true);
     }

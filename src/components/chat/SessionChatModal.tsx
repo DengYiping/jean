@@ -168,7 +168,6 @@ interface SessionChatModalProps {
   worktreePath: string
   isOpen: boolean
   onClose: () => void
-  onCloseWorktree?: () => void
 }
 
 function getSessionStatus(
@@ -183,7 +182,6 @@ export function SessionChatModal({
   worktreePath,
   isOpen,
   onClose,
-  onCloseWorktree,
 }: SessionChatModalProps) {
   const isMobile = useIsMobile()
   const { data: sessionsData } = useSessions(
@@ -420,19 +418,10 @@ export function SessionChatModal({
   }, [])
 
   // Session archive/delete handlers
-  const handleCloseWorktreeFromModal = useCallback(() => {
-    onCloseWorktree?.()
-    onClose()
-  }, [onCloseWorktree, onClose])
-
   const { handleArchiveSession, handleDeleteSession } = useSessionArchive({
     worktreeId,
     worktreePath,
-    sessions,
     removalBehavior: preferences?.removal_behavior,
-    onLastSessionDeleted: onCloseWorktree
-      ? handleCloseWorktreeFromModal
-      : undefined,
   })
 
   // CMD+W: close the active session tab, or close modal if last tab
@@ -1049,8 +1038,12 @@ export function SessionChatModal({
                 aria-label="Scroll to waiting session"
               />
             )}
-            <ScrollArea className="flex-1" viewportRef={modalTabScrollRef}>
-              <div className="flex items-center gap-1.5 py-1 px-3">
+            <ScrollArea
+              className="min-w-0 flex-1"
+              viewportClassName="overflow-x-auto overflow-y-hidden overscroll-x-contain overscroll-y-none touch-pan-x scrollbar-hide [-webkit-overflow-scrolling:touch]"
+              viewportRef={modalTabScrollRef}
+            >
+              <div className="flex min-w-max items-center gap-1.5 py-1 px-3">
                 {sortedSessions.map((session, idx) => {
                   const isActive = session.id === currentSessionId
                   const status = getSessionStatus(session, storeState)

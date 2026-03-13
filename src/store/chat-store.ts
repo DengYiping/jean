@@ -86,6 +86,9 @@ interface ChatUIState {
   // from stale completion events arriving from a previous cancelled run
   sendStartedAt: Record<string, number>
 
+  // Duration (ms) of the last completed run per session — set by completeSession
+  completedDurations: Record<string, number>
+
   // Session IDs initiated by the user (e.g. Clear Context & YOLO) — auto-mark as opened on completion
   userInitiatedSessionIds: Record<string, true>
 
@@ -239,8 +242,10 @@ interface ChatUIState {
   sessionLabels: Record<string, LabelData>
 
   // Pending magic command to execute when ChatWindow mounts (from canvas navigation)
-  pendingMagicCommand: { command: string } | null
-  setPendingMagicCommand: (cmd: { command: string } | null) => void
+  pendingMagicCommand: { command: string; prompt?: string } | null
+  setPendingMagicCommand: (
+    cmd: { command: string; prompt?: string } | null
+  ) => void
 
   // Actions - Session management
   setActiveSession: (
@@ -289,7 +294,7 @@ interface ChatUIState {
   getWorktreePath: (worktreeId: string) => string | undefined
 
   // Actions - Session-based sending state
-  addSendingSession: (sessionId: string) => void
+  addSendingSession: (sessionId: string, startTime?: number) => void
   removeSendingSession: (sessionId: string) => void
   isSending: (sessionId: string) => boolean
 
@@ -509,6 +514,8 @@ interface ChatUIState {
   // Actions - Batch state transitions (single set() to avoid render cascades)
   /** Atomically clear all streaming state and mark session as reviewing */
   completeSession: (sessionId: string) => void
+  /** Atomically clear all streaming state for a user cancellation */
+  cancelSession: (sessionId: string) => void
   /** Atomically clear streaming state and mark session as waiting for input */
   pauseSession: (sessionId: string) => void
   /** Atomically clear streaming state after an error, mark as reviewing */
@@ -567,6 +574,7 @@ export const useChatStore = create<ChatUIState>()(
       worktreePaths: {},
       sendingSessionIds: {},
       sendStartedAt: {},
+      completedDurations: {},
       userInitiatedSessionIds: {},
       waitingForInputSessionIds: {},
       sessionWorktreeMap: {},
@@ -877,18 +885,21 @@ export const useChatStore = create<ChatUIState>()(
       getWorktreePath: worktreeId => get().worktreePaths[worktreeId],
 
       // Sending state (session-based)
-      addSendingSession: sessionId =>
+      addSendingSession: (sessionId, startTime) =>
         set(
           state => {
             // Guard: skip no-op updates to avoid re-renders on every streaming chunk
             if (state.sendingSessionIds[sessionId]) return state
-            const now = Date.now()
+            const now = startTime ?? Date.now()
+            const { [sessionId]: _, ...restDurations } =
+              state.completedDurations
             return {
               sendingSessionIds: {
                 ...state.sendingSessionIds,
                 [sessionId]: true,
               },
               sendStartedAt: { ...state.sendStartedAt, [sessionId]: now },
+              completedDurations: restDurations,
             }
           },
           undefined,
@@ -2217,6 +2228,10 @@ export const useChatStore = create<ChatUIState>()(
               pendingPlanMessageIds,
               executingModes,
               sendStartedAt: sendStartedAtRest,
+              completedDurations:
+                sendStarted > 0
+                  ? { ...state.completedDurations, [sessionId]: elapsed }
+                  : state.completedDurations,
               reviewingSessions: {
                 ...state.reviewingSessions,
                 [sessionId]: true,
@@ -2225,6 +2240,55 @@ export const useChatStore = create<ChatUIState>()(
           },
           undefined,
           'completeSession'
+        ),
+
+      cancelSession: sessionId =>
+        set(
+          state => {
+            const sendStarted = state.sendStartedAt[sessionId] ?? 0
+            const elapsed = Date.now() - sendStarted
+            const { [sessionId]: _sc, ...streamingContents } =
+              state.streamingContents
+            const { [sessionId]: _sb, ...streamingContentBlocks } =
+              state.streamingContentBlocks
+            const { [sessionId]: _tc, ...activeToolCalls } =
+              state.activeToolCalls
+            const { [sessionId]: _ss, ...sendingSessionIds } =
+              state.sendingSessionIds
+            const { [sessionId]: _wi, ...waitingForInputSessionIds } =
+              state.waitingForInputSessionIds
+            const { [sessionId]: _sp, ...streamingPlanApprovals } =
+              state.streamingPlanApprovals
+            const { [sessionId]: _em, ...executingModes } = state.executingModes
+            const { [sessionId]: _pd, ...pendingPermissionDenials } =
+              state.pendingPermissionDenials
+            const { [sessionId]: _dc, ...deniedMessageContext } =
+              state.deniedMessageContext
+            const { [sessionId]: _sa, ...sendStartedAtRest } =
+              state.sendStartedAt
+            return {
+              streamingContents,
+              streamingContentBlocks,
+              activeToolCalls,
+              sendingSessionIds,
+              waitingForInputSessionIds,
+              streamingPlanApprovals,
+              executingModes,
+              pendingPermissionDenials,
+              deniedMessageContext,
+              sendStartedAt: sendStartedAtRest,
+              completedDurations:
+                sendStarted > 0
+                  ? { ...state.completedDurations, [sessionId]: elapsed }
+                  : state.completedDurations,
+              reviewingSessions: {
+                ...state.reviewingSessions,
+                [sessionId]: true,
+              },
+            }
+          },
+          undefined,
+          'cancelSession'
         ),
 
       pauseSession: sessionId =>

@@ -752,20 +752,20 @@ export function GitDiffModal({
             }
           }}
         >
-          <DialogTitle className="flex flex-wrap items-center gap-2 shrink-0 px-3 pt-3 sm:px-0 sm:pt-0">
+          <DialogTitle className="flex shrink-0 flex-wrap items-center gap-2 overflow-visible px-3 pt-3 leading-normal sm:px-0 sm:pt-0">
             {showSwitcher ? (
-              <div className="flex items-center bg-muted rounded-lg p-1">
+              <div className="flex min-h-10 items-center rounded-lg bg-muted p-1.5">
                 <button
                   type="button"
                   onClick={() => handleSwitchDiffType('uncommitted')}
                   className={cn(
-                    'flex items-center gap-1.5 px-2 sm:px-3 py-1 rounded-md text-xs font-medium transition-colors',
+                    'flex min-h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1.5 text-xs font-medium leading-none transition-colors sm:px-3',
                     activeDiffType === 'uncommitted'
                       ? 'bg-background shadow-sm text-foreground'
                       : 'text-muted-foreground hover:text-foreground'
                   )}
                 >
-                  <Pencil className="h-3.5 w-3.5" />
+                  <Pencil className="h-3.5 w-3.5 shrink-0" />
                   <span className="hidden sm:inline">Uncommitted</span>
                   <span className="text-green-500">+{uncommittedAdded}</span>
                   <span className="text-red-500">-{uncommittedRemoved}</span>
@@ -774,13 +774,13 @@ export function GitDiffModal({
                   type="button"
                   onClick={() => handleSwitchDiffType('branch')}
                   className={cn(
-                    'flex items-center gap-1.5 px-2 sm:px-3 py-1 rounded-md text-xs font-medium transition-colors',
+                    'flex min-h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1.5 text-xs font-medium leading-none transition-colors sm:px-3',
                     activeDiffType === 'branch'
                       ? 'bg-background shadow-sm text-foreground'
                       : 'text-muted-foreground hover:text-foreground'
                   )}
                 >
-                  <GitBranch className="h-3.5 w-3.5" />
+                  <GitBranch className="h-3.5 w-3.5 shrink-0" />
                   <span className="hidden sm:inline">Branch</span>
                   <span className="text-green-500">+{branchAdded}</span>
                   <span className="text-red-500">-{branchRemoved}</span>
@@ -789,13 +789,13 @@ export function GitDiffModal({
                   type="button"
                   onClick={() => handleSwitchDiffType('commits')}
                   className={cn(
-                    'flex items-center gap-1.5 px-2 sm:px-3 py-1 rounded-md text-xs font-medium transition-colors',
+                    'flex min-h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1.5 text-xs font-medium leading-none transition-colors sm:px-3',
                     activeDiffType === 'commits'
                       ? 'bg-background shadow-sm text-foreground'
                       : 'text-muted-foreground hover:text-foreground'
                   )}
                 >
-                  <GitCommitHorizontal className="h-3.5 w-3.5" />
+                  <GitCommitHorizontal className="h-3.5 w-3.5 shrink-0" />
                   <span className="hidden sm:inline">Commits</span>
                 </button>
               </div>
@@ -807,20 +807,20 @@ export function GitDiffModal({
             )}
             <div className="flex items-center gap-2 sm:gap-3">
               {/* View mode toggle */}
-              <div className="flex items-center bg-muted rounded-lg p-1">
+              <div className="flex min-h-10 items-center rounded-lg bg-muted p-1.5">
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
                       type="button"
                       onClick={() => setDiffStyle('split')}
                       className={cn(
-                        'flex items-center gap-1.5 px-2 sm:px-3 py-1 rounded-md text-xs font-medium transition-colors',
+                        'flex min-h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1.5 text-xs font-medium leading-none transition-colors sm:px-3',
                         diffStyle === 'split'
                           ? 'bg-background shadow-sm text-foreground'
                           : 'text-muted-foreground hover:text-foreground'
                       )}
                     >
-                      <Columns2 className="h-3.5 w-3.5" />
+                      <Columns2 className="h-3.5 w-3.5 shrink-0" />
                       <span className="hidden sm:inline">Split</span>
                     </button>
                   </TooltipTrigger>
@@ -832,13 +832,13 @@ export function GitDiffModal({
                       type="button"
                       onClick={() => setDiffStyle('unified')}
                       className={cn(
-                        'flex items-center gap-1.5 px-2 sm:px-3 py-1 rounded-md text-xs font-medium transition-colors',
+                        'flex min-h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1.5 text-xs font-medium leading-none transition-colors sm:px-3',
                         diffStyle === 'unified'
                           ? 'bg-background shadow-sm text-foreground'
                           : 'text-muted-foreground hover:text-foreground'
                       )}
                     >
-                      <Rows3 className="h-3.5 w-3.5" />
+                      <Rows3 className="h-3.5 w-3.5 shrink-0" />
                       <span className="hidden sm:inline">Stacked</span>
                     </button>
                   </TooltipTrigger>

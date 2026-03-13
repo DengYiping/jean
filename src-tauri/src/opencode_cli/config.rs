@@ -41,7 +41,7 @@ fn parse_custom_command(raw: &str) -> Result<(String, Vec<String>), String> {
 
 fn resolve_program_path(program: &str) -> Result<PathBuf, String> {
     let expanded = expand_home_path(program);
-    if expanded != PathBuf::from(program) || expanded.components().count() > 1 {
+    if expanded != std::path::Path::new(program) || expanded.components().count() > 1 {
         if expanded.exists() {
             return Ok(expanded);
         }
@@ -85,11 +85,13 @@ pub fn resolve_cli_command(app: &AppHandle) -> Result<ResolvedCliCommand, String
 }
 
 /// Legacy managed CLI directory. Bundled installs are no longer used.
+#[allow(dead_code)] // Older code paths still reference this legacy helper symbol.
 pub fn get_cli_dir(_app: &AppHandle) -> Result<PathBuf, String> {
     Err("Bundled OpenCode CLI installs are no longer supported".to_string())
 }
 
 /// Legacy helper kept only to satisfy older code paths that no longer execute.
+#[allow(dead_code)] // Older code paths still reference this legacy helper symbol.
 pub fn ensure_cli_dir(_app: &AppHandle) -> Result<PathBuf, String> {
     Err("Bundled OpenCode CLI installs are no longer supported".to_string())
 }

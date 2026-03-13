@@ -79,7 +79,8 @@ export function AgentWidget({
                 allResolved &&
                   !hasErrors &&
                   'bg-green-500/20 text-green-600 dark:text-green-400',
-                hasErrors && 'bg-amber-500/20 text-amber-600 dark:text-amber-400'
+                hasErrors &&
+                  'bg-amber-500/20 text-amber-600 dark:text-amber-400'
               )}
             >
               {resolvedCount}/{totalCount}
@@ -119,8 +120,7 @@ function AgentItem({ agent }: AgentItemProps) {
     <span
       className={cn(
         'block min-w-0 truncate text-muted-foreground',
-        agent.status === 'completed' &&
-          'line-through text-muted-foreground/60',
+        agent.status === 'completed' && 'line-through text-muted-foreground/60',
         agent.status === 'errored' && 'text-muted-foreground/60'
       )}
     >

@@ -639,6 +639,7 @@ async fn refresh_usage_caches(app: &AppHandle) {
     }
 }
 
+#[allow(dead_code)] // Claude usage refresh is intentionally parked until the auth bug is resolved.
 async fn refresh_claude_usage_cache(app: &AppHandle) -> Result<(), String> {
     let status = crate::claude_cli::check_claude_cli_installed(app.clone()).await?;
     if !status.installed {

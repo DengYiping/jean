@@ -152,6 +152,7 @@ async fn linear_graphql(
 // =============================================================================
 
 /// Extract numeric part from Linear identifier (e.g., "ENG-123" → 123)
+#[allow(dead_code)] // Shared branch/context helpers are kept for backend-only create-worktree flows.
 pub fn parse_linear_identifier_number(identifier: &str) -> u32 {
     identifier
         .rsplit_once('-')
@@ -160,6 +161,7 @@ pub fn parse_linear_identifier_number(identifier: &str) -> u32 {
 }
 
 /// Generate branch name from Linear issue identifier and title
+#[allow(dead_code)] // Shared branch/context helpers are kept for backend-only create-worktree flows.
 pub fn generate_branch_name_from_linear_issue(identifier: &str, title: &str) -> String {
     let slug = slugify_issue_title(title);
     let id = identifier.to_lowercase();
@@ -167,6 +169,7 @@ pub fn generate_branch_name_from_linear_issue(identifier: &str, title: &str) -> 
 }
 
 /// Convert a LinearIssueDetail to the shared IssueContext for create_worktree
+#[allow(dead_code)] // Shared branch/context helpers are kept for backend-only create-worktree flows.
 pub fn linear_issue_to_issue_context(detail: &LinearIssueDetail) -> IssueContext {
     use super::github_issues::GitHubComment;
 

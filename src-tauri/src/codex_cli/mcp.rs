@@ -26,6 +26,7 @@ struct CodexConfig {
 
 /// A single MCP server entry in Codex TOML config.
 #[derive(serde::Deserialize, Debug)]
+#[allow(dead_code)] // Some parsed Codex MCP fields are preserved for future config support.
 struct CodexMcpServerEntry {
     // STDIO transport
     command: Option<String>,

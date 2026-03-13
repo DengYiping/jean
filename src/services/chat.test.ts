@@ -12,10 +12,7 @@ describe('chat answer formatting', () => {
         id: 'focus',
         question: 'What should I focus on?',
         multiSelect: false,
-        options: [
-          { label: 'Frontend' },
-          { label: 'Backend' },
-        ],
+        options: [{ label: 'Frontend' }, { label: 'Backend' }],
       },
     ]
 

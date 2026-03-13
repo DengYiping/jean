@@ -14,7 +14,7 @@ export default defineConfig(async () => ({
     },
   },
   build: {
-    chunkSizeWarningLimit: 600, // Prevent warnings for template's bundled components
+    chunkSizeWarningLimit: 800, // Allow the intentionally large editor/language chunks without noisy build warnings
     rollupOptions: {
       output: {
         manualChunks(id) {

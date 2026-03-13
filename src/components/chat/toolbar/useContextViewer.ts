@@ -21,7 +21,9 @@ export function useContextViewer({
   activeSessionId,
   activeWorktreePath,
 }: UseContextViewerArgs) {
-  const [viewingContext, setViewingContext] = useState<ViewingContext | null>(null)
+  const [viewingContext, setViewingContext] = useState<ViewingContext | null>(
+    null
+  )
 
   const handleViewIssue = useCallback(
     async (ctx: LoadedIssueContext) => {

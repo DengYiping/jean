@@ -623,12 +623,12 @@ function BashCommandView({
   )
 }
 
-type SpawnAgentState = {
+interface SpawnAgentState {
   status?: string | null
   message?: string | null
 }
 
-type SpawnAgentInput = {
+interface SpawnAgentInput {
   prompt?: string
   receiver_thread_ids?: unknown
   receiverThreadIds?: unknown
@@ -711,7 +711,8 @@ function SpawnAgentView({
   receiverIds: string[]
   agentStates: Record<string, SpawnAgentState>
 }) {
-  const agentIds = receiverIds.length > 0 ? receiverIds : Object.keys(agentStates)
+  const agentIds =
+    receiverIds.length > 0 ? receiverIds : Object.keys(agentStates)
 
   return (
     <div className="space-y-3">
@@ -765,7 +766,9 @@ function SpawnAgentView({
             })}
           </div>
         ) : (
-          <div className="text-xs text-muted-foreground">No agent state reported.</div>
+          <div className="text-xs text-muted-foreground">
+            No agent state reported.
+          </div>
         )}
       </div>
     </div>

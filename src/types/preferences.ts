@@ -704,9 +704,10 @@ export const CODEX_DEFAULT_MAGIC_PROMPT_EFFORTS: MagicPromptReasoningEfforts = {
 }
 
 /** OpenCode preset: same as Codex */
-export const OPENCODE_DEFAULT_MAGIC_PROMPT_EFFORTS: MagicPromptReasoningEfforts = {
-  ...CODEX_DEFAULT_MAGIC_PROMPT_EFFORTS,
-}
+export const OPENCODE_DEFAULT_MAGIC_PROMPT_EFFORTS: MagicPromptReasoningEfforts =
+  {
+    ...CODEX_DEFAULT_MAGIC_PROMPT_EFFORTS,
+  }
 
 /**
  * Per-prompt provider overrides. null = use global default_provider.
@@ -806,8 +807,7 @@ function makeBackendsPreset(backend: string): MagicPromptBackends {
   }
 }
 
-export const CLAUDE_DEFAULT_MAGIC_PROMPT_BACKENDS =
-  makeBackendsPreset('claude')
+export const CLAUDE_DEFAULT_MAGIC_PROMPT_BACKENDS = makeBackendsPreset('claude')
 export const CODEX_DEFAULT_MAGIC_PROMPT_BACKENDS = makeBackendsPreset('codex')
 export const OPENCODE_DEFAULT_MAGIC_PROMPT_BACKENDS =
   makeBackendsPreset('opencode')

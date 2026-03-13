@@ -23,10 +23,10 @@ describe('shouldPlayPermissionApprovalSound', () => {
 
   it('does not replay while approvals are already pending', () => {
     expect(
-      shouldPlayPermissionApprovalSound([createDenial('tool-1')], [
-        createDenial('tool-1'),
-        createDenial('tool-2'),
-      ])
+      shouldPlayPermissionApprovalSound(
+        [createDenial('tool-1')],
+        [createDenial('tool-1'), createDenial('tool-2')]
+      )
     ).toBe(false)
   })
 })

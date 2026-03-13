@@ -1045,7 +1045,9 @@ export const useChatStore = create<ChatUIState>()(
         set(
           state => {
             const existing = state.activeToolCalls[sessionId] ?? []
-            const existingIndex = existing.findIndex(tc => tc.id === toolCall.id)
+            const existingIndex = existing.findIndex(
+              tc => tc.id === toolCall.id
+            )
             // Repeated tool_use events for the same tool ID should update the
             // existing entry in place so streaming plan/todo/collab state stays fresh.
             if (existingIndex !== -1) {

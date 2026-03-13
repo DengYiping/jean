@@ -54,7 +54,12 @@ export function useClaudeCliStatus(options?: { enabled?: boolean }) {
     queryFn: async (): Promise<ClaudeCliStatus> => {
       if (!isTauri()) {
         logger.debug('Not in Tauri context, returning mock CLI status')
-        return { installed: false, version: null, path: null, supports_auth_command: false }
+        return {
+          installed: false,
+          version: null,
+          path: null,
+          supports_auth_command: false,
+        }
       }
 
       try {
@@ -66,7 +71,12 @@ export function useClaudeCliStatus(options?: { enabled?: boolean }) {
         return status
       } catch (error) {
         logger.error('Failed to check Claude CLI status', { error })
-        return { installed: false, version: null, path: null, supports_auth_command: false }
+        return {
+          installed: false,
+          version: null,
+          path: null,
+          supports_auth_command: false,
+        }
       }
     },
     enabled: options?.enabled ?? true,

@@ -342,7 +342,8 @@ describe('preferences service', () => {
         show_create_page_issue_sources: true,
         confirm_session_close: true,
         default_backend: 'claude',
-        selected_codex_model: 'gpt-5.3-fast' as AppPreferences['selected_codex_model'],
+        selected_codex_model:
+          'gpt-5.3-fast' as AppPreferences['selected_codex_model'],
         selected_opencode_model: 'opencode/gpt-5.3-codex',
         opencode_launch_command: null,
         default_codex_reasoning_effort: 'high',

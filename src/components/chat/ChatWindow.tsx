@@ -1606,40 +1606,41 @@ export function ChatWindow({
     clearChatInputState: () => clearChatInputStateRef.current?.(),
   })
 
-  const getPendingInputSnapshot = useCallback((): PendingInputSnapshot | null => {
-    if (!activeSessionId) return null
+  const getPendingInputSnapshot =
+    useCallback((): PendingInputSnapshot | null => {
+      if (!activeSessionId) return null
 
-    const store = useChatStore.getState()
-    const liveInputValue = inputRef.current?.value
-    const textMessage = (
-      liveInputValue ??
-      store.inputDrafts[activeSessionId] ??
-      ''
-    ).trim()
-    const images = [...store.getPendingImages(activeSessionId)]
-    const files = [...store.getPendingFiles(activeSessionId)]
-    const skills = [...store.getPendingSkills(activeSessionId)]
-    const textFiles = [...store.getPendingTextFiles(activeSessionId)]
+      const store = useChatStore.getState()
+      const liveInputValue = inputRef.current?.value
+      const textMessage = (
+        liveInputValue ??
+        store.inputDrafts[activeSessionId] ??
+        ''
+      ).trim()
+      const images = [...store.getPendingImages(activeSessionId)]
+      const files = [...store.getPendingFiles(activeSessionId)]
+      const skills = [...store.getPendingSkills(activeSessionId)]
+      const textFiles = [...store.getPendingTextFiles(activeSessionId)]
 
-    if (
-      !textMessage &&
-      images.length === 0 &&
-      files.length === 0 &&
-      textFiles.length === 0 &&
-      skills.length === 0
-    ) {
-      return null
-    }
+      if (
+        !textMessage &&
+        images.length === 0 &&
+        files.length === 0 &&
+        textFiles.length === 0 &&
+        skills.length === 0
+      ) {
+        return null
+      }
 
-    return {
-      sourceSessionId: activeSessionId,
-      message: textMessage,
-      images,
-      files,
-      skills,
-      textFiles,
-    }
-  }, [activeSessionId, inputRef])
+      return {
+        sourceSessionId: activeSessionId,
+        message: textMessage,
+        images,
+        files,
+        skills,
+        textFiles,
+      }
+    }, [activeSessionId, inputRef])
 
   const clearPendingInputSnapshot = useCallback(
     (snapshot: PendingInputSnapshot) => {
@@ -1732,8 +1733,7 @@ export function ChatWindow({
         (modeBackendOverride === 'codex'
           ? (preferences?.selected_codex_model ?? 'gpt-5.4')
           : modeBackendOverride === 'opencode'
-            ? (preferences?.selected_opencode_model ??
-              'opencode/gpt-5.3-codex')
+            ? (preferences?.selected_opencode_model ?? 'opencode/gpt-5.3-codex')
             : selectedModelRef.current)
 
       const overrideStr =
@@ -1908,11 +1908,10 @@ export function ChatWindow({
         executionMode: mode,
         thinkingLevel,
         effortLevel,
-        parallelExecutionPrompt:
-          preferences?.parallel_execution_prompt_enabled
-            ? (preferences.magic_prompts?.parallel_execution ??
-              DEFAULT_PARALLEL_EXECUTION_PROMPT)
-            : undefined,
+        parallelExecutionPrompt: preferences?.parallel_execution_prompt_enabled
+          ? (preferences.magic_prompts?.parallel_execution ??
+            DEFAULT_PARALLEL_EXECUTION_PROMPT)
+          : undefined,
         aiLanguage: preferences?.ai_language,
         mcpConfig: buildMcpConfigJson(
           mcpServersDataRef.current ?? [],

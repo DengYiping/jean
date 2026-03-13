@@ -308,7 +308,10 @@ function EmptyState() {
   )
 }
 
-export function ReviewResultsPanel({ sessionId, onSendFix }: ReviewResultsPanelProps) {
+export function ReviewResultsPanel({
+  sessionId,
+  onSendFix,
+}: ReviewResultsPanelProps) {
   const [fixingIndices, setFixingIndices] = useState<Set<number>>(new Set())
   const [isFixingAll, setIsFixingAll] = useState(false)
 

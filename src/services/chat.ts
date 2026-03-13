@@ -1967,7 +1967,10 @@ export function formatAnswersForCodexRequestUserInput(
         }
       }
 
-      return [question.id ?? `question_${questionIndex}`, { answers: answerList }]
+      return [
+        question.id ?? `question_${questionIndex}`,
+        { answers: answerList },
+      ]
     })
   )
 }

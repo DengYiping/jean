@@ -1,4 +1,5 @@
 //! Tauri commands for OpenCode CLI management
+#![allow(dead_code)] // Installation/update helpers are intentionally retained for dormant backend paths.
 
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
@@ -203,7 +204,7 @@ fn strip_ansi(input: &str) -> String {
         if ch == '\u{1b}' {
             if chars.peek().is_some_and(|c| *c == '[') {
                 let _ = chars.next();
-                while let Some(c) = chars.next() {
+                for c in chars.by_ref() {
                     if ('@'..='~').contains(&c) {
                         break;
                     }

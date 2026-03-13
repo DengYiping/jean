@@ -229,18 +229,20 @@ export function useMessageHandlers({
       worktreePath: string,
       selectedExecutionMode?: ExecutionMode
     ) => {
-      queryClient.setQueryData<Session>(chatQueryKeys.session(sessionId), old =>
-        old
-          ? {
-              ...old,
-              waiting_for_input: false,
-              waiting_for_input_type: null,
-              pending_plan_message_id: undefined,
-              ...(selectedExecutionMode
-                ? { selected_execution_mode: selectedExecutionMode }
-                : {}),
-            }
-          : old
+      queryClient.setQueryData<Session>(
+        chatQueryKeys.session(sessionId),
+        old =>
+          old
+            ? {
+                ...old,
+                waiting_for_input: false,
+                waiting_for_input_type: null,
+                pending_plan_message_id: undefined,
+                ...(selectedExecutionMode
+                  ? { selected_execution_mode: selectedExecutionMode }
+                  : {}),
+              }
+            : old
       )
       queryClient.setQueryData<WorktreeSessions>(
         chatQueryKeys.sessions(worktreeId),

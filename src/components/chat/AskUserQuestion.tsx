@@ -176,7 +176,9 @@ export function AskUserQuestion({
 
       // Custom text takes precedence
       if (answer.customText) {
-        summaryParts.push(question.isSecret ? '******' : `"${answer.customText}"`)
+        summaryParts.push(
+          question.isSecret ? '******' : `"${answer.customText}"`
+        )
       } else if (answer.selectedOptions.length > 0) {
         const selectedLabels = answer.selectedOptions
           .map(idx => question.options[idx]?.label)
@@ -260,82 +262,82 @@ export function AskUserQuestion({
               <div className="ml-3 space-y-3">
                 {hasOptions &&
                   (question.multiSelect ? (
-                  // Checkbox mode
-                  <div className="space-y-2.5">
-                    {question.options.map((option, oIndex) => (
-                      <div key={oIndex} className="flex items-start gap-2.5">
-                        <Checkbox
-                          id={`${toolCallId}-q${qIndex}-o${oIndex}`}
-                          checked={
-                            answer?.selectedOptions.includes(oIndex) ?? false
-                          }
-                          onCheckedChange={() =>
-                            !readOnly && toggleOption(qIndex, oIndex)
-                          }
-                          disabled={readOnly}
-                          className={cn(
-                            'mt-0.5',
-                            !readOnly && 'cursor-pointer'
-                          )}
-                        />
-                        <Label
-                          htmlFor={`${toolCallId}-q${qIndex}-o${oIndex}`}
-                          className={cn(
-                            'flex flex-1 flex-col items-start',
-                            !readOnly && 'cursor-pointer'
-                          )}
-                        >
-                          <span className="font-medium">
-                            <Markdown>{option.label}</Markdown>
-                          </span>
-                          {option.description && (
-                            <span className="mt-1 text-xs text-muted-foreground">
-                              <Markdown>{option.description}</Markdown>
+                    // Checkbox mode
+                    <div className="space-y-2.5">
+                      {question.options.map((option, oIndex) => (
+                        <div key={oIndex} className="flex items-start gap-2.5">
+                          <Checkbox
+                            id={`${toolCallId}-q${qIndex}-o${oIndex}`}
+                            checked={
+                              answer?.selectedOptions.includes(oIndex) ?? false
+                            }
+                            onCheckedChange={() =>
+                              !readOnly && toggleOption(qIndex, oIndex)
+                            }
+                            disabled={readOnly}
+                            className={cn(
+                              'mt-0.5',
+                              !readOnly && 'cursor-pointer'
+                            )}
+                          />
+                          <Label
+                            htmlFor={`${toolCallId}-q${qIndex}-o${oIndex}`}
+                            className={cn(
+                              'flex flex-1 flex-col items-start',
+                              !readOnly && 'cursor-pointer'
+                            )}
+                          >
+                            <span className="font-medium">
+                              <Markdown>{option.label}</Markdown>
                             </span>
-                          )}
-                        </Label>
-                      </div>
-                    ))}
-                  </div>
+                            {option.description && (
+                              <span className="mt-1 text-xs text-muted-foreground">
+                                <Markdown>{option.description}</Markdown>
+                              </span>
+                            )}
+                          </Label>
+                        </div>
+                      ))}
+                    </div>
                   ) : (
-                  // Radio mode
-                  <RadioGroup
-                    value={answer?.selectedOptions[0]?.toString() ?? ''}
-                    onValueChange={value =>
-                      !readOnly && selectOption(qIndex, parseInt(value, 10))
-                    }
-                    disabled={readOnly}
-                    className="space-y-2.5"
-                  >
-                    {question.options.map((option, oIndex) => (
-                      <div key={oIndex} className="flex items-start gap-2.5">
-                        <RadioGroupItem
-                          value={oIndex.toString()}
-                          id={`${toolCallId}-q${qIndex}-o${oIndex}`}
-                          className={cn(
-                            'mt-0.5',
-                            !readOnly && 'cursor-pointer'
-                          )}
-                        />
-                        <Label
-                          htmlFor={`${toolCallId}-q${qIndex}-o${oIndex}`}
-                          className={cn(
-                            'flex flex-1 flex-col items-start',
-                            !readOnly && 'cursor-pointer'
-                          )}
-                        >
-                          <span className="font-medium">
-                            <Markdown>{option.label}</Markdown>
-                          </span>
-                          {option.description && (
-                            <span className="mt-1 text-xs text-muted-foreground">
-                              <Markdown>{option.description}</Markdown>
+                    // Radio mode
+                    <RadioGroup
+                      value={answer?.selectedOptions[0]?.toString() ?? ''}
+                      onValueChange={value =>
+                        !readOnly && selectOption(qIndex, parseInt(value, 10))
+                      }
+                      disabled={readOnly}
+                      className="space-y-2.5"
+                    >
+                      {question.options.map((option, oIndex) => (
+                        <div key={oIndex} className="flex items-start gap-2.5">
+                          <RadioGroupItem
+                            value={oIndex.toString()}
+                            id={`${toolCallId}-q${qIndex}-o${oIndex}`}
+                            className={cn(
+                              'mt-0.5',
+                              !readOnly && 'cursor-pointer'
+                            )}
+                          />
+                          <Label
+                            htmlFor={`${toolCallId}-q${qIndex}-o${oIndex}`}
+                            className={cn(
+                              'flex flex-1 flex-col items-start',
+                              !readOnly && 'cursor-pointer'
+                            )}
+                          >
+                            <span className="font-medium">
+                              <Markdown>{option.label}</Markdown>
                             </span>
-                          )}
-                        </Label>
-                      </div>
-                    ))}
-                  </RadioGroup>
+                            {option.description && (
+                              <span className="mt-1 text-xs text-muted-foreground">
+                                <Markdown>{option.description}</Markdown>
+                              </span>
+                            )}
+                          </Label>
+                        </div>
+                      ))}
+                    </RadioGroup>
                   ))}
 
                 {/* Show custom text if provided (read-only) or input field (editable) */}

@@ -169,6 +169,7 @@ pub fn init_repo(path: &str) -> Result<(), String> {
 ///
 /// Handles HTTPS (`https://github.com/user/repo.git`) and SSH (`git@github.com:user/repo.git`) formats.
 /// Strips `.git` suffix if present.
+#[allow(dead_code)] // Shared git URL helper kept for backend flows not currently wired.
 pub fn extract_repo_name_from_url(url: &str) -> Result<String, String> {
     let trimmed = url.trim().trim_end_matches('/');
 

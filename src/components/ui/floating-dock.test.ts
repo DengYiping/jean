@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ThreadTokenUsage } from '@/types/chat'
-import { getFloatingDockUsageTotals } from './floating-dock'
+import { computeContextPercent, getFloatingDockUsageTotals } from './floating-dock'
 
 describe('getFloatingDockUsageTotals', () => {
   it('uses Codex last-turn usage instead of summing prior turns', () => {
@@ -78,5 +78,15 @@ describe('getFloatingDockUsageTotals', () => {
       cacheCreation: 200,
       totalTokens: 119_400,
     })
+  })
+})
+
+describe('computeContextPercent', () => {
+  it('uses only in plus out tokens against the context window', () => {
+    expect(computeContextPercent(1_600, 997_500)).toBe(100)
+  })
+
+  it('clamps at zero when usage exceeds the context window', () => {
+    expect(computeContextPercent(1_500, 1_000)).toBe(0)
   })
 })

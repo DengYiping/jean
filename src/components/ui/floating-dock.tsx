@@ -194,16 +194,14 @@ export function FloatingDock() {
 
   const contextMeter = useMemo(() => {
     if (!threadTokenUsage?.modelContextWindow) return null
-    const pct = computeContextPercent(
-      threadTokenUsage.total.totalTokens,
-      threadTokenUsage.modelContextWindow
-    )
+    const usedTokens = activeUsageEntry.input + activeUsageEntry.output
+    const pct = computeContextPercent(usedTokens, threadTokenUsage.modelContextWindow)
     return {
       percent: pct,
-      used: threadTokenUsage.total.totalTokens,
+      used: usedTokens,
       window: threadTokenUsage.modelContextWindow,
     }
-  }, [threadTokenUsage])
+  }, [activeUsageEntry.input, activeUsageEntry.output, threadTokenUsage])
 
   const usageBadge = useMemo(
     () => ({
@@ -524,15 +522,12 @@ export function getFloatingDockUsageTotals(
   return sessionTotals
 }
 
-const BASELINE_TOKENS = 12_000
-
-function computeContextPercent(
-  totalTokens: number,
+export function computeContextPercent(
+  usedTokens: number,
   contextWindow: number
 ): number {
-  if (contextWindow <= BASELINE_TOKENS) return 0
-  const effectiveWindow = contextWindow - BASELINE_TOKENS
-  const used = Math.max(totalTokens - BASELINE_TOKENS, 0)
-  const remaining = Math.max(effectiveWindow - used, 0)
-  return Math.round(Math.min(Math.max((remaining / effectiveWindow) * 100, 0), 100))
+  if (contextWindow <= 0) return 0
+  const used = Math.max(usedTokens, 0)
+  const remaining = Math.max(contextWindow - used, 0)
+  return Math.round(Math.min(Math.max((remaining / contextWindow) * 100, 0), 100))
 }

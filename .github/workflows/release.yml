@@ -1,6 +1,8 @@
 name: 'Release Jean'
 
 on:
+  push:
+  pull_request:
   release:
     types: [published]
   workflow_dispatch:
@@ -13,6 +15,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  RELEASE_REPOSITORY: ${{ github.repository }}
 
 jobs:
   publish-tauri:
@@ -33,14 +36,80 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Patch version from release tag
+      - name: Patch version and release config
+        id: release_config
         shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.version }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_UPDATER_PUBLIC_KEY: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          TAG="${{ github.event.release.tag_name || inputs.version }}"
-          VERSION="${TAG#v}"
+          TAG="$RELEASE_TAG"
+          VERSION="$(node -p "require('./package.json').version")"
+          if [ -n "$TAG" ]; then
+            VERSION="${TAG#v}"
+          fi
           echo "Patching version to $VERSION"
-          node -e "const p=require('./package.json'); p.version='$VERSION'; require('fs').writeFileSync('package.json', JSON.stringify(p,null,2)+'\n')"
-          node -e "const c=require('./src-tauri/tauri.conf.json'); c.version='$VERSION'; require('fs').writeFileSync('src-tauri/tauri.conf.json', JSON.stringify(c,null,2)+'\n')"
+          HAS_TAURI_SIGNING=false
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            HAS_TAURI_SIGNING=true
+          fi
+          HAS_APPLE_SIGNING=false
+          if [ -n "$APPLE_CERTIFICATE" ] && [ -n "$APPLE_CERTIFICATE_PASSWORD" ] && [ -n "$APPLE_SIGNING_IDENTITY" ] && [ -n "$APPLE_ID" ] && [ -n "$APPLE_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+            HAS_APPLE_SIGNING=true
+          fi
+          echo "HAS_TAURI_SIGNING=$HAS_TAURI_SIGNING" >> "$GITHUB_ENV"
+          echo "RELEASE_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "has_tauri_signing=$HAS_TAURI_SIGNING" >> "$GITHUB_OUTPUT"
+          echo "release_version=$VERSION" >> "$GITHUB_OUTPUT"
+          if [ "$RELEASE_REPOSITORY" != "coollabsio/jean" ] && [ -z "$TAURI_UPDATER_PUBLIC_KEY" ]; then
+            echo "::warning::TAURI_UPDATER_PUBLIC_KEY is not set for $RELEASE_REPOSITORY. Forked builds will keep the checked-in updater public key."
+          fi
+          if [ "$HAS_TAURI_SIGNING" != "true" ]; then
+            echo "::warning::TAURI_PRIVATE_KEY is not set. Building without updater artifacts or signed update metadata."
+          fi
+          VERSION="$VERSION" HAS_TAURI_SIGNING="$HAS_TAURI_SIGNING" HAS_APPLE_SIGNING="$HAS_APPLE_SIGNING" RELEASE_REPOSITORY="$RELEASE_REPOSITORY" TAURI_UPDATER_PUBLIC_KEY="$TAURI_UPDATER_PUBLIC_KEY" node <<'EOF'
+          const fs = require('fs');
+
+          const version = process.env.VERSION;
+          const repository = process.env.RELEASE_REPOSITORY;
+          const hasTauriSigning = process.env.HAS_TAURI_SIGNING === 'true';
+          const hasAppleSigning = process.env.HAS_APPLE_SIGNING === 'true';
+          const updaterPublicKey = process.env.TAURI_UPDATER_PUBLIC_KEY?.trim();
+
+          const packageJsonPath = './package.json';
+          const tauriConfigPath = './src-tauri/tauri.conf.json';
+
+          const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+          packageJson.version = version;
+          fs.writeFileSync(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`);
+
+          const tauriConfig = JSON.parse(fs.readFileSync(tauriConfigPath, 'utf8'));
+          tauriConfig.version = version;
+          tauriConfig.bundle ??= {};
+          tauriConfig.bundle.createUpdaterArtifacts = hasTauriSigning;
+          tauriConfig.plugins ??= {};
+          tauriConfig.plugins.updater ??= {};
+          tauriConfig.plugins.updater.endpoints = [
+            `https://github.com/${repository}/releases/latest/download/latest.json`,
+          ];
+          if (updaterPublicKey) {
+            tauriConfig.plugins.updater.pubkey = updaterPublicKey;
+          }
+
+          if (!hasAppleSigning && tauriConfig.bundle?.macOS) {
+            delete tauriConfig.bundle.macOS.signingIdentity;
+            delete tauriConfig.bundle.macOS.providerShortName;
+          }
+
+          fs.writeFileSync(tauriConfigPath, `${JSON.stringify(tauriConfig, null, 2)}\n`);
+          EOF
           sed -i.bak "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml && rm -f src-tauri/Cargo.toml.bak
 
       - name: Install Linux dependencies
@@ -67,7 +136,29 @@ jobs:
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
 
-      - name: Build and release
+      - name: Build app
+        if: github.event_name != 'release' && github.event_name != 'workflow_dispatch'
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: bun run tauri build ${{ matrix.args }} -vv
+
+      - name: Upload build artifacts
+        if: github.event_name != 'release' && github.event_name != 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: jean-${{ matrix.platform }}
+          if-no-files-found: error
+          path: src-tauri/target/**/release/bundle/**
+
+      - name: Build and release from published release
+        if: github.event_name == 'release'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -83,14 +174,35 @@ jobs:
           tauriScript: bun run tauri
           tagName: ${{ github.event.release.tag_name || inputs.version }}
           releaseId: ${{ github.event.release.id }}
-          includeUpdaterJson: true
+          includeUpdaterJson: ${{ steps.release_config.outputs.has_tauri_signing == 'true' }}
+          args: ${{ matrix.args }} -vv
+
+      - name: Build and create release from workflow dispatch
+        if: github.event_name == 'workflow_dispatch'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          tauriScript: bun run tauri
+          tagName: ${{ inputs.version }}
+          releaseName: Jean ${{ inputs.version }}
+          releaseDraft: true
+          includeUpdaterJson: ${{ steps.release_config.outputs.has_tauri_signing == 'true' }}
           args: ${{ matrix.args }} -vv
 
   update-homebrew-tap:
     name: Update Homebrew Tap
     needs: publish-tauri
     runs-on: ubuntu-latest
-    if: github.event_name == 'release' && github.event.action == 'published'
+    if: github.repository == 'coollabsio/jean' && github.event_name == 'release' && github.event.action == 'published'
 
     steps:
       - name: Extract version
@@ -101,7 +213,7 @@ jobs:
         run: |
           TAG="${{ steps.version.outputs.tag }}"
           VERSION="${TAG#v}"
-          DMG_URL="https://github.com/coollabsio/jean/releases/download/$TAG/Jean_${VERSION}_universal.dmg"
+          DMG_URL="https://github.com/${{ github.repository }}/releases/download/$TAG/Jean_${VERSION}_universal.dmg"
 
           echo "Waiting for DMG at: $DMG_URL"
           for i in $(seq 1 30); do
@@ -120,6 +232,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "HOMEBREW_TAP_TOKEN is not set; skipping tap update."
+            exit 0
+          fi
+
           gh workflow run update-cask.yml \
             --repo coollabsio/homebrew-jean \
             --field version='${{ steps.version.outputs.tag }}'

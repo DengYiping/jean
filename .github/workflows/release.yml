@@ -29,8 +29,6 @@ jobs:
             args: '--target universal-apple-darwin --bundles app,dmg'
           - platform: 'ubuntu-22.04'
             args: '--bundles deb,appimage,rpm'
-          - platform: 'windows-latest'
-            args: '--bundles msi,nsis'
 
     runs-on: ${{ matrix.platform }}
     steps:

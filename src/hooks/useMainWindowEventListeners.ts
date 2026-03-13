@@ -99,10 +99,11 @@ function executeKeybindingAction(
       if (!targetWorktreePath && targetWorktreeId) {
         const projectId = useProjectsStore.getState().selectedProjectId
         if (projectId) {
-          const worktrees = queryClient.getQueryData<{ id: string; path: string }[]>(
-            projectsQueryKeys.worktrees(projectId)
-          )
-          targetWorktreePath = worktrees?.find(w => w.id === targetWorktreeId)?.path ?? null
+          const worktrees = queryClient.getQueryData<
+            { id: string; path: string }[]
+          >(projectsQueryKeys.worktrees(projectId))
+          targetWorktreePath =
+            worktrees?.find(w => w.id === targetWorktreeId)?.path ?? null
         }
       }
 

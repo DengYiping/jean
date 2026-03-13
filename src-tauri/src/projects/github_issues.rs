@@ -747,12 +747,15 @@ fn extract_number_from_ref_key(key: &str) -> Option<u32> {
     key.rsplit('-').next()?.parse().ok()
 }
 
+type SessionContextNumbers = (Vec<u32>, Vec<u32>, Vec<u32>);
+type RemovedSessionReferences = (Vec<String>, Vec<String>, Vec<String>, Vec<String>);
+
 /// Get all issue, PR, and security alert numbers referenced by a session
 /// Returns (issue_numbers, pr_numbers, security_numbers)
 pub fn get_session_context_numbers(
     app: &AppHandle,
     session_id: &str,
-) -> Result<(Vec<u32>, Vec<u32>, Vec<u32>), String> {
+) -> Result<SessionContextNumbers, String> {
     let issue_keys = get_session_issue_refs(app, session_id)?;
     let pr_keys = get_session_pr_refs(app, session_id)?;
     let security_keys = get_session_security_refs(app, session_id)?;
@@ -852,7 +855,7 @@ pub fn get_session_context_content(
 pub fn remove_all_session_references(
     app: &tauri::AppHandle,
     session_id: &str,
-) -> Result<(Vec<String>, Vec<String>, Vec<String>, Vec<String>), String> {
+) -> Result<RemovedSessionReferences, String> {
     let mut refs = load_context_references(app)?;
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -1618,6 +1621,7 @@ pub async fn get_github_pr(
 
 /// Generate a branch name from a PR
 /// e.g., PR #123 "Fix the login bug" -> "pr-123-fix-the-login-bug"
+#[allow(dead_code)] // Shared branch helper kept for backend-only worktree creation paths.
 pub fn generate_branch_name_from_pr(pr_number: u32, title: &str) -> String {
     let slug = slugify_issue_title(title);
     format!("pr-{pr_number}-{slug}")
@@ -2023,6 +2027,7 @@ pub struct SecurityAdvisoryRaw {
 
 /// Raw Dependabot alert from GitHub REST API
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)] // Some GitHub API fields are only preserved for parity/debugging today.
 pub struct DependabotAlertRaw {
     pub number: u32,
     pub state: String,
@@ -2112,6 +2117,7 @@ pub struct AdvisoryVulnerabilityPackageRaw {
 
 /// Vulnerability entry from GitHub Security Advisory API
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)] // Some GitHub API fields are only preserved for parity/debugging today.
 pub struct AdvisoryVulnerabilityRaw {
     pub package: Option<AdvisoryVulnerabilityPackageRaw>,
     pub vulnerable_version_range: Option<String>,
@@ -2127,6 +2133,7 @@ pub struct AdvisoryAuthorRaw {
 
 /// Raw repository security advisory from GitHub REST API
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)] // Some GitHub API fields are only preserved for parity/debugging today.
 pub struct RepositoryAdvisoryRaw {
     pub ghsa_id: String,
     pub cve_id: Option<String>,

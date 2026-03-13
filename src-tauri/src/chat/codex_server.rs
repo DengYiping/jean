@@ -43,9 +43,13 @@ pub enum ServerEvent {
 pub struct SessionContext {
     pub registration_id: u64,
     pub session_id: String,
+    #[allow(dead_code)] // Retained for event routing/debugging context even when not read locally.
     pub worktree_id: String,
     pub event_tx: std::sync::mpsc::Sender<ServerEvent>,
 }
+
+type PendingRequestSender = tokio::sync::oneshot::Sender<Result<Value, String>>;
+type PendingRequests = Arc<Mutex<HashMap<u64, PendingRequestSender>>>;
 
 /// The app-server process and its communication channels.
 struct CodexAppServerInner {
@@ -53,7 +57,7 @@ struct CodexAppServerInner {
     stdin_writer: Arc<Mutex<BufWriter<ChildStdin>>>,
     next_request_id: AtomicU64,
     /// Pending request responses: id → oneshot sender
-    pending_requests: Arc<Mutex<HashMap<u64, tokio::sync::oneshot::Sender<Result<Value, String>>>>>,
+    pending_requests: PendingRequests,
     /// Active sessions keyed by codex thread_id
     active_sessions: Arc<Mutex<HashMap<String, SessionContext>>>,
     /// Reader thread handle
@@ -249,9 +253,7 @@ fn ensure_running_inner(app: &AppHandle) -> Result<(), String> {
         });
     }
 
-    let pending_requests: Arc<
-        Mutex<HashMap<u64, tokio::sync::oneshot::Sender<Result<Value, String>>>>,
-    > = Arc::new(Mutex::new(HashMap::new()));
+    let pending_requests: PendingRequests = Arc::new(Mutex::new(HashMap::new()));
     let active_sessions: Arc<Mutex<HashMap<String, SessionContext>>> =
         Arc::new(Mutex::new(HashMap::new()));
     let server_dead = Arc::new(AtomicBool::new(false));
@@ -556,6 +558,7 @@ pub fn interrupt_turn(thread_id: &str, turn_id: &str) -> Result<(), String> {
 }
 
 /// Check if the server is alive.
+#[allow(dead_code)] // Useful for diagnostics and future health checks.
 pub fn is_server_alive() -> bool {
     let guard = CODEX_SERVER.lock().unwrap();
     match *guard {
@@ -570,7 +573,7 @@ pub fn is_server_alive() -> bool {
 
 fn reader_loop(
     stdout: std::process::ChildStdout,
-    pending_requests: Arc<Mutex<HashMap<u64, tokio::sync::oneshot::Sender<Result<Value, String>>>>>,
+    pending_requests: PendingRequests,
     active_sessions: Arc<Mutex<HashMap<String, SessionContext>>>,
     server_dead: Arc<AtomicBool>,
 ) {

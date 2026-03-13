@@ -118,7 +118,8 @@ export function useGitOperations({
             'commit_message_provider',
             preferences?.default_provider
           ),
-          reasoningEffort: preferences?.magic_prompt_efforts?.commit_message_effort ?? null,
+          reasoningEffort:
+            preferences?.magic_prompt_efforts?.commit_message_effort ?? null,
         }
       )
 
@@ -174,7 +175,8 @@ export function useGitOperations({
               'commit_message_provider',
               preferences?.default_provider
             ),
-            reasoningEffort: preferences?.magic_prompt_efforts?.commit_message_effort ?? null,
+            reasoningEffort:
+              preferences?.magic_prompt_efforts?.commit_message_effort ?? null,
           }
         )
 
@@ -203,10 +205,9 @@ export function useGitOperations({
             { id: toastId }
           )
         } else if (result.commit_hash) {
-          toast.success(
-            `${prefix}: ${result.message.split('\n')[0]}`,
-            { id: toastId }
-          )
+          toast.success(`${prefix}: ${result.message.split('\n')[0]}`, {
+            id: toastId,
+          })
         } else {
           toast.success(`${prefix}: Pushed to remote`, { id: toastId })
         }
@@ -270,7 +271,11 @@ export function useGitOperations({
       const toastId = toast.loading(`Pushing ${branch}...`)
 
       try {
-        const result = await gitPush(activeWorktreePath, worktree?.pr_number, remote)
+        const result = await gitPush(
+          activeWorktreePath,
+          worktree?.pr_number,
+          remote
+        )
         triggerImmediateGitPoll()
         if (result.permissionDenied) {
           toast.error(
@@ -289,7 +294,10 @@ export function useGitOperations({
             }
           )
         } else if (result.fellBack) {
-          toast.warning('Could not push to PR branch, pushed to new branch instead', { id: toastId })
+          toast.warning(
+            'Could not push to PR branch, pushed to new branch instead',
+            { id: toastId }
+          )
         } else {
           toast.success('Changes pushed', { id: toastId })
         }
@@ -329,7 +337,8 @@ export function useGitOperations({
             'pr_content_provider',
             preferences?.default_provider
           ),
-          reasoningEffort: preferences?.magic_prompt_efforts?.pr_content_effort ?? null,
+          reasoningEffort:
+            preferences?.magic_prompt_efforts?.pr_content_effort ?? null,
         }
       )
 
@@ -380,185 +389,182 @@ export function useGitOperations({
   // If existingSessionId is provided, stores results on that session (in-place review from ChatWindow)
   // Creates a new session and stores review results in it
   const handleReview = useCallback(async () => {
-      if (!activeWorktreeId || !activeWorktreePath) return
+    if (!activeWorktreeId || !activeWorktreePath) return
 
-      const { setWorktreeLoading, clearWorktreeLoading } =
-        useChatStore.getState()
-      setWorktreeLoading(activeWorktreeId, 'review')
-      const branch = worktree?.branch ?? ''
-      const projectName = project?.name ?? 'project'
-      const worktreeName = worktree?.name ?? branch
-      const reviewTarget = `${projectName}/${worktreeName}`
-      const reviewRunId = generateId()
-      let cancelRequested = false
-      const toastId = toast.loading(`Reviewing ${reviewTarget}...`, {
-        cancel: {
-          label: 'Cancel',
-          onClick: () => {
-            cancelRequested = true
-            toast.loading(`Cancelling review for ${reviewTarget}...`, {
-              id: toastId,
-            })
-            invoke<boolean>('cancel_review_with_ai', { reviewRunId })
-              .then(cancelled => {
-                if (cancelled) {
-                  toast.info(`Review cancelled for ${reviewTarget}`, {
-                    id: toastId,
-                  })
-                } else {
-                  toast.info(`No active review to cancel for ${reviewTarget}`, {
-                    id: toastId,
-                  })
-                }
-              })
-              .catch(error => {
-                toast.error(`Failed to cancel review: ${error}`, { id: toastId })
-              })
-          },
-        },
-      })
-      let unlistenReviewProgress: (() => void) | null = null
-
-      try {
-        unlistenReviewProgress = await listen<{
-          reviewRunId?: string
-          stage: string
-          message: string
-          percent: number
-        }>('review:progress', event => {
-          if (event.payload.reviewRunId !== reviewRunId) return
-          toast.loading(`${reviewTarget}: ${event.payload.message}`, {
+    const { setWorktreeLoading, clearWorktreeLoading } = useChatStore.getState()
+    setWorktreeLoading(activeWorktreeId, 'review')
+    const branch = worktree?.branch ?? ''
+    const projectName = project?.name ?? 'project'
+    const worktreeName = worktree?.name ?? branch
+    const reviewTarget = `${projectName}/${worktreeName}`
+    const reviewRunId = generateId()
+    let cancelRequested = false
+    const toastId = toast.loading(`Reviewing ${reviewTarget}...`, {
+      cancel: {
+        label: 'Cancel',
+        onClick: () => {
+          cancelRequested = true
+          toast.loading(`Cancelling review for ${reviewTarget}...`, {
             id: toastId,
-            description: `${event.payload.percent}%`,
           })
-        })
-
-        const result = await invoke<ReviewResponse>('run_review_with_ai', {
-          worktreePath: activeWorktreePath,
-          customPrompt: preferences?.magic_prompts?.code_review,
-          model: preferences?.magic_prompt_models?.code_review_model,
-          customProfileName: resolveMagicPromptProvider(
-            preferences?.magic_prompt_providers,
-            'code_review_provider',
-            preferences?.default_provider
-          ),
-          reasoningEffort: preferences?.magic_prompt_efforts?.code_review_effort ?? null,
-          reviewRunId,
-        })
-
-        // Always create a new session for the review
-        const newSession = await invoke<Session>('create_session', {
-          worktreeId: activeWorktreeId,
-          worktreePath: activeWorktreePath,
-          name: 'Code Review',
-        })
-        const targetSessionId = newSession.id
-
-        // Store review results in Zustand (session-scoped, auto-opens sidebar)
-        const {
-          setReviewResults,
-          setActiveSession,
-          clearActiveWorktree,
-          copySessionSettings,
-          activeSessionIds,
-        } = useChatStore.getState()
-        const currentReviewSessionId = activeSessionIds[activeWorktreeId]
-        setReviewResults(targetSessionId, result)
-
-        // Inherit model/mode/thinking settings from current session
-        if (currentReviewSessionId) copySessionSettings(currentReviewSessionId, targetSessionId)
-
-        // Navigate to ProjectCanvasView and open the review session
-        setActiveSession(activeWorktreeId, targetSessionId)
-        useProjectsStore.getState().selectWorktree(activeWorktreeId)
-        clearActiveWorktree()
-        setTimeout(() => {
-          window.dispatchEvent(
-            new CustomEvent('open-session-modal', {
-              detail: {
-                sessionId: targetSessionId,
-                worktreeId: activeWorktreeId,
-                worktreePath: activeWorktreePath,
-              },
+          invoke<boolean>('cancel_review_with_ai', { reviewRunId })
+            .then(cancelled => {
+              if (cancelled) {
+                toast.info(`Review cancelled for ${reviewTarget}`, {
+                  id: toastId,
+                })
+              } else {
+                toast.info(`No active review to cancel for ${reviewTarget}`, {
+                  id: toastId,
+                })
+              }
             })
-          )
-        }, 50)
+            .catch(error => {
+              toast.error(`Failed to cancel review: ${error}`, { id: toastId })
+            })
+        },
+      },
+    })
+    let unlistenReviewProgress: (() => void) | null = null
 
-        // Persist review results to session file
-        invoke('update_session_state', {
-          worktreeId: activeWorktreeId,
-          worktreePath: activeWorktreePath,
-          sessionId: targetSessionId,
-          reviewResults: result,
-        }).catch(() => {
-          /* noop - best effort persist */
+    try {
+      unlistenReviewProgress = await listen<{
+        reviewRunId?: string
+        stage: string
+        message: string
+        percent: number
+      }>('review:progress', event => {
+        if (event.payload.reviewRunId !== reviewRunId) return
+        toast.loading(`${reviewTarget}: ${event.payload.message}`, {
+          id: toastId,
+          description: `${event.payload.percent}%`,
         })
+      })
 
-        // Invalidate sessions query to refresh tab bar
-        queryClient.invalidateQueries({
-          queryKey: chatQueryKeys.sessions(activeWorktreeId),
-        })
+      const result = await invoke<ReviewResponse>('run_review_with_ai', {
+        worktreePath: activeWorktreePath,
+        customPrompt: preferences?.magic_prompts?.code_review,
+        model: preferences?.magic_prompt_models?.code_review_model,
+        customProfileName: resolveMagicPromptProvider(
+          preferences?.magic_prompt_providers,
+          'code_review_provider',
+          preferences?.default_provider
+        ),
+        reasoningEffort:
+          preferences?.magic_prompt_efforts?.code_review_effort ?? null,
+        reviewRunId,
+      })
 
-        const findingCount = result.findings.length
-        toast.success(
-          `Review done on ${projectName}/${worktreeName} (${findingCount} findings)`,
-          {
-            id: toastId,
-            action: {
-              label: 'Open',
-              onClick: () => {
-                if (!activeWorktreePath) return
-                const {
-                  setActiveSession,
-                  clearActiveWorktree,
-                } = useChatStore.getState()
-                useProjectsStore.getState().selectWorktree(activeWorktreeId)
-                clearActiveWorktree()
-                setActiveSession(activeWorktreeId, targetSessionId)
-                setTimeout(() => {
-                  window.dispatchEvent(
-                    new CustomEvent('open-session-modal', {
-                      detail: {
-                        sessionId: targetSessionId,
-                        worktreeId: activeWorktreeId,
-                        worktreePath: activeWorktreePath,
-                      },
-                    })
-                  )
-                }, 50)
-              },
+      // Always create a new session for the review
+      const newSession = await invoke<Session>('create_session', {
+        worktreeId: activeWorktreeId,
+        worktreePath: activeWorktreePath,
+        name: 'Code Review',
+      })
+      const targetSessionId = newSession.id
+
+      // Store review results in Zustand (session-scoped, auto-opens sidebar)
+      const {
+        setReviewResults,
+        setActiveSession,
+        clearActiveWorktree,
+        copySessionSettings,
+        activeSessionIds,
+      } = useChatStore.getState()
+      const currentReviewSessionId = activeSessionIds[activeWorktreeId]
+      setReviewResults(targetSessionId, result)
+
+      // Inherit model/mode/thinking settings from current session
+      if (currentReviewSessionId)
+        copySessionSettings(currentReviewSessionId, targetSessionId)
+
+      // Navigate to ProjectCanvasView and open the review session
+      setActiveSession(activeWorktreeId, targetSessionId)
+      useProjectsStore.getState().selectWorktree(activeWorktreeId)
+      clearActiveWorktree()
+      setTimeout(() => {
+        window.dispatchEvent(
+          new CustomEvent('open-session-modal', {
+            detail: {
+              sessionId: targetSessionId,
+              worktreeId: activeWorktreeId,
+              worktreePath: activeWorktreePath,
             },
-          }
+          })
         )
-      } catch (error) {
-        const errorString = String(error)
-        const cancelled =
-          cancelRequested ||
-          errorString.toLowerCase().includes('cancelled') ||
-          errorString.toLowerCase().includes('canceled')
-        if (cancelled) {
-          toast.info(`Review cancelled for ${reviewTarget}`, { id: toastId })
-        } else {
-          toast.error(`Failed to review: ${error}`, { id: toastId })
+      }, 50)
+
+      // Persist review results to session file
+      invoke('update_session_state', {
+        worktreeId: activeWorktreeId,
+        worktreePath: activeWorktreePath,
+        sessionId: targetSessionId,
+        reviewResults: result,
+      }).catch(() => {
+        /* noop - best effort persist */
+      })
+
+      // Invalidate sessions query to refresh tab bar
+      queryClient.invalidateQueries({
+        queryKey: chatQueryKeys.sessions(activeWorktreeId),
+      })
+
+      const findingCount = result.findings.length
+      toast.success(
+        `Review done on ${projectName}/${worktreeName} (${findingCount} findings)`,
+        {
+          id: toastId,
+          action: {
+            label: 'Open',
+            onClick: () => {
+              if (!activeWorktreePath) return
+              const { setActiveSession, clearActiveWorktree } =
+                useChatStore.getState()
+              useProjectsStore.getState().selectWorktree(activeWorktreeId)
+              clearActiveWorktree()
+              setActiveSession(activeWorktreeId, targetSessionId)
+              setTimeout(() => {
+                window.dispatchEvent(
+                  new CustomEvent('open-session-modal', {
+                    detail: {
+                      sessionId: targetSessionId,
+                      worktreeId: activeWorktreeId,
+                      worktreePath: activeWorktreePath,
+                    },
+                  })
+                )
+              }, 50)
+            },
+          },
         }
-      } finally {
-        unlistenReviewProgress?.()
-        clearWorktreeLoading(activeWorktreeId)
+      )
+    } catch (error) {
+      const errorString = String(error)
+      const cancelled =
+        cancelRequested ||
+        errorString.toLowerCase().includes('cancelled') ||
+        errorString.toLowerCase().includes('canceled')
+      if (cancelled) {
+        toast.info(`Review cancelled for ${reviewTarget}`, { id: toastId })
+      } else {
+        toast.error(`Failed to review: ${error}`, { id: toastId })
       }
-    },
-    [
-      activeWorktreeId,
-      activeWorktreePath,
-      worktree,
-      project?.name,
-      queryClient,
-      preferences?.magic_prompts?.code_review,
-      preferences?.magic_prompt_models?.code_review_model,
-      preferences?.magic_prompt_providers,
-      preferences?.default_provider,
-      preferences?.magic_prompt_efforts?.code_review_effort,
-    ]
-  )
+    } finally {
+      unlistenReviewProgress?.()
+      clearWorktreeLoading(activeWorktreeId)
+    }
+  }, [
+    activeWorktreeId,
+    activeWorktreePath,
+    worktree,
+    project?.name,
+    queryClient,
+    preferences?.magic_prompts?.code_review,
+    preferences?.magic_prompt_models?.code_review_model,
+    preferences?.magic_prompt_providers,
+    preferences?.default_provider,
+    preferences?.magic_prompt_efforts?.code_review_effort,
+  ])
 
   // Handle Merge - validates and shows merge options dialog
   const handleMerge = useCallback(async () => {
@@ -618,7 +624,12 @@ export function useGitOperations({
         description: 'Opening conflict resolution session...',
       })
 
-      const { setActiveSession, setInputDraft, copySessionSettings, activeSessionIds } = useChatStore.getState()
+      const {
+        setActiveSession,
+        setInputDraft,
+        copySessionSettings,
+        activeSessionIds,
+      } = useChatStore.getState()
       const currentSessionId = activeSessionIds[activeWorktreeId]
 
       // Create a NEW session tab for conflict resolution
@@ -707,7 +718,12 @@ ${resolveInstructions}`
         description: 'Opening conflict resolution session...',
       })
 
-      const { setActiveSession, setInputDraft, copySessionSettings, activeSessionIds } = useChatStore.getState()
+      const {
+        setActiveSession,
+        setInputDraft,
+        copySessionSettings,
+        activeSessionIds,
+      } = useChatStore.getState()
       const currentSessionId = activeSessionIds[activeWorktreeId]
 
       // Create a NEW session tab for conflict resolution
@@ -841,7 +857,12 @@ ${resolveInstructions}`
             }
           )
 
-          const { setActiveSession, setInputDraft, copySessionSettings, activeSessionIds } = useChatStore.getState()
+          const {
+            setActiveSession,
+            setInputDraft,
+            copySessionSettings,
+            activeSessionIds,
+          } = useChatStore.getState()
           const currentSessionId = activeSessionIds[activeWorktreeId]
 
           // Create a NEW session tab on the CURRENT worktree for conflict resolution
@@ -852,7 +873,8 @@ ${resolveInstructions}`
           })
 
           // Inherit model/mode/thinking settings from current session
-          if (currentSessionId) copySessionSettings(currentSessionId, newSession.id)
+          if (currentSessionId)
+            copySessionSettings(currentSessionId, newSession.id)
 
           // Set the new session as active
           setActiveSession(activeWorktreeId, newSession.id)

@@ -117,7 +117,9 @@ export const MessageList = memo(function MessageList({
               approveShortcut={approveShortcut}
               approveShortcutYolo={approveShortcutYolo}
               approveShortcutClearContext={approveShortcutClearContext}
-              approveShortcutClearContextBuild={approveShortcutClearContextBuild}
+              approveShortcutClearContextBuild={
+                approveShortcutClearContextBuild
+              }
               approveButtonRef={
                 index === lastPlanMessageIndex ? approveButtonRef : undefined
               }

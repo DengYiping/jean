@@ -36,10 +36,7 @@
       "assetProtocol": {
         "enable": true,
         "scope": {
-          "allow": [
-            "**/.jean/images/**",
-            "$APPDATA/**"
-          ],
+          "allow": ["**/.jean/images/**", "$APPDATA/**"],
           "requireLiteralLeadingDot": false
         }
       }

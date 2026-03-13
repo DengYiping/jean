@@ -1,4 +1,5 @@
 //! Tauri commands for Codex CLI management
+#![allow(dead_code)] // Installation/update helpers are intentionally retained for dormant backend paths.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -327,7 +328,7 @@ fn save_cached_codex_usage(snapshot: &CodexUsageSnapshot, now_secs: u64) {
 
 #[cfg(target_os = "macos")]
 fn decode_hex_utf8(hex: &str) -> Option<String> {
-    if hex.is_empty() || hex.len() % 2 != 0 {
+    if hex.is_empty() || !hex.len().is_multiple_of(2) {
         return None;
     }
     if !hex.chars().all(|c| c.is_ascii_hexdigit()) {

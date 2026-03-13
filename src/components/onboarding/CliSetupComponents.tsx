@@ -121,7 +121,8 @@ export function SetupState({
         ) : isError || (!isLoading && versions.length === 0) ? (
           <div className="flex items-center justify-between gap-2 p-3 rounded-lg border border-destructive/30 bg-destructive/5">
             <span className="text-sm text-muted-foreground">
-              Failed to load versions. This may be due to GitHub API rate limiting.
+              Failed to load versions. This may be due to GitHub API rate
+              limiting.
             </span>
             {onRetry && (
               <Button variant="ghost" size="sm" onClick={() => onRetry()}>

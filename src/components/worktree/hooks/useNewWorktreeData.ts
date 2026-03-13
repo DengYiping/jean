@@ -185,7 +185,11 @@ export function useNewWorktreeData(
   const filteredAdvisories = useMemo(() => {
     const ADVISORY_STATE_ORDER = ['triage', 'draft', 'published', 'closed']
     return filterAdvisories(advisories ?? [], searchQuery)
-      .filter(advisory => includeClosed || (advisory.state !== 'closed' && advisory.state !== 'published'))
+      .filter(
+        advisory =>
+          includeClosed ||
+          (advisory.state !== 'closed' && advisory.state !== 'published')
+      )
       .sort(
         (a, b) =>
           (ADVISORY_STATE_ORDER.indexOf(a.state) ?? 99) -

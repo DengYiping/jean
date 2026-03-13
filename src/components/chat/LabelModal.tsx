@@ -109,7 +109,9 @@ export function LabelModal({
     (labelData: LabelData | null) => {
       if (onApply) {
         onApply(labelData)
-        toast.success(labelData ? `Labeled: ${labelData.name}` : 'Label removed')
+        toast.success(
+          labelData ? `Labeled: ${labelData.name}` : 'Label removed'
+        )
         onClose()
         return
       }

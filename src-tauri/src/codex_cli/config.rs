@@ -17,11 +17,13 @@ pub fn get_cli_binary_path(_app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 /// Legacy managed CLI directory. Bundled installs are no longer used.
+#[allow(dead_code)] // Older code paths still reference this legacy helper symbol.
 pub fn get_cli_dir(_app: &AppHandle) -> Result<PathBuf, String> {
     Err("Bundled Codex CLI installs are no longer supported".to_string())
 }
 
 /// Legacy helper kept only to satisfy older code paths that no longer execute.
+#[allow(dead_code)] // Older code paths still reference this legacy helper symbol.
 pub fn ensure_cli_dir(_app: &AppHandle) -> Result<PathBuf, String> {
     Err("Bundled Codex CLI installs are no longer supported".to_string())
 }

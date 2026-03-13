@@ -1,4 +1,10 @@
-import React, { useState, useCallback, useMemo, useEffect, type FC } from 'react'
+import React, {
+  useState,
+  useCallback,
+  useMemo,
+  useEffect,
+  type FC,
+} from 'react'
 import { invoke } from '@/lib/transport'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -584,11 +590,7 @@ export const GeneralPane: React.FC = () => {
       'auth',
       'login',
     ])
-  }, [
-    opencodeStatus?.command,
-    opencodeStatus?.command_args,
-    openCliLoginModal,
-  ])
+  }, [opencodeStatus?.command, opencodeStatus?.command_args, openCliLoginModal])
 
   const claudeStatusDescription = cliStatus?.installed
     ? cliStatus.path
@@ -634,7 +636,11 @@ export const GeneralPane: React.FC = () => {
               ) : claudeAuth?.authenticated ? (
                 <span className="text-sm text-muted-foreground flex items-center gap-2">
                   Logged in
-                  <Button variant="outline" size="sm" onClick={handleClaudeRelogin}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleClaudeRelogin}
+                  >
                     Relogin
                   </Button>
                 </span>
@@ -667,7 +673,10 @@ export const GeneralPane: React.FC = () => {
                     <TooltipContent>Click to copy path</TooltipContent>
                   </Tooltip>
                 ) : (
-                  <>Install <code>claude</code> on your system to enable Claude AI sessions.</>
+                  <>
+                    Install <code>claude</code> on your system to enable Claude
+                    AI sessions.
+                  </>
                 )
               }
             >
@@ -794,7 +803,11 @@ export const GeneralPane: React.FC = () => {
               ) : codexAuth?.authenticated ? (
                 <span className="text-sm text-muted-foreground flex items-center gap-2">
                   Logged in
-                  <Button variant="outline" size="sm" onClick={handleCodexRelogin}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleCodexRelogin}
+                  >
                     Relogin
                   </Button>
                 </span>
@@ -827,7 +840,10 @@ export const GeneralPane: React.FC = () => {
                     <TooltipContent>Click to copy path</TooltipContent>
                   </Tooltip>
                 ) : (
-                  <>Install <code>codex</code> on your system to enable Codex AI sessions.</>
+                  <>
+                    Install <code>codex</code> on your system to enable Codex AI
+                    sessions.
+                  </>
                 )
               }
             >
@@ -880,12 +896,20 @@ export const GeneralPane: React.FC = () => {
               ) : opencodeAuth?.authenticated ? (
                 <span className="text-sm text-muted-foreground flex items-center gap-2">
                   Logged in
-                  <Button variant="outline" size="sm" onClick={handleOpenCodeRelogin}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleOpenCodeRelogin}
+                  >
                     Relogin
                   </Button>
                 </span>
               ) : (
-                <Button variant="outline" size="sm" onClick={handleOpenCodeLogin}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleOpenCodeLogin}
+                >
                   Login
                 </Button>
               )
@@ -915,7 +939,9 @@ export const GeneralPane: React.FC = () => {
                         {opencodeStatus.path ?? 'Unknown launcher command'}
                       </button>
                     </TooltipTrigger>
-                    <TooltipContent>Click to copy launcher command</TooltipContent>
+                    <TooltipContent>
+                      Click to copy launcher command
+                    </TooltipContent>
                   </Tooltip>
                 ) : (
                   <>
@@ -1024,17 +1050,18 @@ export const GeneralPane: React.FC = () => {
                       >
                         <span className="truncate text-left">
                           {preferences?.build_model
-                            ? (openCodeModelOptions.find(o => o.value === preferences.build_model)?.label
-                              ?? formatOpenCodeModelLabelForSettings(preferences.build_model))
+                            ? (openCodeModelOptions.find(
+                                o => o.value === preferences.build_model
+                              )?.label ??
+                              formatOpenCodeModelLabelForSettings(
+                                preferences.build_model
+                              ))
                             : 'Default model'}
                         </span>
                         <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
                       </Button>
                     </PopoverTrigger>
-                    <PopoverContent
-                      align="start"
-                      className="w-80 p-0"
-                    >
+                    <PopoverContent align="start" className="w-80 p-0">
                       <Command>
                         <CommandInput placeholder="Search models..." />
                         <CommandList onWheel={e => e.stopPropagation()}>
@@ -1048,7 +1075,15 @@ export const GeneralPane: React.FC = () => {
                               }}
                             >
                               Default model
-                              <Check className={cn('ml-auto h-4 w-4', !preferences?.build_model || preferences.build_model === 'default' ? 'opacity-100' : 'opacity-0')} />
+                              <Check
+                                className={cn(
+                                  'ml-auto h-4 w-4',
+                                  !preferences?.build_model ||
+                                    preferences.build_model === 'default'
+                                    ? 'opacity-100'
+                                    : 'opacity-0'
+                                )}
+                              />
                             </CommandItem>
                             {openCodeModelOptions.map(option => (
                               <CommandItem
@@ -1060,7 +1095,14 @@ export const GeneralPane: React.FC = () => {
                                 }}
                               >
                                 <span className="truncate">{option.label}</span>
-                                <Check className={cn('ml-auto h-4 w-4', preferences?.build_model === option.value ? 'opacity-100' : 'opacity-0')} />
+                                <Check
+                                  className={cn(
+                                    'ml-auto h-4 w-4',
+                                    preferences?.build_model === option.value
+                                      ? 'opacity-100'
+                                      : 'opacity-0'
+                                  )}
+                                />
                               </CommandItem>
                             ))}
                           </CommandGroup>
@@ -1110,7 +1152,9 @@ export const GeneralPane: React.FC = () => {
                       </>
                     ) : (
                       <>
-                        <SelectItem value="default">Default thinking</SelectItem>
+                        <SelectItem value="default">
+                          Default thinking
+                        </SelectItem>
                         {thinkingLevelOptions.map(option => (
                           <SelectItem key={option.value} value={option.value}>
                             {option.label}
@@ -1162,17 +1206,18 @@ export const GeneralPane: React.FC = () => {
                       >
                         <span className="truncate text-left">
                           {preferences?.yolo_model
-                            ? (openCodeModelOptions.find(o => o.value === preferences.yolo_model)?.label
-                              ?? formatOpenCodeModelLabelForSettings(preferences.yolo_model))
+                            ? (openCodeModelOptions.find(
+                                o => o.value === preferences.yolo_model
+                              )?.label ??
+                              formatOpenCodeModelLabelForSettings(
+                                preferences.yolo_model
+                              ))
                             : 'Default model'}
                         </span>
                         <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
                       </Button>
                     </PopoverTrigger>
-                    <PopoverContent
-                      align="start"
-                      className="w-80 p-0"
-                    >
+                    <PopoverContent align="start" className="w-80 p-0">
                       <Command>
                         <CommandInput placeholder="Search models..." />
                         <CommandList onWheel={e => e.stopPropagation()}>
@@ -1186,7 +1231,15 @@ export const GeneralPane: React.FC = () => {
                               }}
                             >
                               Default model
-                              <Check className={cn('ml-auto h-4 w-4', !preferences?.yolo_model || preferences.yolo_model === 'default' ? 'opacity-100' : 'opacity-0')} />
+                              <Check
+                                className={cn(
+                                  'ml-auto h-4 w-4',
+                                  !preferences?.yolo_model ||
+                                    preferences.yolo_model === 'default'
+                                    ? 'opacity-100'
+                                    : 'opacity-0'
+                                )}
+                              />
                             </CommandItem>
                             {openCodeModelOptions.map(option => (
                               <CommandItem
@@ -1198,7 +1251,14 @@ export const GeneralPane: React.FC = () => {
                                 }}
                               >
                                 <span className="truncate">{option.label}</span>
-                                <Check className={cn('ml-auto h-4 w-4', preferences?.yolo_model === option.value ? 'opacity-100' : 'opacity-0')} />
+                                <Check
+                                  className={cn(
+                                    'ml-auto h-4 w-4',
+                                    preferences?.yolo_model === option.value
+                                      ? 'opacity-100'
+                                      : 'opacity-0'
+                                  )}
+                                />
                               </CommandItem>
                             ))}
                           </CommandGroup>
@@ -1248,7 +1308,9 @@ export const GeneralPane: React.FC = () => {
                       </>
                     ) : (
                       <>
-                        <SelectItem value="default">Default thinking</SelectItem>
+                        <SelectItem value="default">
+                          Default thinking
+                        </SelectItem>
                         {thinkingLevelOptions.map(option => (
                           <SelectItem key={option.value} value={option.value}>
                             {option.label}
@@ -1978,9 +2040,7 @@ const GitCliPathField: FC<{
   preferences: AppPreferences | undefined
   patchPreferences: ReturnType<typeof usePatchPreferences>
 }> = ({ preferences, patchPreferences }) => {
-  const [localValue, setLocalValue] = useState(
-    preferences?.git_cli_path ?? ''
-  )
+  const [localValue, setLocalValue] = useState(preferences?.git_cli_path ?? '')
 
   useEffect(() => {
     setLocalValue(preferences?.git_cli_path ?? '')

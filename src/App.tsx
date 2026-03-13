@@ -29,7 +29,10 @@ import {
   useGhCliAuth,
   useGhCliAccounts,
 } from './services/gh-cli'
-import { useOpencodeCliStatus, useOpencodeCliAuth } from './services/opencode-cli'
+import {
+  useOpencodeCliStatus,
+  useOpencodeCliAuth,
+} from './services/opencode-cli'
 import { useUIStore } from './store/ui-store'
 import type { AppPreferences } from './types/preferences'
 import { useChatStore } from './store/chat-store'
@@ -404,7 +407,10 @@ function App() {
           })
         })
         .catch(err => {
-          logger.warn('Reconnect: HTTP re-fetch failed, falling back to query invalidation', { error: err })
+          logger.warn(
+            'Reconnect: HTTP re-fetch failed, falling back to query invalidation',
+            { error: err }
+          )
           // Fallback: invalidate everything so TanStack Query refetches via WebSocket
           queryClient.invalidateQueries()
         })
@@ -490,7 +496,8 @@ function App() {
     const ghReady = !!ghStatus?.installed && !!ghAuth?.authenticated
     const claudeReady = !!claudeStatus?.installed && !!claudeAuth?.authenticated
     const codexReady = !!codexStatus?.installed && !!codexAuth?.authenticated
-    const opencodeReady = !!opencodeStatus?.installed && !!opencodeAuth?.authenticated
+    const opencodeReady =
+      !!opencodeStatus?.installed && !!opencodeAuth?.authenticated
     const hasAiBackendReady = claudeReady || codexReady || opencodeReady
 
     if (useUIStore.getState().onboardingDismissed) return
@@ -549,7 +556,9 @@ function App() {
           store.setOnboardingManuallyTriggered(false)
         } else {
           const manuallyTriggered = store.onboardingManuallyTriggered
-          const prefs = queryClient.getQueryData<AppPreferences>(['preferences'])
+          const prefs = queryClient.getQueryData<AppPreferences>([
+            'preferences',
+          ])
           if (manuallyTriggered || (prefs && !prefs.has_seen_feature_tour)) {
             store.setOnboardingManuallyTriggered(false)
             setTimeout(() => {
@@ -688,19 +697,25 @@ function App() {
             let worktreePath = store.getWorktreePath(session.worktree_id)
             if (!worktreePath) {
               try {
-                const worktree = await invoke<{ path: string }>('get_worktree', {
-                  worktreeId: session.worktree_id,
-                })
+                const worktree = await invoke<{ path: string }>(
+                  'get_worktree',
+                  {
+                    worktreeId: session.worktree_id,
+                  }
+                )
                 if (worktree.path) {
                   worktreePath = worktree.path
                   store.registerWorktreePath(session.worktree_id, worktree.path)
                 }
               } catch (error) {
-                logger.warn('Failed to resolve worktree path for resumable run', {
-                  session_id: session.session_id,
-                  worktree_id: session.worktree_id,
-                  error,
-                })
+                logger.warn(
+                  'Failed to resolve worktree path for resumable run',
+                  {
+                    session_id: session.session_id,
+                    worktree_id: session.worktree_id,
+                    error,
+                  }
+                )
               }
             }
             if (worktreePath) {
@@ -715,10 +730,13 @@ function App() {
                   sessionSnapshot
                 )
               } catch (error) {
-                logger.warn('Failed to load session snapshot for resumable run', {
-                  session_id: session.session_id,
-                  error,
-                })
+                logger.warn(
+                  'Failed to load session snapshot for resumable run',
+                  {
+                    session_id: session.session_id,
+                    error,
+                  }
+                )
               }
             }
 
@@ -818,10 +836,7 @@ function App() {
   }
 
   const showReconnectOverlay =
-    !isNativeApp() &&
-    !wsConnected &&
-    hadWsConnectionRef.current &&
-    !wsAuthError
+    !isNativeApp() && !wsConnected && hadWsConnectionRef.current && !wsAuthError
 
   return (
     <ErrorBoundary>

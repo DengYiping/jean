@@ -78,11 +78,14 @@ function parseLocalEditorLink(
 
   const lineMatch = href.match(/#L?(\d+)$/)
   const lineNumber = lineMatch?.[1] ? Number.parseInt(lineMatch[1], 10) : null
-  const path = lineMatch ? href.slice(0, href.length - lineMatch[0].length) : href
+  const path = lineMatch
+    ? href.slice(0, href.length - lineMatch[0].length)
+    : href
 
   const isWindowsPath = /^[A-Za-z]:[\\/]/.test(path)
   const isUnixPath = path.startsWith('/')
-  const isRelativePath = path.startsWith('./') || path.startsWith('../') || path.startsWith('~/')
+  const isRelativePath =
+    path.startsWith('./') || path.startsWith('../') || path.startsWith('~/')
 
   if (!isWindowsPath && !isUnixPath && !isRelativePath) return null
   if (!path) return null
@@ -156,7 +159,9 @@ const Markdown = memo(function Markdown({
           {children}
         </div>
       ),
-      strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+      strong: ({ children }) => (
+        <strong className="font-semibold">{children}</strong>
+      ),
       em: ({ children }) => <em className="italic">{children}</em>,
       code: ({ children, className }) => {
         const isBlock = className?.startsWith('language-')
@@ -207,7 +212,9 @@ const Markdown = memo(function Markdown({
         )
       },
       ul: ({ children }) => (
-        <ul className="my-4 ml-6 list-disc list-outside space-y-2">{children}</ul>
+        <ul className="my-4 ml-6 list-disc list-outside space-y-2">
+          {children}
+        </ul>
       ),
       ol: ({ children }) => (
         <ol className="my-4 ml-6 list-decimal list-outside space-y-2">
@@ -225,12 +232,18 @@ const Markdown = memo(function Markdown({
       ),
       table: ({ children }) => (
         <div className="my-5 overflow-x-auto">
-          <table className="min-w-full border-collapse text-sm">{children}</table>
+          <table className="min-w-full border-collapse text-sm">
+            {children}
+          </table>
         </div>
       ),
-      thead: ({ children }) => <thead className="bg-muted/50">{children}</thead>,
+      thead: ({ children }) => (
+        <thead className="bg-muted/50">{children}</thead>
+      ),
       tbody: ({ children }) => <tbody>{children}</tbody>,
-      tr: ({ children }) => <tr className="border-b border-border">{children}</tr>,
+      tr: ({ children }) => (
+        <tr className="border-b border-border">{children}</tr>
+      ),
       th: ({ children }) => (
         <th className="px-4 py-2.5 text-left font-semibold">{children}</th>
       ),

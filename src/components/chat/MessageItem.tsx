@@ -311,7 +311,11 @@ export const MessageItem = memo(function MessageItem({
                 return (
                   <div className="text-sm text-muted-foreground italic">
                     <span>[Message could not be rendered]</span>
-                    {message.content && <Markdown streaming={message.cancelled}>{message.content}</Markdown>}
+                    {message.content && (
+                      <Markdown streaming={message.cancelled}>
+                        {message.content}
+                      </Markdown>
+                    )}
                   </div>
                 )
               }
@@ -339,7 +343,9 @@ export const MessageItem = memo(function MessageItem({
                           const strippedText = stripFindingBlocks(item.text)
                           return (
                             <div>
-                              <Markdown streaming={message.cancelled}>{strippedText}</Markdown>
+                              <Markdown streaming={message.cancelled}>
+                                {strippedText}
+                              </Markdown>
                               {findings.length > 0 && (
                                 <ReviewFindingsList
                                   findings={findings}
@@ -353,7 +359,11 @@ export const MessageItem = memo(function MessageItem({
                             </div>
                           )
                         }
-                        return <Markdown streaming={message.cancelled}>{item.text}</Markdown>
+                        return (
+                          <Markdown streaming={message.cancelled}>
+                            {item.text}
+                          </Markdown>
+                        )
                       }
                       case 'task':
                         return (
@@ -509,7 +519,9 @@ export const MessageItem = memo(function MessageItem({
               {message.role === 'assistant' &&
               hasReviewFindings(displayContent) ? (
                 <>
-                  <Markdown streaming={message.cancelled}>{stripFindingBlocks(displayContent)}</Markdown>
+                  <Markdown streaming={message.cancelled}>
+                    {stripFindingBlocks(displayContent)}
+                  </Markdown>
                   <ReviewFindingsList
                     findings={parseReviewFindings(displayContent)}
                     sessionId={sessionId}
@@ -524,7 +536,9 @@ export const MessageItem = memo(function MessageItem({
                   {displayContent}
                 </div>
               ) : (
-                <Markdown streaming={message.cancelled}>{displayContent}</Markdown>
+                <Markdown streaming={message.cancelled}>
+                  {displayContent}
+                </Markdown>
               )}
             </div>
           )}

@@ -472,7 +472,12 @@ function OnboardingDialogContent() {
     }
 
     setStep(getNextStepAfterBackends())
-  }, [selectedBackends, onboardingManuallyTriggered, getNextStepForBackend, getNextStepAfterBackends])
+  }, [
+    selectedBackends,
+    onboardingManuallyTriggered,
+    getNextStepForBackend,
+    getNextStepAfterBackends,
+  ])
 
   const handleClaudeInstall = useCallback(() => {
     claudeSetup.refetchStatus().then(result => {
@@ -691,7 +696,9 @@ function OnboardingDialogContent() {
   const isGhReinstall = ghSetup.status?.installed && step === 'gh-setup'
 
   const claudeLoginCommand = claudeSetup.status?.path ?? ''
-  const claudeLoginArgs = claudeSetup.status?.supports_auth_command ? ['auth', 'login'] : ['login']
+  const claudeLoginArgs = claudeSetup.status?.supports_auth_command
+    ? ['auth', 'login']
+    : ['login']
   const codexLoginCommand = codexSetup.status?.path ?? ''
   const codexLoginArgs = ['login']
   const opencodeLoginCommand = opencodeSetup.status?.command ?? ''
@@ -706,7 +713,9 @@ function OnboardingDialogContent() {
   const getDialogContent = () => {
     if (step === 'backend-select') {
       return {
-        title: onboardingManuallyTriggered ? 'Install AI Backends' : 'Welcome to Jean',
+        title: onboardingManuallyTriggered
+          ? 'Install AI Backends'
+          : 'Welcome to Jean',
         description: onboardingManuallyTriggered
           ? 'Select additional AI backends to install.'
           : 'Select at least one AI backend to install. GitHub CLI setup is required next.',
@@ -855,160 +864,173 @@ function OnboardingDialogContent() {
           {renderStepIndicator()}
 
           <div className="w-full">
-          {step === 'backend-select' ? (
-            <BackendSelectionState
-              selectedBackends={selectedBackends}
-              onToggle={handleBackendToggle}
-              onContinue={handleBackendSelectionContinue}
-              readyBackends={onboardingManuallyTriggered ? AI_BACKENDS.filter(isBackendReady) : []}
-            />
-          ) : step === 'complete' ? (
-            <SuccessState
-              claudeVersion={claudeSetup.status?.version}
-              codexVersion={codexSetup.status?.version}
-              opencodeVersion={opencodeSetup.status?.version}
-              ghVersion={ghSetup.status?.version}
-              onContinue={handleComplete}
-            />
-          ) : step === 'claude-installing' && cliData ? (
-            <InstallingState cliName="Claude CLI" progress={cliData.progress} />
-          ) : step === 'codex-installing' && cliData ? (
-            <InstallingState cliName="Codex CLI" progress={cliData.progress} />
-          ) : step === 'opencode-installing' && cliData ? (
-            <InstallingState
-              cliName="OpenCode CLI"
-              progress={cliData.progress}
-            />
-          ) : step === 'gh-installing' && cliData ? (
-            <InstallingState cliName="GitHub CLI" progress={cliData.progress} />
-          ) : step === 'claude-auth-checking' ? (
-            <AuthCheckingState cliName="Claude CLI" />
-          ) : step === 'codex-auth-checking' ? (
-            <AuthCheckingState cliName="Codex CLI" />
-          ) : step === 'opencode-auth-checking' ? (
-            <AuthCheckingState cliName="OpenCode CLI" />
-          ) : step === 'gh-auth-checking' ? (
-            <AuthCheckingState cliName="GitHub CLI" />
-          ) : step === 'claude-auth-login' ? (
-            <AuthLoginState
-              cliName="Claude CLI"
-              terminalId={claudeLoginTerminalId}
-              command={claudeLoginCommand}
-              commandArgs={claudeLoginArgs}
-              onComplete={handleClaudeLoginComplete}
-              onRetry={handleClaudeLoginRetry}
-            />
-          ) : step === 'codex-auth-login' ? (
-            <AuthLoginState
-              cliName="Codex CLI"
-              terminalId={codexLoginTerminalId}
-              command={codexLoginCommand}
-              commandArgs={codexLoginArgs}
-              onComplete={handleCodexLoginComplete}
-              onRetry={handleCodexLoginRetry}
-            />
-          ) : step === 'opencode-auth-login' ? (
-            <AuthLoginState
-              cliName="OpenCode CLI"
-              terminalId={opencodeLoginTerminalId}
-              command={opencodeLoginCommand}
-              commandArgs={opencodeLoginArgs}
-              onComplete={handleOpencodeLoginComplete}
-              onRetry={handleOpencodeLoginRetry}
-            />
-          ) : step === 'gh-auth-login' ? (
-            <AuthLoginState
-              cliName="GitHub CLI"
-              terminalId={ghLoginTerminalId}
-              command={ghLoginCommand}
-              commandArgs={ghLoginArgs}
-              onComplete={handleGhLoginComplete}
-              onRetry={handleGhLoginRetry}
-            />
-          ) : step === 'claude-setup' ? (
-            <HostInstallState
-              cliName="Claude CLI"
-              binaryName="claude"
-              onRefresh={handleClaudeInstall}
-            />
-          ) : step === 'codex-setup' ? (
-            <HostInstallState
-              cliName="Codex CLI"
-              binaryName="codex"
-              onRefresh={handleCodexInstall}
-            />
-          ) : step === 'opencode-setup' ? (
-            <HostInstallState
-              cliName="OpenCode CLI"
-              binaryName="opencode"
-              onRefresh={handleOpencodeInstall}
-            />
-          ) : cliData ? (
-            cliData.installError ? (
-              <ErrorState
-                cliName={backendLabel[cliData.type]}
-                error={cliData.installError}
-                onRetry={
-                  cliData.type === 'claude'
-                    ? handleClaudeInstall
-                    : cliData.type === 'codex'
-                      ? handleCodexInstall
-                      : cliData.type === 'opencode'
-                        ? handleOpencodeInstall
-                        : handleGhInstall
+            {step === 'backend-select' ? (
+              <BackendSelectionState
+                selectedBackends={selectedBackends}
+                onToggle={handleBackendToggle}
+                onContinue={handleBackendSelectionContinue}
+                readyBackends={
+                  onboardingManuallyTriggered
+                    ? AI_BACKENDS.filter(isBackendReady)
+                    : []
                 }
               />
+            ) : step === 'complete' ? (
+              <SuccessState
+                claudeVersion={claudeSetup.status?.version}
+                codexVersion={codexSetup.status?.version}
+                opencodeVersion={opencodeSetup.status?.version}
+                ghVersion={ghSetup.status?.version}
+                onContinue={handleComplete}
+              />
+            ) : step === 'claude-installing' && cliData ? (
+              <InstallingState
+                cliName="Claude CLI"
+                progress={cliData.progress}
+              />
+            ) : step === 'codex-installing' && cliData ? (
+              <InstallingState
+                cliName="Codex CLI"
+                progress={cliData.progress}
+              />
+            ) : step === 'opencode-installing' && cliData ? (
+              <InstallingState
+                cliName="OpenCode CLI"
+                progress={cliData.progress}
+              />
+            ) : step === 'gh-installing' && cliData ? (
+              <InstallingState
+                cliName="GitHub CLI"
+                progress={cliData.progress}
+              />
+            ) : step === 'claude-auth-checking' ? (
+              <AuthCheckingState cliName="Claude CLI" />
+            ) : step === 'codex-auth-checking' ? (
+              <AuthCheckingState cliName="Codex CLI" />
+            ) : step === 'opencode-auth-checking' ? (
+              <AuthCheckingState cliName="OpenCode CLI" />
+            ) : step === 'gh-auth-checking' ? (
+              <AuthCheckingState cliName="GitHub CLI" />
+            ) : step === 'claude-auth-login' ? (
+              <AuthLoginState
+                cliName="Claude CLI"
+                terminalId={claudeLoginTerminalId}
+                command={claudeLoginCommand}
+                commandArgs={claudeLoginArgs}
+                onComplete={handleClaudeLoginComplete}
+                onRetry={handleClaudeLoginRetry}
+              />
+            ) : step === 'codex-auth-login' ? (
+              <AuthLoginState
+                cliName="Codex CLI"
+                terminalId={codexLoginTerminalId}
+                command={codexLoginCommand}
+                commandArgs={codexLoginArgs}
+                onComplete={handleCodexLoginComplete}
+                onRetry={handleCodexLoginRetry}
+              />
+            ) : step === 'opencode-auth-login' ? (
+              <AuthLoginState
+                cliName="OpenCode CLI"
+                terminalId={opencodeLoginTerminalId}
+                command={opencodeLoginCommand}
+                commandArgs={opencodeLoginArgs}
+                onComplete={handleOpencodeLoginComplete}
+                onRetry={handleOpencodeLoginRetry}
+              />
+            ) : step === 'gh-auth-login' ? (
+              <AuthLoginState
+                cliName="GitHub CLI"
+                terminalId={ghLoginTerminalId}
+                command={ghLoginCommand}
+                commandArgs={ghLoginArgs}
+                onComplete={handleGhLoginComplete}
+                onRetry={handleGhLoginRetry}
+              />
+            ) : step === 'claude-setup' ? (
+              <HostInstallState
+                cliName="Claude CLI"
+                binaryName="claude"
+                onRefresh={handleClaudeInstall}
+              />
+            ) : step === 'codex-setup' ? (
+              <HostInstallState
+                cliName="Codex CLI"
+                binaryName="codex"
+                onRefresh={handleCodexInstall}
+              />
+            ) : step === 'opencode-setup' ? (
+              <HostInstallState
+                cliName="OpenCode CLI"
+                binaryName="opencode"
+                onRefresh={handleOpencodeInstall}
+              />
+            ) : cliData ? (
+              cliData.installError ? (
+                <ErrorState
+                  cliName={backendLabel[cliData.type]}
+                  error={cliData.installError}
+                  onRetry={
+                    cliData.type === 'claude'
+                      ? handleClaudeInstall
+                      : cliData.type === 'codex'
+                        ? handleCodexInstall
+                        : cliData.type === 'opencode'
+                          ? handleOpencodeInstall
+                          : handleGhInstall
+                  }
+                />
+              ) : (
+                <SetupState
+                  cliName={backendLabel[cliData.type]}
+                  versions={cliData.versions}
+                  selectedVersion={
+                    cliData.type === 'claude'
+                      ? claudeVersion
+                      : cliData.type === 'codex'
+                        ? codexVersion
+                        : cliData.type === 'opencode'
+                          ? opencodeVersion
+                          : ghVersion
+                  }
+                  currentVersion={
+                    (cliData.type === 'claude' && isClaudeReinstall) ||
+                    (cliData.type === 'codex' && isCodexReinstall) ||
+                    (cliData.type === 'opencode' && isOpencodeReinstall) ||
+                    (cliData.type === 'gh' && isGhReinstall)
+                      ? cliData.currentVersion
+                      : null
+                  }
+                  isLoading={cliData.isVersionsLoading}
+                  isError={cliData.isVersionsError}
+                  onRetry={cliData.onRetryVersions}
+                  onVersionChange={
+                    cliData.type === 'claude'
+                      ? setClaudeVersion
+                      : cliData.type === 'codex'
+                        ? setCodexVersion
+                        : cliData.type === 'opencode'
+                          ? setOpencodeVersion
+                          : setGhVersion
+                  }
+                  onInstall={
+                    cliData.type === 'claude'
+                      ? handleClaudeInstall
+                      : cliData.type === 'codex'
+                        ? handleCodexInstall
+                        : cliData.type === 'opencode'
+                          ? handleOpencodeInstall
+                          : handleGhInstall
+                  }
+                />
+              )
             ) : (
-              <SetupState
-                cliName={backendLabel[cliData.type]}
-                versions={cliData.versions}
-                selectedVersion={
-                  cliData.type === 'claude'
-                    ? claudeVersion
-                    : cliData.type === 'codex'
-                      ? codexVersion
-                      : cliData.type === 'opencode'
-                        ? opencodeVersion
-                        : ghVersion
-                }
-                currentVersion={
-                  (cliData.type === 'claude' && isClaudeReinstall) ||
-                  (cliData.type === 'codex' && isCodexReinstall) ||
-                  (cliData.type === 'opencode' && isOpencodeReinstall) ||
-                  (cliData.type === 'gh' && isGhReinstall)
-                    ? cliData.currentVersion
-                    : null
-                }
-                isLoading={cliData.isVersionsLoading}
-                isError={cliData.isVersionsError}
-                onRetry={cliData.onRetryVersions}
-                onVersionChange={
-                  cliData.type === 'claude'
-                    ? setClaudeVersion
-                    : cliData.type === 'codex'
-                      ? setCodexVersion
-                      : cliData.type === 'opencode'
-                        ? setOpencodeVersion
-                        : setGhVersion
-                }
-                onInstall={
-                  cliData.type === 'claude'
-                    ? handleClaudeInstall
-                    : cliData.type === 'codex'
-                      ? handleCodexInstall
-                      : cliData.type === 'opencode'
-                        ? handleOpencodeInstall
-                        : handleGhInstall
-                }
+              <BackendSelectionState
+                selectedBackends={selectedBackends}
+                onToggle={handleBackendToggle}
+                onContinue={handleBackendSelectionContinue}
               />
-            )
-          ) : (
-            <BackendSelectionState
-              selectedBackends={selectedBackends}
-              onToggle={handleBackendToggle}
-              onContinue={handleBackendSelectionContinue}
-            />
-          )}
+            )}
           </div>
         </div>
       </DialogContent>
@@ -1049,11 +1071,21 @@ function BackendSelectionState({
               const label = backendLabel[backend]
 
               return (
-                <label key={backend} htmlFor={id} className="flex items-center gap-3 rounded-lg border border-border p-3 cursor-pointer hover:bg-accent/40">
-                  <Checkbox id={id} checked={checked} onCheckedChange={value => onToggle(backend, value === true)} />
+                <label
+                  key={backend}
+                  htmlFor={id}
+                  className="flex items-center gap-3 rounded-lg border border-border p-3 cursor-pointer hover:bg-accent/40"
+                >
+                  <Checkbox
+                    id={id}
+                    checked={checked}
+                    onCheckedChange={value => onToggle(backend, value === true)}
+                  />
                   <div>
                     <p className="text-sm font-medium">{label}</p>
-                    <p className="text-xs text-muted-foreground">Install and authenticate {label}.</p>
+                    <p className="text-xs text-muted-foreground">
+                      Install and authenticate {label}.
+                    </p>
                   </div>
                 </label>
               )
@@ -1066,7 +1098,8 @@ function BackendSelectionState({
               : 'You must install at least one AI backend. You can install more later in Settings.'}
           </p>
           <p className="text-xs text-muted-foreground">
-            Jean installs its own copies of each CLI and won&apos;t use or modify your global installations.
+            Jean installs its own copies of each CLI and won&apos;t use or
+            modify your global installations.
           </p>
         </>
       )}
@@ -1098,15 +1131,15 @@ function SuccessState({
       <div className="text-center">
         <p className="font-medium">All Tools Ready</p>
         <div className="text-sm text-muted-foreground mt-2 space-y-1">
-            {claudeVersion && <p>Claude CLI: v{claudeVersion}</p>}
-            {codexVersion && <p>Codex CLI: v{codexVersion}</p>}
-            {opencodeVersion && <p>OpenCode CLI: v{opencodeVersion}</p>}
-            {ghVersion && <p>GitHub CLI: v{ghVersion}</p>}
-            {!claudeVersion &&
-              !codexVersion &&
-              !opencodeVersion &&
-              !ghVersion && <p>Setup complete</p>}
-          </div>
+          {claudeVersion && <p>Claude CLI: v{claudeVersion}</p>}
+          {codexVersion && <p>Codex CLI: v{codexVersion}</p>}
+          {opencodeVersion && <p>OpenCode CLI: v{opencodeVersion}</p>}
+          {ghVersion && <p>GitHub CLI: v{ghVersion}</p>}
+          {!claudeVersion &&
+            !codexVersion &&
+            !opencodeVersion &&
+            !ghVersion && <p>Setup complete</p>}
+        </div>
       </div>
 
       <Button onClick={onContinue} className="w-full" size="lg">

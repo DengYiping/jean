@@ -1,4 +1,12 @@
-import { useMemo, useCallback, useRef, useEffect, useState, lazy, Suspense } from 'react'
+import {
+  useMemo,
+  useCallback,
+  useRef,
+  useEffect,
+  useState,
+  lazy,
+  Suspense,
+} from 'react'
 import { TitleBar } from '@/components/titlebar/TitleBar'
 import { DevModeBanner } from './DevModeBanner'
 import { SidebarWidthProvider } from './SidebarWidthContext'
@@ -186,7 +194,9 @@ export function MainWindow() {
   const updateModalVersion = useUIStore(state => state.updateModalVersion)
   const githubDashboardOpen = useUIStore(state => state.githubDashboardOpen)
   const selectedWorktreeId = useProjectsStore(state => state.selectedWorktreeId)
-  const addProjectDialogOpen = useProjectsStore(state => state.addProjectDialogOpen)
+  const addProjectDialogOpen = useProjectsStore(
+    state => state.addProjectDialogOpen
+  )
   const projectSettingsDialogOpen = useProjectsStore(
     state => state.projectSettingsDialogOpen
   )
@@ -247,13 +257,18 @@ export function MainWindow() {
   const [closeConfirmBranch, setCloseConfirmBranch] = useState<
     string | undefined
   >()
-  const [closeConfirmMode, setCloseConfirmMode] = useState<'worktree' | 'session'>('worktree')
+  const [closeConfirmMode, setCloseConfirmMode] = useState<
+    'worktree' | 'session'
+  >('worktree')
   const [closeConfirmOpen, setCloseConfirmOpen] = useState(false)
-  const handleConfirmRequired = useCallback((branchName?: string, mode?: 'worktree' | 'session') => {
-    setCloseConfirmBranch(branchName)
-    setCloseConfirmMode(mode ?? 'worktree')
-    setCloseConfirmOpen(true)
-  }, [])
+  const handleConfirmRequired = useCallback(
+    (branchName?: string, mode?: 'worktree' | 'session') => {
+      setCloseConfirmBranch(branchName)
+      setCloseConfirmMode(mode ?? 'worktree')
+      setCloseConfirmOpen(true)
+    },
+    []
+  )
   const { executeClose } = useCloseSessionOrWorktreeKeybinding(
     handleConfirmRequired
   )
@@ -269,7 +284,6 @@ export function MainWindow() {
     return () =>
       window.removeEventListener('command:open-archived-modal', handler)
   }, [])
-
 
   // Auto-cleanup old archived items on startup
   useArchiveCleanup()
@@ -351,9 +365,7 @@ export function MainWindow() {
   const shouldRenderUpdatePrDialog = useRetainedMount(updatePrModalOpen)
   const shouldRenderWorkflowRunsModal = useRetainedMount(workflowRunsModalOpen)
   const shouldRenderMagicModal = useRetainedMount(magicModalOpen)
-  const shouldRenderReleaseNotesDialog = useRetainedMount(
-    releaseNotesModalOpen
-  )
+  const shouldRenderReleaseNotesDialog = useRetainedMount(releaseNotesModalOpen)
   const shouldRenderNewWorktreeModal = useRetainedMount(newWorktreeModalOpen)
   const shouldRenderAddProjectDialog = useRetainedMount(addProjectDialogOpen)
   const shouldRenderGitInitModal = useRetainedMount(gitInitModalOpen)

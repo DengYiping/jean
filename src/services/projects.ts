@@ -747,9 +747,7 @@ export function useCreateWorktreeFromExistingBranch() {
  */
 export function useCreateWorktreeKeybinding() {
   useEffect(() => {
-    const handleCreateWorktree = async () => {
-      // Import dynamically to avoid circular dependency
-      const { useUIStore } = await import('@/store/ui-store')
+    const handleCreateWorktree = () => {
       const { setNewWorktreeModalOpen } = useUIStore.getState()
       setNewWorktreeModalOpen(true)
     }
@@ -929,7 +927,8 @@ export function useWorktreeEvents() {
         if (setupFailed) {
           toast.error('Setup script failed', {
             id: `worktree-creating-${worktree.id}`,
-            description: 'Worktree was created but the setup script exited with an error.',
+            description:
+              'Worktree was created but the setup script exited with an error.',
             action: openWorktreeAction,
           })
         } else {
@@ -1025,7 +1024,9 @@ export function useWorktreeEvents() {
 
         // Close SessionChatModal if it's open for this worktree
         window.dispatchEvent(
-          new CustomEvent('close-worktree-modal', { detail: { worktreeId: id } })
+          new CustomEvent('close-worktree-modal', {
+            detail: { worktreeId: id },
+          })
         )
       })
     )

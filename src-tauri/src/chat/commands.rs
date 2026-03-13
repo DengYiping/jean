@@ -421,6 +421,7 @@ pub async fn rename_session(
 }
 
 /// Regenerate session name using AI based on the first user message
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn regenerate_session_name(
     app: AppHandle,
@@ -1910,7 +1911,7 @@ pub async fn send_chat_message(
 
                     // Embedded binary path hints
                     let gh_binary = crate::gh_cli::config::resolve_gh_binary(&thread_app);
-                    if gh_binary != std::path::PathBuf::from("gh") {
+                    if gh_binary != std::path::Path::new("gh") {
                         system_prompt_parts.push(format!(
                             "When running GitHub CLI commands, use the full path to the embedded binary: {}\n\
                              Do NOT use bare `gh` — always use the full path above.",
@@ -2170,7 +2171,7 @@ pub async fn send_chat_message(
 
                     // Embedded binary path hints
                     let gh_binary = crate::gh_cli::config::resolve_gh_binary(&thread_app);
-                    if gh_binary != std::path::PathBuf::from("gh") {
+                    if gh_binary != std::path::Path::new("gh") {
                         system_prompt_parts.push(format!(
                             "When running GitHub CLI commands, use the full path to the embedded binary: {}\n\
                              Do NOT use bare `gh` — always use the full path above.",
@@ -3501,21 +3502,24 @@ pub async fn open_file_in_default_app(
                 }
                 cmd.arg(&path).spawn()
             }
-            "intellij" => match {
-                let mut cmd = std::process::Command::new("idea");
-                if let Some(line) = line_number {
-                    cmd.args(["--line", &line.to_string()]);
+            "intellij" => {
+                let intellij_spawn = {
+                    let mut cmd = std::process::Command::new("idea");
+                    if let Some(line) = line_number {
+                        cmd.args(["--line", &line.to_string()]);
+                    }
+                    cmd.arg(&path).spawn()
+                };
+                match intellij_spawn {
+                    Ok(child) => Ok(child),
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                        std::process::Command::new("open")
+                            .args(["-a", "IntelliJ IDEA", &path])
+                            .spawn()
+                    }
+                    Err(e) => Err(e),
                 }
-                cmd.arg(&path).spawn()
-            } {
-                Ok(child) => Ok(child),
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                    std::process::Command::new("open")
-                        .args(["-a", "IntelliJ IDEA", &path])
-                        .spawn()
-                }
-                Err(e) => Err(e),
-            },
+            }
             _ => match std::process::Command::new("code")
                 .args(if line_number.is_some() {
                     vec!["-g", vscode_target.as_str()]
@@ -4162,6 +4166,7 @@ fn generate_fallback_slug(project_name: &str, session_name: &str) -> String {
 }
 
 /// Execute one-shot Claude CLI call for summarization with JSON schema (non-streaming)
+#[allow(clippy::too_many_arguments)]
 fn execute_summarization_claude(
     app: &AppHandle,
     prompt: &str,
@@ -4868,6 +4873,7 @@ pub struct SessionDigestResponse {
 }
 
 /// Execute one-shot Claude CLI call for session digest with JSON schema (non-streaming)
+#[allow(clippy::too_many_arguments)]
 fn execute_digest_claude(
     app: &AppHandle,
     prompt: &str,

@@ -446,7 +446,7 @@ fn build_claude_args(
 
     // Embedded gh CLI path - tell Claude to use the app's bundled binary
     let gh_binary = crate::gh_cli::config::resolve_gh_binary(app);
-    if gh_binary != std::path::PathBuf::from("gh") {
+    if gh_binary != std::path::Path::new("gh") {
         system_prompt_parts.push(format!(
             "When running GitHub CLI commands, use the full path to the embedded binary: {}\n\
              Do NOT use bare `gh` — always use the full path above.",
@@ -1342,7 +1342,7 @@ pub fn tail_claude_output(
             // Log progress every 10 seconds during startup (only log once per 10-second mark)
             // Use subsec_millis to only log in the first 100ms of each 10-second window
             let secs = elapsed.as_secs();
-            if secs > 0 && secs % 10 == 0 && elapsed.subsec_millis() < 100 {
+            if secs > 0 && secs.is_multiple_of(10) && elapsed.subsec_millis() < 100 {
                 log::trace!(
                     "Waiting for Claude output... {secs}s elapsed, process_alive: {process_alive}"
                 );

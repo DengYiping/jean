@@ -153,8 +153,9 @@ export function MobileToolbarMenu({
   const [modelSheetOpen, setModelSheetOpen] = useState(false)
   const [modelSearchQuery, setModelSearchQuery] = useState('')
   const providerDisplayName = getProviderDisplayName(selectedProvider)
-  const selectedModelLabel =
-    filteredModelOptions.find(o => o.value === selectedModel)?.label
+  const selectedModelLabel = filteredModelOptions.find(
+    o => o.value === selectedModel
+  )?.label
 
   const openModelSheet = () => {
     setMenuOpen(false)
@@ -189,160 +190,162 @@ export function MobileToolbarMenu({
           align={isMobile ? 'end' : 'start'}
           className="w-56"
         >
-        <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">
-          Context
-        </div>
-        <DropdownMenuItem onClick={onSaveContext}>
-          <BookmarkPlus className="h-4 w-4" />
-          Save Context
-          <span className="ml-auto text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-            S
-          </span>
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={onLoadContext}>
-          <FolderOpen className="h-4 w-4" />
-          Load Context
-          <span className="ml-auto text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-            L
-          </span>
-        </DropdownMenuItem>
-
-        <DropdownMenuSeparator />
-
-        <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">
-          Commit
-        </div>
-        <DropdownMenuItem onClick={onCommit}>
-          <GitCommitHorizontal className="h-4 w-4" />
-          Commit
-          <span className="ml-auto text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-            C
-          </span>
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={onCommitAndPush}>
-          <GitCommitHorizontal className="h-4 w-4" />
-          Commit & Push
-          <span className="ml-auto text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-            P
-          </span>
-        </DropdownMenuItem>
-
-        <DropdownMenuSeparator />
-
-        <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">
-          Sync
-        </div>
-        <DropdownMenuItem onClick={handlePullClick}>
-          <ArrowDownToLine className="h-4 w-4" />
-          Pull
-          <span className="ml-auto text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-            D
-          </span>
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={handlePushClick}>
-          <ArrowUpToLine className="h-4 w-4" />
-          Push
-          <span className="ml-auto text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-            U
-          </span>
-        </DropdownMenuItem>
-
-        <DropdownMenuSeparator />
-
-        <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">
-          Pull Request
-        </div>
-        <DropdownMenuItem onClick={onOpenPr}>
-          <GitPullRequest className="h-4 w-4" />
-          {hasOpenPr ? 'Open' : 'Create'}
-          <span className="ml-auto text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-            O
-          </span>
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={onReview}>
-          <Eye className="h-4 w-4" />
-          Review
-          <span className="ml-auto text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-            R
-          </span>
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-
-        <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">
-          Branch
-        </div>
-        <DropdownMenuItem onClick={onMerge}>
-          <GitMerge className="h-4 w-4" />
-          Merge to Base
-          <span className="ml-auto text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-            M
-          </span>
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={onResolveConflicts}>
-          <GitMerge className="h-4 w-4" />
-          Resolve Conflicts
-          <span className="ml-auto text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-            F
-          </span>
-        </DropdownMenuItem>
-
-        {(uncommittedAdded > 0 ||
-          uncommittedRemoved > 0 ||
-          branchDiffAdded > 0 ||
-          branchDiffRemoved > 0 ||
-          prUrl) && <DropdownMenuSeparator />}
-
-        {(uncommittedAdded > 0 || uncommittedRemoved > 0) && (
-          <DropdownMenuItem onClick={handleUncommittedDiffClick}>
-            <Pencil className="h-4 w-4" />
-            <span>Uncommitted</span>
-            <span className="ml-auto text-xs">
-              <span className="text-green-500">+{uncommittedAdded}</span>
-              {' / '}
-              <span className="text-red-500">-{uncommittedRemoved}</span>
+          <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            Context
+          </div>
+          <DropdownMenuItem onClick={onSaveContext}>
+            <BookmarkPlus className="h-4 w-4" />
+            Save Context
+            <span className="ml-auto text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+              S
             </span>
           </DropdownMenuItem>
-        )}
-
-        {(branchDiffAdded > 0 || branchDiffRemoved > 0) && (
-          <DropdownMenuItem onClick={handleBranchDiffClick}>
-            <GitBranch className="h-4 w-4" />
-            <span>Branch diff</span>
-            <span className="ml-auto text-xs">
-              <span className="text-green-500">+{branchDiffAdded}</span>
-              {' / '}
-              <span className="text-red-500">-{branchDiffRemoved}</span>
+          <DropdownMenuItem onClick={onLoadContext}>
+            <FolderOpen className="h-4 w-4" />
+            Load Context
+            <span className="ml-auto text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+              L
             </span>
           </DropdownMenuItem>
-        )}
 
-        {prUrl && prNumber && (
-          <DropdownMenuItem asChild>
-            <a
-              href={prUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={cn(
-                displayStatus ? getPrStatusDisplay(displayStatus).className : ''
-              )}
-            >
-              {displayStatus === 'merged' ? (
-                <GitMerge className="h-4 w-4" />
-              ) : (
-                <GitPullRequest className="h-4 w-4" />
-              )}
-              <span>#{prNumber}</span>
-              <CheckStatusButton
-                status={checkStatus ?? null}
-                projectPath={activeWorktreePath}
-              />
-            </a>
+          <DropdownMenuSeparator />
+
+          <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            Commit
+          </div>
+          <DropdownMenuItem onClick={onCommit}>
+            <GitCommitHorizontal className="h-4 w-4" />
+            Commit
+            <span className="ml-auto text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+              C
+            </span>
           </DropdownMenuItem>
-        )}
+          <DropdownMenuItem onClick={onCommitAndPush}>
+            <GitCommitHorizontal className="h-4 w-4" />
+            Commit & Push
+            <span className="ml-auto text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+              P
+            </span>
+          </DropdownMenuItem>
 
-        <DropdownMenuSeparator />
+          <DropdownMenuSeparator />
 
-        {!sessionHasMessages && (
+          <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            Sync
+          </div>
+          <DropdownMenuItem onClick={handlePullClick}>
+            <ArrowDownToLine className="h-4 w-4" />
+            Pull
+            <span className="ml-auto text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+              D
+            </span>
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={handlePushClick}>
+            <ArrowUpToLine className="h-4 w-4" />
+            Push
+            <span className="ml-auto text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+              U
+            </span>
+          </DropdownMenuItem>
+
+          <DropdownMenuSeparator />
+
+          <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            Pull Request
+          </div>
+          <DropdownMenuItem onClick={onOpenPr}>
+            <GitPullRequest className="h-4 w-4" />
+            {hasOpenPr ? 'Open' : 'Create'}
+            <span className="ml-auto text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+              O
+            </span>
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={onReview}>
+            <Eye className="h-4 w-4" />
+            Review
+            <span className="ml-auto text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+              R
+            </span>
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+
+          <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            Branch
+          </div>
+          <DropdownMenuItem onClick={onMerge}>
+            <GitMerge className="h-4 w-4" />
+            Merge to Base
+            <span className="ml-auto text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+              M
+            </span>
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={onResolveConflicts}>
+            <GitMerge className="h-4 w-4" />
+            Resolve Conflicts
+            <span className="ml-auto text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+              F
+            </span>
+          </DropdownMenuItem>
+
+          {(uncommittedAdded > 0 ||
+            uncommittedRemoved > 0 ||
+            branchDiffAdded > 0 ||
+            branchDiffRemoved > 0 ||
+            prUrl) && <DropdownMenuSeparator />}
+
+          {(uncommittedAdded > 0 || uncommittedRemoved > 0) && (
+            <DropdownMenuItem onClick={handleUncommittedDiffClick}>
+              <Pencil className="h-4 w-4" />
+              <span>Uncommitted</span>
+              <span className="ml-auto text-xs">
+                <span className="text-green-500">+{uncommittedAdded}</span>
+                {' / '}
+                <span className="text-red-500">-{uncommittedRemoved}</span>
+              </span>
+            </DropdownMenuItem>
+          )}
+
+          {(branchDiffAdded > 0 || branchDiffRemoved > 0) && (
+            <DropdownMenuItem onClick={handleBranchDiffClick}>
+              <GitBranch className="h-4 w-4" />
+              <span>Branch diff</span>
+              <span className="ml-auto text-xs">
+                <span className="text-green-500">+{branchDiffAdded}</span>
+                {' / '}
+                <span className="text-red-500">-{branchDiffRemoved}</span>
+              </span>
+            </DropdownMenuItem>
+          )}
+
+          {prUrl && prNumber && (
+            <DropdownMenuItem asChild>
+              <a
+                href={prUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cn(
+                  displayStatus
+                    ? getPrStatusDisplay(displayStatus).className
+                    : ''
+                )}
+              >
+                {displayStatus === 'merged' ? (
+                  <GitMerge className="h-4 w-4" />
+                ) : (
+                  <GitPullRequest className="h-4 w-4" />
+                )}
+                <span>#{prNumber}</span>
+                <CheckStatusButton
+                  status={checkStatus ?? null}
+                  projectPath={activeWorktreePath}
+                />
+              </a>
+            </DropdownMenuItem>
+          )}
+
+          <DropdownMenuSeparator />
+
+          {!sessionHasMessages && (
             <DropdownMenuSub>
               <DropdownMenuSubTrigger className="[&>svg:last-child]:!ml-2">
                 <Sparkles className="mr-2 h-4 w-4" />
@@ -351,78 +354,78 @@ export function MobileToolbarMenu({
                   {selectedBackend}
                 </span>
               </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent>
-              <DropdownMenuRadioGroup
-                value={selectedBackend}
-                onValueChange={v =>
-                  onBackendChange(v as 'claude' | 'codex' | 'opencode')
-                }
-              >
-                {installedBackends.includes('claude') && (
-                  <DropdownMenuRadioItem value="claude">
-                    Claude
-                  </DropdownMenuRadioItem>
-                )}
-                {installedBackends.includes('codex') && (
-                  <DropdownMenuRadioItem value="codex">
-                    Codex{' '}
-                    <span className="ml-1 rounded bg-primary/15 px-1 py-px text-[9px] font-semibold uppercase text-primary">
-                      BETA
-                    </span>
-                  </DropdownMenuRadioItem>
-                )}
-                {installedBackends.includes('opencode') && (
-                  <DropdownMenuRadioItem value="opencode">
-                    OpenCode{' '}
-                    <span className="ml-1 rounded bg-primary/15 px-1 py-px text-[9px] font-semibold uppercase text-primary">
-                      BETA
-                    </span>
-                  </DropdownMenuRadioItem>
-                )}
-              </DropdownMenuRadioGroup>
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
-        )}
-
-        {customCliProfiles.length > 0 &&
-          !providerLocked &&
-          selectedBackend === 'claude' && (
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger>
-                <Sparkles className="mr-2 h-4 w-4" />
-                <span>Provider</span>
-                <span className="ml-auto text-xs text-muted-foreground">
-                  {providerDisplayName}
-                </span>
-              </DropdownMenuSubTrigger>
               <DropdownMenuSubContent>
                 <DropdownMenuRadioGroup
-                  value={selectedProvider ?? '__anthropic__'}
-                  onValueChange={handleProviderChange}
+                  value={selectedBackend}
+                  onValueChange={v =>
+                    onBackendChange(v as 'claude' | 'codex' | 'opencode')
+                  }
                 >
-                  <DropdownMenuRadioItem value="__anthropic__">
-                    Anthropic
-                  </DropdownMenuRadioItem>
-                  {customCliProfiles.length > 0 && (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuLabel className="text-xs text-muted-foreground">
-                        Custom Providers
-                      </DropdownMenuLabel>
-                      {customCliProfiles.map(profile => (
-                        <DropdownMenuRadioItem
-                          key={profile.name}
-                          value={profile.name}
-                        >
-                          {profile.name}
-                        </DropdownMenuRadioItem>
-                      ))}
-                    </>
+                  {installedBackends.includes('claude') && (
+                    <DropdownMenuRadioItem value="claude">
+                      Claude
+                    </DropdownMenuRadioItem>
+                  )}
+                  {installedBackends.includes('codex') && (
+                    <DropdownMenuRadioItem value="codex">
+                      Codex{' '}
+                      <span className="ml-1 rounded bg-primary/15 px-1 py-px text-[9px] font-semibold uppercase text-primary">
+                        BETA
+                      </span>
+                    </DropdownMenuRadioItem>
+                  )}
+                  {installedBackends.includes('opencode') && (
+                    <DropdownMenuRadioItem value="opencode">
+                      OpenCode{' '}
+                      <span className="ml-1 rounded bg-primary/15 px-1 py-px text-[9px] font-semibold uppercase text-primary">
+                        BETA
+                      </span>
+                    </DropdownMenuRadioItem>
                   )}
                 </DropdownMenuRadioGroup>
               </DropdownMenuSubContent>
             </DropdownMenuSub>
           )}
+
+          {customCliProfiles.length > 0 &&
+            !providerLocked &&
+            selectedBackend === 'claude' && (
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  <span>Provider</span>
+                  <span className="ml-auto text-xs text-muted-foreground">
+                    {providerDisplayName}
+                  </span>
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent>
+                  <DropdownMenuRadioGroup
+                    value={selectedProvider ?? '__anthropic__'}
+                    onValueChange={handleProviderChange}
+                  >
+                    <DropdownMenuRadioItem value="__anthropic__">
+                      Anthropic
+                    </DropdownMenuRadioItem>
+                    {customCliProfiles.length > 0 && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuLabel className="text-xs text-muted-foreground">
+                          Custom Providers
+                        </DropdownMenuLabel>
+                        {customCliProfiles.map(profile => (
+                          <DropdownMenuRadioItem
+                            key={profile.name}
+                            value={profile.name}
+                          >
+                            {profile.name}
+                          </DropdownMenuRadioItem>
+                        ))}
+                      </>
+                    )}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            )}
 
           {isMobile ? (
             <DropdownMenuItem onSelect={openModelSheet}>
@@ -456,7 +459,10 @@ export function MobileToolbarMenu({
                   onValueChange={handleModelChange}
                 >
                   {filteredModelOptions.map(option => (
-                    <DropdownMenuRadioItem key={option.value} value={option.value}>
+                    <DropdownMenuRadioItem
+                      key={option.value}
+                      value={option.value}
+                    >
                       {option.label}
                     </DropdownMenuRadioItem>
                   ))}
@@ -465,101 +471,103 @@ export function MobileToolbarMenu({
             </DropdownMenuSub>
           )}
 
-        {hideThinkingLevel ? null : useAdaptiveThinking || isCodex ? (
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger className="[&>svg:last-child]:!ml-2">
-              <Brain className="mr-2 h-4 w-4" />
-              <span>Effort</span>
-              <span className="ml-auto w-16 text-right text-xs text-muted-foreground">
-                {
-                  EFFORT_LEVEL_OPTIONS.find(
-                    o => o.value === selectedEffortLevel
-                  )?.label
-                }
-              </span>
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent>
-              <DropdownMenuRadioGroup
-                value={selectedEffortLevel}
-                onValueChange={handleEffortLevelChange}
-              >
-                {EFFORT_LEVEL_OPTIONS.map(option => (
-                  <DropdownMenuRadioItem
-                    key={option.value}
-                    value={option.value}
-                  >
-                    {option.label}
-                    <span className="ml-auto pl-4 text-xs text-muted-foreground">
-                      {option.description}
-                    </span>
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
-        ) : (
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger className="[&>svg:last-child]:!ml-2">
-              <Brain className="mr-2 h-4 w-4" />
-              <span>Thinking</span>
-              <span className="ml-auto w-16 text-right text-xs text-muted-foreground">
-                {
-                  THINKING_LEVEL_OPTIONS.find(
-                    o => o.value === selectedThinkingLevel
-                  )?.label
-                }
-              </span>
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent>
-              <DropdownMenuRadioGroup
-                value={selectedThinkingLevel}
-                onValueChange={handleThinkingLevelChange}
-              >
-                {THINKING_LEVEL_OPTIONS.map(option => (
-                  <DropdownMenuRadioItem
-                    key={option.value}
-                    value={option.value}
-                  >
-                    {option.label}
-                    <span className="ml-auto pl-4 text-xs text-muted-foreground">
-                      {option.tokens}
-                    </span>
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
-        )}
+          {hideThinkingLevel ? null : useAdaptiveThinking || isCodex ? (
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger className="[&>svg:last-child]:!ml-2">
+                <Brain className="mr-2 h-4 w-4" />
+                <span>Effort</span>
+                <span className="ml-auto w-16 text-right text-xs text-muted-foreground">
+                  {
+                    EFFORT_LEVEL_OPTIONS.find(
+                      o => o.value === selectedEffortLevel
+                    )?.label
+                  }
+                </span>
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent>
+                <DropdownMenuRadioGroup
+                  value={selectedEffortLevel}
+                  onValueChange={handleEffortLevelChange}
+                >
+                  {EFFORT_LEVEL_OPTIONS.map(option => (
+                    <DropdownMenuRadioItem
+                      key={option.value}
+                      value={option.value}
+                    >
+                      {option.label}
+                      <span className="ml-auto pl-4 text-xs text-muted-foreground">
+                        {option.description}
+                      </span>
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          ) : (
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger className="[&>svg:last-child]:!ml-2">
+                <Brain className="mr-2 h-4 w-4" />
+                <span>Thinking</span>
+                <span className="ml-auto w-16 text-right text-xs text-muted-foreground">
+                  {
+                    THINKING_LEVEL_OPTIONS.find(
+                      o => o.value === selectedThinkingLevel
+                    )?.label
+                  }
+                </span>
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent>
+                <DropdownMenuRadioGroup
+                  value={selectedThinkingLevel}
+                  onValueChange={handleThinkingLevelChange}
+                >
+                  {THINKING_LEVEL_OPTIONS.map(option => (
+                    <DropdownMenuRadioItem
+                      key={option.value}
+                      value={option.value}
+                    >
+                      {option.label}
+                      <span className="ml-auto pl-4 text-xs text-muted-foreground">
+                        {option.tokens}
+                      </span>
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          )}
 
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger className="[&>svg:last-child]:!ml-2">
-            {executionMode === 'plan' && (
-              <ClipboardList className="mr-2 h-4 w-4" />
-            )}
-            {executionMode === 'build' && <Hammer className="mr-2 h-4 w-4" />}
-            {executionMode === 'yolo' && <Zap className="mr-2 h-4 w-4" />}
-            <span>Mode</span>
-            <span className="ml-auto w-16 text-right text-xs text-muted-foreground capitalize">
-              {executionMode}
-            </span>
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent>
-            <DropdownMenuRadioGroup
-              value={executionMode}
-              onValueChange={v => onSetExecutionMode(v as ExecutionMode)}
-            >
-              <DropdownMenuRadioItem value="plan">Plan</DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="build">Build</DropdownMenuRadioItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuRadioItem
-                value="yolo"
-                className="text-red-600 focus:text-red-600 dark:text-red-400 dark:focus:text-red-400"
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger className="[&>svg:last-child]:!ml-2">
+              {executionMode === 'plan' && (
+                <ClipboardList className="mr-2 h-4 w-4" />
+              )}
+              {executionMode === 'build' && <Hammer className="mr-2 h-4 w-4" />}
+              {executionMode === 'yolo' && <Zap className="mr-2 h-4 w-4" />}
+              <span>Mode</span>
+              <span className="ml-auto w-16 text-right text-xs text-muted-foreground capitalize">
+                {executionMode}
+              </span>
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              <DropdownMenuRadioGroup
+                value={executionMode}
+                onValueChange={v => onSetExecutionMode(v as ExecutionMode)}
               >
-                Yolo
-              </DropdownMenuRadioItem>
-            </DropdownMenuRadioGroup>
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
+                <DropdownMenuRadioItem value="plan">Plan</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="build">
+                  Build
+                </DropdownMenuRadioItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuRadioItem
+                  value="yolo"
+                  className="text-red-600 focus:text-red-600 dark:text-red-400 dark:focus:text-red-400"
+                >
+                  Yolo
+                </DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
         </DropdownMenuContent>
       </DropdownMenu>
       <Sheet open={modelSheetOpen} onOpenChange={setModelSheetOpen}>
@@ -592,7 +600,8 @@ export function MobileToolbarMenu({
                 type="button"
                 className={cn(
                   'flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground',
-                  selectedModel === option.value && 'bg-accent text-accent-foreground'
+                  selectedModel === option.value &&
+                    'bg-accent text-accent-foreground'
                 )}
                 onClick={() => {
                   handleModelChange(option.value)
@@ -600,7 +609,9 @@ export function MobileToolbarMenu({
                 }}
               >
                 <span className="flex-1">{option.label}</span>
-                {selectedModel === option.value && <Check className="h-4 w-4" />}
+                {selectedModel === option.value && (
+                  <Check className="h-4 w-4" />
+                )}
               </button>
             ))}
             {visibleModelOptions.length === 0 && (

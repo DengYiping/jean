@@ -290,7 +290,8 @@ export function DesktopToolbarControls({
                       <DropdownMenuCheckboxItem
                         key={`${backend}-${server.name}`}
                         checked={
-                          !server.disabled && enabledMcpServers.includes(server.name)
+                          !server.disabled &&
+                          enabledMcpServers.includes(server.name)
                         }
                         onCheckedChange={() => onToggleMcpServer(server.name)}
                         disabled={server.disabled}
@@ -543,7 +544,11 @@ export function DesktopToolbarControls({
               </TooltipTrigger>
               <TooltipContent>Switch backend (Tab)</TooltipContent>
             </Tooltip>
-            <DropdownMenuContent align="start" className="min-w-40" onCloseAutoFocus={focusChatInput}>
+            <DropdownMenuContent
+              align="start"
+              className="min-w-40"
+              onCloseAutoFocus={focusChatInput}
+            >
               <DropdownMenuRadioGroup
                 value={selectedBackend}
                 onValueChange={v =>
@@ -601,7 +606,12 @@ export function DesktopToolbarControls({
                 </TooltipTrigger>
                 <TooltipContent>Provider (⌘⇧P)</TooltipContent>
               </Tooltip>
-              <DropdownMenuContent align="start" className="min-w-40" onEscapeKeyDown={e => e.stopPropagation()} onCloseAutoFocus={focusChatInput}>
+              <DropdownMenuContent
+                align="start"
+                className="min-w-40"
+                onEscapeKeyDown={e => e.stopPropagation()}
+                onCloseAutoFocus={focusChatInput}
+              >
                 <DropdownMenuRadioGroup
                   value={selectedProvider ?? '__anthropic__'}
                   onValueChange={handleProviderChange}
@@ -762,7 +772,11 @@ export function DesktopToolbarControls({
               {`Effort: ${EFFORT_LEVEL_OPTIONS.find(o => o.value === selectedEffortLevel)?.label} (⌘⇧E)`}
             </TooltipContent>
           </Tooltip>
-          <DropdownMenuContent align="start" onEscapeKeyDown={e => e.stopPropagation()} onCloseAutoFocus={focusChatInput}>
+          <DropdownMenuContent
+            align="start"
+            onEscapeKeyDown={e => e.stopPropagation()}
+            onCloseAutoFocus={focusChatInput}
+          >
             <DropdownMenuRadioGroup
               value={selectedEffortLevel}
               onValueChange={handleEffortLevelChange}
@@ -815,7 +829,11 @@ export function DesktopToolbarControls({
               {`Thinking: ${THINKING_LEVEL_OPTIONS.find(o => o.value === selectedThinkingLevel)?.label} (⌘⇧E)`}
             </TooltipContent>
           </Tooltip>
-          <DropdownMenuContent align="start" onEscapeKeyDown={e => e.stopPropagation()} onCloseAutoFocus={focusChatInput}>
+          <DropdownMenuContent
+            align="start"
+            onEscapeKeyDown={e => e.stopPropagation()}
+            onCloseAutoFocus={focusChatInput}
+          >
             <DropdownMenuRadioGroup
               value={selectedThinkingLevel}
               onValueChange={handleThinkingLevelChange}

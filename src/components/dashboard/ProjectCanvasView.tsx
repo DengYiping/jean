@@ -72,7 +72,6 @@ import { PlanDialog } from '@/components/chat/PlanDialog'
 import { RecapDialog } from '@/components/chat/RecapDialog'
 import { SessionChatModal } from '@/components/chat/SessionChatModal'
 
-
 import { LabelModal } from '@/components/chat/LabelModal'
 import { getLabelTextColor } from '@/lib/label-colors'
 import {
@@ -192,7 +191,8 @@ function getSessionMetrics(cards: SessionCardData[]) {
       c.status === 'planning' || c.status === 'vibing' || c.status === 'yoloing'
   ).length
   const latestUpdatedAt = cards.reduce(
-    (latest, card) => Math.max(latest, card.session.updated_at ?? card.session.created_at),
+    (latest, card) =>
+      Math.max(latest, card.session.updated_at ?? card.session.created_at),
     0
   )
 
@@ -284,11 +284,18 @@ function WorktreeSectionHeader({
       pickRemoteOrRun(async remote => {
         const toastId = toast.loading('Pushing changes...')
         try {
-          const result = await gitPush(worktree.path, worktree.pr_number, remote)
+          const result = await gitPush(
+            worktree.path,
+            worktree.pr_number,
+            remote
+          )
           triggerImmediateGitPoll()
           fetchWorktreesStatus(projectId)
           if (result.fellBack) {
-            toast.warning('Could not push to PR branch, pushed to new branch instead', { id: toastId })
+            toast.warning(
+              'Could not push to PR branch, pushed to new branch instead',
+              { id: toastId }
+            )
           } else {
             toast.success('Changes pushed', { id: toastId })
           }
@@ -367,7 +374,7 @@ function WorktreeSectionHeader({
           <div className="flex min-w-0 items-start gap-2 sm:items-center">
             {shortcutNumber !== undefined && (
               <kbd className="hidden shrink-0 h-4 min-w-4 items-center justify-center rounded border border-border/50 bg-muted/50 px-0.5 font-mono text-muted-foreground sm:inline-flex">
-                <span className='text-[9px]'>⌘{shortcutNumber}</span>
+                <span className="text-[9px]">⌘{shortcutNumber}</span>
               </kbd>
             )}
             {hasRunningTerminal && (
@@ -734,15 +741,17 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
     worktreeId: selectedFlatCard?.worktreeId ?? '',
     worktreePath: selectedFlatCard?.worktreePath ?? '',
   })
-  const { handleClearContextApproval, handleClearContextApprovalBuild } = useClearContextApproval({
-    worktreeId: selectedFlatCard?.worktreeId ?? '',
-    worktreePath: selectedFlatCard?.worktreePath ?? '',
-  })
-  const { handleWorktreeApproval, handleWorktreeApprovalYolo } = useWorktreeApproval({
-    worktreeId: selectedFlatCard?.worktreeId ?? '',
-    worktreePath: selectedFlatCard?.worktreePath ?? '',
-    projectId: projectId ?? null,
-  })
+  const { handleClearContextApproval, handleClearContextApprovalBuild } =
+    useClearContextApproval({
+      worktreeId: selectedFlatCard?.worktreeId ?? '',
+      worktreePath: selectedFlatCard?.worktreePath ?? '',
+    })
+  const { handleWorktreeApproval, handleWorktreeApprovalYolo } =
+    useWorktreeApproval({
+      worktreeId: selectedFlatCard?.worktreeId ?? '',
+      worktreePath: selectedFlatCard?.worktreePath ?? '',
+      projectId: projectId ?? null,
+    })
 
   // Archive mutations - need to handle per-worktree
   const archiveWorktree = useArchiveWorktree()
@@ -815,9 +824,15 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
         setSelectedWorktreeModal(null)
       }
     }
-    window.addEventListener('close-worktree-modal', handleCloseModal as EventListener)
+    window.addEventListener(
+      'close-worktree-modal',
+      handleCloseModal as EventListener
+    )
     return () =>
-      window.removeEventListener('close-worktree-modal', handleCloseModal as EventListener)
+      window.removeEventListener(
+        'close-worktree-modal',
+        handleCloseModal as EventListener
+      )
   }, [selectedWorktreeModal?.worktreeId])
 
   // Record last opened worktree+session per project for restoration on project switch
@@ -858,7 +873,9 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
       ? { worktreeId: selectedWorktreeModal.worktreeId }
       : highlightedCardRef.current
     if (!highlighted) return
-    const cardIndex = flatCards.findIndex(fc => fc.worktreeId === highlighted.worktreeId)
+    const cardIndex = flatCards.findIndex(
+      fc => fc.worktreeId === highlighted.worktreeId
+    )
     if (cardIndex !== -1 && cardIndex !== selectedIndex) {
       setSelectedIndex(cardIndex)
     }
@@ -962,7 +979,8 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
     const lastOpened = lastOpenedPerProject[projectId]
     if (lastOpened) {
       const worktreeSessions =
-        sessionsByWorktreeIdRef.current.get(lastOpened.worktreeId)?.sessions ?? []
+        sessionsByWorktreeIdRef.current.get(lastOpened.worktreeId)?.sessions ??
+        []
       const hasSavedSession = worktreeSessions.some(
         session => session.id === lastOpened.sessionId
       )
@@ -1087,7 +1105,8 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
       const { activeSessionIds, setActiveSession, setLastOpenedForProject } =
         useChatStore.getState()
       const existingSessionId = activeSessionIds[worktreeId]
-      const firstSessionId = sessionsByWorktreeIdRef.current.get(worktreeId)?.sessions[0]?.id
+      const firstSessionId =
+        sessionsByWorktreeIdRef.current.get(worktreeId)?.sessions[0]?.id
       const targetSessionId = existingSessionId ?? firstSessionId
 
       if (targetSessionId) {
@@ -1163,7 +1182,12 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
         'open-worktree-by-index',
         handleOpenWorktreeByIndex
       )
-  }, [worktreeSections, flatCards, handleWorktreeClick, handleSelectedIndexChange])
+  }, [
+    worktreeSections,
+    flatCards,
+    handleWorktreeClick,
+    handleSelectedIndexChange,
+  ])
 
   // Cancel running session via cancel-prompt event (dispatched by centralized keybinding system)
   useEffect(() => {
@@ -1580,9 +1604,15 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
           <div className="flex flex-col shrink-0">
             <div className="flex items-center gap-2">
               <h2 className="truncate text-lg font-semibold">{project.name}</h2>
-              <NewIssuesBadge projectPath={project.path} projectId={projectId} />
+              <NewIssuesBadge
+                projectPath={project.path}
+                projectId={projectId}
+              />
               <OpenPRsBadge projectPath={project.path} projectId={projectId} />
-              <SecurityAlertsBadge projectPath={project.path} projectId={projectId} />
+              <SecurityAlertsBadge
+                projectPath={project.path}
+                projectId={projectId}
+              />
               <FailedRunsBadge projectPath={project.path} />
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -1769,7 +1799,8 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
                       />
                     )
                   }
-                  const thisShortcut = ++shortcutNum <= 9 ? shortcutNum : undefined
+                  const thisShortcut =
+                    ++shortcutNum <= 9 ? shortcutNum : undefined
                   return (
                     <div
                       key={section.worktree.id}
@@ -1814,8 +1845,14 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
           onApproveYolo={handleDialogApproveYolo}
           onClearContextApprove={handleDialogClearContextApprove}
           onClearContextBuildApprove={handleDialogClearContextApproveBuild}
-          onWorktreeBuildApprove={handleWorktreeApproval ? handleDialogWorktreeApprove : undefined}
-          onWorktreeYoloApprove={handleWorktreeApprovalYolo ? handleDialogWorktreeApproveYolo : undefined}
+          onWorktreeBuildApprove={
+            handleWorktreeApproval ? handleDialogWorktreeApprove : undefined
+          }
+          onWorktreeYoloApprove={
+            handleWorktreeApprovalYolo
+              ? handleDialogWorktreeApproveYolo
+              : undefined
+          }
         />
       ) : planDialogContent ? (
         <PlanDialog
@@ -1828,8 +1865,14 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
           onApproveYolo={handleDialogApproveYolo}
           onClearContextApprove={handleDialogClearContextApprove}
           onClearContextBuildApprove={handleDialogClearContextApproveBuild}
-          onWorktreeBuildApprove={handleWorktreeApproval ? handleDialogWorktreeApprove : undefined}
-          onWorktreeYoloApprove={handleWorktreeApprovalYolo ? handleDialogWorktreeApproveYolo : undefined}
+          onWorktreeBuildApprove={
+            handleWorktreeApproval ? handleDialogWorktreeApprove : undefined
+          }
+          onWorktreeYoloApprove={
+            handleWorktreeApprovalYolo
+              ? handleDialogWorktreeApproveYolo
+              : undefined
+          }
         />
       ) : null}
 

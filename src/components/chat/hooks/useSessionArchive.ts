@@ -62,7 +62,14 @@ export function useSessionArchive({
         navigateToCanvas()
       }
     },
-    [sessions, worktreeId, worktreePath, archiveSession, navigateToCanvas, onLastSessionDeleted]
+    [
+      sessions,
+      worktreeId,
+      worktreePath,
+      archiveSession,
+      navigateToCanvas,
+      onLastSessionDeleted,
+    ]
   )
 
   // Respects removalBehavior preference — used by context menu "Delete Session"

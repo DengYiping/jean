@@ -220,7 +220,10 @@ export const ChatToolbar = memo(function ChatToolbar({
         triggerImmediateGitPoll()
         if (projectId) fetchWorktreesStatus(projectId)
         if (result.fellBack) {
-          toast.warning('Could not push to PR branch, pushed to new branch instead', { id: toastId })
+          toast.warning(
+            'Could not push to PR branch, pushed to new branch instead',
+            { id: toastId }
+          )
         } else {
           toast.success('Changes pushed', { id: toastId })
         }

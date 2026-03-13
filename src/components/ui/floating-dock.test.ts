@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { ThreadTokenUsage } from '@/types/chat'
-import { computeContextPercent, getFloatingDockUsageTotals } from './floating-dock'
+import {
+  computeContextPercent,
+  getFloatingDockUsageTotals,
+} from './floating-dock'
 
 describe('getFloatingDockUsageTotals', () => {
   it('uses Codex last-turn usage instead of summing prior turns', () => {

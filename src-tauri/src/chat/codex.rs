@@ -898,23 +898,10 @@ fn process_server_notification(
             let item_id = params.get("itemId").and_then(|v| v.as_str()).unwrap_or("");
             let delta = params.get("delta").and_then(|v| v.as_str()).unwrap_or("");
             if !delta.is_empty() {
-                let next_plan = if item_id.is_empty() {
-                    delta.to_string()
-                } else {
+                if !item_id.is_empty() {
                     let plan = pending_plan_texts.entry(item_id.to_string()).or_default();
                     plan.push_str(delta);
-                    plan.clone()
-                };
-                upsert_codex_plan_tool(
-                    app,
-                    session_id,
-                    worktree_id,
-                    item_id,
-                    next_plan,
-                    tool_calls,
-                    content_blocks,
-                    pending_tool_ids,
-                );
+                }
             }
         }
         "turn/plan/updated" => {
@@ -1579,19 +1566,21 @@ fn process_codex_event(
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .to_string();
-                    if !item_id.is_empty() {
+                    if !item_id.is_empty() && !initial_plan.is_empty() {
                         pending_plan_texts.insert(item_id.to_string(), initial_plan.clone());
                     }
-                    upsert_codex_plan_tool(
-                        app,
-                        session_id,
-                        worktree_id,
-                        item_id,
-                        initial_plan,
-                        tool_calls,
-                        content_blocks,
-                        pending_tool_ids,
-                    );
+                    if !initial_plan.is_empty() {
+                        upsert_codex_plan_tool(
+                            app,
+                            session_id,
+                            worktree_id,
+                            item_id,
+                            initial_plan,
+                            tool_calls,
+                            content_blocks,
+                            pending_tool_ids,
+                        );
+                    }
                 }
                 "mcp_tool_call" => {
                     let server = item
@@ -1825,24 +1814,31 @@ fn process_codex_event(
                     }
                 }
                 "plan" => {
-                    let final_plan = item
+                    let item_text = item
                         .get("text")
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .to_string();
-                    if !item_id.is_empty() {
-                        pending_plan_texts.remove(item_id);
+                    let final_plan = if item_text.is_empty() && !item_id.is_empty() {
+                        pending_plan_texts.remove(item_id).unwrap_or_default()
+                    } else {
+                        if !item_id.is_empty() {
+                            pending_plan_texts.remove(item_id);
+                        }
+                        item_text
+                    };
+                    if !final_plan.is_empty() {
+                        upsert_codex_plan_tool(
+                            app,
+                            session_id,
+                            worktree_id,
+                            item_id,
+                            final_plan,
+                            tool_calls,
+                            content_blocks,
+                            pending_tool_ids,
+                        );
                     }
-                    upsert_codex_plan_tool(
-                        app,
-                        session_id,
-                        worktree_id,
-                        item_id,
-                        final_plan,
-                        tool_calls,
-                        content_blocks,
-                        pending_tool_ids,
-                    );
                 }
                 "mcp_tool_call" => {
                     let output = item

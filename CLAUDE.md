@@ -6,7 +6,20 @@
 
 ## Overview
 
-This repository is a template with sensible defaults for building Tauri React apps.
+This repository is a fork of the upstream `coollabsio/jean` project. It is a Tauri desktop app for managing projects, worktrees, terminals, and chat sessions across Claude CLI, Codex CLI, and OpenCode.
+
+## Fork Context
+
+When documenting or evaluating fork-specific behavior, treat `origin/main` as the upstream baseline and compare against `origin/ydeng-main` (or the current fork branch if it is ahead of `ydeng-main`).
+
+Current fork-specific focus areas:
+
+- Codex collaboration parity: plan approval flows, `request_user_input`, and restoration of plan/question state from Codex run history
+- Live Codex visibility: sub-agent progress, streamed todo updates, improved FileChange rendering, and local link handling
+- Repo-local Codex skill discovery
+- Usage/context telemetry improvements: floating usage dock, context meter, and token accounting fixes
+- Local tooling customization: custom git executable override, custom OpenCode launcher command, host-installed AI CLIs, and IntelliJ editor support
+- Worktree/session UX: build/yolo creation shortcuts, PR preview/checkout improvements, waiting-state cleanup, and diff viewer polish
 
 ## Core Rules
 
@@ -15,6 +28,7 @@ This repository is a template with sensible defaults for building Tauri React ap
 - Read @docs/tasks.md for task management
 - Review `docs/developer/architecture-guide.md` for high-level patterns
 - Check `docs/developer/` for system-specific patterns (command-system.md, performance-patterns.md, etc.)
+- For fork-specific product copy or release notes, review `git log --oneline origin/main..origin/ydeng-main`
 - Check git status and project structure
 
 ### Development Practices

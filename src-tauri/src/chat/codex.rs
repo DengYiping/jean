@@ -183,6 +183,7 @@ pub fn build_turn_start_params(
     thread_id: &str,
     prompt: &str,
     working_dir: &std::path::Path,
+    model: Option<&str>,
     execution_mode: Option<&str>,
     reasoning_effort: Option<&str>,
     add_dirs: &[String],
@@ -200,6 +201,22 @@ pub fn build_turn_start_params(
     if let Some(effort) = reasoning_effort {
         params["effort"] = serde_json::json!(effort);
     }
+
+    let collaboration_model = model.unwrap_or("gpt-5.4");
+    let mut settings = serde_json::json!({
+        "model": collaboration_model,
+    });
+    if let Some(effort) = reasoning_effort {
+        settings["reasoningEffort"] = serde_json::json!(effort);
+    }
+    params["collaborationMode"] = serde_json::json!({
+        "mode": if execution_mode.unwrap_or("plan") == "plan" {
+            "plan"
+        } else {
+            "default"
+        },
+        "settings": settings,
+    });
 
     // Sandbox policy with writable roots (for build/yolo modes with add_dirs)
     let mode = execution_mode.unwrap_or("plan");
@@ -329,6 +346,7 @@ pub fn execute_codex_via_server(
         &thread_id,
         prompt,
         working_dir,
+        model,
         execution_mode,
         reasoning_effort,
         add_dirs,
@@ -442,6 +460,7 @@ fn process_turn_events(
     let mut tool_calls: Vec<ToolCall> = Vec::new();
     let mut content_blocks: Vec<ContentBlock> = Vec::new();
     let mut pending_tool_ids: HashMap<String, String> = HashMap::new();
+    let mut pending_plan_texts: HashMap<String, String> = HashMap::new();
     let mut seen_plan_ids_for_history: HashSet<String> = HashSet::new();
     let mut completed = false;
     let mut cancelled = false;
@@ -551,6 +570,7 @@ fn process_turn_events(
                     &mut tool_calls,
                     &mut content_blocks,
                     &mut pending_tool_ids,
+                    &mut pending_plan_texts,
                     &mut completed,
                     &mut cancelled,
                     &mut usage,
@@ -595,6 +615,8 @@ fn process_turn_events(
                     &method,
                     &params,
                     is_build_mode,
+                    &mut tool_calls,
+                    &mut content_blocks,
                 );
             }
             ServerEvent::ServerDied => {
@@ -655,7 +677,10 @@ fn process_turn_events(
             &DoneEvent {
                 session_id: session_id.to_string(),
                 worktree_id: worktree_id.to_string(),
-                waiting_for_plan: is_plan_mode && !full_content.is_empty(),
+                waiting_for_plan: is_plan_mode
+                    && tool_calls
+                        .iter()
+                        .any(|tool_call| tool_call.name == "ExitPlanMode"),
             },
         );
     }
@@ -768,6 +793,7 @@ fn process_server_notification(
     tool_calls: &mut Vec<ToolCall>,
     content_blocks: &mut Vec<ContentBlock>,
     pending_tool_ids: &mut HashMap<String, String>,
+    pending_plan_texts: &mut HashMap<String, String>,
     completed: &mut bool,
     cancelled: &mut bool,
     usage: &mut Option<UsageData>,
@@ -820,6 +846,7 @@ fn process_server_notification(
                 tool_calls,
                 content_blocks,
                 pending_tool_ids,
+                pending_plan_texts,
                 completed,
                 usage,
                 error_emitted,
@@ -841,6 +868,7 @@ fn process_server_notification(
                 tool_calls,
                 content_blocks,
                 pending_tool_ids,
+                pending_plan_texts,
                 completed,
                 usage,
                 error_emitted,
@@ -862,10 +890,21 @@ fn process_server_notification(
                 tool_calls,
                 content_blocks,
                 pending_tool_ids,
+                pending_plan_texts,
                 completed,
                 usage,
                 error_emitted,
             );
+        }
+        "item/plan/delta" => {
+            let item_id = params.get("itemId").and_then(|v| v.as_str()).unwrap_or("");
+            let delta = params.get("delta").and_then(|v| v.as_str()).unwrap_or("");
+            if !delta.is_empty() {
+                if !item_id.is_empty() {
+                    let plan = pending_plan_texts.entry(item_id.to_string()).or_default();
+                    plan.push_str(delta);
+                }
+            }
         }
         "turn/plan/updated" => {
             if let Some(item) = synthetic_todo_list_item_from_plan_update(params) {
@@ -887,6 +926,7 @@ fn process_server_notification(
                     tool_calls,
                     content_blocks,
                     pending_tool_ids,
+                    pending_plan_texts,
                     completed,
                     usage,
                     error_emitted,
@@ -1179,6 +1219,61 @@ fn collab_tool_display_name(collab_tool: &str) -> &str {
     }
 }
 
+fn normalize_history_request_questions(questions: &[serde_json::Value]) -> serde_json::Value {
+    serde_json::Value::Array(
+        questions
+            .iter()
+            .map(|question| {
+                let mut question = question.clone();
+                if let Some(obj) = question.as_object_mut() {
+                    obj.entry("multiSelect".to_string())
+                        .or_insert(serde_json::Value::Bool(false));
+                    if !obj.contains_key("options") || obj["options"].is_null() {
+                        obj.insert("options".to_string(), serde_json::Value::Array(Vec::new()));
+                    }
+                }
+                question
+            })
+            .collect(),
+    )
+}
+
+fn upsert_history_tool_call(
+    tool_calls: &mut Vec<ToolCall>,
+    content_blocks: &mut Vec<ContentBlock>,
+    pending_tool_ids: &mut HashMap<String, String>,
+    item_id: &str,
+    tool_name: &str,
+    input: serde_json::Value,
+) {
+    let tool_id = if let Some(existing) = pending_tool_ids.get(item_id) {
+        existing.clone()
+    } else if item_id.is_empty() {
+        uuid::Uuid::new_v4().to_string()
+    } else {
+        item_id.to_string()
+    };
+
+    if let Some(existing_tool) = tool_calls.iter_mut().find(|tool| tool.id == tool_id) {
+        existing_tool.name = tool_name.to_string();
+        existing_tool.input = input;
+    } else {
+        tool_calls.push(ToolCall {
+            id: tool_id.clone(),
+            name: tool_name.to_string(),
+            input,
+            output: None,
+            parent_tool_use_id: None,
+        });
+        content_blocks.push(ContentBlock::ToolUse {
+            tool_call_id: tool_id.clone(),
+        });
+        if !item_id.is_empty() {
+            pending_tool_ids.insert(item_id.to_string(), tool_id);
+        }
+    }
+}
+
 /// Handle an approval request from the app-server.
 fn handle_approval_request(
     app: &tauri::AppHandle,
@@ -1188,6 +1283,8 @@ fn handle_approval_request(
     method: &str,
     params: &serde_json::Value,
     is_build_mode: bool,
+    tool_calls: &mut Vec<ToolCall>,
+    content_blocks: &mut Vec<ContentBlock>,
 ) {
     match method {
         "item/fileChange/requestApproval" => {
@@ -1239,6 +1336,68 @@ fn handle_approval_request(
             );
             // Response will come from approve_codex_command Tauri command
         }
+        "item/tool/requestUserInput" => {
+            let item_id = params
+                .get("itemId")
+                .and_then(|v| v.as_str())
+                .filter(|value| !value.is_empty())
+                .map(ToString::to_string)
+                .unwrap_or_else(|| format!("codex-request-user-input-{rpc_id}"));
+            let mut input = serde_json::json!({
+                "questions": params
+                    .get("questions")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Array(Vec::new())),
+                "rpcId": rpc_id,
+            });
+            if let Some(questions) = input.get_mut("questions").and_then(|v| v.as_array_mut()) {
+                for question in questions {
+                    if let Some(obj) = question.as_object_mut() {
+                        obj.entry("multiSelect".to_string())
+                            .or_insert(serde_json::Value::Bool(false));
+                        if !obj.contains_key("options") || obj["options"].is_null() {
+                            obj.insert("options".to_string(), serde_json::Value::Array(Vec::new()));
+                        }
+                    }
+                }
+            }
+
+            if let Some(existing_tool) = tool_calls.iter_mut().find(|tool| tool.id == item_id) {
+                existing_tool.name = "AskUserQuestion".to_string();
+                existing_tool.input = input.clone();
+            } else {
+                tool_calls.push(ToolCall {
+                    id: item_id.clone(),
+                    name: "AskUserQuestion".to_string(),
+                    input: input.clone(),
+                    output: None,
+                    parent_tool_use_id: None,
+                });
+                content_blocks.push(ContentBlock::ToolUse {
+                    tool_call_id: item_id.clone(),
+                });
+                let _ = app.emit_all(
+                    "chat:tool_block",
+                    &ToolBlockEvent {
+                        session_id: session_id.to_string(),
+                        worktree_id: worktree_id.to_string(),
+                        tool_call_id: item_id.clone(),
+                    },
+                );
+            }
+
+            let _ = app.emit_all(
+                "chat:tool_use",
+                &ToolUseEvent {
+                    session_id: session_id.to_string(),
+                    worktree_id: worktree_id.to_string(),
+                    id: item_id,
+                    name: "AskUserQuestion".to_string(),
+                    input,
+                    parent_tool_use_id: None,
+                },
+            );
+        }
         _ => {
             log::debug!("Unknown approval request method: {method}");
             // Auto-accept unknown approvals to avoid blocking
@@ -1284,6 +1443,66 @@ fn format_codex_user_error(error_msg: &str) -> String {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn upsert_codex_plan_tool(
+    app: &tauri::AppHandle,
+    session_id: &str,
+    worktree_id: &str,
+    item_id: &str,
+    plan_text: String,
+    tool_calls: &mut Vec<ToolCall>,
+    content_blocks: &mut Vec<ContentBlock>,
+    pending_tool_ids: &mut HashMap<String, String>,
+) {
+    let tool_id = if let Some(existing) = pending_tool_ids.get(item_id) {
+        existing.clone()
+    } else if item_id.is_empty() {
+        uuid::Uuid::new_v4().to_string()
+    } else {
+        item_id.to_string()
+    };
+    let tool_input = serde_json::json!({ "plan": plan_text });
+
+    if let Some(existing_tool) = tool_calls.iter_mut().find(|t| t.id == tool_id) {
+        existing_tool.name = "ExitPlanMode".to_string();
+        existing_tool.input = tool_input.clone();
+    } else {
+        tool_calls.push(ToolCall {
+            id: tool_id.clone(),
+            name: "ExitPlanMode".to_string(),
+            input: tool_input.clone(),
+            output: None,
+            parent_tool_use_id: None,
+        });
+        content_blocks.push(ContentBlock::ToolUse {
+            tool_call_id: tool_id.clone(),
+        });
+        if !item_id.is_empty() {
+            pending_tool_ids.insert(item_id.to_string(), tool_id.clone());
+        }
+        let _ = app.emit_all(
+            "chat:tool_block",
+            &ToolBlockEvent {
+                session_id: session_id.to_string(),
+                worktree_id: worktree_id.to_string(),
+                tool_call_id: tool_id.clone(),
+            },
+        );
+    }
+
+    let _ = app.emit_all(
+        "chat:tool_use",
+        &ToolUseEvent {
+            session_id: session_id.to_string(),
+            worktree_id: worktree_id.to_string(),
+            id: tool_id,
+            name: "ExitPlanMode".to_string(),
+            input: tool_input,
+            parent_tool_use_id: None,
+        },
+    );
+}
+
 /// Process a single Codex JSONL event. Shared between attached and detached tailers.
 #[allow(clippy::too_many_arguments)]
 fn process_codex_event(
@@ -1297,6 +1516,7 @@ fn process_codex_event(
     tool_calls: &mut Vec<ToolCall>,
     content_blocks: &mut Vec<ContentBlock>,
     pending_tool_ids: &mut HashMap<String, String>,
+    pending_plan_texts: &mut HashMap<String, String>,
     completed: &mut bool,
     usage: &mut Option<UsageData>,
     error_emitted: &mut bool,
@@ -1396,6 +1616,28 @@ fn process_codex_event(
                             tool_call_id: tool_id,
                         },
                     );
+                }
+                "plan" => {
+                    let initial_plan = item
+                        .get("text")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    if !item_id.is_empty() && !initial_plan.is_empty() {
+                        pending_plan_texts.insert(item_id.to_string(), initial_plan.clone());
+                    }
+                    if !initial_plan.is_empty() {
+                        upsert_codex_plan_tool(
+                            app,
+                            session_id,
+                            worktree_id,
+                            item_id,
+                            initial_plan,
+                            tool_calls,
+                            content_blocks,
+                            pending_tool_ids,
+                        );
+                    }
                 }
                 "mcp_tool_call" => {
                     let server = item
@@ -1628,6 +1870,33 @@ fn process_codex_event(
                         );
                     }
                 }
+                "plan" => {
+                    let item_text = item
+                        .get("text")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let final_plan = if item_text.is_empty() && !item_id.is_empty() {
+                        pending_plan_texts.remove(item_id).unwrap_or_default()
+                    } else {
+                        if !item_id.is_empty() {
+                            pending_plan_texts.remove(item_id);
+                        }
+                        item_text
+                    };
+                    if !final_plan.is_empty() {
+                        upsert_codex_plan_tool(
+                            app,
+                            session_id,
+                            worktree_id,
+                            item_id,
+                            final_plan,
+                            tool_calls,
+                            content_blocks,
+                            pending_tool_ids,
+                        );
+                    }
+                }
                 "mcp_tool_call" => {
                     let output = item
                         .get("output")
@@ -1738,6 +2007,7 @@ fn process_codex_event(
 
             if let Some(tool_id) = pending_tool_ids.get(item_id) {
                 let tool_name = match item_type {
+                    "plan" => Some("ExitPlanMode".to_string()),
                     "todo_list" => Some("CodexTodoList".to_string()),
                     "collab_tool_call" => item
                         .get("tool")
@@ -1846,6 +2116,8 @@ pub fn parse_codex_run_to_message(
     let mut content_blocks: Vec<ContentBlock> = Vec::new();
     let mut pending_tool_ids: std::collections::HashMap<String, String> =
         std::collections::HashMap::new();
+    let mut pending_plan_texts: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
 
     for line in lines {
         if line.trim().is_empty() {
@@ -1863,6 +2135,36 @@ pub fn parse_codex_run_to_message(
             .unwrap_or(false)
         {
             continue;
+        }
+
+        if let Some(method) = msg.get("method").and_then(|v| v.as_str()) {
+            if method == "item/tool/requestUserInput" {
+                let params = msg.get("params").unwrap_or(&serde_json::Value::Null);
+                let item_id = params
+                    .get("itemId")
+                    .and_then(|v| v.as_str())
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or("");
+                let rpc_id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+                let questions = params
+                    .get("questions")
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                let input = serde_json::json!({
+                    "questions": normalize_history_request_questions(&questions),
+                    "rpcId": rpc_id,
+                });
+                upsert_history_tool_call(
+                    &mut tool_calls,
+                    &mut content_blocks,
+                    &mut pending_tool_ids,
+                    item_id,
+                    "AskUserQuestion",
+                    input,
+                );
+                continue;
+            }
         }
 
         let event_type = msg.get("type").and_then(|v| v.as_str()).unwrap_or("");
@@ -1919,6 +2221,26 @@ pub fn parse_codex_run_to_message(
                         });
                         if !item_id.is_empty() {
                             pending_tool_ids.insert(item_id.to_string(), tool_id);
+                        }
+                    }
+                    "plan" => {
+                        let plan_text = item
+                            .get("text")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        if !item_id.is_empty() && !plan_text.is_empty() {
+                            pending_plan_texts.insert(item_id.to_string(), plan_text.clone());
+                        }
+                        if !plan_text.is_empty() {
+                            upsert_history_tool_call(
+                                &mut tool_calls,
+                                &mut content_blocks,
+                                &mut pending_tool_ids,
+                                item_id,
+                                "ExitPlanMode",
+                                serde_json::json!({ "plan": plan_text }),
+                            );
                         }
                     }
                     "mcp_tool_call" => {
@@ -2050,6 +2372,31 @@ pub fn parse_codex_run_to_message(
                             });
                         }
                     }
+                    "plan" => {
+                        let item_text = item
+                            .get("text")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let plan_text = if item_text.is_empty() && !item_id.is_empty() {
+                            pending_plan_texts.remove(item_id).unwrap_or_default()
+                        } else {
+                            if !item_id.is_empty() {
+                                pending_plan_texts.remove(item_id);
+                            }
+                            item_text
+                        };
+                        if !plan_text.is_empty() {
+                            upsert_history_tool_call(
+                                &mut tool_calls,
+                                &mut content_blocks,
+                                &mut pending_tool_ids,
+                                item_id,
+                                "ExitPlanMode",
+                                serde_json::json!({ "plan": plan_text }),
+                            );
+                        }
+                    }
                     "mcp_tool_call" => {
                         let output = item
                             .get("output")
@@ -2119,7 +2466,18 @@ pub fn parse_codex_run_to_message(
                 let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
                 let item_id = item.get("id").and_then(|v| v.as_str()).unwrap_or("");
 
-                if item_type == "todo_list" || item_type == "collab_tool_call" {
+                if item_type == "plan" {
+                    if let Some(plan_text) = item.get("text").and_then(|v| v.as_str()) {
+                        upsert_history_tool_call(
+                            &mut tool_calls,
+                            &mut content_blocks,
+                            &mut pending_tool_ids,
+                            item_id,
+                            "ExitPlanMode",
+                            serde_json::json!({ "plan": plan_text }),
+                        );
+                    }
+                } else if item_type == "todo_list" || item_type == "collab_tool_call" {
                     if let Some(tool_id) = pending_tool_ids.get(item_id) {
                         if let Some(tc) = tool_calls.iter_mut().find(|t| t.id == *tool_id) {
                             tc.input = item.clone();
@@ -2347,6 +2705,49 @@ mod tests {
     }
 
     #[test]
+    fn plan_turns_set_collaboration_mode() {
+        let params = build_turn_start_params(
+            "thread-1",
+            "Plan this",
+            std::path::Path::new("/tmp"),
+            Some("gpt-5.4-fast"),
+            Some("plan"),
+            Some("medium"),
+            &[],
+        );
+
+        assert_eq!(params["collaborationMode"]["mode"], "plan");
+        assert_eq!(
+            params["collaborationMode"]["settings"]["model"],
+            "gpt-5.4-fast"
+        );
+        assert_eq!(
+            params["collaborationMode"]["settings"]["reasoningEffort"],
+            "medium"
+        );
+    }
+
+    #[test]
+    fn non_plan_turns_reset_to_default_collaboration_mode() {
+        let params = build_turn_start_params(
+            "thread-1",
+            "Build this",
+            std::path::Path::new("/tmp"),
+            Some("gpt-5.4"),
+            Some("build"),
+            Some("medium"),
+            &[],
+        );
+
+        assert_eq!(params["collaborationMode"]["mode"], "default");
+        assert_eq!(params["collaborationMode"]["settings"]["model"], "gpt-5.4");
+        assert_eq!(
+            params["collaborationMode"]["settings"]["reasoningEffort"],
+            "medium"
+        );
+    }
+
+    #[test]
     fn turn_plan_updated_is_persisted_as_started_then_updated() {
         let params = serde_json::json!({
             "plan": {
@@ -2393,6 +2794,103 @@ mod tests {
         assert_eq!(item["type"], "todo_list");
         assert_eq!(item["items"][0]["text"], "Run tests");
         assert_eq!(item["items"][0]["status"], "pending");
+    }
+
+    #[test]
+    fn parse_codex_run_restores_plan_tools_from_history() {
+        let run = crate::chat::types::RunEntry {
+            run_id: "run-1".to_string(),
+            started_at: 1,
+            ended_at: Some(2),
+            status: crate::chat::types::RunStatus::Completed,
+            user_message_id: "user-1".to_string(),
+            assistant_message_id: Some("assistant-1".to_string()),
+            user_message: "Plan this".to_string(),
+            model: None,
+            execution_mode: Some("plan".to_string()),
+            thinking_level: None,
+            effort_level: None,
+            claude_session_id: None,
+            pid: None,
+            cancelled: false,
+            recovered: false,
+            usage: None,
+        };
+
+        let lines = vec![
+            serde_json::json!({
+                "type": "item.started",
+                "item": { "type": "plan", "id": "plan-1", "text": "" }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "item.completed",
+                "item": { "type": "plan", "id": "plan-1", "text": "# Plan\n- one\n" }
+            })
+            .to_string(),
+        ];
+
+        let message = parse_codex_run_to_message(&lines, &run).expect("message should parse");
+        let plan_tool = message
+            .tool_calls
+            .iter()
+            .find(|tool| tool.name == "ExitPlanMode")
+            .expect("plan tool should be restored");
+
+        assert_eq!(plan_tool.input["plan"], "# Plan\n- one\n");
+    }
+
+    #[test]
+    fn parse_codex_run_restores_request_user_input_tools_from_history() {
+        let run = crate::chat::types::RunEntry {
+            run_id: "run-2".to_string(),
+            started_at: 1,
+            ended_at: Some(2),
+            status: crate::chat::types::RunStatus::Completed,
+            user_message_id: "user-2".to_string(),
+            assistant_message_id: Some("assistant-2".to_string()),
+            user_message: "Question".to_string(),
+            model: None,
+            execution_mode: Some("plan".to_string()),
+            thinking_level: None,
+            effort_level: None,
+            claude_session_id: None,
+            pid: None,
+            cancelled: false,
+            recovered: false,
+            usage: None,
+        };
+
+        let lines = vec![serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "item/tool/requestUserInput",
+            "id": 42,
+            "params": {
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "itemId": "question-1",
+                "questions": [{
+                    "id": "q1",
+                    "header": "Scope",
+                    "question": "Choose one",
+                    "isOther": false,
+                    "isSecret": false,
+                    "options": [{ "label": "A", "description": "opt A" }]
+                }]
+            }
+        })
+        .to_string()];
+
+        let message = parse_codex_run_to_message(&lines, &run).expect("message should parse");
+        let question_tool = message
+            .tool_calls
+            .iter()
+            .find(|tool| tool.name == "AskUserQuestion")
+            .expect("question tool should be restored");
+
+        assert_eq!(question_tool.id, "question-1");
+        assert_eq!(question_tool.input["rpcId"], 42);
+        assert_eq!(question_tool.input["questions"][0]["id"], "q1");
     }
 }
 

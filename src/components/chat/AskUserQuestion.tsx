@@ -176,7 +176,7 @@ export function AskUserQuestion({
 
       // Custom text takes precedence
       if (answer.customText) {
-        summaryParts.push(`"${answer.customText}"`)
+        summaryParts.push(question.isSecret ? '******' : `"${answer.customText}"`)
       } else if (answer.selectedOptions.length > 0) {
         const selectedLabels = answer.selectedOptions
           .map(idx => question.options[idx]?.label)
@@ -233,6 +233,14 @@ export function AskUserQuestion({
           const answer = readOnly
             ? effectiveAnswers?.find(a => a.questionIndex === qIndex)
             : answers.get(qIndex)
+          const hasOptions = question.options.length > 0
+          const allowsCustomInput =
+            question.isOther || question.isSecret || !hasOptions
+          const inputPlaceholder = question.isSecret
+            ? 'Enter secret value...'
+            : hasOptions
+              ? 'Add details...'
+              : 'Type your answer...'
 
           return (
             <div key={qIndex}>
@@ -250,7 +258,8 @@ export function AskUserQuestion({
 
               {/* Options - indented section */}
               <div className="ml-3 space-y-3">
-                {question.multiSelect ? (
+                {hasOptions &&
+                  (question.multiSelect ? (
                   // Checkbox mode
                   <div className="space-y-2.5">
                     {question.options.map((option, oIndex) => (
@@ -288,7 +297,7 @@ export function AskUserQuestion({
                       </div>
                     ))}
                   </div>
-                ) : (
+                  ) : (
                   // Radio mode
                   <RadioGroup
                     value={answer?.selectedOptions[0]?.toString() ?? ''}
@@ -327,26 +336,28 @@ export function AskUserQuestion({
                       </div>
                     ))}
                   </RadioGroup>
-                )}
+                  ))}
 
                 {/* Show custom text if provided (read-only) or input field (editable) */}
                 {readOnly ? (
                   answer?.customText && (
                     <div className="pt-1 text-muted-foreground italic">
-                      &ldquo;{answer.customText}&rdquo;
+                      {question.isSecret ? '******' : `"${answer.customText}"`}
                     </div>
                   )
-                ) : (
+                ) : allowsCustomInput ? (
                   <div className="pt-1">
                     <Input
-                      placeholder="Or type your own answer..."
+                      type={question.isSecret ? 'password' : 'text'}
+                      autoComplete="off"
+                      placeholder={inputPlaceholder}
                       value={answers.get(qIndex)?.customText ?? ''}
                       onChange={e => updateCustomText(qIndex, e.target.value)}
                       disabled={readOnly}
                       className="cursor-text font-mono text-sm select-text bg-white dark:bg-input"
                     />
                   </div>
-                )}
+                ) : null}
               </div>
             </div>
           )

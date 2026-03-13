@@ -454,9 +454,12 @@ export interface QuestionOption {
  * Single question in AskUserQuestion tool
  */
 export interface Question {
+  id?: string
   question: string
   header?: string
   multiSelect: boolean
+  isOther?: boolean
+  isSecret?: boolean
   options: QuestionOption[]
 }
 
@@ -465,6 +468,7 @@ export interface Question {
  */
 export interface AskUserQuestionInput {
   questions: Question[]
+  rpcId?: number
 }
 
 /**

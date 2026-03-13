@@ -1792,6 +1792,13 @@ pub async fn dispatch_command(
             crate::chat::approve_codex_command(session_id, rpc_id, decision)?;
             Ok(Value::Null)
         }
+        "answer_codex_user_input" => {
+            let session_id: String = field(&args, "sessionId", "session_id")?;
+            let rpc_id: u64 = field(&args, "rpcId", "rpc_id")?;
+            let answers: Value = from_field(&args, "answers")?;
+            crate::chat::answer_codex_user_input(session_id, rpc_id, answers)?;
+            Ok(Value::Null)
+        }
 
         // =====================================================================
         // Queue management (cross-client sync)

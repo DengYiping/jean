@@ -1270,7 +1270,7 @@ export function useSendMessage() {
 
       return { previous, worktreeId }
     },
-    onSuccess: (response, { sessionId, worktreeId, executionMode }) => {
+    onSuccess: (response, { sessionId, worktreeId }) => {
       // All cancelled responses are handled by the chat:cancelled event handler,
       // which already correctly restores the user message (undo path) or preserves
       // the partial assistant response (preserve path). Letting onSuccess proceed
@@ -1280,29 +1280,7 @@ export function useSendMessage() {
         return
       }
 
-      // For Codex plan mode: inject synthetic ExitPlanMode tool call into the response
-      // so the plan approval UI renders (Codex has no native ExitPlanMode tool)
-      const { selectedBackends } = useChatStore.getState()
-      const isCodexPlan =
-        selectedBackends[sessionId] === 'codex' &&
-        executionMode === 'plan' &&
-        !response.cancelled &&
-        response.content.length > 0
-      let finalResponse = response
-      if (isCodexPlan) {
-        const syntheticId = `codex-plan-${sessionId}-${Date.now()}`
-        finalResponse = {
-          ...response,
-          tool_calls: [
-            ...response.tool_calls,
-            { id: syntheticId, name: 'ExitPlanMode', input: {} },
-          ],
-          content_blocks: [
-            ...(response.content_blocks ?? []),
-            { type: 'tool_use' as const, tool_call_id: syntheticId },
-          ],
-        }
-      }
+      const finalResponse = response
 
       // Replace the optimistic assistant message with the complete one from backend
       // This fixes a race condition where chat:done creates an optimistic message
@@ -1953,6 +1931,45 @@ export function formatAnswersAsNaturalLanguage(
   return parts.length > 0
     ? parts.join('\n\n')
     : 'No specific preferences selected.'
+}
+
+const CODEX_OTHER_OPTION_LABEL = 'None of the above'
+
+export function formatAnswersForCodexRequestUserInput(
+  questions: Question[],
+  answers: QuestionAnswer[]
+): Record<string, { answers: string[] }> {
+  const answersByQuestionIndex = new Map(
+    answers.map(answer => [answer.questionIndex, answer] as const)
+  )
+
+  return Object.fromEntries(
+    questions.map((question, questionIndex) => {
+      const answer = answersByQuestionIndex.get(questionIndex)
+      const answerList: string[] = []
+
+      if (answer) {
+        answerList.push(
+          ...answer.selectedOptions
+            .map(optionIndex => question.options[optionIndex]?.label)
+            .filter((label): label is string => !!label)
+        )
+
+        if (answer.customText) {
+          if (question.options.length > 0) {
+            if (question.isOther && answerList.length === 0) {
+              answerList.push(CODEX_OTHER_OPTION_LABEL)
+            }
+            answerList.push(`user_note: ${answer.customText}`)
+          } else {
+            answerList.push(answer.customText)
+          }
+        }
+      }
+
+      return [question.id ?? `question_${questionIndex}`, { answers: answerList }]
+    })
+  )
 }
 
 // ============================================================================

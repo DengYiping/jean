@@ -3557,6 +3557,7 @@ pub async fn open_file_in_default_app(
         let cursor_target = line_number
             .map(|line| format!("{path}:{line}"))
             .unwrap_or_else(|| path.clone());
+        let intellij_line = line_number.map(|line| line.to_string());
         let vscode_target = line_number
             .map(|line| format!("{path}:{line}"))
             .unwrap_or_else(|| path.clone());
@@ -3570,14 +3571,15 @@ pub async fn open_file_in_default_app(
                 })
                 .creation_flags(CREATE_NO_WINDOW)
                 .spawn(),
-            "intellij" => std::process::Command::new("cmd")
-                .args(if let Some(line) = line_number {
-                    vec!["/c", "idea", "--line", &line.to_string(), &path]
+            "intellij" => {
+                let mut cmd = std::process::Command::new("cmd");
+                if let Some(line) = intellij_line.as_deref() {
+                    cmd.args(["/c", "idea", "--line", line, path.as_str()]);
                 } else {
-                    vec!["/c", "idea", &path]
-                })
-                .creation_flags(CREATE_NO_WINDOW)
-                .spawn(),
+                    cmd.args(["/c", "idea", path.as_str()]);
+                }
+                cmd.creation_flags(CREATE_NO_WINDOW).spawn()
+            }
             "xcode" => return Err("Xcode is only available on macOS".to_string()),
             _ => std::process::Command::new("cmd")
                 .args(if line_number.is_some() {

@@ -65,8 +65,10 @@ jobs:
             HAS_APPLE_SIGNING=true
           fi
           echo "HAS_TAURI_SIGNING=$HAS_TAURI_SIGNING" >> "$GITHUB_ENV"
+          echo "HAS_APPLE_SIGNING=$HAS_APPLE_SIGNING" >> "$GITHUB_ENV"
           echo "RELEASE_VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "has_tauri_signing=$HAS_TAURI_SIGNING" >> "$GITHUB_OUTPUT"
+          echo "has_apple_signing=$HAS_APPLE_SIGNING" >> "$GITHUB_OUTPUT"
           echo "release_version=$VERSION" >> "$GITHUB_OUTPUT"
           if [ "$RELEASE_REPOSITORY" != "coollabsio/jean" ] && [ -z "$TAURI_UPDATER_PUBLIC_KEY" ]; then
             echo "::warning::TAURI_UPDATER_PUBLIC_KEY is not set for $RELEASE_REPOSITORY. Forked builds will keep the checked-in updater public key."
@@ -147,7 +149,12 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: bun run tauri build ${{ matrix.args }} -vv
+        run: |
+          if [ "${{ steps.release_config.outputs.has_apple_signing }}" != "true" ]; then
+            unset APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
+          fi
+
+          bun run tauri build ${{ matrix.args }} -vv
 
       - name: Upload build artifacts
         if: github.event_name != 'release' && github.event_name != 'workflow_dispatch'
@@ -158,7 +165,7 @@ jobs:
           path: src-tauri/target/**/release/bundle/**
 
       - name: Build and release from published release
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' && steps.release_config.outputs.has_apple_signing == 'true'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -177,8 +184,22 @@ jobs:
           includeUpdaterJson: ${{ steps.release_config.outputs.has_tauri_signing == 'true' }}
           args: ${{ matrix.args }} -vv
 
+      - name: Build and release from published release (unsigned macOS)
+        if: github.event_name == 'release' && steps.release_config.outputs.has_apple_signing != 'true'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tauriScript: bun run tauri
+          tagName: ${{ github.event.release.tag_name || inputs.version }}
+          releaseId: ${{ github.event.release.id }}
+          includeUpdaterJson: ${{ steps.release_config.outputs.has_tauri_signing == 'true' }}
+          args: ${{ matrix.args }} -vv
+
       - name: Build and create release from workflow dispatch
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && steps.release_config.outputs.has_apple_signing == 'true'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -190,6 +211,21 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          tauriScript: bun run tauri
+          tagName: ${{ inputs.version }}
+          releaseName: Jean ${{ inputs.version }}
+          releaseDraft: true
+          includeUpdaterJson: ${{ steps.release_config.outputs.has_tauri_signing == 'true' }}
+          args: ${{ matrix.args }} -vv
+
+      - name: Build and create release from workflow dispatch (unsigned macOS)
+        if: github.event_name == 'workflow_dispatch' && steps.release_config.outputs.has_apple_signing != 'true'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tauriScript: bun run tauri
           tagName: ${{ inputs.version }}

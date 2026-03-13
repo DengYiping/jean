@@ -5,66 +5,11 @@ import { usePreferences } from '@/services/preferences'
 import { DEFAULT_PARALLEL_EXECUTION_PROMPT } from '@/types/preferences'
 import { isTauri } from '@/services/projects'
 import { useWsConnectionStatus } from '@/lib/transport'
-import type { QueuedMessage } from '@/types/chat'
 import { logger } from '@/lib/logger'
+import { buildQueuedMessageWithRefs } from '@/lib/queued-message'
 
 // GIT_ALLOWED_TOOLS duplicated from ChatWindow - tools always allowed for git operations
 const GIT_ALLOWED_TOOLS = ['Bash', 'Read', 'Glob', 'Grep']
-
-/**
- * Build full message with attachment references for backend
- * Pure function extracted from ChatWindow
- */
-function buildMessageWithRefs(queuedMsg: QueuedMessage): string {
-  let message = queuedMsg.message
-
-  // Add file/directory references (from @ mentions)
-  if (queuedMsg.pendingFiles.length > 0) {
-    const fileRefs = queuedMsg.pendingFiles
-      .map(f =>
-        f.isDirectory
-          ? `[Directory: ${f.relativePath} - Use Glob and Read tools to explore this directory]`
-          : `[File: ${f.relativePath} - Use the Read tool to view this file]`
-      )
-      .join('\n')
-    message = message ? `${message}\n\n${fileRefs}` : fileRefs
-  }
-
-  // Add skill references (from / mentions)
-  if (queuedMsg.pendingSkills.length > 0) {
-    const skillRefs = queuedMsg.pendingSkills
-      .map(
-        s =>
-          `[Skill: ${s.path} - Read and use this skill to guide your response]`
-      )
-      .join('\n')
-    message = message ? `${message}\n\n${skillRefs}` : skillRefs
-  }
-
-  // Add image references
-  if (queuedMsg.pendingImages.length > 0) {
-    const imageRefs = queuedMsg.pendingImages
-      .map(
-        img =>
-          `[Image attached: ${img.path} - Use the Read tool to view this image]`
-      )
-      .join('\n')
-    message = message ? `${message}\n\n${imageRefs}` : imageRefs
-  }
-
-  // Add text file references
-  if (queuedMsg.pendingTextFiles.length > 0) {
-    const textFileRefs = queuedMsg.pendingTextFiles
-      .map(
-        tf =>
-          `[Text file attached: ${tf.path} - Use the Read tool to view this file]`
-      )
-      .join('\n')
-    message = message ? `${message}\n\n${textFileRefs}` : textFileRefs
-  }
-
-  return message
-}
 
 /**
  * Global queue processor hook - must be at App level so it stays active
@@ -84,6 +29,7 @@ export function useQueueProcessor(): void {
 
   // Track which sessions we're currently processing to prevent race conditions
   const processingRef = useRef<Set<string>>(new Set())
+  const processQueuesRef = useRef<() => void>(() => undefined)
 
   // PERFORMANCE: Derived boolean selector — only re-renders when the answer changes,
   // not on every mutation to any key in the underlying records.
@@ -156,7 +102,7 @@ export function useQueueProcessor(): void {
             // entries from lingering (defense against stale state).
             useChatStore.getState().clearQueue(capturedSessionId)
             processingRef.current.delete(capturedSessionId)
-            queueMicrotask(processQueues)
+            queueMicrotask(() => processQueuesRef.current())
             return
           }
 
@@ -194,7 +140,7 @@ export function useQueueProcessor(): void {
               : undefined
 
           // Build full message with attachment refs
-          const fullMessage = buildMessageWithRefs(msg)
+          const fullMessage = buildQueuedMessageWithRefs(msg)
 
           // Send the message
           sendMessage.mutate(
@@ -220,7 +166,7 @@ export function useQueueProcessor(): void {
             {
               onSettled: () => {
                 processingRef.current.delete(capturedSessionId)
-                queueMicrotask(processQueues)
+                queueMicrotask(() => processQueuesRef.current())
               },
             }
           )
@@ -231,7 +177,7 @@ export function useQueueProcessor(): void {
             err,
           })
           processingRef.current.delete(capturedSessionId)
-          queueMicrotask(processQueues)
+          queueMicrotask(() => processQueuesRef.current())
         })
     }
   }, [
@@ -240,6 +186,10 @@ export function useQueueProcessor(): void {
     preferences?.magic_prompts?.parallel_execution,
     preferences?.chrome_enabled,
   ])
+
+  useEffect(() => {
+    processQueuesRef.current = processQueues
+  }, [processQueues])
 
   useEffect(() => {
     if (!hasProcessableQueue || !isTauri()) return

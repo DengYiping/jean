@@ -1799,6 +1799,12 @@ pub async fn dispatch_command(
             crate::chat::answer_codex_user_input(session_id, rpc_id, answers)?;
             Ok(Value::Null)
         }
+        "steer_codex_turn" => {
+            let session_id: String = field(&args, "sessionId", "session_id")?;
+            let input: String = from_field(&args, "input")?;
+            let result = crate::chat::steer_codex_turn(session_id, input)?;
+            to_value(result)
+        }
 
         // =====================================================================
         // Queue management (cross-client sync)
@@ -1841,6 +1847,21 @@ pub async fn dispatch_command(
             )
             .await?;
             Ok(Value::Null)
+        }
+        "reorder_queued_messages" => {
+            let worktree_id: String = field(&args, "worktreeId", "worktree_id")?;
+            let worktree_path: String = field(&args, "worktreePath", "worktree_path")?;
+            let session_id: String = field(&args, "sessionId", "session_id")?;
+            let queue: Vec<Value> = from_field(&args, "queue")?;
+            let result = crate::chat::reorder_queued_messages(
+                app.clone(),
+                worktree_id,
+                worktree_path,
+                session_id,
+                queue,
+            )
+            .await?;
+            to_value(result)
         }
         "clear_message_queue" => {
             let worktree_id: String = field(&args, "worktreeId", "worktree_id")?;

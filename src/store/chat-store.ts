@@ -465,6 +465,7 @@ interface ChatUIState {
   enqueueMessage: (sessionId: string, message: QueuedMessage) => void
   dequeueMessage: (sessionId: string) => QueuedMessage | undefined
   removeQueuedMessage: (sessionId: string, messageId: string) => void
+  reorderQueuedMessages: (sessionId: string, messages: QueuedMessage[]) => void
   clearQueue: (sessionId: string) => void
   getQueueLength: (sessionId: string) => number
   getQueuedMessages: (sessionId: string) => QueuedMessage[]
@@ -1990,16 +1991,42 @@ export const useChatStore = create<ChatUIState>()(
 
       removeQueuedMessage: (sessionId, messageId) =>
         set(
-          state => ({
-            messageQueues: {
-              ...state.messageQueues,
-              [sessionId]: (state.messageQueues[sessionId] ?? []).filter(
-                m => m.id !== messageId
-              ),
-            },
-          }),
+          state => {
+            const existingQueue = state.messageQueues[sessionId] ?? []
+            const nextQueue = existingQueue.filter(m => m.id !== messageId)
+            if (nextQueue.length === existingQueue.length) return state
+            return {
+              messageQueues: {
+                ...state.messageQueues,
+                [sessionId]: nextQueue,
+              },
+            }
+          },
           undefined,
           'removeQueuedMessage'
+        ),
+
+      reorderQueuedMessages: (sessionId, messages) =>
+        set(
+          state => {
+            const existingQueue = state.messageQueues[sessionId] ?? []
+            if (
+              existingQueue.length === messages.length &&
+              existingQueue.every(
+                (message, index) => message.id === messages[index]?.id
+              )
+            ) {
+              return state
+            }
+            return {
+              messageQueues: {
+                ...state.messageQueues,
+                [sessionId]: messages,
+              },
+            }
+          },
+          undefined,
+          'reorderQueuedMessages'
         ),
 
       clearQueue: sessionId =>

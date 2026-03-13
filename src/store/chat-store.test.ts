@@ -549,6 +549,25 @@ describe('ChatStore', () => {
       expect(messages[0]?.id).toBe('msg-2')
     })
 
+    it('reorders queued messages', () => {
+      const { enqueueMessage, reorderQueuedMessages, getQueuedMessages } =
+        useChatStore.getState()
+
+      const msg1 = createMockMessage('msg-1', 'First')
+      const msg2 = createMockMessage('msg-2', 'Second')
+      const msg3 = createMockMessage('msg-3', 'Third')
+
+      enqueueMessage('session-1', msg1)
+      enqueueMessage('session-1', msg2)
+      enqueueMessage('session-1', msg3)
+
+      reorderQueuedMessages('session-1', [msg3, msg1, msg2])
+
+      expect(getQueuedMessages('session-1').map(message => message.id)).toEqual(
+        ['msg-3', 'msg-1', 'msg-2']
+      )
+    })
+
     it('clears queue', () => {
       const { enqueueMessage, clearQueue, getQueueLength } =
         useChatStore.getState()

@@ -15,6 +15,7 @@ import { toast } from 'sonner'
 import { useCommandContext } from './use-command-context'
 import { usePreferences } from '@/services/preferences'
 import { logger } from '@/lib/logger'
+import { areQueuedMessageIdsEqual } from '@/lib/queued-message'
 import {
   eventToShortcutString,
   DEFAULT_KEYBINDINGS,
@@ -638,11 +639,7 @@ export function useMainWindowEventListeners() {
             const currentQueue =
               useChatStore.getState().messageQueues[sessionId] ?? []
             // Skip if the queue already matches (this client caused the event)
-            if (
-              currentQueue.length === queue.length &&
-              currentQueue[0]?.id === queue[0]?.id
-            )
-              return
+            if (areQueuedMessageIdsEqual(currentQueue, queue)) return
             useChatStore.setState(state => ({
               messageQueues: {
                 ...state.messageQueues,

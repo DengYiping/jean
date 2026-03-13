@@ -9,6 +9,7 @@ import {
 } from '@/services/chat'
 import { buildMcpConfigJson } from '@/services/mcp'
 import { DEFAULT_PARALLEL_EXECUTION_PROMPT } from '@/types/preferences'
+import { buildQueuedMessageWithRefs } from '@/lib/queued-message'
 import type {
   QueuedMessage,
   ExecutionMode,
@@ -98,57 +99,6 @@ export function useMessageSending({
     [preferences?.custom_cli_profiles]
   )
 
-  // Helper to build full message with attachment references for backend
-  const buildMessageWithRefs = useCallback(
-    (queuedMsg: QueuedMessage): string => {
-      let message = queuedMsg.message
-
-      if (queuedMsg.pendingFiles.length > 0) {
-        const fileRefs = queuedMsg.pendingFiles
-          .map(f =>
-            f.isDirectory
-              ? `[Directory: ${f.relativePath} - Use Glob and Read tools to explore this directory]`
-              : `[File: ${f.relativePath} - Use the Read tool to view this file]`
-          )
-          .join('\n')
-        message = message ? `${message}\n\n${fileRefs}` : fileRefs
-      }
-
-      if (queuedMsg.pendingSkills.length > 0) {
-        const skillRefs = queuedMsg.pendingSkills
-          .map(
-            s =>
-              `[Skill: ${s.path} - Read and use this skill to guide your response]`
-          )
-          .join('\n')
-        message = message ? `${message}\n\n${skillRefs}` : skillRefs
-      }
-
-      if (queuedMsg.pendingImages.length > 0) {
-        const imageRefs = queuedMsg.pendingImages
-          .map(
-            img =>
-              `[Image attached: ${img.path} - Use the Read tool to view this image]`
-          )
-          .join('\n')
-        message = message ? `${message}\n\n${imageRefs}` : imageRefs
-      }
-
-      if (queuedMsg.pendingTextFiles.length > 0) {
-        const textFileRefs = queuedMsg.pendingTextFiles
-          .map(
-            tf =>
-              `[Text file attached: ${tf.path} - Use the Read tool to view this file]`
-          )
-          .join('\n')
-        message = message ? `${message}\n\n${textFileRefs}` : textFileRefs
-      }
-
-      return message
-    },
-    []
-  )
-
   // Helper to send a queued message immediately
   const sendMessageNow = useCallback(
     (queuedMsg: QueuedMessage) => {
@@ -190,7 +140,7 @@ export function useMessageSending({
           ? [...new Set(mergedAllowedTools)]
           : undefined
 
-      const fullMessage = buildMessageWithRefs(queuedMsg)
+      const fullMessage = buildQueuedMessageWithRefs(queuedMsg)
       const resolved = resolveCustomProfile(queuedMsg.model, queuedMsg.provider)
 
       sendMessage.mutate(
@@ -226,7 +176,6 @@ export function useMessageSending({
       activeSessionId,
       activeWorktreeId,
       activeWorktreePath,
-      buildMessageWithRefs,
       sendMessage,
       queryClient,
       preferences?.parallel_execution_prompt_enabled,

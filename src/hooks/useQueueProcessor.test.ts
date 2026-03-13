@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderHook, waitFor } from '@testing-library/react'
 import { useChatStore } from '@/store/chat-store'
+import type * as TransportModule from '@/lib/transport'
 import type { QueuedMessage } from '@/types/chat'
 import { useQueueProcessor } from './useQueueProcessor'
 
@@ -23,7 +24,7 @@ vi.mock('@/services/projects', () => ({
 }))
 
 vi.mock('@/lib/transport', async importOriginal => {
-  const actual = await importOriginal<typeof import('@/lib/transport')>()
+  const actual = (await importOriginal()) as typeof TransportModule
   return {
     ...actual,
     useWsConnectionStatus: () => true,
@@ -82,7 +83,9 @@ describe('useQueueProcessor', () => {
       worktreePaths: { [worktreeId]: worktreePath },
     })
 
-    mockPersistDequeue.mockResolvedValueOnce(first).mockResolvedValueOnce(second)
+    mockPersistDequeue
+      .mockResolvedValueOnce(first)
+      .mockResolvedValueOnce(second)
     mockMutate.mockImplementation(
       (
         _args: unknown,
@@ -103,5 +106,44 @@ describe('useQueueProcessor', () => {
     })
 
     expect(mockMutate).toHaveBeenCalledTimes(2)
+  })
+
+  it('executes queued messages in dequeue order', async () => {
+    const sessionId = 'session-1'
+    const worktreeId = 'worktree-1'
+    const worktreePath = '/tmp/worktree-1'
+    const first = createQueuedMessage('msg-1', 'first')
+    const second = createQueuedMessage('msg-2', 'second')
+
+    useChatStore.setState({
+      messageQueues: { [sessionId]: [second, first] },
+      sessionWorktreeMap: { [sessionId]: worktreeId },
+      worktreePaths: { [worktreeId]: worktreePath },
+    })
+
+    mockPersistDequeue
+      .mockResolvedValueOnce(second)
+      .mockResolvedValueOnce(first)
+    mockMutate.mockImplementation(
+      (
+        _args: unknown,
+        opts?: {
+          onSettled?: () => void
+        }
+      ) => {
+        useChatStore.getState().setStreamingContent(sessionId, 'done')
+        useChatStore.getState().completeSession(sessionId)
+        opts?.onSettled?.()
+      }
+    )
+
+    renderHook(() => useQueueProcessor())
+
+    await waitFor(() => {
+      expect(mockMutate).toHaveBeenCalledTimes(2)
+    })
+
+    expect(mockMutate.mock.calls[0]?.[0]).toMatchObject({ message: 'second' })
+    expect(mockMutate.mock.calls[1]?.[0]).toMatchObject({ message: 'first' })
   })
 })

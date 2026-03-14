@@ -1,7 +1,7 @@
 {
   "scripts": {
     "setup": "bun install",
-    "teardown": null,
+    "teardown": "rm -rf src-tauri/target && rm -rf node_modules",
     "run": "bun run tauri:dev",
     "build": "bun run tauri:build -- --no-sign"
   }

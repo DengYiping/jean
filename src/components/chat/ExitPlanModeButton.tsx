@@ -21,6 +21,7 @@ interface ExitPlanModeButtonProps {
   isLatestPlanRequest?: boolean
   hasFollowUpMessage?: boolean
   onPlanApproval?: () => void
+  onCustomBuildPrompt?: () => void
   onPlanApprovalYolo?: () => void
   onClearContextApproval?: () => void
   onClearContextBuildApproval?: () => void
@@ -40,6 +41,7 @@ export function ExitPlanModeButton({
   isLatestPlanRequest = true,
   hasFollowUpMessage = false,
   onPlanApproval,
+  onCustomBuildPrompt,
   onPlanApprovalYolo,
   onClearContextApproval,
   onClearContextBuildApproval,
@@ -72,7 +74,9 @@ export function ExitPlanModeButton({
     return null
 
   const hasApproveDropdownItems =
-    !!onClearContextBuildApproval || !!onWorktreeBuildApproval
+    !!onCustomBuildPrompt ||
+    !!onClearContextBuildApproval ||
+    !!onWorktreeBuildApproval
   const hasAutoDropdownItems =
     !!onClearContextApproval || !!onWorktreeYoloApproval
 
@@ -92,21 +96,28 @@ export function ExitPlanModeButton({
           tooltip={approveTooltip}
           onClick={() => onPlanApproval?.()}
         >
-          <DropdownMenuItem onClick={() => onClearContextBuildApproval?.()}>
-            <span className="flex flex-col">
-              <span>New Session</span>
-              {buildLabel && (
-                <span className="text-[10px] text-muted-foreground">
-                  {buildLabel}
-                </span>
-              )}
-            </span>
-            <DropdownMenuShortcut>
-              {formatShortcutDisplay(
-                DEFAULT_KEYBINDINGS.approve_plan_clear_context_build
-              )}
-            </DropdownMenuShortcut>
-          </DropdownMenuItem>
+          {onCustomBuildPrompt && (
+            <DropdownMenuItem onClick={() => onCustomBuildPrompt()}>
+              <span>Custom Prompt...</span>
+            </DropdownMenuItem>
+          )}
+          {onClearContextBuildApproval && (
+            <DropdownMenuItem onClick={() => onClearContextBuildApproval()}>
+              <span className="flex flex-col">
+                <span>New Session</span>
+                {buildLabel && (
+                  <span className="text-[10px] text-muted-foreground">
+                    {buildLabel}
+                  </span>
+                )}
+              </span>
+              <DropdownMenuShortcut>
+                {formatShortcutDisplay(
+                  DEFAULT_KEYBINDINGS.approve_plan_clear_context_build
+                )}
+              </DropdownMenuShortcut>
+            </DropdownMenuItem>
+          )}
           {onWorktreeBuildApproval && (
             <DropdownMenuItem onClick={() => onWorktreeBuildApproval()}>
               <span className="flex flex-col">

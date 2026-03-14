@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { FileText, Pencil, RotateCcw } from 'lucide-react'
+import { ArrowLeft, FileText, Pencil, RotateCcw } from 'lucide-react'
 import { invoke } from '@tauri-apps/api/core'
 import { logger } from '@/lib/logger'
 import { readPlanFile } from '@/services/chat'
@@ -33,13 +33,20 @@ export interface ApprovalContext {
   pendingPlanMessageId: string | null
 }
 
+export type PlanDialogMode = 'default' | 'build-custom'
+
 interface PlanDialogBaseProps {
   isOpen: boolean
   onClose: () => void
   editable?: boolean
   disabled?: boolean
+  initialMode?: PlanDialogMode
   approvalContext?: ApprovalContext
   onApprove?: (updatedPlan: string) => void
+  onApproveWithCustomPrompt?: (
+    updatedPlan: string,
+    customPrompt: string
+  ) => void
   onApproveYolo?: (updatedPlan: string) => void
   onClearContextApprove?: (updatedPlan: string) => void
   onClearContextBuildApprove?: (updatedPlan: string) => void
@@ -68,8 +75,10 @@ export function PlanDialog({
   onClose,
   editable = false,
   disabled = false,
+  initialMode = 'default',
   approvalContext: _approvalContext,
   onApprove,
+  onApproveWithCustomPrompt,
   onApproveYolo,
   onClearContextApprove,
   onClearContextBuildApprove,
@@ -95,6 +104,9 @@ export function PlanDialog({
   const originalContent = inlineContent ?? fetchedContent ?? ''
   const [editedContent, setEditedContent] = useState('')
   const [isEditMode, setIsEditMode] = useState(false)
+  const [dialogMode, setDialogMode] = useState<PlanDialogMode>(initialMode)
+  const [customPrompt, setCustomPrompt] = useState('')
+  const customPromptRef = useRef<HTMLTextAreaElement | null>(null)
 
   // Sync edited content when original changes or dialog opens
   useEffect(() => {
@@ -106,9 +118,25 @@ export function PlanDialog({
 
   // Reset edit mode when dialog closes
   useEffect(() => {
+    if (!isOpen) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setIsEditMode(false)
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setDialogMode(initialMode)
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setCustomPrompt('')
+      return
+    }
+
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (!isOpen) setIsEditMode(false)
-  }, [isOpen])
+    setDialogMode(initialMode)
+  }, [initialMode, isOpen])
+
+  useEffect(() => {
+    if (isOpen && dialogMode === 'build-custom') {
+      customPromptRef.current?.focus()
+    }
+  }, [dialogMode, isOpen])
 
   // Track dialog open state in UIStore to block canvas keybindings
   useEffect(() => {
@@ -120,6 +148,13 @@ export function PlanDialog({
   // Enable approve buttons when callbacks are provided and not disabled (session still running)
   const canApprove =
     !hideApproveButtons && !!onApprove && !!onApproveYolo && !disabled
+  const canUseCustomPrompt =
+    !hideApproveButtons &&
+    !!onApprove &&
+    !!onApproveWithCustomPrompt &&
+    !disabled
+  const canSubmitCustomPrompt =
+    canUseCustomPrompt && customPrompt.trim().length > 0
 
   // Auto-save plan file with debounce when content changes
   useEffect(() => {
@@ -150,6 +185,14 @@ export function PlanDialog({
     onClose()
   }, [editedContent, onApprove, onClose])
 
+  const handleApproveWithCustomPrompt = useCallback(() => {
+    const trimmedPrompt = customPrompt.trim()
+    if (!trimmedPrompt) return
+
+    onApproveWithCustomPrompt?.(editedContent, trimmedPrompt)
+    onClose()
+  }, [customPrompt, editedContent, onApproveWithCustomPrompt, onClose])
+
   const handleApproveYolo = useCallback(() => {
     // File is auto-saved, just call the approve callback
     onApproveYolo?.(editedContent)
@@ -176,12 +219,31 @@ export function PlanDialog({
     onClose()
   }, [editedContent, onWorktreeYoloApprove, onClose])
 
+  const handleEnterCustomPromptMode = useCallback(() => {
+    setDialogMode('build-custom')
+  }, [])
+
+  const handleExitCustomPromptMode = useCallback(() => {
+    setDialogMode('default')
+    setCustomPrompt('')
+  }, [])
+
   // Keyboard shortcuts for approve actions
   useEffect(() => {
     if (!isOpen || !editable) return
 
     const handleKeyDown = (e: KeyboardEvent) => {
       const isMod = e.metaKey || e.ctrlKey
+
+      if (dialogMode === 'build-custom') {
+        if (isMod && e.key === 'Enter' && !e.shiftKey && !e.altKey) {
+          e.preventDefault()
+          if (canSubmitCustomPrompt) {
+            handleApproveWithCustomPrompt()
+          }
+        }
+        return
+      }
 
       // Check most specific combos first to avoid matching simpler patterns
 
@@ -245,8 +307,11 @@ export function PlanDialog({
   }, [
     isOpen,
     editable,
+    dialogMode,
     canApprove,
+    canSubmitCustomPrompt,
     handleApprove,
+    handleApproveWithCustomPrompt,
     handleApproveYolo,
     onClearContextApprove,
     handleClearContextApprove,
@@ -273,154 +338,190 @@ export function PlanDialog({
           </DialogTitle>
         </DialogHeader>
 
-        {editable && isEditMode ? (
-          // Edit mode: textarea
-          <Textarea
-            value={editedContent}
-            onChange={e => setEditedContent(e.target.value)}
-            className="flex-1 min-h-0 resize-none font-mono text-sm"
-            placeholder="Loading plan..."
-          />
-        ) : (
-          // View mode: rendered markdown
-          <ScrollArea className="flex-1 min-h-0 -mx-6 px-6 select-text">
-            {!inlineContent && isLoading ? (
-              <div className="text-sm text-muted-foreground">
-                Loading plan...
+        <div className="flex flex-1 min-h-0 flex-col gap-4">
+          {editable && isEditMode ? (
+            <Textarea
+              value={editedContent}
+              onChange={e => setEditedContent(e.target.value)}
+              className="flex-1 min-h-0 resize-none font-mono text-sm"
+              placeholder="Loading plan..."
+            />
+          ) : (
+            <ScrollArea className="flex-1 min-h-0 -mx-6 px-6 select-text">
+              {!inlineContent && isLoading ? (
+                <div className="text-sm text-muted-foreground">
+                  Loading plan...
+                </div>
+              ) : (editable ? editedContent : originalContent) ? (
+                <Markdown className="text-sm">
+                  {editable ? editedContent : originalContent}
+                </Markdown>
+              ) : (
+                <div className="text-sm text-destructive">
+                  Failed to load plan file
+                </div>
+              )}
+            </ScrollArea>
+          )}
+
+          {dialogMode === 'build-custom' && (
+            <div className="shrink-0 border-t pt-4">
+              <div className="mb-2 text-sm font-medium">
+                Custom build prompt
               </div>
-            ) : (editable ? editedContent : originalContent) ? (
-              <Markdown className="text-sm">
-                {editable ? editedContent : originalContent}
-              </Markdown>
-            ) : (
-              <div className="text-sm text-destructive">
-                Failed to load plan file
-              </div>
-            )}
-          </ScrollArea>
-        )}
+              <Textarea
+                ref={customPromptRef}
+                value={customPrompt}
+                onChange={e => setCustomPrompt(e.target.value)}
+                className="min-h-28 resize-y text-sm"
+                placeholder="Add extra implementation instructions for build mode."
+              />
+            </div>
+          )}
+        </div>
 
         {editable && (
           <DialogFooter className="shrink-0 border-t pt-4 -mx-6 px-6 mt-4 sm:justify-between">
-            {/* Left side: Edit or Reset button */}
-            {isEditMode ? (
-              <Button
-                variant="ghost"
-                onClick={handleReset}
-                disabled={!hasChanges}
-                className="sm:mr-auto"
-              >
-                <RotateCcw className="h-4 w-4 mr-2" />
-                Reset
-              </Button>
-            ) : (
-              <Button
-                variant="ghost"
-                onClick={() => setIsEditMode(true)}
-                className="sm:mr-auto"
-              >
-                <Pencil className="h-4 w-4 mr-2" />
-                Edit
-              </Button>
-            )}
+            <div className="flex flex-wrap items-center gap-2 sm:mr-auto">
+              {isEditMode ? (
+                <Button
+                  variant="ghost"
+                  onClick={handleReset}
+                  disabled={!hasChanges}
+                >
+                  <RotateCcw className="h-4 w-4 mr-2" />
+                  Reset
+                </Button>
+              ) : (
+                <Button variant="ghost" onClick={() => setIsEditMode(true)}>
+                  <Pencil className="h-4 w-4 mr-2" />
+                  Edit
+                </Button>
+              )}
+              {dialogMode === 'build-custom' && (
+                <Button variant="ghost" onClick={handleExitCustomPromptMode}>
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Back
+                </Button>
+              )}
+            </div>
 
-            {/* Right side: Approve + Auto split buttons */}
             <div className="flex gap-2">
-              <SplitButton
-                label="Approve"
-                tooltip={`Approve plan (${formatShortcutDisplay(DEFAULT_KEYBINDINGS.approve_plan)})`}
-                onClick={handleApprove}
-                disabled={!canApprove}
-              >
-                {onClearContextBuildApprove && (
-                  <DropdownMenuItem
-                    onClick={handleClearContextBuildApprove}
+              {dialogMode === 'build-custom' ? (
+                <Button
+                  onClick={handleApproveWithCustomPrompt}
+                  disabled={!canSubmitCustomPrompt}
+                  title={`Build with custom prompt (${formatShortcutDisplay(DEFAULT_KEYBINDINGS.approve_plan)})`}
+                >
+                  Build ({formatShortcutDisplay(DEFAULT_KEYBINDINGS.approve_plan)})
+                </Button>
+              ) : (
+                <>
+                  <SplitButton
+                    label="Approve"
+                    tooltip={`Approve plan (${formatShortcutDisplay(DEFAULT_KEYBINDINGS.approve_plan)})`}
+                    onClick={handleApprove}
                     disabled={!canApprove}
                   >
-                    <span className="flex flex-col">
-                      <span>New Session</span>
-                      {buildLabel && (
-                        <span className="text-[10px] text-muted-foreground">
-                          {buildLabel}
+                    {canUseCustomPrompt && (
+                      <DropdownMenuItem
+                        onClick={handleEnterCustomPromptMode}
+                        disabled={!canUseCustomPrompt}
+                      >
+                        <span>Custom Prompt...</span>
+                      </DropdownMenuItem>
+                    )}
+                    {onClearContextBuildApprove && (
+                      <DropdownMenuItem
+                        onClick={handleClearContextBuildApprove}
+                        disabled={!canApprove}
+                      >
+                        <span className="flex flex-col">
+                          <span>New Session</span>
+                          {buildLabel && (
+                            <span className="text-[10px] text-muted-foreground">
+                              {buildLabel}
+                            </span>
+                          )}
                         </span>
-                      )}
-                    </span>
-                    <DropdownMenuShortcut>
-                      {formatShortcutDisplay(
-                        DEFAULT_KEYBINDINGS.approve_plan_clear_context_build
-                      )}
-                    </DropdownMenuShortcut>
-                  </DropdownMenuItem>
-                )}
-                {onWorktreeBuildApprove && (
-                  <DropdownMenuItem
-                    onClick={handleWorktreeBuildApprove}
+                        <DropdownMenuShortcut>
+                          {formatShortcutDisplay(
+                            DEFAULT_KEYBINDINGS.approve_plan_clear_context_build
+                          )}
+                        </DropdownMenuShortcut>
+                      </DropdownMenuItem>
+                    )}
+                    {onWorktreeBuildApprove && (
+                      <DropdownMenuItem
+                        onClick={handleWorktreeBuildApprove}
+                        disabled={!canApprove}
+                      >
+                        <span className="flex flex-col">
+                          <span>New Worktree</span>
+                          {buildLabel && (
+                            <span className="text-[10px] text-muted-foreground">
+                              {buildLabel}
+                            </span>
+                          )}
+                        </span>
+                        <DropdownMenuShortcut>
+                          {formatShortcutDisplay(
+                            DEFAULT_KEYBINDINGS.approve_plan_worktree_build
+                          )}
+                        </DropdownMenuShortcut>
+                      </DropdownMenuItem>
+                    )}
+                  </SplitButton>
+                  <SplitButton
+                    label="YOLO"
+                    tooltip={`Approve with yolo mode (${formatShortcutDisplay(DEFAULT_KEYBINDINGS.approve_plan_yolo)})`}
+                    variant="outline"
+                    onClick={handleApproveYolo}
                     disabled={!canApprove}
                   >
-                    <span className="flex flex-col">
-                      <span>New Worktree</span>
-                      {buildLabel && (
-                        <span className="text-[10px] text-muted-foreground">
-                          {buildLabel}
+                    {onClearContextApprove && (
+                      <DropdownMenuItem
+                        onClick={handleClearContextApprove}
+                        disabled={!canApprove}
+                      >
+                        <span className="flex flex-col">
+                          <span>New Session (YOLO)</span>
+                          {yoloLabel && (
+                            <span className="text-[10px] text-muted-foreground">
+                              {yoloLabel}
+                            </span>
+                          )}
                         </span>
-                      )}
-                    </span>
-                    <DropdownMenuShortcut>
-                      {formatShortcutDisplay(
-                        DEFAULT_KEYBINDINGS.approve_plan_worktree_build
-                      )}
-                    </DropdownMenuShortcut>
-                  </DropdownMenuItem>
-                )}
-              </SplitButton>
-              <SplitButton
-                label="YOLO"
-                tooltip={`Approve with yolo mode (${formatShortcutDisplay(DEFAULT_KEYBINDINGS.approve_plan_yolo)})`}
-                variant="outline"
-                onClick={handleApproveYolo}
-                disabled={!canApprove}
-              >
-                {onClearContextApprove && (
-                  <DropdownMenuItem
-                    onClick={handleClearContextApprove}
-                    disabled={!canApprove}
-                  >
-                    <span className="flex flex-col">
-                      <span>New Session (YOLO)</span>
-                      {yoloLabel && (
-                        <span className="text-[10px] text-muted-foreground">
-                          {yoloLabel}
+                        <DropdownMenuShortcut>
+                          {formatShortcutDisplay(
+                            DEFAULT_KEYBINDINGS.approve_plan_clear_context
+                          )}
+                        </DropdownMenuShortcut>
+                      </DropdownMenuItem>
+                    )}
+                    {onWorktreeYoloApprove && (
+                      <DropdownMenuItem
+                        onClick={handleWorktreeYoloApprove}
+                        disabled={!canApprove}
+                      >
+                        <span className="flex flex-col">
+                          <span>New Worktree (YOLO)</span>
+                          {yoloLabel && (
+                            <span className="text-[10px] text-muted-foreground">
+                              {yoloLabel}
+                            </span>
+                          )}
                         </span>
-                      )}
-                    </span>
-                    <DropdownMenuShortcut>
-                      {formatShortcutDisplay(
-                        DEFAULT_KEYBINDINGS.approve_plan_clear_context
-                      )}
-                    </DropdownMenuShortcut>
-                  </DropdownMenuItem>
-                )}
-                {onWorktreeYoloApprove && (
-                  <DropdownMenuItem
-                    onClick={handleWorktreeYoloApprove}
-                    disabled={!canApprove}
-                  >
-                    <span className="flex flex-col">
-                      <span>New Worktree (YOLO)</span>
-                      {yoloLabel && (
-                        <span className="text-[10px] text-muted-foreground">
-                          {yoloLabel}
-                        </span>
-                      )}
-                    </span>
-                    <DropdownMenuShortcut>
-                      {formatShortcutDisplay(
-                        DEFAULT_KEYBINDINGS.approve_plan_worktree_yolo
-                      )}
-                    </DropdownMenuShortcut>
-                  </DropdownMenuItem>
-                )}
-              </SplitButton>
+                        <DropdownMenuShortcut>
+                          {formatShortcutDisplay(
+                            DEFAULT_KEYBINDINGS.approve_plan_worktree_yolo
+                          )}
+                        </DropdownMenuShortcut>
+                      </DropdownMenuItem>
+                    )}
+                  </SplitButton>
+                </>
+              )}
             </div>
           </DialogFooter>
         )}

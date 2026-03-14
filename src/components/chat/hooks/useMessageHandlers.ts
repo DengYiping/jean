@@ -38,6 +38,7 @@ import type {
   WorktreeCreateErrorEvent,
 } from '@/types/projects'
 import { logger } from '@/lib/logger'
+import { buildPlanApprovalMessage } from '../plan-approval-message'
 
 /** Git commands to auto-approve for magic prompts (no permission prompts needed) */
 export const GIT_ALLOWED_TOOLS = [
@@ -608,13 +609,11 @@ export function useMessageHandlers({
 
       // Format approval message - include updated plan if provided
       // For Codex: use explicit execution instruction since it resumes a thread
-      const isCodex =
-        useChatStore.getState().selectedBackends[sessionId] === 'codex'
-      const message = updatedPlan
-        ? `I've updated the plan. Please review and execute:\n\n<updated-plan>\n${updatedPlan}\n</updated-plan>`
-        : isCodex
-          ? 'Execute the plan you created. Implement all changes described.'
-          : 'Plan approved. Begin implementing the changes now. Do not re-explain the plan — start writing code.'
+      const message = buildPlanApprovalMessage({
+        mode: 'build',
+        backend: useChatStore.getState().selectedBackends[sessionId],
+        updatedPlan,
+      })
       // Send approval message so the backend continues with execution
       // NOTE: setLastSentMessage is critical for permission denial flow - without it,
       // the denied message context won't be set and approval UI won't work
@@ -776,13 +775,11 @@ export function useMessageHandlers({
       }, 100)
 
       // Format approval message - include updated plan if provided
-      const isCodexYolo =
-        useChatStore.getState().selectedBackends[sessionId] === 'codex'
-      const message = updatedPlan
-        ? `I've updated the plan. Please review and execute:\n\n<updated-plan>\n${updatedPlan}\n</updated-plan>`
-        : isCodexYolo
-          ? 'Execute the plan you created. Implement all changes described.'
-          : 'Plan approved (yolo mode). Begin implementing all changes immediately without asking for confirmation. Do not re-explain the plan — start writing code.'
+      const message = buildPlanApprovalMessage({
+        mode: 'yolo',
+        backend: useChatStore.getState().selectedBackends[sessionId],
+        updatedPlan,
+      })
       // Send approval message so the backend continues with execution
       setLastSentMessage(sessionId, message)
       setError(sessionId, null)

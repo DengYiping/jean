@@ -13,6 +13,7 @@ import type {
   SessionDigest,
   Session,
 } from '@/types/chat'
+import type { PlanDialogMode } from '../PlanDialog'
 
 interface UseChatWindowEventsParams {
   inputRef: RefObject<HTMLTextAreaElement | null>
@@ -25,6 +26,7 @@ interface UseChatWindowEventsParams {
   latestPlanFilePath: string | null
   setPlanDialogContent: (content: string | null) => void
   setIsPlanDialogOpen: (open: boolean) => void
+  setPlanDialogMode: (mode: PlanDialogMode) => void
   // Recap dialog
   session: Session | null | undefined
   isRecapDialogOpen: boolean
@@ -118,6 +120,7 @@ export function useChatWindowEvents({
   latestPlanFilePath,
   setPlanDialogContent,
   setIsPlanDialogOpen,
+  setPlanDialogMode,
   session,
   isRecapDialogOpen,
   recapDialogDigest,
@@ -195,6 +198,7 @@ export function useChatWindowEvents({
   // P key: Open plan dialog
   useEffect(() => {
     const handler = () => {
+      setPlanDialogMode('default')
       if (latestPlanContent) {
         setPlanDialogContent(latestPlanContent)
         setIsPlanDialogOpen(true)
@@ -211,6 +215,7 @@ export function useChatWindowEvents({
     latestPlanFilePath,
     setPlanDialogContent,
     setIsPlanDialogOpen,
+    setPlanDialogMode,
   ])
 
   // R key: Open recap dialog

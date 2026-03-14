@@ -63,6 +63,8 @@ interface VirtualizedMessageListProps {
   isSending: boolean
   /** Callback when user approves a plan */
   onPlanApproval: (messageId: string) => void
+  /** Callback when user wants to add a custom prompt before build approval */
+  onCustomBuildPrompt?: (messageId: string) => void
   /** Callback when user approves a plan with yolo mode */
   onPlanApprovalYolo?: (messageId: string) => void
   /** Callback for clear context approval (new session with plan in yolo mode) */
@@ -136,6 +138,7 @@ export const VirtualizedMessageList = memo(
         approveButtonRef,
         isSending,
         onPlanApproval,
+        onCustomBuildPrompt,
         onPlanApprovalYolo,
         onClearContextApproval,
         onClearContextApprovalBuild,
@@ -356,6 +359,7 @@ export const VirtualizedMessageList = memo(
                   }
                   isSending={isSending}
                   onPlanApproval={onPlanApproval}
+                  onCustomBuildPrompt={onCustomBuildPrompt}
                   onPlanApprovalYolo={onPlanApprovalYolo}
                   onClearContextApproval={onClearContextApproval}
                   onClearContextApprovalBuild={onClearContextApprovalBuild}

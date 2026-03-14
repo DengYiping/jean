@@ -94,7 +94,7 @@ import { ChatToolbar } from './ChatToolbar'
 import { ReviewResultsPanel } from './ReviewResultsPanel'
 import { QueuedMessagesList } from './QueuedMessageItem'
 import { FloatingButtons } from './FloatingButtons'
-import { PlanDialog } from './PlanDialog'
+import { PlanDialog, type PlanDialogMode } from './PlanDialog'
 import { RecapDialog } from './RecapDialog'
 import { StreamingMessage } from './StreamingMessage'
 import { StreamingStatusBar } from './StreamingStatusBar'
@@ -884,11 +884,24 @@ export function ChatWindow({
     isStreamingPlanApproved,
   })
 
+  // When the approval UI appears after the final render, keep the viewport pinned
+  // so the inline Approve controls stay visible instead of requiring a manual scroll.
+  useEffect(() => {
+    if (!isAtBottom) return
+    if (!pendingPlanMessage && !hasStreamingPlan) return
+
+    requestAnimationFrame(() => {
+      scrollToBottom(true)
+    })
+  }, [hasStreamingPlan, isAtBottom, pendingPlanMessage?.id, scrollToBottom])
+
   // State for plan dialog
   const [isPlanDialogOpen, setIsPlanDialogOpen] = useState(false)
   const [planDialogContent, setPlanDialogContent] = useState<string | null>(
     null
   )
+  const [planDialogMode, setPlanDialogMode] =
+    useState<PlanDialogMode>('default')
 
   // State for recap dialog
   const [isRecapDialogOpen, setIsRecapDialogOpen] = useState(false)
@@ -897,25 +910,38 @@ export function ChatWindow({
   const [isGeneratingRecap, setIsGeneratingRecap] = useState(false)
 
   // Plan dialog approval handlers (DRYs 4x-duplicated onApprove/onApproveYolo callbacks)
-  const { handlePlanDialogApprove, handlePlanDialogApproveYolo } =
-    usePlanDialogApproval({
-      activeSessionId,
-      activeWorktreeId,
-      activeWorktreePath,
-      pendingPlanMessage,
-      selectedModelRef,
-      buildModelRef,
-      buildBackendRef,
-      yoloModelRef,
-      yoloBackendRef,
-      selectedProviderRef,
-      selectedThinkingLevelRef,
-      selectedEffortLevelRef,
-      useAdaptiveThinkingRef,
-      isCodexBackendRef,
-      mcpServersDataRef,
-      enabledMcpServersRef,
-    })
+  const {
+    handlePlanDialogApprove,
+    handlePlanDialogApproveWithCustomPrompt,
+    handlePlanDialogApproveYolo,
+  } = usePlanDialogApproval({
+    activeSessionId,
+    activeWorktreeId,
+    activeWorktreePath,
+    pendingPlanMessage,
+    selectedModelRef,
+    buildModelRef,
+    buildBackendRef,
+    yoloModelRef,
+    yoloBackendRef,
+    selectedProviderRef,
+    selectedThinkingLevelRef,
+    selectedEffortLevelRef,
+    useAdaptiveThinkingRef,
+    isCodexBackendRef,
+    mcpServersDataRef,
+    enabledMcpServersRef,
+  })
+
+  const openBuildCustomPromptDialog = useCallback(() => {
+    if (latestPlanContent) {
+      setPlanDialogContent(latestPlanContent)
+    } else {
+      setPlanDialogContent(null)
+    }
+    setPlanDialogMode('build-custom')
+    setIsPlanDialogOpen(true)
+  }, [latestPlanContent])
 
   // Clear context approval handler for PlanDialog
   const handlePlanDialogClearContextApprove = useCallback(
@@ -2441,6 +2467,7 @@ export function ChatWindow({
     latestPlanFilePath,
     setPlanDialogContent,
     setIsPlanDialogOpen,
+    setPlanDialogMode,
     session,
     isRecapDialogOpen,
     recapDialogDigest,
@@ -2756,6 +2783,7 @@ export function ChatWindow({
                               approveButtonRef={approveButtonRef}
                               isSending={isSending}
                               onPlanApproval={handlePlanApproval}
+                              onCustomBuildPrompt={openBuildCustomPromptDialog}
                               onPlanApprovalYolo={handlePlanApprovalYolo}
                               onClearContextApproval={
                                 handleClearContextApproval
@@ -2816,6 +2844,9 @@ export function ChatWindow({
                               isStreamingPlanApproved={isStreamingPlanApproved}
                               onStreamingPlanApproval={
                                 handleStreamingPlanApproval
+                              }
+                              onStreamingCustomBuildPrompt={
+                                openBuildCustomPromptDialog
                               }
                               onStreamingPlanApprovalYolo={
                                 handleStreamingPlanApprovalYolo
@@ -3251,9 +3282,11 @@ export function ChatWindow({
             <PlanDialog
               content={planDialogContent}
               isOpen={isPlanDialogOpen}
+              initialMode={planDialogMode}
               onClose={() => {
                 setIsPlanDialogOpen(false)
                 setPlanDialogContent(null)
+                setPlanDialogMode('default')
               }}
               editable={true}
               approvalContext={
@@ -3267,6 +3300,9 @@ export function ChatWindow({
                   : undefined
               }
               onApprove={handlePlanDialogApprove}
+              onApproveWithCustomPrompt={
+                handlePlanDialogApproveWithCustomPrompt
+              }
               onApproveYolo={handlePlanDialogApproveYolo}
               onClearContextApprove={handlePlanDialogClearContextApprove}
               onClearContextBuildApprove={
@@ -3287,7 +3323,11 @@ export function ChatWindow({
             <PlanDialog
               filePath={latestPlanFilePath}
               isOpen={isPlanDialogOpen}
-              onClose={() => setIsPlanDialogOpen(false)}
+              initialMode={planDialogMode}
+              onClose={() => {
+                setIsPlanDialogOpen(false)
+                setPlanDialogMode('default')
+              }}
               editable={true}
               approvalContext={
                 activeWorktreeId && activeWorktreePath && activeSessionId
@@ -3300,6 +3340,9 @@ export function ChatWindow({
                   : undefined
               }
               onApprove={handlePlanDialogApprove}
+              onApproveWithCustomPrompt={
+                handlePlanDialogApproveWithCustomPrompt
+              }
               onApproveYolo={handlePlanDialogApproveYolo}
               onClearContextApprove={handlePlanDialogClearContextApprove}
               onClearContextBuildApprove={

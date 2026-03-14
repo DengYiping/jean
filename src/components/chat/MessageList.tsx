@@ -20,6 +20,7 @@ interface MessageListProps {
   approveButtonRef?: React.RefObject<HTMLButtonElement | null>
   isSending: boolean
   onPlanApproval: (messageId: string) => void
+  onCustomBuildPrompt?: (messageId: string) => void
   onPlanApprovalYolo?: (messageId: string) => void
   onClearContextApproval?: (messageId: string) => void
   onClearContextApprovalBuild?: (messageId: string) => void
@@ -66,6 +67,7 @@ export const MessageList = memo(function MessageList({
   approveButtonRef,
   isSending,
   onPlanApproval,
+  onCustomBuildPrompt,
   onPlanApprovalYolo,
   onClearContextApproval,
   onClearContextApprovalBuild,
@@ -144,6 +146,7 @@ export const MessageList = memo(function MessageList({
               }
               isSending={isSending}
               onPlanApproval={onPlanApproval}
+              onCustomBuildPrompt={onCustomBuildPrompt}
               onPlanApprovalYolo={onPlanApprovalYolo}
               onClearContextApproval={onClearContextApproval}
               onClearContextApprovalBuild={onClearContextApprovalBuild}

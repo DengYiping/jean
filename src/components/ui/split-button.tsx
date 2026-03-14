@@ -58,6 +58,7 @@ export function SplitButton({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
+            aria-label={`${label} options`}
             variant={variant}
             size={size}
             disabled={disabled}

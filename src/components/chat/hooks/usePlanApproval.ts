@@ -11,30 +11,11 @@ import {
 import { invoke } from '@/lib/transport'
 import type { Session, WorktreeSessions } from '@/types/chat'
 import type { SessionCardData } from '../session-card-utils'
+import { buildPlanApprovalMessage } from '../plan-approval-message'
 
 interface UsePlanApprovalParams {
   worktreeId: string
   worktreePath: string
-}
-
-/**
- * Formats the approval message, including updated plan if content was changed.
- */
-function formatApprovalMessage(
-  baseMessage: string,
-  updatedPlan?: string,
-  originalPlan?: string | null
-): string {
-  // No updated plan provided, or plan unchanged
-  if (!updatedPlan || updatedPlan === originalPlan) {
-    return baseMessage
-  }
-
-  return `I've updated the plan. Please review and execute:
-
-<updated-plan>
-${updatedPlan}
-</updated-plan>`
 }
 
 /**
@@ -63,7 +44,7 @@ export function usePlanApproval({
   } = useChatStore.getState()
 
   const handlePlanApproval = useCallback(
-    (card: SessionCardData, updatedPlan?: string) => {
+    (card: SessionCardData, updatedPlan?: string, customPrompt?: string) => {
       const sessionId = card.session.id
       const messageId = card.pendingPlanMessageId
       const originalPlan = card.planContent
@@ -139,13 +120,14 @@ export function usePlanApproval({
       const thinkingLevel = preferences?.thinking_level ?? 'off'
       const sessionBackend = card.session.backend
 
-      const isCodex = sessionBackend === 'codex'
-      const baseMsg = isCodex
-        ? 'Execute the plan you created. Implement all changes described.'
-        : 'Plan approved. Begin implementing the changes now. Do not re-explain the plan — start writing code.'
-      const rawMessage = messageId
-        ? formatApprovalMessage(baseMsg, updatedPlan, originalPlan)
-        : `I've updated the plan. Please review and execute:\n\n<updated-plan>\n${updatedPlan}\n</updated-plan>`
+      const rawMessage = buildPlanApprovalMessage({
+        mode: 'build',
+        backend: sessionBackend,
+        updatedPlan,
+        originalPlan,
+        customPrompt,
+        approvedPlanContent: updatedPlan ?? originalPlan,
+      })
       const buildInfo = [sessionBackend, model].filter(Boolean).join(' / ')
       const message = buildInfo
         ? `[Build: ${buildInfo}]\n${rawMessage}`
@@ -297,13 +279,13 @@ export function usePlanApproval({
       const thinkingLevel = preferences?.thinking_level ?? 'off'
       const sessionBackend = card.session.backend
 
-      const isCodexYolo = sessionBackend === 'codex'
-      const baseMsgYolo = isCodexYolo
-        ? 'Execute the plan you created. Implement all changes described.'
-        : 'Plan approved (yolo mode). Begin implementing all changes immediately without asking for confirmation. Do not re-explain the plan — start writing code.'
-      const rawMessage = messageId
-        ? formatApprovalMessage(baseMsgYolo, updatedPlan, originalPlan)
-        : `I've updated the plan. Please review and execute:\n\n<updated-plan>\n${updatedPlan}\n</updated-plan>`
+      const rawMessage = buildPlanApprovalMessage({
+        mode: 'yolo',
+        backend: sessionBackend,
+        updatedPlan,
+        originalPlan,
+        approvedPlanContent: updatedPlan ?? originalPlan,
+      })
       const yoloInfo = [sessionBackend, model].filter(Boolean).join(' / ')
       const message = yoloInfo
         ? `[Yolo: ${yoloInfo}]\n${rawMessage}`

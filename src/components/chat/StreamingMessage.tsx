@@ -63,6 +63,8 @@ interface StreamingMessageProps {
   isStreamingPlanApproved: (sessionId: string) => boolean
   /** Callback when user approves streaming plan */
   onStreamingPlanApproval: () => void
+  /** Callback when user wants a custom build prompt for the streaming plan */
+  onStreamingCustomBuildPrompt?: () => void
   /** Callback when user approves streaming plan with yolo mode */
   onStreamingPlanApprovalYolo?: () => void
   /** Callback for clear context approval during streaming */
@@ -99,6 +101,7 @@ export const StreamingMessage = memo(function StreamingMessage({
   areQuestionsSkipped,
   isStreamingPlanApproved,
   onStreamingPlanApproval,
+  onStreamingCustomBuildPrompt,
   onStreamingPlanApprovalYolo,
   onStreamingClearContextApproval,
   onStreamingClearContextApprovalBuild,
@@ -284,6 +287,9 @@ export const StreamingMessage = memo(function StreamingMessage({
                                   toolCalls={toolCalls}
                                   isApproved={isApproved}
                                   onPlanApproval={onStreamingPlanApproval}
+                                  onCustomBuildPrompt={
+                                    onStreamingCustomBuildPrompt
+                                  }
                                   onPlanApprovalYolo={
                                     onStreamingPlanApprovalYolo
                                   }

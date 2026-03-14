@@ -585,6 +585,19 @@ export function useMainWindowEventListeners() {
       const keybindings = keybindingsRef.current
       for (const [action, binding] of Object.entries(keybindings)) {
         if (binding === shortcut) {
+          const planDialogOpen = useUIStore.getState().planDialogOpen
+          const isPlanDialogApprovalAction =
+            action === 'approve_plan' ||
+            action === 'approve_plan_yolo' ||
+            action === 'approve_plan_clear_context' ||
+            action === 'approve_plan_clear_context_build' ||
+            action === 'approve_plan_worktree_build' ||
+            action === 'approve_plan_worktree_yolo'
+
+          if (planDialogOpen && isPlanDialogApprovalAction) {
+            return
+          }
+
           e.preventDefault()
           e.stopPropagation()
           executeKeybindingAction(

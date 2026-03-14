@@ -1386,6 +1386,15 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
     [planDialogCard, handlePlanApproval]
   )
 
+  const handleDialogApproveWithCustomPrompt = useCallback(
+    (updatedPlan: string, customPrompt: string) => {
+      if (planDialogCard) {
+        handlePlanApproval(planDialogCard, updatedPlan, customPrompt)
+      }
+    },
+    [planDialogCard, handlePlanApproval]
+  )
+
   const handleDialogApproveYolo = useCallback(
     (updatedPlan: string) => {
       if (planDialogCard) {
@@ -1863,6 +1872,7 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
           editable={true}
           approvalContext={planApprovalContext ?? undefined}
           onApprove={handleDialogApprove}
+          onApproveWithCustomPrompt={handleDialogApproveWithCustomPrompt}
           onApproveYolo={handleDialogApproveYolo}
           onClearContextApprove={handleDialogClearContextApprove}
           onClearContextBuildApprove={handleDialogClearContextApproveBuild}
@@ -1883,6 +1893,7 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
           editable={true}
           approvalContext={planApprovalContext ?? undefined}
           onApprove={handleDialogApprove}
+          onApproveWithCustomPrompt={handleDialogApproveWithCustomPrompt}
           onApproveYolo={handleDialogApproveYolo}
           onClearContextApprove={handleDialogClearContextApprove}
           onClearContextBuildApprove={handleDialogClearContextApproveBuild}

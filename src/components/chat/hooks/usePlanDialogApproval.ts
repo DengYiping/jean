@@ -20,6 +20,7 @@ import type {
 } from '@/types/chat'
 import type { Session } from '@/types/chat'
 import type { McpServerInfo } from '@/types/chat'
+import { buildPlanApprovalMessage } from '../plan-approval-message'
 
 interface UsePlanDialogApprovalParams {
   activeSessionId: string | null | undefined
@@ -65,7 +66,11 @@ export function usePlanDialogApproval({
   const queryClient = useQueryClient()
 
   const approve = useCallback(
-    (updatedPlan: string | undefined, mode: 'build' | 'yolo') => {
+    (
+      updatedPlan: string | undefined,
+      mode: 'build' | 'yolo',
+      customPrompt?: string
+    ) => {
       if (!activeSessionId || !activeWorktreeId || !activeWorktreePath) return
 
       // Optimistic updates: apply immediately so the approving client's UI updates
@@ -163,14 +168,20 @@ export function usePlanDialogApproval({
           )
         })
 
-      // Build approval message
-      const defaultText =
-        mode === 'yolo'
-          ? 'Plan approved (yolo mode). Begin implementing all changes immediately without asking for confirmation. Do not re-explain the plan — start writing code.'
-          : 'Plan approved. Begin implementing the changes now. Do not re-explain the plan — start writing code.'
-      const message = updatedPlan
-        ? `I've updated the plan. Please review and execute:\n\n<updated-plan>\n${updatedPlan}\n</updated-plan>`
-        : defaultText
+      const modelOverride =
+        mode === 'yolo' ? yoloModelRef.current : buildModelRef.current
+      const backendOverride =
+        mode === 'yolo' ? yoloBackendRef.current : buildBackendRef.current
+      const message = buildPlanApprovalMessage({
+        mode,
+        backend:
+          (backendOverride as Session['backend'] | null) ??
+          (isCodexBackendRef.current ? 'codex' : null),
+        updatedPlan,
+        originalPlan: null,
+        customPrompt,
+        approvedPlanContent: updatedPlan,
+      })
 
       setExecutionMode(activeSessionId, mode)
       invoke('broadcast_session_setting', {
@@ -196,10 +207,6 @@ export function usePlanDialogApproval({
         )
       })
 
-      const modelOverride =
-        mode === 'yolo' ? yoloModelRef.current : buildModelRef.current
-      const backendOverride =
-        mode === 'yolo' ? yoloBackendRef.current : buildBackendRef.current
       const model = modelOverride ?? selectedModelRef.current
       const modeLabel = mode === 'yolo' ? 'Yolo' : 'Build'
       const overrideStr =
@@ -265,10 +272,20 @@ export function usePlanDialogApproval({
     [approve]
   )
 
+  const handlePlanDialogApproveWithCustomPrompt = useCallback(
+    (updatedPlan: string | undefined, customPrompt: string) =>
+      approve(updatedPlan, 'build', customPrompt),
+    [approve]
+  )
+
   const handlePlanDialogApproveYolo = useCallback(
     (updatedPlan?: string) => approve(updatedPlan, 'yolo'),
     [approve]
   )
 
-  return { handlePlanDialogApprove, handlePlanDialogApproveYolo }
+  return {
+    handlePlanDialogApprove,
+    handlePlanDialogApproveWithCustomPrompt,
+    handlePlanDialogApproveYolo,
+  }
 }

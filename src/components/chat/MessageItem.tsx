@@ -74,6 +74,8 @@ interface MessageItemProps {
   isSending: boolean
   /** Callback when user approves a plan */
   onPlanApproval: (messageId: string) => void
+  /** Callback when user wants to add a custom prompt before build approval */
+  onCustomBuildPrompt?: (messageId: string) => void
   /** Callback when user approves a plan with yolo mode */
   onPlanApprovalYolo?: (messageId: string) => void
   /** Callback for clear context approval (new session with plan in yolo mode) */
@@ -140,6 +142,7 @@ export const MessageItem = memo(function MessageItem({
   approveButtonRef,
   isSending,
   onPlanApproval,
+  onCustomBuildPrompt,
   onPlanApprovalYolo,
   onClearContextApproval,
   onClearContextApprovalBuild,
@@ -194,6 +197,10 @@ export const MessageItem = memo(function MessageItem({
   const handlePlanApprovalYolo = useCallback(() => {
     onPlanApprovalYolo?.(message.id)
   }, [onPlanApprovalYolo, message.id])
+
+  const handleCustomBuildPrompt = useCallback(() => {
+    onCustomBuildPrompt?.(message.id)
+  }, [onCustomBuildPrompt, message.id])
 
   // Stable callback for clear context approval
   const handleClearContextApproval = useCallback(() => {
@@ -487,6 +494,7 @@ export const MessageItem = memo(function MessageItem({
             isLatestPlanRequest={isLatestPlanRequest}
             hasFollowUpMessage={hasFollowUpMessage}
             onPlanApproval={handlePlanApproval}
+            onCustomBuildPrompt={handleCustomBuildPrompt}
             onPlanApprovalYolo={handlePlanApprovalYolo}
             onClearContextApproval={handleClearContextApproval}
             onClearContextBuildApproval={handleClearContextApprovalBuild}
@@ -556,6 +564,7 @@ export const MessageItem = memo(function MessageItem({
                 isLatestPlanRequest={isLatestPlanRequest}
                 hasFollowUpMessage={hasFollowUpMessage}
                 onPlanApproval={handlePlanApproval}
+                onCustomBuildPrompt={handleCustomBuildPrompt}
                 onPlanApprovalYolo={handlePlanApprovalYolo}
                 onClearContextApproval={handleClearContextApproval}
                 onClearContextBuildApproval={handleClearContextApprovalBuild}

@@ -1266,6 +1266,14 @@ fn normalize_item_types(item: &serde_json::Value) -> serde_json::Value {
             };
             obj.insert("type".to_string(), serde_json::json!(normalized));
         }
+        if obj.get("type").and_then(|v| v.as_str()) == Some("command_execution") {
+            if let Some(command) = obj.get("command").and_then(|v| v.as_str()) {
+                obj.insert(
+                    "command".to_string(),
+                    serde_json::json!(normalize_bash_display_command(command)),
+                );
+            }
+        }
         // Also normalize nested field names for command_execution
         if let Some(output) = obj.remove("aggregatedOutput") {
             obj.insert("aggregated_output".to_string(), output);
@@ -1281,6 +1289,87 @@ fn normalize_item_types(item: &serde_json::Value) -> serde_json::Value {
         }
     }
     item
+}
+
+fn parse_double_quoted_shell_word(payload: &str) -> Option<String> {
+    if !payload.starts_with('"') {
+        return None;
+    }
+
+    let mut result = String::new();
+    let mut chars = payload.char_indices();
+    chars.next()?;
+
+    while let Some((idx, ch)) = chars.next() {
+        match ch {
+            '"' => {
+                if payload[idx + ch.len_utf8()..].trim().is_empty() {
+                    return Some(result);
+                }
+                return None;
+            }
+            '\\' => {
+                let (_, next) = chars.next()?;
+                result.push(next);
+            }
+            _ => result.push(ch),
+        }
+    }
+
+    None
+}
+
+fn parse_single_quoted_shell_word(payload: &str) -> Option<String> {
+    if !payload.starts_with('\'') {
+        return None;
+    }
+
+    let mut result = String::new();
+    let mut chars = payload.char_indices();
+    chars.next()?;
+
+    while let Some((idx, ch)) = chars.next() {
+        if ch != '\'' {
+            result.push(ch);
+            continue;
+        }
+
+        let rest = &payload[idx..];
+        if rest.starts_with("'\\''") {
+            result.push('\'');
+            chars.next()?;
+            chars.next()?;
+            chars.next()?;
+            continue;
+        }
+        if rest.starts_with("'\"'\"'") {
+            result.push('\'');
+            chars.next()?;
+            chars.next()?;
+            chars.next()?;
+            chars.next()?;
+            continue;
+        }
+
+        if payload[idx + ch.len_utf8()..].trim().is_empty() {
+            return Some(result);
+        }
+        return None;
+    }
+
+    None
+}
+
+fn normalize_bash_display_command(command: &str) -> String {
+    ["/bin/zsh -lc ", "zsh -lc ", "/bin/bash -lc ", "bash -lc "]
+        .iter()
+        .find_map(|prefix| {
+            command.strip_prefix(prefix).and_then(|payload| {
+                parse_single_quoted_shell_word(payload)
+                    .or_else(|| parse_double_quoted_shell_word(payload))
+            })
+        })
+        .unwrap_or_else(|| command.to_string())
 }
 
 fn collab_tool_display_name(collab_tool: &str) -> &str {
@@ -1391,11 +1480,9 @@ fn handle_approval_request(
         }
         "item/commandExecution/requestApproval" => {
             // Emit permission denied event for the frontend
-            let command = params
-                .get("command")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
+            let command = normalize_bash_display_command(
+                params.get("command").and_then(|v| v.as_str()).unwrap_or(""),
+            );
             let item_id = params
                 .get("itemId")
                 .and_then(|v| v.as_str())
@@ -2383,7 +2470,11 @@ pub fn parse_codex_run_to_message(
 
         match event_type {
             "item.started" => {
-                let item = msg.get("item").unwrap_or(&serde_json::Value::Null);
+                let normalized_item = msg
+                    .get("item")
+                    .map(normalize_item_types)
+                    .unwrap_or(serde_json::Value::Null);
+                let item = &normalized_item;
                 let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
                 let item_id = item.get("id").and_then(|v| v.as_str()).unwrap_or("");
 
@@ -2553,7 +2644,11 @@ pub fn parse_codex_run_to_message(
                 }
             }
             "item.completed" => {
-                let item = msg.get("item").unwrap_or(&serde_json::Value::Null);
+                let normalized_item = msg
+                    .get("item")
+                    .map(normalize_item_types)
+                    .unwrap_or(serde_json::Value::Null);
+                let item = &normalized_item;
                 let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
                 let item_id = item.get("id").and_then(|v| v.as_str()).unwrap_or("");
 
@@ -2691,7 +2786,11 @@ pub fn parse_codex_run_to_message(
             // item.updated refreshes todo/collab inputs in-place for history
             // replay too.
             "item.updated" => {
-                let item = msg.get("item").unwrap_or(&serde_json::Value::Null);
+                let normalized_item = msg
+                    .get("item")
+                    .map(normalize_item_types)
+                    .unwrap_or(serde_json::Value::Null);
+                let item = &normalized_item;
                 let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
                 let item_id = item.get("id").and_then(|v| v.as_str()).unwrap_or("");
 
@@ -3263,6 +3362,71 @@ mod tests {
         });
 
         assert!(!codex_error_notification_will_retry(&params));
+    }
+
+    #[test]
+    fn normalize_bash_display_command_unwraps_zsh_and_bash_wrappers() {
+        assert_eq!(
+            normalize_bash_display_command("/bin/zsh -lc 'git status --short'"),
+            "git status --short"
+        );
+        assert_eq!(
+            normalize_bash_display_command("bash -lc \"sed -n '1,260p' docs/file.md\""),
+            "sed -n '1,260p' docs/file.md"
+        );
+    }
+
+    #[test]
+    fn normalize_bash_display_command_preserves_unsupported_or_malformed_commands() {
+        assert_eq!(
+            normalize_bash_display_command("python -c 'print(1)'"),
+            "python -c 'print(1)'"
+        );
+        assert_eq!(
+            normalize_bash_display_command("/bin/zsh -lc 'unterminated"),
+            "/bin/zsh -lc 'unterminated"
+        );
+    }
+
+    #[test]
+    fn parse_codex_run_normalizes_wrapped_command_execution_history() {
+        let run = RunEntry {
+            run_id: "run-3".to_string(),
+            user_message_id: "user-3".to_string(),
+            user_message: "prompt".to_string(),
+            model: None,
+            execution_mode: Some("build".to_string()),
+            thinking_level: None,
+            effort_level: None,
+            started_at: 1,
+            ended_at: Some(2),
+            status: RunStatus::Completed,
+            assistant_message_id: Some("assistant-3".to_string()),
+            cancelled: false,
+            recovered: false,
+            claude_session_id: None,
+            pid: None,
+            usage: None,
+        };
+
+        let lines = vec![serde_json::json!({
+            "type": "item.started",
+            "item": {
+                "type": "commandExecution",
+                "id": "cmd-1",
+                "command": "/bin/zsh -lc 'git status --short'"
+            }
+        })
+        .to_string()];
+
+        let message = parse_codex_run_to_message(&lines, &run).expect("message should parse");
+        let bash_tool = message
+            .tool_calls
+            .iter()
+            .find(|tool| tool.name == "Bash")
+            .expect("bash tool should be restored");
+
+        assert_eq!(bash_tool.input["command"], "git status --short");
     }
 }
 

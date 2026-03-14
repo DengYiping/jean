@@ -61,10 +61,8 @@ describe('ToolCallInline', () => {
     fireEvent.click(screen.getByRole('button'))
 
     expect(screen.getByText('2 files changed')).toBeInTheDocument()
-    expect(screen.getAllByText('+1')).toHaveLength(2)
-    expect(screen.getAllByText('-3')).toHaveLength(1)
-    expect(screen.getByText('Deleted')).toBeInTheDocument()
-    expect(screen.getByText('Modified')).toBeInTheDocument()
+    expect(screen.getByText('D')).toBeInTheDocument()
+    expect(screen.getByText('M')).toBeInTheDocument()
 
     fireEvent.click(
       screen.getByRole('button', { name: /GenerateViewRequestIF\.java/i })

@@ -1,10 +1,10 @@
-import { memo, useState } from 'react'
-import { ChevronDown } from 'lucide-react'
+import { memo, useMemo, useState } from 'react'
+import { ChevronRight } from 'lucide-react'
 import type { ToolCall } from '@/types/chat'
 import { cn } from '@/lib/utils'
 import {
   collectFileChanges,
-  formatFileChangeKind,
+  computeDisplayNames,
   getFileChangeTotals,
   type ParsedFileChange,
 } from './file-change-utils'
@@ -14,78 +14,99 @@ interface FileChangeCardProps {
   className?: string
 }
 
-function getKindBadgeClass(kind: string): string {
+const COLLAPSE_THRESHOLD = 5
+const SHOW_MORE_THRESHOLD = 15
+const INITIAL_VISIBLE = 10
+
+function getKindColor(kind: string): string {
   switch (kind) {
     case 'add':
     case 'create':
-      return 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300'
+      return 'text-emerald-400'
     case 'delete':
-      return 'border-rose-500/20 bg-rose-500/10 text-rose-300'
+      return 'text-rose-400'
     case 'move':
     case 'rename':
-      return 'border-amber-500/20 bg-amber-500/10 text-amber-300'
+      return 'text-amber-400'
     default:
-      return 'border-sky-500/20 bg-sky-500/10 text-sky-300'
+      return 'text-sky-400'
   }
 }
 
-function FileChangeRow({ change }: { change: ParsedFileChange }) {
+function getKindLetter(kind: string): string {
+  switch (kind) {
+    case 'add':
+    case 'create':
+      return 'A'
+    case 'delete':
+      return 'D'
+    case 'move':
+    case 'rename':
+      return 'R'
+    default:
+      return 'M'
+  }
+}
+
+function FileChangeRow({
+  change,
+  displayName,
+}: {
+  change: ParsedFileChange
+  displayName: string
+}) {
   const [isOpen, setIsOpen] = useState(false)
-  const kindLabel = formatFileChangeKind(change.kind)
 
   return (
-    <div className="border-t border-white/6 first:border-t-0">
+    <div className="border-t border-white/[0.04] first:border-t-0">
       <button
         type="button"
         onClick={() => setIsOpen(open => !open)}
-        className="flex w-full items-center gap-2.5 px-4 py-3 text-left transition-colors hover:bg-white/[0.035]"
+        title={change.path}
+        className="flex w-full items-center gap-2 px-3 py-[5px] text-left transition-colors hover:bg-white/[0.04]"
       >
-        <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center gap-2">
-            <div className="truncate text-[13px] font-medium text-zinc-100">
-              {change.path}
-            </div>
-            <span
-              className={cn(
-                'shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.16em]',
-                getKindBadgeClass(change.kind)
-              )}
-            >
-              {kindLabel}
-            </span>
-          </div>
-          {change.previousPath && (
-            <div className="truncate pt-0.5 text-[10px] text-zinc-500">
-              from {change.previousPath}
-            </div>
-          )}
-        </div>
-        <div className="shrink-0 text-[12px] font-semibold">
-          <span className="text-emerald-400">+{change.added}</span>
-          <span className="px-1 text-zinc-700">·</span>
-          <span className="text-rose-400">-{change.removed}</span>
-        </div>
-        <ChevronDown
+        <span
           className={cn(
-            'h-3.5 w-3.5 shrink-0 text-zinc-500 transition-transform duration-200',
-            isOpen && 'rotate-180'
+            'w-4 shrink-0 text-center text-[10px] font-bold',
+            getKindColor(change.kind)
+          )}
+        >
+          {getKindLetter(change.kind)}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-[12px] text-zinc-300">
+          {displayName}
+        </span>
+        {(change.added > 0 || change.removed > 0) && (
+          <span className="shrink-0 text-[11px] tabular-nums text-zinc-500">
+            {change.added > 0 && (
+              <span className="text-emerald-400/70">+{change.added}</span>
+            )}
+            {change.added > 0 && change.removed > 0 && (
+              <span className="px-0.5">/</span>
+            )}
+            {change.removed > 0 && (
+              <span className="text-rose-400/70">-{change.removed}</span>
+            )}
+          </span>
+        )}
+        <ChevronRight
+          className={cn(
+            'h-3 w-3 shrink-0 text-zinc-600 transition-transform duration-150',
+            isOpen && 'rotate-90'
           )}
         />
       </button>
 
       {isOpen && (
-        <div className="border-t border-white/6 bg-black/20">
-          <div className="flex items-center gap-2 px-4 py-1.5 text-[10px] uppercase tracking-[0.18em] text-zinc-500">
-            <span>{kindLabel}</span>
-          </div>
+        <div className="border-t border-white/[0.04] bg-black/30">
           {change.lines.length > 0 ? (
-            <div className="max-h-80 overflow-auto font-mono text-[11px]">
+            <div className="max-h-56 overflow-auto font-mono text-[10px] leading-[18px]">
               {change.lines.map((line, index) => {
                 if (line.kind === 'hunk') {
                   return (
                     <div
-                      key={`${change.path}-hunk-${index}`}
-                      className="border-t border-white/6 bg-sky-500/10 px-4 py-1 text-sky-300"
+                      key={`h-${index}`}
+                      className="bg-sky-500/8 px-3 py-0.5 text-sky-400/60"
                     >
                       {line.text}
                     </div>
@@ -95,8 +116,8 @@ function FileChangeRow({ change }: { change: ParsedFileChange }) {
                 if (line.kind === 'meta') {
                   return (
                     <div
-                      key={`${change.path}-meta-${index}`}
-                      className="border-t border-white/6 px-4 py-1 text-zinc-500"
+                      key={`m-${index}`}
+                      className="px-3 py-0.5 text-zinc-600"
                     >
                       {line.text}
                     </div>
@@ -112,30 +133,30 @@ function FileChangeRow({ change }: { change: ParsedFileChange }) {
 
                 return (
                   <div
-                    key={`${change.path}-line-${index}`}
+                    key={`l-${index}`}
                     className={cn(
-                      'grid grid-cols-[3.25rem_3.25rem_1rem_minmax(0,1fr)] items-start border-t border-white/6',
-                      line.kind === 'added' && 'bg-emerald-500/10',
-                      line.kind === 'removed' && 'bg-rose-500/10'
+                      'grid grid-cols-[2.5rem_2.5rem_0.75rem_minmax(0,1fr)]',
+                      line.kind === 'added' && 'bg-emerald-500/8',
+                      line.kind === 'removed' && 'bg-rose-500/8'
                     )}
                   >
-                    <span className="px-2 py-0.5 text-right text-zinc-500">
+                    <span className="select-none px-1 text-right text-zinc-600">
                       {line.oldLineNumber ?? ''}
                     </span>
-                    <span className="px-2 py-0.5 text-right text-zinc-500">
+                    <span className="select-none px-1 text-right text-zinc-600">
                       {line.newLineNumber ?? ''}
                     </span>
                     <span
                       className={cn(
-                        'px-1 py-0.5',
-                        line.kind === 'added' && 'text-emerald-300',
-                        line.kind === 'removed' && 'text-rose-300',
-                        line.kind === 'context' && 'text-zinc-600'
+                        'select-none',
+                        line.kind === 'added' && 'text-emerald-400/60',
+                        line.kind === 'removed' && 'text-rose-400/60',
+                        line.kind === 'context' && 'text-zinc-700'
                       )}
                     >
                       {sign}
                     </span>
-                    <span className="overflow-x-auto whitespace-pre px-1 py-0.5 text-zinc-200">
+                    <span className="overflow-x-auto whitespace-pre text-zinc-300">
                       {line.text || ' '}
                     </span>
                   </div>
@@ -143,8 +164,8 @@ function FileChangeRow({ change }: { change: ParsedFileChange }) {
               })}
             </div>
           ) : (
-            <div className="px-4 py-2.5 text-[12px] text-zinc-500">
-              No textual diff available.
+            <div className="px-3 py-2 text-[11px] text-zinc-600">
+              No diff available
             </div>
           )}
         </div>
@@ -158,38 +179,85 @@ export const FileChangeCard = memo(function FileChangeCard({
   className,
 }: FileChangeCardProps) {
   const changes = collectFileChanges(toolCalls)
+  const [isListOpen, setIsListOpen] = useState(
+    () => changes.length <= COLLAPSE_THRESHOLD
+  )
+  const [showAll, setShowAll] = useState(false)
+
+  const displayNameMap = useMemo(
+    () => computeDisplayNames(changes.map(c => c.path)),
+    [changes]
+  )
 
   if (changes.length === 0) return null
 
   const totals = getFileChangeTotals(changes)
+  const needsShowMore =
+    isListOpen && !showAll && changes.length > SHOW_MORE_THRESHOLD
+  const visibleChanges = needsShowMore
+    ? changes.slice(0, INITIAL_VISIBLE)
+    : changes
+  const remainingCount = changes.length - INITIAL_VISIBLE
 
   return (
     <div
       className={cn(
-        'mt-3 overflow-hidden rounded-[18px] border border-white/8 bg-[linear-gradient(180deg,rgba(34,34,34,0.96),rgba(23,23,23,0.98))] text-zinc-50 shadow-[0_14px_40px_rgba(0,0,0,0.24)]',
+        'mt-3 overflow-hidden rounded-xl border border-white/[0.06] bg-[linear-gradient(180deg,rgba(30,30,30,0.97),rgba(22,22,22,0.99))]',
         className
       )}
     >
-      <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1 px-4 py-3">
-        <span className="text-[14px] font-semibold tracking-[-0.02em] text-zinc-100">
+      <button
+        type="button"
+        onClick={() => {
+          if (changes.length > COLLAPSE_THRESHOLD) {
+            setIsListOpen(open => !open)
+          }
+        }}
+        className={cn(
+          'flex w-full items-center gap-2 px-3 py-2',
+          changes.length > COLLAPSE_THRESHOLD &&
+            'cursor-pointer transition-colors hover:bg-white/[0.03]'
+        )}
+      >
+        {changes.length > COLLAPSE_THRESHOLD && (
+          <ChevronRight
+            className={cn(
+              'h-3 w-3 shrink-0 text-zinc-500 transition-transform duration-150',
+              isListOpen && 'rotate-90'
+            )}
+          />
+        )}
+        <span className="text-[12px] font-semibold text-zinc-300">
           {changes.length} file{changes.length === 1 ? '' : 's'} changed
         </span>
-        <span className="text-[14px] font-semibold tracking-[-0.02em] text-emerald-400">
+        <span className="text-[12px] font-semibold text-emerald-400/80">
           +{totals.added}
         </span>
-        <span className="text-[14px] font-semibold tracking-[-0.02em] text-rose-400">
+        <span className="text-[12px] font-semibold text-rose-400/80">
           -{totals.removed}
         </span>
-      </div>
+      </button>
 
-      <div>
-        {changes.map(change => (
-          <FileChangeRow
-            key={`${change.path}:${change.previousPath ?? ''}:${change.kind}`}
-            change={change}
-          />
-        ))}
-      </div>
+      {isListOpen && (
+        <div className="border-t border-white/[0.04]">
+          {visibleChanges.map(change => (
+            <FileChangeRow
+              key={`${change.path}:${change.previousPath ?? ''}:${change.kind}`}
+              change={change}
+              displayName={displayNameMap.get(change.path) ?? change.path}
+            />
+          ))}
+          {needsShowMore && (
+            <button
+              type="button"
+              onClick={() => setShowAll(true)}
+              className="w-full border-t border-white/[0.04] px-3 py-1.5 text-[11px] text-zinc-500 transition-colors hover:bg-white/[0.03] hover:text-zinc-400"
+            >
+              Show {remainingCount} more file{remainingCount === 1 ? '' : 's'}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   )
 })

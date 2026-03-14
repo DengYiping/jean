@@ -1,4 +1,5 @@
 import type { ToolCall } from '@/types/chat'
+import { getFilename, normalizePath } from '@/lib/path-utils'
 
 export type FileChangeLineKind =
   | 'hunk'
@@ -238,6 +239,72 @@ export function getFileChangeTotals(changes: ParsedFileChange[]): {
     added: changes.reduce((sum, change) => sum + change.added, 0),
     removed: changes.reduce((sum, change) => sum + change.removed, 0),
   }
+}
+
+export function computeDisplayNames(paths: string[]): Map<string, string> {
+  const result = new Map<string, string>()
+  if (paths.length === 0) return result
+
+  const entries = paths.map(p => ({
+    original: p,
+    norm: normalizePath(p),
+    basename: getFilename(p),
+  }))
+
+  const groups = new Map<string, typeof entries>()
+  for (const entry of entries) {
+    const group = groups.get(entry.basename)
+    if (group) {
+      group.push(entry)
+    } else {
+      groups.set(entry.basename, [entry])
+    }
+  }
+
+  for (const [basename, group] of groups) {
+    const sole = group.length === 1 ? group[0] : undefined
+    if (sole) {
+      result.set(sole.original, basename)
+      continue
+    }
+
+    const withSegs = group.map(e => ({
+      ...e,
+      segments: e.norm.split('/').slice(0, -1),
+    }))
+
+    for (let depth = 1; depth <= 20; depth++) {
+      const seen = new Map<string, typeof withSegs>()
+      for (const entry of withSegs) {
+        const suffix = entry.segments.slice(-depth).join('/')
+        const key = suffix ? `${suffix}/${basename}` : basename
+        const bucket = seen.get(key)
+        if (bucket) {
+          bucket.push(entry)
+        } else {
+          seen.set(key, [entry])
+        }
+      }
+
+      for (const [name, bucket] of seen) {
+        const single = bucket.length === 1 ? bucket[0] : undefined
+        if (single && !result.has(single.original)) {
+          const isPartial = name !== single.norm
+          result.set(single.original, isPartial ? `\u2026/${name}` : name)
+        }
+      }
+
+      if (withSegs.every(e => result.has(e.original))) break
+    }
+
+    for (const entry of withSegs) {
+      if (!result.has(entry.original)) {
+        result.set(entry.original, entry.norm)
+      }
+    }
+  }
+
+  return result
 }
 
 export function formatFileChangeKind(kind: string): string {

@@ -28,19 +28,16 @@ describe('FileChangeCard', () => {
     )
 
     expect(screen.getByText('2 files changed')).toBeInTheDocument()
-    expect(screen.getAllByText('+2').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('-3').length).toBeGreaterThan(0)
-    expect(screen.getByText('Modified')).toBeInTheDocument()
-    expect(screen.getByText('Deleted')).toBeInTheDocument()
+    expect(screen.getByText('M')).toBeInTheDocument()
+    expect(screen.getByText('D')).toBeInTheDocument()
     expect(screen.queryByText('Undo')).not.toBeInTheDocument()
 
     fireEvent.click(
       screen.getByRole('button', {
-        name: /src\/components\/chat\/ToolCallInline\.test\.tsx/i,
+        name: /ToolCallInline\.test\.tsx/i,
       })
     )
 
-    expect(screen.getAllByText('Modified').length).toBeGreaterThan(0)
     expect(screen.getByText('@@ -1,2 +1,3 @@')).toBeInTheDocument()
     expect(screen.getByText('line 4')).toBeInTheDocument()
   })

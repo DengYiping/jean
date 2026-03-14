@@ -26,9 +26,7 @@ describe('PlanDialog', () => {
     )
 
     expect(screen.getByText('Custom build prompt')).toBeVisible()
-    expect(
-      screen.getByRole('button', { name: /Build \(/ })
-    ).toBeDisabled()
+    expect(screen.getByRole('button', { name: /Build \(/ })).toBeDisabled()
   })
 
   it('submits the trimmed custom prompt with the edited plan content', () => {

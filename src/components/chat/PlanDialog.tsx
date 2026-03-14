@@ -413,7 +413,8 @@ export function PlanDialog({
                   disabled={!canSubmitCustomPrompt}
                   title={`Build with custom prompt (${formatShortcutDisplay(DEFAULT_KEYBINDINGS.approve_plan)})`}
                 >
-                  Build ({formatShortcutDisplay(DEFAULT_KEYBINDINGS.approve_plan)})
+                  Build (
+                  {formatShortcutDisplay(DEFAULT_KEYBINDINGS.approve_plan)})
                 </Button>
               ) : (
                 <>

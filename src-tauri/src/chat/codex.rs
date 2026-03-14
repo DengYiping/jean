@@ -1110,6 +1110,12 @@ fn process_server_notification(
                 .and_then(|e| e.get("message"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("Unknown Codex error");
+            if codex_error_notification_will_retry(params) {
+                log::warn!(
+                    "Retriable Codex app-server error for session {session_id}: {error_msg}"
+                );
+                return;
+            }
             let user_error = format_codex_user_error(error_msg);
             let _ = app.emit_all(
                 "chat:error",
@@ -1120,13 +1126,7 @@ fn process_server_notification(
                 },
             );
             *error_emitted = true;
-            let will_retry = params
-                .get("willRetry")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-            if !will_retry {
-                *completed = true;
-            }
+            *completed = true;
         }
         _ => {
             log::trace!("Unhandled app-server notification: {method}");
@@ -1525,6 +1525,13 @@ fn format_codex_user_error(error_msg: &str) -> String {
     } else {
         format!("Codex error: {error_msg}")
     }
+}
+
+fn codex_error_notification_will_retry(params: &serde_json::Value) -> bool {
+    params
+        .get("willRetry")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3237,6 +3244,25 @@ mod tests {
         assert_eq!(question_tool.id, "question-1");
         assert_eq!(question_tool.input["rpcId"], 42);
         assert_eq!(question_tool.input["questions"][0]["id"], "q1");
+    }
+
+    #[test]
+    fn retriable_error_notifications_do_not_mark_turn_terminal() {
+        let params = serde_json::json!({
+            "error": { "message": "temporary upstream failure" },
+            "willRetry": true
+        });
+
+        assert!(codex_error_notification_will_retry(&params));
+    }
+
+    #[test]
+    fn non_retriable_error_notifications_remain_terminal() {
+        let params = serde_json::json!({
+            "error": { "message": "hard failure" }
+        });
+
+        assert!(!codex_error_notification_will_retry(&params));
     }
 }
 

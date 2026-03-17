@@ -5,6 +5,7 @@ import type { PullRequestReviewDialogRequest } from '@/types/github'
 export type PreferencePane =
   | 'general'
   | 'opinionated'
+  | 'usage'
   | 'appearance'
   | 'keybindings'
   | 'magic-prompts'

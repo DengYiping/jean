@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import {
   Settings,
   Palette,
@@ -6,6 +6,7 @@ import {
   Wand2,
   Plug,
   Blocks,
+  BarChart3,
   Puzzle,
   FlaskConical,
   Globe,
@@ -34,6 +35,14 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command'
+import {
   Sidebar,
   SidebarContent,
   SidebarGroup,
@@ -44,6 +53,8 @@ import {
   SidebarProvider,
 } from '@/components/ui/sidebar'
 import { useUIStore, type PreferencePane } from '@/store/ui-store'
+import type { KeybindingAction } from '@/types/keybindings'
+import type { MagicPrompts } from '@/types/preferences'
 import { GeneralPane } from './panes/GeneralPane'
 import { AppearancePane } from './panes/AppearancePane'
 import { KeybindingsPane } from './panes/KeybindingsPane'
@@ -51,10 +62,15 @@ import { MagicPromptsPane } from './panes/MagicPromptsPane'
 import { CodexSkillsPane } from './panes/CodexSkillsPane'
 import { McpServersPane } from './panes/McpServersPane'
 import { ProvidersPane } from './panes/ProvidersPane'
+import { UsagePane } from './panes/UsagePane'
 import { IntegrationsPane } from './panes/IntegrationsPane'
 import { ExperimentalPane } from './panes/ExperimentalPane'
 import { WebAccessPane } from './panes/WebAccessPane'
 import { OpinionatedPane } from './panes/OpinionatedPane'
+import {
+  searchPreferenceEntries,
+  type PreferenceSearchEntry,
+} from './preferences-search'
 
 const navigationItems = [
   {
@@ -71,6 +87,11 @@ const navigationItems = [
     id: 'providers' as const,
     name: 'Providers',
     icon: Blocks,
+  },
+  {
+    id: 'usage' as const,
+    name: 'Usage',
+    icon: BarChart3,
   },
   {
     id: 'appearance' as const,
@@ -134,6 +155,8 @@ const getPaneTitle = (pane: PreferencePane): string => {
       return 'MCP Servers'
     case 'providers':
       return 'Providers'
+    case 'usage':
+      return 'Usage'
     case 'integrations':
       return 'Integrations'
     case 'experimental':
@@ -147,15 +170,42 @@ const getPaneTitle = (pane: PreferencePane): string => {
 
 export function PreferencesDialog() {
   const [activePane, setActivePane] = useState<PreferencePane>('general')
+  const [searchValue, setSearchValue] = useState('')
+  const [pendingJump, setPendingJump] = useState<PreferenceSearchEntry | null>(
+    null
+  )
+  const [searchTargetAction, setSearchTargetAction] =
+    useState<KeybindingAction | null>(null)
+  const [searchTargetPromptKey, setSearchTargetPromptKey] = useState<
+    keyof MagicPrompts | null
+  >(null)
   const preferencesOpen = useUIStore(state => state.preferencesOpen)
   const setPreferencesOpen = useUIStore(state => state.setPreferencesOpen)
   const preferencesPane = useUIStore(state => state.preferencesPane)
+  const clearHighlightTimeoutRef = useRef<number | null>(null)
+
+  const searchResults = useMemo(
+    () => searchPreferenceEntries(searchValue, 40),
+    [searchValue]
+  )
+  const isSearching = searchValue.trim().length > 0
+
+  const clearPendingHighlight = useCallback(() => {
+    if (clearHighlightTimeoutRef.current) {
+      window.clearTimeout(clearHighlightTimeoutRef.current)
+      clearHighlightTimeoutRef.current = null
+    }
+  }, [])
 
   // Handle open state change and navigate to specific pane if requested
   const handleOpenChange = useCallback(
     (open: boolean) => {
       if (!open) {
         setActivePane('general')
+        setSearchValue('')
+        setPendingJump(null)
+        setSearchTargetAction(null)
+        setSearchTargetPromptKey(null)
       }
       setPreferencesOpen(open)
     },
@@ -169,6 +219,64 @@ export function PreferencesDialog() {
       setActivePane(preferencesPane)
     }
   }, [preferencesOpen, preferencesPane])
+
+  useEffect(() => {
+    if (!pendingJump) return
+    if (pendingJump.pane !== activePane) return
+
+    const scrollAndHighlight = () => {
+      const anchorId = pendingJump.anchorId ?? pendingJump.fallbackAnchorId
+      if (!anchorId) return
+
+      const target = document.getElementById(anchorId)
+      if (!target) return
+
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      target.classList.add(
+        'ring-2',
+        'ring-primary/40',
+        'ring-offset-2',
+        'ring-offset-background',
+        'rounded-md'
+      )
+
+      clearPendingHighlight()
+      clearHighlightTimeoutRef.current = window.setTimeout(() => {
+        target.classList.remove(
+          'ring-2',
+          'ring-primary/40',
+          'ring-offset-2',
+          'ring-offset-background',
+          'rounded-md'
+        )
+      }, 1800)
+    }
+
+    const raf = window.requestAnimationFrame(scrollAndHighlight)
+    setPendingJump(null)
+    return () => window.cancelAnimationFrame(raf)
+  }, [activePane, clearPendingHighlight, pendingJump])
+
+  useEffect(() => () => clearPendingHighlight(), [clearPendingHighlight])
+
+  const handlePaneSelect = useCallback((pane: PreferencePane) => {
+    setSearchValue('')
+    setPendingJump(null)
+    setSearchTargetAction(null)
+    setSearchTargetPromptKey(null)
+    setActivePane(pane)
+  }, [])
+
+  const handleSearchResultSelect = useCallback(
+    (entry: PreferenceSearchEntry) => {
+      setActivePane(entry.pane)
+      setSearchValue('')
+      setPendingJump(entry)
+      setSearchTargetAction(entry.keybindingAction ?? null)
+      setSearchTargetPromptKey(entry.detailKey ?? null)
+    },
+    []
+  )
 
   return (
     <Dialog open={preferencesOpen} onOpenChange={handleOpenChange}>
@@ -194,7 +302,7 @@ export function PreferencesDialog() {
                           isActive={activePane === item.id}
                         >
                           <button
-                            onClick={() => setActivePane(item.id)}
+                            onClick={() => handlePaneSelect(item.id)}
                             className="w-full"
                           >
                             <item.icon />
@@ -215,7 +323,7 @@ export function PreferencesDialog() {
                 {/* Mobile pane selector */}
                 <Select
                   value={activePane}
-                  onValueChange={v => setActivePane(v as PreferencePane)}
+                  onValueChange={v => handlePaneSelect(v as PreferencePane)}
                 >
                   <SelectTrigger className="md:hidden w-full">
                     <SelectValue />
@@ -256,17 +364,108 @@ export function PreferencesDialog() {
             </header>
 
             <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4 pt-0 min-h-0 custom-scrollbar">
-              {activePane === 'general' && <GeneralPane />}
-              {activePane === 'opinionated' && <OpinionatedPane />}
-              {activePane === 'appearance' && <AppearancePane />}
-              {activePane === 'keybindings' && <KeybindingsPane />}
-              {activePane === 'magic-prompts' && <MagicPromptsPane />}
-              {activePane === 'skills' && <CodexSkillsPane />}
-              {activePane === 'mcp-servers' && <McpServersPane />}
-              {activePane === 'providers' && <ProvidersPane />}
-              {activePane === 'integrations' && <IntegrationsPane />}
-              {activePane === 'experimental' && <ExperimentalPane />}
-              {activePane === 'web-access' && <WebAccessPane />}
+              <Command
+                shouldFilter={false}
+                className="rounded-lg border border-border bg-background"
+              >
+                <CommandInput
+                  placeholder="Search settings..."
+                  value={searchValue}
+                  onValueChange={setSearchValue}
+                />
+                {isSearching && (
+                  <CommandList className="max-h-[320px]">
+                    <CommandEmpty>No settings found.</CommandEmpty>
+                    <CommandGroup heading="Results">
+                      {searchResults.map(result => (
+                        <CommandItem
+                          key={result.id}
+                          value={`${result.title} ${result.paneTitle} ${result.sectionTitle ?? ''} ${result.keywords.join(' ')}`}
+                          onSelect={() => handleSearchResultSelect(result)}
+                        >
+                          <div className="flex min-w-0 flex-1 items-center gap-2">
+                            <span className="truncate">{result.title}</span>
+                            <span className="text-xs text-muted-foreground truncate">
+                              {result.sectionTitle
+                                ? `${result.paneTitle} / ${result.sectionTitle}`
+                                : result.paneTitle}
+                            </span>
+                          </div>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                )}
+              </Command>
+
+              {!isSearching && (
+                <>
+                  {activePane === 'general' && (
+                    <div id="pref-pane-general">
+                      <GeneralPane />
+                    </div>
+                  )}
+                  {activePane === 'opinionated' && (
+                    <div id="pref-pane-opinionated">
+                      <OpinionatedPane />
+                    </div>
+                  )}
+                  {activePane === 'providers' && (
+                    <div id="pref-pane-providers">
+                      <ProvidersPane />
+                    </div>
+                  )}
+                  {activePane === 'usage' && (
+                    <div id="pref-pane-usage">
+                      <UsagePane />
+                    </div>
+                  )}
+                  {activePane === 'appearance' && (
+                    <div id="pref-pane-appearance">
+                      <AppearancePane />
+                    </div>
+                  )}
+                  {activePane === 'keybindings' && (
+                    <div id="pref-pane-keybindings">
+                      <KeybindingsPane
+                        searchTargetAction={searchTargetAction}
+                      />
+                    </div>
+                  )}
+                  {activePane === 'magic-prompts' && (
+                    <div id="pref-pane-magic-prompts">
+                      <MagicPromptsPane
+                        searchTargetPromptKey={searchTargetPromptKey}
+                      />
+                    </div>
+                  )}
+                  {activePane === 'skills' && (
+                    <div id="pref-pane-skills">
+                      <CodexSkillsPane />
+                    </div>
+                  )}
+                  {activePane === 'mcp-servers' && (
+                    <div id="pref-pane-mcp-servers">
+                      <McpServersPane />
+                    </div>
+                  )}
+                  {activePane === 'integrations' && (
+                    <div id="pref-pane-integrations">
+                      <IntegrationsPane />
+                    </div>
+                  )}
+                  {activePane === 'experimental' && (
+                    <div id="pref-pane-experimental">
+                      <ExperimentalPane />
+                    </div>
+                  )}
+                  {activePane === 'web-access' && (
+                    <div id="pref-pane-web-access">
+                      <WebAccessPane />
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </main>
         </SidebarProvider>

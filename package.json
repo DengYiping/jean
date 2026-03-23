@@ -31,6 +31,7 @@
     "tauri:dev": "tauri dev --config src-tauri/tauri.conf.dev.json",
     "tauri:build": "bun run tauri build",
     "tauri:build:macos": "tauri build --target universal-apple-darwin --bundles app,dmg",
+    "tauri:build:install:macos:unsigned": "bun scripts/build-install-unsigned-macos-app.js",
     "tauri:build:linux": "tauri build --bundles deb,rpm",
     "tauri:build:linux:appimage": "bash scripts/build-appimage.sh",
     "tauri:build:windows": "tauri build --bundles msi,nsis",

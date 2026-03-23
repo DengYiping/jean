@@ -14,7 +14,6 @@ import { useCommandContext } from '@/lib/commands'
 import {
   ArrowUpCircle,
   Github,
-  Heart,
   PanelLeft,
   PanelLeftClose,
   Settings,
@@ -122,36 +121,6 @@ export function TitleBar({
                 )}
               </kbd>
             </TooltipContent>
-          </Tooltip>
-          {!isMobile && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  onClick={() =>
-                    openExternal('https://github.com/coollabsio/jean')
-                  }
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6 rounded-none text-foreground/70 hover:text-foreground"
-                >
-                  <Github className="h-3 w-3" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>GitHub</TooltipContent>
-            </Tooltip>
-          )}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                onClick={() => openExternal('https://jean.build/sponsorships/')}
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 rounded-none text-pink-500 hover:text-pink-400"
-              >
-                <Heart className="h-3 w-3" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Sponsor</TooltipContent>
           </Tooltip>
         </div>
       </div>

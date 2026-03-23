@@ -128,6 +128,9 @@ pub struct Project {
     /// Linear team ID to filter issues (None = show all teams)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub linear_team_id: Option<String>,
+    /// Hide this project's GitHub issues and PRs across Jean
+    #[serde(default)]
+    pub hide_github_issues_and_prs: bool,
     /// IDs of linked projects for cross-project context sharing
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub linked_project_ids: Vec<String>,
@@ -573,4 +576,26 @@ pub struct WorktreeBranchExistsEvent {
     pub issue_context: Option<super::github_issues::IssueContext>,
     /// PR context to use when creating a new worktree with the suggested name
     pub pr_context: Option<super::github_issues::PullRequestContext>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Project;
+
+    #[test]
+    fn project_deserializes_hide_github_issues_and_prs_to_false_by_default() {
+        let project: Project = serde_json::from_str(
+            r#"{
+                "id": "project-1",
+                "name": "demo",
+                "path": "/tmp/demo",
+                "default_branch": "main",
+                "added_at": 1,
+                "order": 0
+            }"#,
+        )
+        .unwrap();
+
+        assert!(!project.hide_github_issues_and_prs);
+    }
 }

@@ -49,6 +49,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
+import { hideGitHubIssuesAndPRs } from '@/types/projects'
 
 const SettingsSection: React.FC<{
   title: string
@@ -115,6 +117,8 @@ export function GeneralPane({
     null
   )
   const [showLinearApiKey, setShowLinearApiKey] = useState(false)
+  const [localHideGitHubIssuesAndPRs, setLocalHideGitHubIssuesAndPRs] =
+    useState<boolean | null>(null)
 
   // Linear has access if either project key or global key is set
   const hasLinearAccess =
@@ -295,6 +299,23 @@ export function GeneralPane({
     [projectId, updateSettings, queryClient]
   )
 
+  const handleHideGitHubIssuesAndPRsChange = useCallback(
+    (checked: boolean) => {
+      setLocalHideGitHubIssuesAndPRs(checked)
+      updateSettings.mutate(
+        {
+          projectId,
+          hideGithubIssuesAndPRs: checked,
+        },
+        {
+          onSuccess: () => setLocalHideGitHubIssuesAndPRs(null),
+          onError: () => setLocalHideGitHubIssuesAndPRs(null),
+        }
+      )
+    },
+    [projectId, updateSettings]
+  )
+
   const handleBrowseWorktreesDir = useCallback(async () => {
     const { open } = await import('@tauri-apps/plugin-dialog')
     const selected = await open({
@@ -306,6 +327,9 @@ export function GeneralPane({
       setLocalWorktreesDir(selected)
     }
   }, [])
+
+  const displayedHideGitHubIssuesAndPRs =
+    localHideGitHubIssuesAndPRs ?? hideGitHubIssuesAndPRs(project)
 
   return (
     <div className="space-y-6">
@@ -598,6 +622,30 @@ export function GeneralPane({
                 Reset to default
               </Button>
             )}
+          </div>
+        </InlineField>
+      </SettingsSection>
+
+      <SettingsSection title="GitHub">
+        <InlineField
+          label="Issues and Pull Requests"
+          description="Exclude this project's GitHub issues and pull requests from dashboard, badges, pickers, and session creation flows. Security alerts and advisories still appear."
+        >
+          <div className="flex items-center justify-between gap-4 rounded-lg border border-border px-3 py-3">
+            <div className="space-y-1">
+              <div className="text-sm font-medium text-foreground">
+                Hide GitHub issues and PRs in Jean
+              </div>
+              <div className="text-xs text-muted-foreground">
+                Keep other GitHub surfaces for this project available.
+              </div>
+            </div>
+            <Switch
+              checked={displayedHideGitHubIssuesAndPRs}
+              onCheckedChange={handleHideGitHubIssuesAndPRsChange}
+              disabled={updateSettings.isPending}
+              aria-label="Hide GitHub issues and PRs in Jean"
+            />
           </div>
         </InlineField>
       </SettingsSection>

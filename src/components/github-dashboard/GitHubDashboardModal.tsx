@@ -43,7 +43,7 @@ import { cn } from '@/lib/utils'
 import { useUIStore } from '@/store/ui-store'
 import { useProjects, isTauri, useCreateWorktree } from '@/services/projects'
 import { usePreferences } from '@/services/preferences'
-import { isFolder } from '@/types/projects'
+import { hideGitHubIssuesAndPRs, isFolder } from '@/types/projects'
 import {
   isGhAuthError,
   githubQueryKeys,
@@ -657,10 +657,14 @@ export function GitHubDashboardModal() {
     () => allProjects.filter(p => !isFolder(p) && p.path),
     [allProjects]
   )
+  const issuePrProjects = useMemo(
+    () => projects.filter(project => !hideGitHubIssuesAndPRs(project)),
+    [projects]
+  )
 
   // Fetch issues for all projects in parallel
   const issueResults = useQueries({
-    queries: projects.map(p => ({
+    queries: issuePrProjects.map(p => ({
       queryKey: githubQueryKeys.issues(p.path, 'open'),
       queryFn: async (): Promise<GitHubIssueListResult> => {
         if (!isTauri()) return { issues: [], totalCount: 0 }
@@ -674,7 +678,7 @@ export function GitHubDashboardModal() {
           return { issues: [], totalCount: 0 }
         }
       },
-      enabled: projects.length > 0,
+      enabled: issuePrProjects.length > 0,
       staleTime: 5 * 60 * 1000,
       gcTime: 10 * 60 * 1000,
       retry: 1,
@@ -683,7 +687,7 @@ export function GitHubDashboardModal() {
 
   // Fetch PRs for all projects in parallel
   const prResults = useQueries({
-    queries: projects.map(p => ({
+    queries: issuePrProjects.map(p => ({
       queryKey: githubQueryKeys.prs(p.path, 'open'),
       queryFn: async (): Promise<GitHubPullRequest[]> => {
         if (!isTauri()) return []
@@ -697,7 +701,7 @@ export function GitHubDashboardModal() {
           return []
         }
       },
-      enabled: projects.length > 0,
+      enabled: issuePrProjects.length > 0,
       staleTime: 5 * 60 * 1000,
       gcTime: 10 * 60 * 1000,
       retry: 1,
@@ -1040,13 +1044,27 @@ export function GitHubDashboardModal() {
           : advisoryResults
 
   const authError = activeResults.find(r => isGhAuthError(r.error))
+  const filterProjects = useMemo(
+    () =>
+      activeTab === 'issues' || activeTab === 'prs' ? issuePrProjects : projects,
+    [activeTab, issuePrProjects, projects]
+  )
+
+  useEffect(() => {
+    if (
+      projectFilter !== 'all' &&
+      !filterProjects.some(project => project.id === projectFilter)
+    ) {
+      setProjectFilter('all')
+    }
+  }, [filterProjects, projectFilter])
 
   const filteredProjects = useMemo(
     () =>
       projectFilter === 'all'
-        ? projects
-        : projects.filter(p => p.id === projectFilter),
-    [projects, projectFilter]
+        ? filterProjects
+        : filterProjects.filter(p => p.id === projectFilter),
+    [filterProjects, projectFilter]
   )
 
   const { labels: labelFilters, textQuery: q } = useMemo(
@@ -1058,7 +1076,10 @@ export function GitHubDashboardModal() {
 
   const projectData = useMemo(() => {
     return filteredProjects.map(project => {
-      const projectIdx = projects.indexOf(project)
+      const projectIdx =
+        activeTab === 'issues' || activeTab === 'prs'
+          ? issuePrProjects.indexOf(project)
+          : projects.indexOf(project)
       if (projectIdx === -1) return { project, items: [] as unknown[] }
 
       if (activeTab === 'issues') {
@@ -1128,6 +1149,7 @@ export function GitHubDashboardModal() {
   }, [
     filteredProjects,
     projects,
+    issuePrProjects,
     activeTab,
     issueResults,
     prResults,
@@ -1157,7 +1179,7 @@ export function GitHubDashboardModal() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Projects</SelectItem>
-                {projects.map(p => (
+                {filterProjects.map(p => (
                   <SelectItem key={p.id} value={p.id}>
                     {p.name}
                   </SelectItem>

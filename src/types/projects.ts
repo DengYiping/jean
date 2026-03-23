@@ -59,8 +59,14 @@ export interface Project {
   linear_api_key?: string | null
   /** Linear team ID to filter issues (undefined/null = show all teams) */
   linear_team_id?: string | null
+  /** Hide this project's GitHub issues and PRs across Jean */
+  hide_github_issues_and_prs?: boolean
   /** IDs of linked projects for cross-project context sharing */
   linked_project_ids?: string[]
+}
+
+export function hideGitHubIssuesAndPRs(project?: Project | null): boolean {
+  return project?.hide_github_issues_and_prs === true
 }
 
 /**

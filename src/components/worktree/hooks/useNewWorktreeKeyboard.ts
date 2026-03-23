@@ -10,7 +10,7 @@ import type { LinearIssue } from '@/types/linear'
 
 interface Params {
   activeTab: TabId
-  showIssueSources: boolean
+  visibleTabs: TabId[]
   setActiveTab: (tab: TabId) => void
   filteredIssues: GitHubIssue[]
   filteredPRs: GitHubPullRequest[]
@@ -63,7 +63,7 @@ interface Params {
 
 export function useNewWorktreeKeyboard({
   activeTab,
-  showIssueSources,
+  visibleTabs,
   setActiveTab,
   filteredIssues,
   filteredPRs,
@@ -106,41 +106,17 @@ export function useNewWorktreeKeyboard({
 
       // Tab shortcuts (Cmd+key)
       if (e.metaKey || e.ctrlKey) {
-        if (key === '1') {
+        const tabIndex = Number(key) - 1
+        if (
+          Number.isInteger(tabIndex) &&
+          tabIndex >= 0 &&
+          tabIndex < visibleTabs.length
+        ) {
+          const nextTab = visibleTabs[tabIndex]
+          if (!nextTab) return
           e.preventDefault()
-          setActiveTab('quick')
+          setActiveTab(nextTab)
           return
-        }
-        if (key === '2') {
-          e.preventDefault()
-          setActiveTab(showIssueSources ? 'issues' : 'prs')
-          return
-        }
-        if (key === '3') {
-          e.preventDefault()
-          setActiveTab(showIssueSources ? 'prs' : 'branches')
-          return
-        }
-        if (key === '4') {
-          if (showIssueSources) {
-            e.preventDefault()
-            setActiveTab('security')
-            return
-          }
-        }
-        if (key === '5') {
-          if (showIssueSources) {
-            e.preventDefault()
-            setActiveTab('branches')
-            return
-          }
-        }
-        if (key === '6') {
-          if (showIssueSources) {
-            e.preventDefault()
-            setActiveTab('linear')
-            return
-          }
         }
       }
 
@@ -412,7 +388,7 @@ export function useNewWorktreeKeyboard({
       handleSelectLinearIssue,
       handleSelectLinearIssueAndInvestigate,
       creatingFromNumber,
-      showIssueSources,
+      visibleTabs,
       setActiveTab,
       setSelectedItemIndex,
     ]

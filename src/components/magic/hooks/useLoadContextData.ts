@@ -34,6 +34,8 @@ import {
   parseLinearItemNumber,
 } from '@/services/linear'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
+import { useProjects } from '@/services/projects'
+import { hideGitHubIssuesAndPRs } from '@/types/projects'
 import type { SavedContextsResponse } from '@/types/chat'
 
 interface UseLoadContextDataOptions {
@@ -56,6 +58,12 @@ export function useLoadContextData({
   includeClosed,
 }: UseLoadContextDataOptions) {
   const queryClient = useQueryClient()
+  const { data: projects } = useProjects()
+  const project = useMemo(
+    () => projects?.find(candidate => candidate.id === projectId),
+    [projectId, projects]
+  )
+  const showGitHubIssuePrSources = !hideGitHubIssuesAndPRs(project)
 
   // Issue contexts for this session
   const {
@@ -116,7 +124,9 @@ export function useLoadContextData({
     isFetching: isRefetchingIssues,
     error: issuesError,
     refetch: refetchIssues,
-  } = useGitHubIssues(worktreePath, issueState)
+  } = useGitHubIssues(worktreePath, issueState, {
+    enabled: open && showGitHubIssuePrSources,
+  })
   const issues = issueResult?.issues
 
   // GitHub security alerts query
@@ -145,7 +155,9 @@ export function useLoadContextData({
     isFetching: isRefetchingPRs,
     error: prsError,
     refetch: refetchPRs,
-  } = useGitHubPRs(worktreePath, prState)
+  } = useGitHubPRs(worktreePath, prState, {
+    enabled: open && showGitHubIssuePrSources,
+  })
 
   // Fetch saved contexts
   const {
@@ -169,11 +181,14 @@ export function useLoadContextData({
 
   // GitHub search queries (triggered when local filter may miss results)
   const { data: searchedIssues, isFetching: isSearchingIssues } =
-    useSearchGitHubIssues(worktreePath, debouncedSearchQuery)
+    useSearchGitHubIssues(
+      worktreePath,
+      showGitHubIssuePrSources ? debouncedSearchQuery : ''
+    )
 
   const { data: searchedPRs, isFetching: isSearchingPRs } = useSearchGitHubPRs(
     worktreePath,
-    debouncedSearchQuery
+    showGitHubIssuePrSources ? debouncedSearchQuery : ''
   )
 
   const { data: searchedLinearIssues, isFetching: isSearchingLinearIssues } =
@@ -182,11 +197,11 @@ export function useLoadContextData({
   // Exact number lookups (finds any issue/PR regardless of age or state)
   const { data: exactIssue } = useGetGitHubIssueByNumber(
     worktreePath,
-    debouncedSearchQuery
+    showGitHubIssuePrSources ? debouncedSearchQuery : ''
   )
   const { data: exactPR } = useGetGitHubPRByNumber(
     worktreePath,
-    debouncedSearchQuery
+    showGitHubIssuePrSources ? debouncedSearchQuery : ''
   )
   const { data: exactLinearIssue } = useGetLinearIssueByNumber(
     projectId,
@@ -196,6 +211,7 @@ export function useLoadContextData({
 
   // Filter issues locally, merge with search results, exclude already loaded ones
   const filteredIssues = useMemo(() => {
+    if (!showGitHubIssuePrSources) return []
     const loadedNumbers = new Set(loadedIssueContexts?.map(c => c.number) ?? [])
     if (parseItemNumber(searchQuery) !== null) {
       return exactIssue && !loadedNumbers.has(exactIssue.number)
@@ -206,10 +222,18 @@ export function useLoadContextData({
     const merged = mergeWithSearchResults(localFiltered, searchedIssues)
     const withExact = prependExactMatch(merged, exactIssue)
     return withExact.filter(issue => !loadedNumbers.has(issue.number))
-  }, [issues, searchQuery, searchedIssues, loadedIssueContexts, exactIssue])
+  }, [
+    exactIssue,
+    issues,
+    loadedIssueContexts,
+    searchQuery,
+    searchedIssues,
+    showGitHubIssuePrSources,
+  ])
 
   // Filter PRs locally, merge with search results, exclude already loaded ones
   const filteredPRs = useMemo(() => {
+    if (!showGitHubIssuePrSources) return []
     const loadedNumbers = new Set(loadedPRContexts?.map(c => c.number) ?? [])
     if (parseItemNumber(searchQuery) !== null) {
       return exactPR && !loadedNumbers.has(exactPR.number) ? [exactPR] : []
@@ -218,7 +242,14 @@ export function useLoadContextData({
     const merged = mergeWithSearchResults(localFiltered, searchedPRs)
     const withExact = prependExactMatch(merged, exactPR)
     return withExact.filter(pr => !loadedNumbers.has(pr.number))
-  }, [prs, searchQuery, searchedPRs, loadedPRContexts, exactPR])
+  }, [
+    exactPR,
+    loadedPRContexts,
+    prs,
+    searchQuery,
+    searchedPRs,
+    showGitHubIssuePrSources,
+  ])
 
   // Filter security alerts locally, exclude already loaded ones, sort by state
   const filteredSecurityAlerts = useMemo(() => {
@@ -431,6 +462,7 @@ export function useLoadContextData({
     // Derived booleans
     hasLoadedIssueContexts: (loadedIssueContexts?.length ?? 0) > 0,
     hasLoadedPRContexts: (loadedPRContexts?.length ?? 0) > 0,
+    showGitHubIssuePrSources,
     hasLoadedSecurityContexts: (loadedSecurityContexts?.length ?? 0) > 0,
     hasLoadedAdvisoryContexts: (loadedAdvisoryContexts?.length ?? 0) > 0,
     hasLoadedLinearContexts: (loadedLinearContexts?.length ?? 0) > 0,

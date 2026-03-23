@@ -302,10 +302,14 @@ describe('GitHub Commands', () => {
   it('hides issue and pr commands for excluded projects', () => {
     const commands = getAllCommands(mockContext)
 
-    expect(commands.find(command => command.id === 'open-github-issues')).toBeUndefined()
+    expect(
+      commands.find(command => command.id === 'open-github-issues')
+    ).toBeUndefined()
     expect(
       commands.find(command => command.id === 'open-github-pull-requests')
     ).toBeUndefined()
-    expect(commands.find(command => command.id === 'open-github-dashboard')).toBeDefined()
+    expect(
+      commands.find(command => command.id === 'open-github-dashboard')
+    ).toBeDefined()
   })
 })

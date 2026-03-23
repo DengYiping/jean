@@ -99,13 +99,11 @@ export function NewWorktreeModal() {
       ...tab,
       key: String(index + 1),
     }))
-  }, [
-    showGitHubIssuesTab,
-    showGitHubPRsTab,
-    showLinearTab,
-    showSecurityTab,
-  ])
-  const visibleTabIds = useMemo(() => visibleTabs.map(tab => tab.id), [visibleTabs])
+  }, [showGitHubIssuesTab, showGitHubPRsTab, showLinearTab, showSecurityTab])
+  const visibleTabIds = useMemo(
+    () => visibleTabs.map(tab => tab.id),
+    [visibleTabs]
+  )
 
   const data = useNewWorktreeData(
     searchQuery,

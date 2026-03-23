@@ -1,7 +1,6 @@
 #!/usr/bin/env bun
 
 import fs from 'fs'
-import os from 'os'
 import path from 'path'
 import { spawnSync } from 'child_process'
 import { fileURLToPath } from 'url'
@@ -43,8 +42,8 @@ Usage:
   bun run tauri:build:install:macos:unsigned
 
 What it does:
-  1. Creates a temporary Tauri config with macOS app signing disabled
-  2. Builds the universal macOS .app bundle
+  1. Builds the macOS .app bundle with Tauri's --no-sign flag
+  2. Uses the current host target instead of forcing a universal build
   3. Replaces /Applications/Jean.app with the new build via staged rename
 `)
 }
@@ -68,25 +67,10 @@ if (!fs.existsSync(tauriConfigPath)) {
 
 const tauriConfig = JSON.parse(fs.readFileSync(tauriConfigPath, 'utf8'))
 const productName = tauriConfig.productName || 'Jean'
-const tempDir = fs.mkdtempSync(
-  path.join(os.tmpdir(), 'jean-tauri-unsigned-build-')
-)
-const tempConfigPath = path.join(tempDir, 'tauri.conf.unsigned.json')
-
-const unsignedConfig = structuredClone(tauriConfig)
-unsignedConfig.bundle ??= {}
-unsignedConfig.bundle.macOS ??= {}
-delete unsignedConfig.bundle.macOS.signingIdentity
-delete unsignedConfig.bundle.macOS.providerShortName
-unsignedConfig.bundle.createUpdaterArtifacts = false
-
-fs.writeFileSync(tempConfigPath, JSON.stringify(unsignedConfig, null, 2) + '\n')
-
 const builtAppPath = path.join(
   projectDir,
   'src-tauri',
   'target',
-  'universal-apple-darwin',
   'release',
   'bundle',
   'macos',
@@ -102,12 +86,9 @@ run(
   'bun',
   [
     'run',
-    'tauri',
-    'build',
-    '--config',
-    tempConfigPath,
-    '--target',
-    'universal-apple-darwin',
+    'tauri:build',
+    '--',
+    '--no-sign',
     '--bundles',
     'app',
   ],
@@ -155,8 +136,6 @@ try {
 
   const message = error instanceof Error ? error.message : String(error)
   fail(`Failed to install app bundle: ${message}`)
-} finally {
-  removePath(tempDir)
 }
 
 console.log(`==> Installed ${installedAppPath}`)

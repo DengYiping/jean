@@ -2844,6 +2844,7 @@ export function ChatWindow({
                               onQuestionAnswer={handleQuestionAnswer}
                               onQuestionSkip={handleSkipQuestion}
                               onFileClick={setViewingFilePath}
+                              scrollViewportRef={scrollViewportRef}
                               onEditedFileClick={setViewingFilePath}
                               isQuestionAnswered={isQuestionAnswered}
                               getSubmittedAnswers={getSubmittedAnswers}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { getModifierSymbol } from '@/lib/platform'
 import {
@@ -90,6 +90,32 @@ export function LoadContextModal({
     searchQuery,
     includeClosed,
   })
+  const showIssueSources = preferences?.show_create_page_issue_sources ?? true
+  const showGitHubIssuePrSources = data.showGitHubIssuePrSources
+  const showGitHubIssuesTab = showIssueSources && showGitHubIssuePrSources
+  const showGitHubPRsTab = showGitHubIssuePrSources
+  const showSecurityTab = showIssueSources
+  const showLinearTab = showIssueSources
+  const visibleTabs = useMemo(
+    () =>
+      TABS.filter(tab => {
+        if (tab.id === 'issues') return showGitHubIssuesTab
+        if (tab.id === 'prs') return showGitHubPRsTab
+        if (tab.id === 'security') return showSecurityTab
+        if (tab.id === 'linear') return showLinearTab
+        return true
+      }).map((tab, index) => ({
+        ...tab,
+        key: String(index + 1),
+      })),
+    [
+      showGitHubIssuesTab,
+      showGitHubPRsTab,
+      showLinearTab,
+      showSecurityTab,
+    ]
+  )
+  const visibleTabIds = useMemo(() => visibleTabs.map(tab => tab.id), [visibleTabs])
 
   // Stable callback for handlers to reset search/selection
   const onClearSearch = useCallback(() => {
@@ -118,6 +144,7 @@ export function LoadContextModal({
   // Keyboard navigation
   const { handleKeyDown } = useLoadContextKeyboard({
     activeTab,
+    visibleTabs: visibleTabIds,
     filteredIssues: data.filteredIssues,
     filteredPRs: data.filteredPRs,
     filteredSecurityAlerts: data.filteredSecurityAlerts,
@@ -148,16 +175,16 @@ export function LoadContextModal({
   useEffect(() => {
     if (open && !prevOpenRef.current) {
       // Dynamic default tab based on loaded data
-      if (data.hasLoadedIssueContexts) {
+      if (showGitHubIssuesTab && data.hasLoadedIssueContexts) {
         setActiveTab('issues')
-      } else if (data.hasLoadedPRContexts) {
+      } else if (showGitHubPRsTab && data.hasLoadedPRContexts) {
         setActiveTab('prs')
       } else if (
-        data.hasLoadedSecurityContexts ||
-        data.hasLoadedAdvisoryContexts
+        showSecurityTab &&
+        (data.hasLoadedSecurityContexts || data.hasLoadedAdvisoryContexts)
       ) {
         setActiveTab('security')
-      } else if (data.hasLoadedLinearContexts) {
+      } else if (showLinearTab && data.hasLoadedLinearContexts) {
         setActiveTab('linear')
       } else {
         setActiveTab('contexts')
@@ -256,7 +283,17 @@ export function LoadContextModal({
     data.hasLoadedLinearContexts,
     data.hasAttachedContexts,
     handlers.resetState,
+    showGitHubIssuesTab,
+    showGitHubPRsTab,
+    showLinearTab,
+    showSecurityTab,
   ])
+
+  useEffect(() => {
+    if (!visibleTabIds.includes(activeTab)) {
+      setActiveTab('contexts')
+    }
+  }, [activeTab, visibleTabIds])
 
   // Focus search input when tab changes
   useEffect(() => {
@@ -305,7 +342,7 @@ export function LoadContextModal({
 
         {/* Tabs */}
         <div className="flex overflow-x-auto border-b border-border scrollbar-hide">
-          {TABS.map(tab => (
+          {visibleTabs.map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
@@ -331,7 +368,7 @@ export function LoadContextModal({
 
         {/* Tab content */}
         <div className="flex flex-col flex-1 min-h-0">
-          {activeTab === 'issues' && (
+          {showGitHubIssuesTab && activeTab === 'issues' && (
             <GitHubItemsTab
               config={{
                 kind: 'issues',
@@ -365,7 +402,7 @@ export function LoadContextModal({
             />
           )}
 
-          {activeTab === 'prs' && (
+          {showGitHubPRsTab && activeTab === 'prs' && (
             <GitHubItemsTab
               config={{
                 kind: 'prs',
@@ -399,7 +436,7 @@ export function LoadContextModal({
             />
           )}
 
-          {activeTab === 'security' && (
+          {showSecurityTab && activeTab === 'security' && (
             <SecurityAlertsTab
               loadedContexts={data.loadedSecurityContexts ?? []}
               filteredAlerts={data.filteredSecurityAlerts}
@@ -449,7 +486,7 @@ export function LoadContextModal({
             />
           )}
 
-          {activeTab === 'linear' && (
+          {showLinearTab && activeTab === 'linear' && (
             <LinearItemsTab
               searchQuery={searchQuery}
               setSearchQuery={setSearchQuery}

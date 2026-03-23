@@ -13,6 +13,7 @@ type TabId = 'issues' | 'prs' | 'security' | 'contexts' | 'linear'
 
 interface UseLoadContextKeyboardOptions {
   activeTab: TabId
+  visibleTabs: TabId[]
   filteredIssues: GitHubIssue[]
   filteredPRs: GitHubPullRequest[]
   filteredSecurityAlerts: DependabotAlert[]
@@ -38,6 +39,7 @@ interface UseLoadContextKeyboardOptions {
 
 export function useLoadContextKeyboard({
   activeTab,
+  visibleTabs,
   filteredIssues,
   filteredPRs,
   filteredSecurityAlerts,
@@ -66,29 +68,16 @@ export function useLoadContextKeyboard({
 
       // Tab shortcuts (Cmd+key)
       if (e.metaKey || e.ctrlKey) {
-        if (key === '1') {
+        const tabIndex = Number(key) - 1
+        if (
+          Number.isInteger(tabIndex) &&
+          tabIndex >= 0 &&
+          tabIndex < visibleTabs.length
+        ) {
+          const nextTab = visibleTabs[tabIndex]
+          if (!nextTab) return
           e.preventDefault()
-          onTabChange('contexts')
-          return
-        }
-        if (key === '2') {
-          e.preventDefault()
-          onTabChange('issues')
-          return
-        }
-        if (key === '3') {
-          e.preventDefault()
-          onTabChange('prs')
-          return
-        }
-        if (key === '4') {
-          e.preventDefault()
-          onTabChange('security')
-          return
-        }
-        if (key === '5') {
-          e.preventDefault()
-          onTabChange('linear')
+          onTabChange(nextTab)
           return
         }
       }

@@ -221,6 +221,7 @@ pub async fn add_project(
         worktrees_dir: None,
         linear_api_key: None,
         linear_team_id: None,
+        hide_github_issues_and_prs: false,
         linked_project_ids: Vec::new(),
     };
 
@@ -383,6 +384,7 @@ pub async fn init_project(
         worktrees_dir: None,
         linear_api_key: None,
         linear_team_id: None,
+        hide_github_issues_and_prs: false,
         linked_project_ids: Vec::new(),
     };
 
@@ -439,6 +441,7 @@ pub async fn clone_project(
         worktrees_dir: None,
         linear_api_key: None,
         linear_team_id: None,
+        hide_github_issues_and_prs: false,
         linked_project_ids: Vec::new(),
     };
 
@@ -4060,6 +4063,7 @@ pub async fn update_project_settings(
     worktrees_dir: Option<String>,
     linear_api_key: Option<String>,
     linear_team_id: Option<String>,
+    hide_github_issues_and_prs: Option<bool>,
     linked_project_ids: Option<Vec<String>>,
 ) -> Result<Project, String> {
     log::trace!("Updating settings for project: {project_id}");
@@ -4150,6 +4154,11 @@ pub async fn update_project_settings(
         } else {
             Some(team_id)
         };
+    }
+
+    if let Some(hide) = hide_github_issues_and_prs {
+        log::trace!("Updating hide_github_issues_and_prs: {hide}");
+        project.hide_github_issues_and_prs = hide;
     }
 
     // Handle linked_project_ids with bidirectional sync
@@ -8224,6 +8233,7 @@ pub async fn create_folder(
         worktrees_dir: None,
         linear_api_key: None,
         linear_team_id: None,
+        hide_github_issues_and_prs: false,
         linked_project_ids: Vec::new(),
     };
 

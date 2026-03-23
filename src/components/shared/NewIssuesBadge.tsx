@@ -9,10 +9,12 @@ import {
 } from '@/components/ui/tooltip'
 import { useGitHubIssues } from '@/services/github'
 import { ghCliQueryKeys } from '@/services/gh-cli'
+import { useProjects } from '@/services/projects'
 import { useUIStore } from '@/store/ui-store'
 import { useProjectsStore } from '@/store/projects-store'
 import type { GhAuthStatus } from '@/types/gh-cli'
 import { usePreferences } from '@/services/preferences'
+import { hideGitHubIssuesAndPRs } from '@/types/projects'
 
 const BADGE_STALE_TIME = 5 * 60 * 1000 // 5 minutes — background badge, not active UI
 
@@ -29,12 +31,15 @@ export function NewIssuesBadge({
 }: NewIssuesBadgeProps) {
   const queryClient = useQueryClient()
   const { data: preferences } = usePreferences()
+  const { data: projects } = useProjects()
   const showIssueSources = preferences?.show_create_page_issue_sources ?? true
   const authData = queryClient.getQueryData<GhAuthStatus>(ghCliQueryKeys.auth())
   const isAuthenticated = authData?.authenticated ?? false
+  const project = projects?.find(candidate => candidate.id === projectId)
+  const isHidden = hideGitHubIssuesAndPRs(project)
 
   const { data: issueResult } = useGitHubIssues(projectPath, 'open', {
-    enabled: isAuthenticated && showIssueSources,
+    enabled: isAuthenticated && showIssueSources && !isHidden,
     staleTime: BADGE_STALE_TIME,
   })
 
@@ -52,7 +57,7 @@ export function NewIssuesBadge({
     [projectId]
   )
 
-  if (!showIssueSources || totalCount === 0) return null
+  if (!showIssueSources || isHidden || totalCount === 0) return null
 
   return (
     <Tooltip>

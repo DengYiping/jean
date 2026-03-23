@@ -9,9 +9,11 @@ import {
 } from '@/components/ui/tooltip'
 import { useGitHubPRs } from '@/services/github'
 import { ghCliQueryKeys } from '@/services/gh-cli'
+import { useProjects } from '@/services/projects'
 import { useUIStore } from '@/store/ui-store'
 import { useProjectsStore } from '@/store/projects-store'
 import type { GhAuthStatus } from '@/types/gh-cli'
+import { hideGitHubIssuesAndPRs } from '@/types/projects'
 
 const BADGE_STALE_TIME = 5 * 60 * 1000 // 5 minutes — background badge, not active UI
 
@@ -27,11 +29,14 @@ export function OpenPRsBadge({
   className,
 }: OpenPRsBadgeProps) {
   const queryClient = useQueryClient()
+  const { data: projects } = useProjects()
   const authData = queryClient.getQueryData<GhAuthStatus>(ghCliQueryKeys.auth())
   const isAuthenticated = authData?.authenticated ?? false
+  const project = projects?.find(candidate => candidate.id === projectId)
+  const isHidden = hideGitHubIssuesAndPRs(project)
 
   const { data: prs } = useGitHubPRs(projectPath, 'open', {
-    enabled: isAuthenticated,
+    enabled: isAuthenticated && !isHidden,
     staleTime: BADGE_STALE_TIME,
   })
 
@@ -49,7 +54,7 @@ export function OpenPRsBadge({
     [projectId]
   )
 
-  if (totalCount === 0) return null
+  if (isHidden || totalCount === 0) return null
 
   return (
     <Tooltip>

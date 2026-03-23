@@ -442,8 +442,8 @@ export function WorkflowRunsModal() {
         setSelectedModel(sessionId, investigateModel)
         setSelectedProvider(sessionId, investigateProvider)
         setSelectedBackend(sessionId, investigateBackend)
-        setExecutionMode(sessionId, 'build')
-        setExecutingMode(sessionId, 'build')
+        setExecutionMode(sessionId, 'yolo')
+        setExecutingMode(sessionId, 'yolo')
 
         // Persist model/backend/provider to session on disk
         setSessionBackend.mutate({
@@ -471,7 +471,7 @@ export function WorkflowRunsModal() {
           worktreePath,
           message: prompt,
           model: investigateModel,
-          executionMode: 'build',
+          executionMode: 'yolo',
           thinkingLevel: 'think',
           backend: investigateBackend,
           customProfileName: investigateCustomProfile,

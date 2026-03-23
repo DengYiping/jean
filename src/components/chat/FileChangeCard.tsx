@@ -1,4 +1,12 @@
-import { memo, useMemo, useState } from 'react'
+import {
+  memo,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
+import type { RefObject } from 'react'
 import { ChevronRight } from 'lucide-react'
 import type { ToolCall } from '@/types/chat'
 import { cn } from '@/lib/utils'
@@ -12,6 +20,7 @@ import {
 interface FileChangeCardProps {
   toolCalls: ToolCall[] | undefined
   className?: string
+  viewportRef?: RefObject<HTMLDivElement | null>
 }
 
 const COLLAPSE_THRESHOLD = 5
@@ -51,17 +60,97 @@ function getKindLetter(kind: string): string {
 function FileChangeRow({
   change,
   displayName,
+  viewportRef,
 }: {
   change: ParsedFileChange
   displayName: string
+  viewportRef?: RefObject<HTMLDivElement | null>
 }) {
   const [isOpen, setIsOpen] = useState(false)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const anchorTopRef = useRef<number | null>(null)
+  const animationFrameRef = useRef<number | null>(null)
+  const correctionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  )
+
+  useEffect(() => {
+    return () => {
+      if (animationFrameRef.current != null) {
+        cancelAnimationFrame(animationFrameRef.current)
+      }
+      if (correctionTimeoutRef.current) {
+        clearTimeout(correctionTimeoutRef.current)
+      }
+    }
+  }, [])
+
+  useLayoutEffect(() => {
+    if (anchorTopRef.current == null) return
+
+    const viewport = viewportRef?.current
+    const button = buttonRef.current
+    if (!viewport || !button) {
+      anchorTopRef.current = null
+      return
+    }
+
+    const correctViewport = () => {
+      const anchorTop = anchorTopRef.current
+      if (anchorTop == null) return
+
+      const viewportTop = viewport.getBoundingClientRect().top
+      const currentTop = button.getBoundingClientRect().top - viewportTop
+      const delta = currentTop - anchorTop
+
+      if (Math.abs(delta) > 0.5) {
+        viewport.scrollTop += delta
+      }
+    }
+
+    animationFrameRef.current = requestAnimationFrame(() => {
+      correctViewport()
+      animationFrameRef.current = null
+    })
+
+    correctionTimeoutRef.current = setTimeout(() => {
+      correctViewport()
+      correctionTimeoutRef.current = null
+      anchorTopRef.current = null
+    }, 170)
+
+    return () => {
+      if (animationFrameRef.current != null) {
+        cancelAnimationFrame(animationFrameRef.current)
+        animationFrameRef.current = null
+      }
+      if (correctionTimeoutRef.current) {
+        clearTimeout(correctionTimeoutRef.current)
+        correctionTimeoutRef.current = null
+      }
+    }
+  }, [isOpen, viewportRef])
+
+  const handleToggle = () => {
+    const viewport = viewportRef?.current
+    const button = buttonRef.current
+
+    if (viewport && button) {
+      const viewportTop = viewport.getBoundingClientRect().top
+      anchorTopRef.current = button.getBoundingClientRect().top - viewportTop
+    } else {
+      anchorTopRef.current = null
+    }
+
+    setIsOpen(open => !open)
+  }
 
   return (
     <div className="border-t border-white/[0.04] first:border-t-0">
       <button
+        ref={buttonRef}
         type="button"
-        onClick={() => setIsOpen(open => !open)}
+        onClick={handleToggle}
         title={change.path}
         className="flex w-full items-center gap-2 px-3 py-[5px] text-left transition-colors hover:bg-white/[0.04]"
       >
@@ -177,6 +266,7 @@ function FileChangeRow({
 export const FileChangeCard = memo(function FileChangeCard({
   toolCalls,
   className,
+  viewportRef,
 }: FileChangeCardProps) {
   const changes = collectFileChanges(toolCalls)
   const [isListOpen, setIsListOpen] = useState(
@@ -245,6 +335,7 @@ export const FileChangeCard = memo(function FileChangeCard({
               key={`${change.path}:${change.previousPath ?? ''}:${change.kind}`}
               change={change}
               displayName={displayNameMap.get(change.path) ?? change.path}
+              viewportRef={viewportRef}
             />
           ))}
           {needsShowMore && (

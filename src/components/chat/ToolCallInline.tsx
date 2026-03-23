@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import type { RefObject } from 'react'
 import {
   FileText,
   Edit,
@@ -42,6 +43,8 @@ interface ToolCallInlineProps {
   className?: string
   /** Callback when a file path is clicked (for Read/Edit/Write tools) */
   onFileClick?: (filePath: string) => void
+  /** Chat viewport for preserving inline expansion position */
+  viewportRef?: RefObject<HTMLDivElement | null>
   /** Whether the message is currently streaming */
   isStreaming?: boolean
   /** Whether this item is still in progress (shows spinner) */
@@ -56,10 +59,12 @@ export function ToolCallInline({
   toolCall,
   className,
   onFileClick,
+  viewportRef,
   isStreaming,
   isIncomplete,
 }: ToolCallInlineProps) {
   const [isOpen, setIsOpen] = useState(false)
+  const display = getToolDisplay(toolCall, { viewportRef })
   const {
     icon,
     label,
@@ -67,7 +72,7 @@ export function ToolCallInline({
     filePath,
     expandedContent,
     suppressDefaultOutput,
-  } = getToolDisplay(toolCall)
+  } = display
 
   const handleFileClick = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -152,6 +157,8 @@ interface TaskCallInlineProps {
   className?: string
   /** Callback when a file path is clicked (for Read/Edit/Write tools) */
   onFileClick?: (filePath: string) => void
+  /** Chat viewport for preserving inline expansion position */
+  viewportRef?: RefObject<HTMLDivElement | null>
   /** Whether the message is currently streaming */
   isStreaming?: boolean
   /** Whether this item is still in progress (shows spinner) */
@@ -168,6 +175,7 @@ export function TaskCallInline({
   allToolCalls,
   className,
   onFileClick,
+  viewportRef,
   isStreaming,
   isIncomplete,
 }: TaskCallInlineProps) {
@@ -243,6 +251,7 @@ export function TaskCallInline({
                       )}
                       allToolCalls={allToolCalls}
                       onFileClick={onFileClick}
+                      viewportRef={viewportRef}
                       isStreaming={isStreaming}
                     />
                   ) : (
@@ -250,6 +259,7 @@ export function TaskCallInline({
                       key={subTool.id}
                       toolCall={subTool}
                       onFileClick={onFileClick}
+                      viewportRef={viewportRef}
                     />
                   )
                 )}
@@ -270,6 +280,8 @@ interface StackedGroupProps {
   items: StackableItem[]
   className?: string
   onFileClick?: (filePath: string) => void
+  /** Chat viewport for preserving inline expansion position */
+  viewportRef?: RefObject<HTMLDivElement | null>
   /** Whether the message is currently streaming */
   isStreaming?: boolean
   /** Whether this item is still in progress (shows spinner) */
@@ -284,6 +296,7 @@ export function StackedGroup({
   items,
   className,
   onFileClick,
+  viewportRef,
   isStreaming,
   isIncomplete,
 }: StackedGroupProps) {
@@ -355,6 +368,7 @@ export function StackedGroup({
                   key={item.tool.id}
                   toolCall={item.tool}
                   onFileClick={onFileClick}
+                  viewportRef={viewportRef}
                 />
               )
             )}
@@ -409,13 +423,14 @@ function SubThinkingItem({ thinking }: SubThinkingItemProps) {
 interface SubToolItemProps {
   toolCall: ToolCall
   onFileClick?: (filePath: string) => void
+  viewportRef?: RefObject<HTMLDivElement | null>
 }
 
 /**
  * Compact sub-tool item displayed within a Task or ToolCallGroup
  * Even more minimal than ToolCallInline - just icon, label, and detail inline
  */
-function SubToolItem({ toolCall, onFileClick }: SubToolItemProps) {
+function SubToolItem({ toolCall, onFileClick, viewportRef }: SubToolItemProps) {
   const [isOpen, setIsOpen] = useState(false)
   const {
     icon,
@@ -424,7 +439,7 @@ function SubToolItem({ toolCall, onFileClick }: SubToolItemProps) {
     filePath,
     expandedContent,
     suppressDefaultOutput,
-  } = getToolDisplay(toolCall)
+  } = getToolDisplay(toolCall, { viewportRef })
 
   const handleFileClick = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -501,6 +516,10 @@ interface ToolDisplay {
   filePath?: string
   expandedContent: React.ReactNode
   suppressDefaultOutput?: boolean
+}
+
+interface ToolDisplayOptions {
+  viewportRef?: RefObject<HTMLDivElement | null>
 }
 
 /** Renders a unified diff view with colored +/- lines */
@@ -776,7 +795,10 @@ function SpawnAgentView({
   )
 }
 
-function getToolDisplay(toolCall: ToolCall): ToolDisplay {
+function getToolDisplay(
+  toolCall: ToolCall,
+  { viewportRef }: ToolDisplayOptions = {}
+): ToolDisplay {
   const input = toolCall.input as Record<string, unknown>
 
   switch (toolCall.name) {
@@ -1042,7 +1064,11 @@ function getToolDisplay(toolCall: ToolCall): ToolDisplay {
         filePath,
         expandedContent:
           changes.length > 0 ? (
-            <FileChangeCard toolCalls={[toolCall]} className="mt-0" />
+            <FileChangeCard
+              toolCalls={[toolCall]}
+              className="mt-0"
+              viewportRef={viewportRef}
+            />
           ) : (
             JSON.stringify(toolCall.input, null, 2)
           ),

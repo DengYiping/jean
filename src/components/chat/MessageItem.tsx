@@ -1,4 +1,5 @@
 import { memo, useCallback } from 'react'
+import type { RefObject } from 'react'
 import { Copy } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getSkillName } from '@/lib/path-utils'
@@ -96,6 +97,8 @@ interface MessageItemProps {
   onQuestionSkip: (toolCallId: string) => void
   /** Callback when user clicks a file path */
   onFileClick: (path: string) => void
+  /** Chat viewport for preserving inline expansion position */
+  scrollViewportRef?: RefObject<HTMLDivElement | null>
   /** Callback when user clicks an edited file badge (opens diff modal) */
   onEditedFileClick: (path: string) => void
   /** Callback when user fixes a finding */
@@ -151,6 +154,7 @@ export const MessageItem = memo(function MessageItem({
   onQuestionAnswer,
   onQuestionSkip,
   onFileClick,
+  scrollViewportRef,
   onEditedFileClick,
   onFixFinding,
   onFixAllFindings,
@@ -383,6 +387,7 @@ export const MessageItem = memo(function MessageItem({
                             subToolCalls={item.subTools}
                             allToolCalls={message.tool_calls ?? []}
                             onFileClick={onFileClick}
+                            viewportRef={scrollViewportRef}
                             isStreaming={false}
                           />
                         )
@@ -391,6 +396,7 @@ export const MessageItem = memo(function MessageItem({
                           <ToolCallInline
                             toolCall={item.tool}
                             onFileClick={onFileClick}
+                            viewportRef={scrollViewportRef}
                             isStreaming={false}
                           />
                         )
@@ -399,6 +405,7 @@ export const MessageItem = memo(function MessageItem({
                           <StackedGroup
                             items={item.items}
                             onFileClick={onFileClick}
+                            viewportRef={scrollViewportRef}
                             isStreaming={false}
                           />
                         )
@@ -441,6 +448,7 @@ export const MessageItem = memo(function MessageItem({
                           <ToolCallInline
                             toolCall={item.tool}
                             onFileClick={onFileClick}
+                            viewportRef={scrollViewportRef}
                             isStreaming={false}
                           />
                         )

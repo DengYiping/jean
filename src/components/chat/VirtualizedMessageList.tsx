@@ -368,6 +368,7 @@ export const VirtualizedMessageList = memo(
                   onQuestionAnswer={onQuestionAnswer}
                   onQuestionSkip={onQuestionSkip}
                   onFileClick={onFileClick}
+                  scrollViewportRef={scrollContainerRef}
                   onEditedFileClick={onEditedFileClick}
                   onFixFinding={onFixFinding}
                   onFixAllFindings={onFixAllFindings}

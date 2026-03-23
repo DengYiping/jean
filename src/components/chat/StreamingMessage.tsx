@@ -1,4 +1,5 @@
 import { memo } from 'react'
+import type { RefObject } from 'react'
 import { Markdown } from '@/components/ui/markdown'
 import type {
   ToolCall,
@@ -48,6 +49,8 @@ interface StreamingMessageProps {
   onQuestionSkip: (toolCallId: string) => void
   /** Callback when user clicks a file path */
   onFileClick: (path: string) => void
+  /** Chat viewport for preserving inline expansion position */
+  scrollViewportRef?: RefObject<HTMLDivElement | null>
   /** Callback when user clicks an edited file badge (opens diff modal) */
   onEditedFileClick: (path: string) => void
   /** Check if a question has been answered */
@@ -95,6 +98,7 @@ export const StreamingMessage = memo(function StreamingMessage({
   onQuestionAnswer,
   onQuestionSkip,
   onFileClick,
+  scrollViewportRef,
   onEditedFileClick,
   isQuestionAnswered,
   getSubmittedAnswers,
@@ -206,6 +210,7 @@ export const StreamingMessage = memo(function StreamingMessage({
                                 subToolCalls={item.subTools}
                                 allToolCalls={toolCalls}
                                 onFileClick={onFileClick}
+                                viewportRef={scrollViewportRef}
                                 isStreaming={true}
                                 isIncomplete={isIncomplete}
                               />
@@ -215,6 +220,7 @@ export const StreamingMessage = memo(function StreamingMessage({
                               <ToolCallInline
                                 toolCall={item.tool}
                                 onFileClick={onFileClick}
+                                viewportRef={scrollViewportRef}
                                 isStreaming={true}
                                 isIncomplete={isIncomplete}
                               />
@@ -224,6 +230,7 @@ export const StreamingMessage = memo(function StreamingMessage({
                               <StackedGroup
                                 items={item.items}
                                 onFileClick={onFileClick}
+                                viewportRef={scrollViewportRef}
                                 isStreaming={true}
                                 isIncomplete={isIncomplete}
                               />
@@ -266,6 +273,7 @@ export const StreamingMessage = memo(function StreamingMessage({
                               <ToolCallInline
                                 toolCall={item.tool}
                                 onFileClick={onFileClick}
+                                viewportRef={scrollViewportRef}
                                 isStreaming={true}
                                 isIncomplete={false}
                               />

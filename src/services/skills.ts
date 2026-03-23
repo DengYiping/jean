@@ -9,11 +9,12 @@ export const skillQueryKeys = {
   all: ['claude-cli'] as const,
   skills: (backend: Backend, worktreePath?: string | null) =>
     [...skillQueryKeys.all, 'skills', backend, worktreePath ?? null] as const,
-  commands: () => [...skillQueryKeys.all, 'commands'] as const,
+  commands: (worktreePath?: string | null) =>
+    [...skillQueryKeys.all, 'commands', worktreePath ?? null] as const,
 }
 
 /**
- * Hook to get Claude CLI skills from ~/.claude/skills/
+ * Hook to get Claude CLI skills from ~/.claude/skills/ and <project>/.claude/skills/
  * Skills can be attached anywhere in a prompt as context
  * Results are cached for 5 minutes (skills rarely change)
  */
@@ -32,7 +33,9 @@ export function useSkills(backend: Backend, worktreePath?: string | null) {
         const skills =
           backend === 'codex'
             ? await invoke<ClaudeSkill[]>(command, { worktreePath })
-            : await invoke<ClaudeSkill[]>(command)
+            : await invoke<ClaudeSkill[]>(command, {
+                worktreePath: worktreePath ?? undefined,
+              })
         logger.info('Backend skills loaded', { backend, count: skills.length })
         return skills
       } catch (error) {
@@ -45,18 +48,18 @@ export function useSkills(backend: Backend, worktreePath?: string | null) {
   })
 }
 
-export function useClaudeSkills() {
-  return useSkills('claude')
+export function useClaudeSkills(worktreePath?: string | null) {
+  return useSkills('claude', worktreePath)
 }
 
 /**
- * Hook to get Claude CLI custom commands from ~/.claude/commands/
+ * Hook to get Claude CLI custom commands from ~/.claude/commands/ and <project>/.claude/commands/
  * Commands can only be executed at the start of an empty prompt
  * Results are cached for 5 minutes (commands rarely change)
  */
-export function useClaudeCommands() {
+export function useClaudeCommands(worktreePath?: string | null) {
   return useQuery({
-    queryKey: skillQueryKeys.commands(),
+    queryKey: skillQueryKeys.commands(worktreePath),
     queryFn: async (): Promise<ClaudeCommand[]> => {
       if (!isTauri()) {
         return []
@@ -64,7 +67,9 @@ export function useClaudeCommands() {
 
       try {
         logger.debug('Loading Claude CLI custom commands')
-        const commands = await invoke<ClaudeCommand[]>('list_claude_commands')
+        const commands = await invoke<ClaudeCommand[]>('list_claude_commands', {
+          worktreePath: worktreePath ?? undefined,
+        })
         logger.info('Claude CLI custom commands loaded', {
           count: commands.length,
         })

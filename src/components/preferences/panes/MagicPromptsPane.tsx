@@ -284,13 +284,16 @@ const PROMPT_SECTIONS: PromptSection[] = [
         description:
           'Prompt for generating commit messages from staged changes.',
         variables: [
+          {
+            name: '{diff_stat}',
+            description: 'Compact file change summary (git diff --stat)',
+          },
           { name: '{status}', description: 'Git status output' },
           { name: '{diff}', description: 'Staged changes diff' },
           {
             name: '{recent_commits}',
             description: 'Recent commit messages for style',
           },
-          { name: '{remote_info}', description: 'Remote repository info' },
         ],
         defaultValue: DEFAULT_COMMIT_MESSAGE_PROMPT,
         defaultModel: 'sonnet',
@@ -449,9 +452,7 @@ const PROMPT_CONFIGS = PROMPT_SECTIONS.flatMap(s => s.configs)
 
 const CLAUDE_MODEL_OPTIONS: { value: MagicPromptModel; label: string }[] = [
   { value: 'opus', label: 'Opus 4.6' },
-  { value: 'opus-4.5', label: 'Opus 4.5' },
   { value: 'sonnet', label: 'Sonnet 4.6' },
-  { value: 'sonnet-4.5', label: 'Sonnet 4.5' },
   { value: 'haiku', label: 'Haiku' },
 ]
 

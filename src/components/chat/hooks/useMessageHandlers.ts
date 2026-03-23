@@ -104,6 +104,7 @@ interface UseMessageHandlersParams {
   queryClient: QueryClient
   // Callbacks
   scrollToBottom: (instant?: boolean) => void
+  markAtBottom: () => void
   inputRef: RefObject<HTMLTextAreaElement | null>
   // For pending plan approval callback
   pendingPlanMessage: ChatMessage | null | undefined
@@ -220,6 +221,7 @@ export function useMessageHandlers({
   createSession,
   queryClient,
   scrollToBottom,
+  markAtBottom,
   inputRef,
   pendingPlanMessage,
   projectIdRef,
@@ -368,18 +370,10 @@ export function useMessageHandlers({
         logger.error('[useMessageHandlers] Failed to clear waiting state:', err)
       })
 
-      // Scroll to bottom after DOM updates from collapsing the question form.
-      // rAF ensures React has processed state changes before we read scrollHeight.
-      // Using instant scroll so stale scrollHeight during animation isn't a concern.
-      requestAnimationFrame(() => {
-        scrollToBottom(true)
-      })
-      // Safety net: if React committed after our rAF scroll (large content blocks),
-      // the scroll position may be past the now-shorter content → empty viewport.
-      // Re-scroll after React has definitely flushed.
-      setTimeout(() => {
-        scrollToBottom(true)
-      }, 100)
+      // Mark as at-bottom so Tier 4 / Tier 2 auto-scroll kicks in when
+      // streaming starts. Don't physically scroll — let native CSS scroll
+      // anchoring handle the question form collapse smoothly.
+      markAtBottom()
 
       // Format answers as natural language
       const message = formatAnswersAsNaturalLanguage(questions, answers)
@@ -424,7 +418,7 @@ export function useMessageHandlers({
       getMcpConfig,
       getCustomProfileName,
       sendMessage,
-      scrollToBottom,
+      markAtBottom,
       inputRef,
     ]
   )
@@ -597,15 +591,10 @@ export function useMessageHandlers({
       setWaitingForInput(sessionId, false)
       setPendingPlanMessageId(sessionId, null)
 
-      // Scroll to bottom after DOM updates from collapsing the plan approval UI
-      requestAnimationFrame(() => {
-        scrollToBottom(true)
-      })
-      // Safety net: if React committed after our rAF scroll (large content blocks),
-      // the scroll position may be past the now-shorter content → empty viewport.
-      setTimeout(() => {
-        scrollToBottom(true)
-      }, 100)
+      // Mark as at-bottom so Tier 4 / Tier 2 auto-scroll kicks in when
+      // streaming starts. Don't physically scroll — let native CSS scroll
+      // anchoring handle the plan collapse smoothly.
+      markAtBottom()
 
       // Format approval message - include updated plan if provided
       // For Codex: use explicit execution instruction since it resumes a thread
@@ -686,7 +675,7 @@ export function useMessageHandlers({
       useAdaptiveThinkingRef,
       getMcpConfig,
       getCustomProfileName,
-      scrollToBottom,
+      markAtBottom,
       sendMessage,
       queryClient,
       inputRef,
@@ -764,15 +753,10 @@ export function useMessageHandlers({
       setWaitingForInput(sessionId, false)
       setPendingPlanMessageId(sessionId, null)
 
-      // Scroll to bottom after DOM updates from collapsing the plan approval UI
-      requestAnimationFrame(() => {
-        scrollToBottom(true)
-      })
-      // Safety net: if React committed after our rAF scroll (large content blocks),
-      // the scroll position may be past the now-shorter content → empty viewport.
-      setTimeout(() => {
-        scrollToBottom(true)
-      }, 100)
+      // Mark as at-bottom so Tier 4 / Tier 2 auto-scroll kicks in when
+      // streaming starts. Don't physically scroll — let native CSS scroll
+      // anchoring handle the plan collapse smoothly.
+      markAtBottom()
 
       // Format approval message - include updated plan if provided
       const message = buildPlanApprovalMessage({
@@ -850,7 +834,7 @@ export function useMessageHandlers({
       useAdaptiveThinkingRef,
       getMcpConfig,
       getCustomProfileName,
-      scrollToBottom,
+      markAtBottom,
       sendMessage,
       queryClient,
       inputRef,
@@ -894,10 +878,10 @@ export function useMessageHandlers({
     setSessionReviewing(sessionId, false)
     setWaitingForInput(sessionId, false)
 
-    // Scroll to bottom after DOM updates from collapsing the plan approval UI
-    requestAnimationFrame(() => {
-      scrollToBottom(true)
-    })
+    // Mark as at-bottom so Tier 4 / Tier 2 auto-scroll kicks in when
+    // streaming starts. Don't physically scroll — let native CSS scroll
+    // anchoring handle the plan collapse smoothly.
+    markAtBottom()
 
     // Explicitly set to build mode (not toggle, to avoid switching back to plan if already in build)
     setMode(sessionId, 'build')
@@ -944,7 +928,7 @@ export function useMessageHandlers({
     useAdaptiveThinkingRef,
     getMcpConfig,
     getCustomProfileName,
-    scrollToBottom,
+    markAtBottom,
     sendMessage,
     inputRef,
   ])
@@ -979,10 +963,10 @@ export function useMessageHandlers({
     setSessionReviewing(sessionId, false)
     setWaitingForInput(sessionId, false)
 
-    // Scroll to bottom after DOM updates from collapsing the plan approval UI
-    requestAnimationFrame(() => {
-      scrollToBottom(true)
-    })
+    // Mark as at-bottom so Tier 4 / Tier 2 auto-scroll kicks in when
+    // streaming starts. Don't physically scroll — let native CSS scroll
+    // anchoring handle the plan collapse smoothly.
+    markAtBottom()
 
     // Set to yolo mode for auto-approval of all future tools
     setMode(sessionId, 'yolo')
@@ -1027,7 +1011,7 @@ export function useMessageHandlers({
     useAdaptiveThinkingRef,
     getMcpConfig,
     getCustomProfileName,
-    scrollToBottom,
+    markAtBottom,
     sendMessage,
     inputRef,
   ])

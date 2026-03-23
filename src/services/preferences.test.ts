@@ -132,9 +132,11 @@ describe('preferences service', () => {
         custom_cli_profiles: [],
         default_provider: null,
 
+        auto_save_context: true,
         auto_pull_base_branch: true,
         show_create_page_issue_sources: true,
         confirm_session_close: true,
+        default_execution_mode: 'plan',
         default_backend: 'claude',
         selected_codex_model: 'gpt-5.4',
         selected_opencode_model: 'opencode/gpt-5.3-codex',
@@ -142,7 +144,7 @@ describe('preferences service', () => {
         default_codex_reasoning_effort: 'high',
         codex_multi_agent_enabled: false,
         codex_max_agent_threads: 3,
-        restore_last_session: false,
+        restore_last_session: true,
         close_original_on_clear_context: true,
         build_model: null,
         yolo_model: null,
@@ -152,6 +154,10 @@ describe('preferences service', () => {
         yolo_thinking_level: null,
         linear_api_key: null,
         magic_models_auto_initialized: false,
+        claude_cli_source: 'jean',
+        codex_cli_source: 'jean',
+        opencode_cli_source: 'jean',
+        gh_cli_source: 'jean',
       }
       vi.mocked(invoke).mockResolvedValueOnce(mockPreferences)
 
@@ -249,9 +255,11 @@ describe('preferences service', () => {
         custom_cli_profiles: [],
         default_provider: null,
 
+        auto_save_context: true,
         auto_pull_base_branch: true,
         show_create_page_issue_sources: true,
         confirm_session_close: true,
+        default_execution_mode: 'plan',
         default_backend: 'claude',
         selected_codex_model: 'gpt-5.4',
         selected_opencode_model: 'opencode/gpt-5.3-codex',
@@ -259,7 +267,7 @@ describe('preferences service', () => {
         default_codex_reasoning_effort: 'high',
         codex_multi_agent_enabled: false,
         codex_max_agent_threads: 3,
-        restore_last_session: false,
+        restore_last_session: true,
         close_original_on_clear_context: true,
         build_model: null,
         yolo_model: null,
@@ -269,6 +277,10 @@ describe('preferences service', () => {
         yolo_thinking_level: null,
         linear_api_key: null,
         magic_models_auto_initialized: false,
+        claude_cli_source: 'jean',
+        codex_cli_source: 'jean',
+        opencode_cli_source: 'jean',
+        gh_cli_source: 'jean',
       }
       vi.mocked(invoke).mockResolvedValueOnce(prefsWithOldBinding)
 
@@ -338,9 +350,11 @@ describe('preferences service', () => {
         custom_cli_profiles: [],
         default_provider: null,
 
+        auto_save_context: true,
         auto_pull_base_branch: true,
         show_create_page_issue_sources: true,
         confirm_session_close: true,
+        default_execution_mode: 'plan',
         default_backend: 'claude',
         selected_codex_model:
           'gpt-5.3-fast' as AppPreferences['selected_codex_model'],
@@ -349,7 +363,7 @@ describe('preferences service', () => {
         default_codex_reasoning_effort: 'high',
         codex_multi_agent_enabled: false,
         codex_max_agent_threads: 3,
-        restore_last_session: false,
+        restore_last_session: true,
         close_original_on_clear_context: true,
         build_model: null,
         yolo_model: null,
@@ -359,6 +373,10 @@ describe('preferences service', () => {
         yolo_thinking_level: null,
         linear_api_key: null,
         magic_models_auto_initialized: false,
+        claude_cli_source: 'jean',
+        codex_cli_source: 'jean',
+        opencode_cli_source: 'jean',
+        gh_cli_source: 'jean',
       }
       vi.mocked(invoke).mockResolvedValueOnce(prefsWithDeprecatedFastModel)
 
@@ -429,9 +447,11 @@ describe('preferences service', () => {
         custom_cli_profiles: [],
         default_provider: null,
 
+        auto_save_context: true,
         auto_pull_base_branch: true,
         show_create_page_issue_sources: true,
         confirm_session_close: true,
+        default_execution_mode: 'plan',
         default_backend: 'claude',
         selected_codex_model: 'gpt-5.4',
         selected_opencode_model: 'opencode/gpt-5.3-codex',
@@ -439,7 +459,7 @@ describe('preferences service', () => {
         default_codex_reasoning_effort: 'high',
         codex_multi_agent_enabled: false,
         codex_max_agent_threads: 3,
-        restore_last_session: false,
+        restore_last_session: true,
         close_original_on_clear_context: true,
         build_model: null,
         yolo_model: null,
@@ -449,6 +469,10 @@ describe('preferences service', () => {
         yolo_thinking_level: null,
         linear_api_key: null,
         magic_models_auto_initialized: false,
+        claude_cli_source: 'jean',
+        codex_cli_source: 'jean',
+        opencode_cli_source: 'jean',
+        gh_cli_source: 'jean',
       }
 
       const { result } = renderHook(() => useSavePreferences(), {
@@ -521,9 +545,11 @@ describe('preferences service', () => {
         custom_cli_profiles: [],
         default_provider: null,
 
+        auto_save_context: true,
         auto_pull_base_branch: true,
         show_create_page_issue_sources: true,
         confirm_session_close: true,
+        default_execution_mode: 'plan',
         default_backend: 'claude',
         selected_codex_model: 'gpt-5.4',
         selected_opencode_model: 'opencode/gpt-5.3-codex',
@@ -531,7 +557,7 @@ describe('preferences service', () => {
         default_codex_reasoning_effort: 'high',
         codex_multi_agent_enabled: false,
         codex_max_agent_threads: 3,
-        restore_last_session: false,
+        restore_last_session: true,
         close_original_on_clear_context: true,
         build_model: null,
         yolo_model: null,
@@ -541,6 +567,10 @@ describe('preferences service', () => {
         yolo_thinking_level: null,
         linear_api_key: null,
         magic_models_auto_initialized: false,
+        claude_cli_source: 'jean',
+        codex_cli_source: 'jean',
+        opencode_cli_source: 'jean',
+        gh_cli_source: 'jean',
       }
 
       const { result } = renderHook(() => useSavePreferences(), {
@@ -613,9 +643,11 @@ describe('preferences service', () => {
         custom_cli_profiles: [],
         default_provider: null,
 
+        auto_save_context: true,
         auto_pull_base_branch: true,
         show_create_page_issue_sources: true,
         confirm_session_close: true,
+        default_execution_mode: 'plan',
         default_backend: 'claude',
         selected_codex_model: 'gpt-5.4',
         selected_opencode_model: 'opencode/gpt-5.3-codex',
@@ -623,7 +655,7 @@ describe('preferences service', () => {
         default_codex_reasoning_effort: 'high',
         codex_multi_agent_enabled: false,
         codex_max_agent_threads: 3,
-        restore_last_session: false,
+        restore_last_session: true,
         close_original_on_clear_context: true,
         build_model: null,
         yolo_model: null,
@@ -633,6 +665,10 @@ describe('preferences service', () => {
         yolo_thinking_level: null,
         linear_api_key: null,
         magic_models_auto_initialized: false,
+        claude_cli_source: 'jean',
+        codex_cli_source: 'jean',
+        opencode_cli_source: 'jean',
+        gh_cli_source: 'jean',
       }
 
       const { result } = renderHook(() => useSavePreferences(), {
@@ -703,9 +739,11 @@ describe('preferences service', () => {
         custom_cli_profiles: [],
         default_provider: null,
 
+        auto_save_context: true,
         auto_pull_base_branch: true,
         show_create_page_issue_sources: true,
         confirm_session_close: true,
+        default_execution_mode: 'plan',
         default_backend: 'claude',
         selected_codex_model: 'gpt-5.4',
         selected_opencode_model: 'opencode/gpt-5.3-codex',
@@ -713,7 +751,7 @@ describe('preferences service', () => {
         default_codex_reasoning_effort: 'high',
         codex_multi_agent_enabled: false,
         codex_max_agent_threads: 3,
-        restore_last_session: false,
+        restore_last_session: true,
         close_original_on_clear_context: true,
         build_model: null,
         yolo_model: null,
@@ -723,6 +761,10 @@ describe('preferences service', () => {
         yolo_thinking_level: null,
         linear_api_key: null,
         magic_models_auto_initialized: false,
+        claude_cli_source: 'jean',
+        codex_cli_source: 'jean',
+        opencode_cli_source: 'jean',
+        gh_cli_source: 'jean',
       }
 
       const { result } = renderHook(() => useSavePreferences(), {

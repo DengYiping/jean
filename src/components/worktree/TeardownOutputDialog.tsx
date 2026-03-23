@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { CheckCircle2, Copy, XCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { logger } from '@/lib/logger'
+import { copyToClipboard } from '@/lib/clipboard'
 import {
   Dialog,
   DialogContent,
@@ -47,7 +48,7 @@ export function TeardownOutputDialog() {
   const handleCopy = async () => {
     if (!detail?.output) return
     try {
-      await navigator.clipboard.writeText(detail.output)
+      await copyToClipboard(detail.output)
       setCopied(true)
       toast.success('Output copied to clipboard')
       window.setTimeout(() => setCopied(false), 1500)

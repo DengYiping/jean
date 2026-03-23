@@ -45,6 +45,8 @@ import type {
   AttachedSavedContext,
   LoadedIssueContext,
   LoadedPullRequestContext,
+  LoadedSecurityAlertContext,
+  LoadedAdvisoryContext,
 } from '@/types/github'
 import type { LoadedLinearIssueContext } from '@/types/linear'
 import type {
@@ -102,6 +104,8 @@ interface DesktopToolbarControlsProps {
 
   loadedIssueContexts: LoadedIssueContext[]
   loadedPRContexts: LoadedPullRequestContext[]
+  loadedSecurityContexts?: LoadedSecurityAlertContext[]
+  loadedAdvisoryContexts?: LoadedAdvisoryContext[]
   loadedLinearContexts: LoadedLinearIssueContext[]
   attachedSavedContexts: AttachedSavedContext[]
 
@@ -129,6 +133,9 @@ interface DesktopToolbarControlsProps {
   handleEffortLevelChange: (value: string) => void
   handleViewIssue: (ctx: LoadedIssueContext) => void
   handleViewPR: (ctx: LoadedPullRequestContext) => void
+  handleViewSecurityAlert?: (ctx: LoadedSecurityAlertContext) => void
+  handleViewAdvisory?: (ctx: LoadedAdvisoryContext) => void
+  handleViewLinear?: (ctx: LoadedLinearIssueContext) => void
   handleViewSavedContext: (ctx: AttachedSavedContext) => void
 }
 
@@ -185,6 +192,9 @@ export function DesktopToolbarControls({
   handleEffortLevelChange,
   handleViewIssue,
   handleViewPR,
+  handleViewSecurityAlert: _handleViewSecurityAlert,
+  handleViewAdvisory: _handleViewAdvisory,
+  handleViewLinear: _handleViewLinear,
   handleViewSavedContext,
 }: DesktopToolbarControlsProps) {
   // Prevent Radix from restoring focus to the trigger button;

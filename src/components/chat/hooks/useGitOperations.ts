@@ -21,6 +21,7 @@ import { isBaseSession } from '@/types/projects'
 import type {
   CreatePrResponse,
   CreateCommitResponse,
+  DetectPrResponse,
   ReviewResponse,
   MergeWorktreeResponse,
   MergeConflictsResponse,
@@ -99,6 +100,11 @@ export function useGitOperations({
     if (!activeWorktreePath || !activeWorktreeId) return
 
     const { setWorktreeLoading, clearWorktreeLoading } = useChatStore.getState()
+    const { gitDiffSelectedFiles, clearGitDiffSelectedFiles } =
+      useUIStore.getState()
+    const specificFiles =
+      gitDiffSelectedFiles.size > 0 ? Array.from(gitDiffSelectedFiles) : null
+
     setWorktreeLoading(activeWorktreeId, 'commit')
     const prefix =
       project?.name && worktree?.name
@@ -121,11 +127,14 @@ export function useGitOperations({
           ),
           reasoningEffort:
             preferences?.magic_prompt_efforts?.commit_message_effort ?? null,
+          specificFiles,
         }
       )
 
-      // Trigger git status refresh
+      // Clear selected files and trigger refresh
+      clearGitDiffSelectedFiles()
       triggerImmediateGitPoll()
+      window.dispatchEvent(new CustomEvent('git-commit-completed'))
 
       toast.success(`${prefix}: ${result.message.split('\n')[0]}`, {
         id: toastId,
@@ -154,6 +163,11 @@ export function useGitOperations({
 
       const { setWorktreeLoading, clearWorktreeLoading } =
         useChatStore.getState()
+      const { gitDiffSelectedFiles, clearGitDiffSelectedFiles } =
+        useUIStore.getState()
+      const specificFiles =
+        gitDiffSelectedFiles.size > 0 ? Array.from(gitDiffSelectedFiles) : null
+
       setWorktreeLoading(activeWorktreeId, 'commit')
       const prefix =
         project?.name && worktree?.name
@@ -178,11 +192,14 @@ export function useGitOperations({
             ),
             reasoningEffort:
               preferences?.magic_prompt_efforts?.commit_message_effort ?? null,
+            specificFiles,
           }
         )
 
-        // Trigger git status refresh
+        // Clear selected files and trigger refresh
+        clearGitDiffSelectedFiles()
         triggerImmediateGitPoll()
+        window.dispatchEvent(new CustomEvent('git-commit-completed'))
 
         if (result.push_permission_denied) {
           toast.error(
@@ -441,6 +458,30 @@ export function useGitOperations({
           description: `${event.payload.percent}%`,
         })
       })
+
+      if (!worktree?.pr_number) {
+        invoke<DetectPrResponse | null>('detect_and_link_pr', {
+          worktreeId: activeWorktreeId,
+          worktreePath: activeWorktreePath,
+        })
+          .then(result => {
+            if (result && worktree?.project_id) {
+              queryClient.invalidateQueries({
+                queryKey: projectsQueryKeys.worktrees(worktree.project_id),
+              })
+              queryClient.invalidateQueries({
+                queryKey: [
+                  ...projectsQueryKeys.all,
+                  'worktree',
+                  activeWorktreeId,
+                ],
+              })
+            }
+          })
+          .catch(() => {
+            /* noop - PR detection is best-effort */
+          })
+      }
 
       const result = await invoke<ReviewResponse>('run_review_with_ai', {
         worktreePath: activeWorktreePath,

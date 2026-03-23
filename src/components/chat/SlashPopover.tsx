@@ -75,7 +75,7 @@ export function SlashPopover({
   handleRef,
 }: SlashPopoverProps) {
   const { data: skills = [] } = useSkills(backend, worktreePath)
-  const { data: commands = [] } = useClaudeCommands()
+  const { data: commands = [] } = useClaudeCommands(worktreePath)
   const listRef = useRef<HTMLDivElement>(null)
   const [selectedIndex, setSelectedIndex] = useState(0)
 

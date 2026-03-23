@@ -7,7 +7,9 @@ import {
   lazy,
   Suspense,
 } from 'react'
+import { cn } from '@/lib/utils'
 import { TitleBar } from '@/components/titlebar/TitleBar'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { DevModeBanner } from './DevModeBanner'
 import { SidebarWidthProvider } from './SidebarWidthContext'
 import { MainWindowContent } from './MainWindowContent'
@@ -139,6 +141,7 @@ const CloseWorktreeDialog = lazy(() =>
 )
 import { FloatingDock } from '@/components/ui/floating-dock'
 import { Toaster } from '@/components/ui/sonner'
+import { useWindowMaximized } from '@/hooks/use-window-maximized'
 import { useUIStore } from '@/store/ui-store'
 import { useProjectsStore } from '@/store/projects-store'
 import { useMainWindowEventListeners } from '@/hooks/useMainWindowEventListeners'
@@ -162,6 +165,7 @@ import {
   useWorktreeEvents,
 } from '@/services/projects'
 import { isNativeApp } from '@/lib/environment'
+import { isWindows } from '@/lib/platform'
 
 // Left sidebar resize constraints (pixels)
 const MIN_SIDEBAR_WIDTH = 150
@@ -180,6 +184,7 @@ function useRetainedMount(active: boolean) {
 }
 
 export function MainWindow() {
+  const isMaximized = useWindowMaximized()
   const leftSidebarVisible = useUIStore(state => state.leftSidebarVisible)
   const leftSidebarSize = useUIStore(state => state.leftSidebarSize)
   const setLeftSidebarSize = useUIStore(state => state.setLeftSidebarSize)
@@ -214,6 +219,8 @@ export function MainWindow() {
     state => state.jeanConfigWizardOpen
   )
 
+  const isMobile = useIsMobile()
+
   // Fetch worktree data for polling initialization
   const { data: worktree } = useWorktree(selectedWorktreeId ?? null)
   const { data: projects } = useProjects()
@@ -222,13 +229,15 @@ export function MainWindow() {
     : null
 
   // Compute window title based on selected project/worktree
+  // On mobile, show only project name (worktree name is in the content header)
   const windowTitle = useMemo(() => {
     if (!project || !worktree) return 'Jean'
+    if (isMobile) return project.name
     const branchSuffix =
       worktree.branch !== worktree.name ? ` (${worktree.branch})` : ''
 
     return `${project.name} › ${worktree.name}${branchSuffix}`
-  }, [project, worktree])
+  }, [project, worktree, isMobile])
 
   // Compute polling info - null if no worktree or data not loaded
   const pollingInfo: WorktreePollingInfo | null = useMemo(() => {
@@ -385,9 +394,18 @@ export function MainWindow() {
   const shouldRenderCloseWorktreeDialog = useRetainedMount(closeConfirmOpen)
   const shouldRenderGitHubDashboardModal = useRetainedMount(githubDashboardOpen)
 
+  // On Windows, use smaller border radius and remove it when maximized
+  // On other platforms, use rounded-xl only in native app mode
+  const roundedClass = isWindows
+    ? !isMaximized && 'rounded-sm'
+    : isNativeApp() && 'rounded-xl'
+
   return (
     <div
-      className={`flex h-dvh w-full flex-col overflow-hidden bg-background ${isNativeApp() ? 'rounded-xl' : ''}`}
+      className={cn(
+        'flex h-dvh w-full flex-col overflow-hidden bg-background',
+        roundedClass
+      )}
     >
       {/* Title Bar - semi-transparent overlay */}
       <TitleBar title={windowTitle} className="absolute top-0 left-0 right-0" />
@@ -396,7 +414,7 @@ export function MainWindow() {
       <DevModeBanner />
 
       {/* Main Content Area */}
-      <div className="flex flex-1 overflow-hidden pt-8">
+      <div className="flex flex-1 overflow-hidden pt-9">
         {/* Left Sidebar with pixel-based width - only render after UI state is initialized */}
         {leftSidebarVisible && isInitialized && (
           <SidebarWidthProvider value={leftSidebarSize}>
@@ -415,7 +433,7 @@ export function MainWindow() {
         {/* Custom resize handle for left sidebar */}
         {leftSidebarVisible && isInitialized && (
           <div
-            className="relative h-full w-px hover:bg-border"
+            className="relative h-full w-px bg-border"
             onMouseDown={handleResizeStart}
           >
             {/* Invisible wider hit area for easier clicking */}

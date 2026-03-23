@@ -5,8 +5,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Shield, ShieldAlert } from 'lucide-react'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Markdown } from '@/components/ui/markdown'
+import { LinearIcon } from '@/components/icons/LinearIcon'
 import type { ViewingContext } from '@/components/chat/toolbar/types'
 
 interface ContextViewerDialogProps {
@@ -34,7 +36,21 @@ export function ContextViewerDialog({
             {viewingContext.type === 'saved' && (
               <FolderOpen className="h-4 w-4 text-blue-500" />
             )}
+            {viewingContext.type === 'security' && (
+              <Shield className="h-4 w-4 text-orange-500" />
+            )}
+            {viewingContext.type === 'advisory' && (
+              <ShieldAlert className="h-4 w-4 text-orange-500" />
+            )}
+            {viewingContext.type === 'linear' && (
+              <LinearIcon className="h-4 w-4 text-violet-500" />
+            )}
             {viewingContext.number ? `#${viewingContext.number}: ` : ''}
+            {viewingContext.ghsaId ? `${viewingContext.ghsaId}: ` : ''}
+            {viewingContext.identifier &&
+            !viewingContext.title.startsWith(viewingContext.identifier)
+              ? `${viewingContext.identifier}: `
+              : ''}
             {viewingContext.title}
           </DialogTitle>
         </DialogHeader>

@@ -38,7 +38,8 @@ use super::types::{
     JeanConfig, MergeType, Project, SessionType, Worktree, WorktreeArchivedEvent,
     WorktreeBranchExistsEvent, WorktreeCreateErrorEvent, WorktreeCreatedEvent,
     WorktreeCreatingEvent, WorktreeDeleteErrorEvent, WorktreeDeletedEvent, WorktreeDeletingEvent,
-    WorktreePathExistsEvent, WorktreePermanentlyDeletedEvent, WorktreeUnarchivedEvent,
+    WorktreePathExistsEvent, WorktreePermanentlyDeletedEvent, WorktreeSetupCompleteEvent,
+    WorktreeUnarchivedEvent,
 };
 use crate::claude_cli::resolve_cli_binary;
 use crate::codex_cli::resolve_cli_binary as resolve_codex_cli_binary;
@@ -220,6 +221,7 @@ pub async fn add_project(
         worktrees_dir: None,
         linear_api_key: None,
         linear_team_id: None,
+        linked_project_ids: Vec::new(),
     };
 
     data.add_project(project.clone());
@@ -381,6 +383,7 @@ pub async fn init_project(
         worktrees_dir: None,
         linear_api_key: None,
         linear_team_id: None,
+        linked_project_ids: Vec::new(),
     };
 
     data.add_project(project.clone());
@@ -436,6 +439,7 @@ pub async fn clone_project(
         worktrees_dir: None,
         linear_api_key: None,
         linear_team_id: None,
+        linked_project_ids: Vec::new(),
     };
 
     data.add_project(project.clone());
@@ -479,6 +483,11 @@ pub async fn remove_project(app: AppHandle, project_id: String) -> Result<(), St
     for worktree_id in &archived_worktree_ids {
         data.remove_worktree(worktree_id);
         log::trace!("Removed archived worktree: {worktree_id}");
+    }
+
+    // Clean up reciprocal linked project references
+    for other in &mut data.projects {
+        other.linked_project_ids.retain(|id| id != &project_id);
     }
 
     // Remove project
@@ -1203,31 +1212,14 @@ pub async fn create_worktree(
                 }
             }
 
-            // Check for jean.json and run setup script
-            let (setup_output, setup_script, setup_success) =
-                if let Some(config) = git::read_jean_config(&project_path) {
-                    if let Some(script) = config.scripts.setup {
-                        log::trace!("Background: Found jean.json with setup script, executing...");
-                        match git::run_setup_script(
-                            &worktree_path_clone,
-                            &project_path,
-                            &final_branch,
-                            &script,
-                        ) {
-                            Ok(output) => (Some(output), Some(script), Some(true)),
-                            Err(e) => {
-                                log::warn!("Background: Setup script failed (continuing): {e}");
-                                (Some(e), Some(script), Some(false))
-                            }
-                        }
-                    } else {
-                        (None, None, None)
-                    }
-                } else {
-                    (None, None, None)
-                };
+            // Check for jean.json setup script upfront so we can include it in the
+            // initial worktree record. This lets the frontend know a setup script
+            // will run (setup_script is set, but setup_output is still None).
+            let pending_setup_script =
+                git::read_jean_config(&project_path).and_then(|config| config.scripts.setup);
 
-            // Save to storage
+            // Save to storage and emit worktree:created BEFORE running setup script
+            // so the UI can open immediately and the user can start typing.
             if let Ok(mut data) = load_projects_data(&app_clone) {
                 // Get max order for worktrees in this project
                 let max_order = data
@@ -1238,17 +1230,18 @@ pub async fn create_worktree(
                     .max()
                     .unwrap_or(0);
 
-                // Create the final worktree record
+                // Create the worktree record (setup_script set if jean.json has one,
+                // but setup_output is None — signals "setup pending" to frontend)
                 let worktree = Worktree {
                     id: worktree_id_clone.clone(),
                     project_id: project_id_clone.clone(),
                     name: name_clone.clone(),
                     path: worktree_path_clone.clone(),
-                    branch: final_branch,
+                    branch: final_branch.clone(),
                     created_at,
-                    setup_output,
-                    setup_script,
-                    setup_success,
+                    setup_output: None,
+                    setup_script: pending_setup_script.clone(),
+                    setup_success: None,
                     session_type: SessionType::Worktree,
                     pr_number: pr_context_clone.as_ref().map(|ctx| ctx.number),
                     pr_url: None,
@@ -1289,7 +1282,7 @@ pub async fn create_worktree(
                     return;
                 }
 
-                // Emit success event
+                // Emit success event — UI opens immediately
                 log::trace!(
                     "Background: Worktree created successfully: {}",
                     worktree.name
@@ -1307,6 +1300,52 @@ pub async fn create_worktree(
                 };
                 if let Err(emit_err) = app_clone.emit_all("worktree:error", &error_event) {
                     log::error!("Failed to emit worktree:error event: {emit_err}");
+                }
+                return;
+            }
+
+            // Run setup script AFTER emitting worktree:created (user can already type)
+            if let Some(script) = pending_setup_script {
+                log::trace!("Background: Found jean.json with setup script, executing...");
+                let (setup_output, setup_success) = match git::run_setup_script(
+                    &worktree_path_clone,
+                    &project_path,
+                    &final_branch,
+                    &script,
+                ) {
+                    Ok(output) => (output, true),
+                    Err(e) => {
+                        log::warn!("Background: Setup script failed (continuing): {e}");
+                        (e, false)
+                    }
+                };
+
+                // Update worktree in storage with setup results
+                if let Ok(mut data) = load_projects_data(&app_clone) {
+                    if let Some(wt) = data
+                        .worktrees
+                        .iter_mut()
+                        .find(|w| w.id == worktree_id_clone)
+                    {
+                        wt.setup_output = Some(setup_output.clone());
+                        wt.setup_script = Some(script.clone());
+                        wt.setup_success = Some(setup_success);
+                    }
+                    if let Err(e) = save_projects_data(&app_clone, &data) {
+                        log::warn!("Background: Failed to save setup results: {e}");
+                    }
+                }
+
+                // Emit setup complete event
+                let setup_event = WorktreeSetupCompleteEvent {
+                    id: worktree_id_clone,
+                    project_id: project_id_clone,
+                    setup_output,
+                    setup_script: script,
+                    setup_success,
+                };
+                if let Err(e) = app_clone.emit_all("worktree:setup_complete", &setup_event) {
+                    log::error!("Failed to emit worktree:setup_complete event: {e}");
                 }
             }
         })); // end catch_unwind
@@ -2486,6 +2525,20 @@ pub async fn delete_worktree(app: AppHandle, worktree_id: String) -> Result<(), 
         // Remove the git worktree (this can be slow for large repos)
         if let Err(e) = git::remove_worktree(&project_path, &worktree_path) {
             log::error!("Background: Failed to remove worktree: {e}");
+
+            // Re-add worktree to storage since deletion failed
+            match load_projects_data(&app_clone) {
+                Ok(mut data) => {
+                    data.add_worktree(worktree_for_restore);
+                    if let Err(save_err) = save_projects_data(&app_clone, &data) {
+                        log::error!("Failed to restore worktree in storage: {save_err}");
+                    }
+                }
+                Err(load_err) => {
+                    log::error!("Failed to load projects data for restore: {load_err}");
+                }
+            }
+
             let error_event = WorktreeDeleteErrorEvent {
                 id: worktree_id_clone,
                 project_id: project_id_clone,
@@ -2602,8 +2655,9 @@ pub async fn create_base_session(app: AppHandle, project_id: String) -> Result<W
             let wt_id = session.id.clone();
             if let Err(e) = crate::chat::with_sessions_mut(&app, &wt_path, &wt_id, |sessions| {
                 for s in &mut sessions.sessions {
-                    if s.archived_at.is_some() {
+                    if s.archived_by_base_close == Some(true) {
                         s.archived_at = None;
+                        s.archived_by_base_close = None;
                     }
                 }
                 Ok(())
@@ -2701,6 +2755,7 @@ async fn close_base_session_internal(
                     );
                     if session.archived_at.is_none() {
                         session.archived_at = Some(ts);
+                        session.archived_by_base_close = Some(true);
                         archived_count += 1;
                         log::info!("[BASE_CLOSE] -> Archived session '{}'", session.name);
                     }
@@ -3031,6 +3086,12 @@ pub async fn permanently_delete_worktree(
     save_projects_data(&app, &data)?;
     log::trace!("Worktree removed from storage: {worktree_id}");
 
+    // Collect session IDs for cleanup before the index file is deleted
+    let session_ids: Vec<String> =
+        crate::chat::storage::load_sessions(&app, &worktree.path, &worktree.id)
+            .map(|ws| ws.sessions.iter().map(|s| s.id.clone()).collect())
+            .unwrap_or_default();
+
     // Clone values for background thread
     let app_clone = app.clone();
     let worktree_id_clone = worktree_id.clone();
@@ -3073,6 +3134,11 @@ pub async fn permanently_delete_worktree(
                     log::trace!("Deleted sessions file for worktree: {worktree_id_clone}");
                 }
             }
+        }
+
+        // Clean up combined-context files for each session
+        for sid in &session_ids {
+            crate::chat::storage::cleanup_combined_context_files(&app_clone, sid);
         }
 
         // Emit success event
@@ -3234,19 +3300,14 @@ pub async fn open_worktree_in_terminal(
 
         let script = match terminal_app.as_str() {
             "warp" => {
-                // Warp uses a different AppleScript approach
-                format!(
-                    r#"tell application "Warp"
-                        activate
-                        tell application "System Events"
-                            keystroke "t" using command down
-                            delay 0.3
-                            keystroke "cd '{}' && clear"
-                            keystroke return
-                        end tell
-                    end tell"#,
-                    escaped_path
-                )
+                let output = std::process::Command::new("open")
+                    .arg(format!("warp://action/new_tab?path={escaped_path}"))
+                    .spawn();
+
+                match output {
+                    Ok(_) => return Ok(()),
+                    Err(e) => return Err(format_open_error("Warp", &e)),
+                }
             }
             "ghostty" => {
                 // Opening a directory path with Ghostty creates a new tab
@@ -3348,8 +3409,28 @@ pub async fn open_worktree_in_terminal(
 
     #[cfg(target_os = "windows")]
     {
-        match terminal_app.as_str() {
-            "powershell" => {
+        let result = match terminal_app.as_str() {
+            "warp" => {
+                // Try known install path first, then fall back to PATH
+                let local = std::env::var("LOCALAPPDATA").unwrap_or_default();
+                let known_path = format!("{local}\\Programs\\Warp\\warp.exe");
+                let warp_exe = if std::path::Path::new(&known_path).exists() {
+                    known_path
+                } else if crate::platform::executable_exists("warp") {
+                    "warp".to_string()
+                } else {
+                    return Err(format!("Warp not found. Checked: {known_path} and PATH"));
+                };
+                log::trace!("Using Warp at: {warp_exe}");
+                std::process::Command::new(&warp_exe)
+                    .current_dir(&worktree_path)
+                    .spawn()
+            }
+            "windows-terminal" => std::process::Command::new("wt")
+                .args(["-d", &worktree_path])
+                .spawn(),
+            _ => {
+                // Default: PowerShell
                 std::process::Command::new("powershell")
                     .args([
                         "-NoExit",
@@ -3357,37 +3438,13 @@ pub async fn open_worktree_in_terminal(
                         &format!("Set-Location '{worktree_path}'"),
                     ])
                     .spawn()
-                    .map_err(|e| format_open_error("PowerShell", &e))?;
             }
-            "cmd" => {
-                std::process::Command::new("cmd")
-                    .args(["/k", &format!("cd /d \"{worktree_path}\"")])
-                    .spawn()
-                    .map_err(|e| format_open_error("CMD", &e))?;
-            }
-            _ => {
-                // Default: Windows Terminal (wt.exe) — opens new tab in existing window
-                let result = std::process::Command::new("wt")
-                    .args(["-w", "0", "nt", "-d", &worktree_path])
-                    .spawn();
+        };
 
-                match result {
-                    Ok(_) => {}
-                    Err(_) => {
-                        // Fallback to PowerShell if wt.exe not available
-                        std::process::Command::new("powershell")
-                            .args([
-                                "-NoExit",
-                                "-Command",
-                                &format!("Set-Location '{worktree_path}'"),
-                            ])
-                            .spawn()
-                            .map_err(|e| format_open_error("PowerShell", &e))?;
-                    }
-                }
-            }
+        match result {
+            Ok(_) => log::trace!("Opened {terminal_app} in {worktree_path}"),
+            Err(e) => return Err(format!("Failed to open {terminal_app}: {e}")),
         }
-        log::trace!("Opened terminal in {worktree_path}");
     }
 
     Ok(())
@@ -3991,6 +4048,7 @@ pub async fn get_project_branches(
 pub async fn update_project_settings(
     app: AppHandle,
     project_id: String,
+    name: Option<String>,
     default_branch: Option<String>,
     enabled_mcp_servers: Option<Vec<String>>,
     known_mcp_servers: Option<Vec<String>>,
@@ -4002,6 +4060,7 @@ pub async fn update_project_settings(
     worktrees_dir: Option<String>,
     linear_api_key: Option<String>,
     linear_team_id: Option<String>,
+    linked_project_ids: Option<Vec<String>>,
 ) -> Result<Project, String> {
     log::trace!("Updating settings for project: {project_id}");
 
@@ -4010,6 +4069,15 @@ pub async fn update_project_settings(
     let project = data
         .find_project_mut(&project_id)
         .ok_or_else(|| format!("Project not found: {project_id}"))?;
+
+    if let Some(new_name) = name {
+        let new_name = new_name.trim().to_string();
+        if new_name.is_empty() {
+            return Err("Project name cannot be empty".to_string());
+        }
+        log::trace!("Renaming project from '{}' to '{new_name}'", project.name);
+        project.name = new_name;
+    }
 
     if let Some(branch) = default_branch {
         log::trace!(
@@ -4084,7 +4152,54 @@ pub async fn update_project_settings(
         };
     }
 
-    let updated_project = project.clone();
+    // Handle linked_project_ids with bidirectional sync
+    if let Some(ids) = linked_project_ids {
+        // Filter out self-references and deduplicate
+        let clean_ids: Vec<String> = {
+            let mut seen = std::collections::HashSet::new();
+            ids.into_iter()
+                .filter(|id| id != &project_id && seen.insert(id.clone()))
+                .collect()
+        };
+
+        let old_ids = project.linked_project_ids.clone();
+        project.linked_project_ids = clean_ids.clone();
+
+        // Compute added and removed for reciprocal updates
+        let added: Vec<String> = clean_ids
+            .iter()
+            .filter(|id| !old_ids.contains(id))
+            .cloned()
+            .collect();
+        let removed: Vec<String> = old_ids
+            .iter()
+            .filter(|id| !clean_ids.contains(id))
+            .cloned()
+            .collect();
+
+        let pid = project_id.clone();
+
+        // Add reciprocal links for newly added projects
+        for add_id in &added {
+            if let Some(other) = data.find_project_mut(add_id) {
+                if !other.linked_project_ids.contains(&pid) {
+                    other.linked_project_ids.push(pid.clone());
+                }
+            }
+        }
+        // Remove reciprocal links for removed projects
+        for rem_id in &removed {
+            if let Some(other) = data.find_project_mut(rem_id) {
+                other.linked_project_ids.retain(|id| id != &pid);
+            }
+        }
+    }
+
+    // Re-fetch the project after potential mutations from bidirectional sync
+    let updated_project = data
+        .find_project(&project_id)
+        .ok_or_else(|| format!("Project not found after update: {project_id}"))?
+        .clone();
     save_projects_data(&app, &data)?;
 
     log::trace!("Successfully updated project settings");
@@ -4505,6 +4620,65 @@ pub async fn save_worktree_pr(
     Ok(())
 }
 
+/// Response from detecting an existing PR for the current branch
+#[derive(Serialize, Clone)]
+pub struct DetectPrResponse {
+    pub pr_number: u32,
+    pub pr_url: String,
+    pub title: String,
+}
+
+/// Detect and link an existing PR for the current branch of a worktree.
+///
+/// Runs `gh pr view` to check if a PR exists. If found, saves the PR info
+/// to the worktree and returns the PR details. Returns None if no PR exists.
+#[tauri::command]
+pub async fn detect_and_link_pr(
+    app: AppHandle,
+    worktree_id: String,
+    worktree_path: String,
+) -> Result<Option<DetectPrResponse>, String> {
+    log::trace!("Detecting PR for worktree {worktree_id} at {worktree_path}");
+
+    let gh = resolve_gh_binary(&app);
+    let view_output = silent_command(&gh)
+        .args(["pr", "view", "--json", "number,url,title"])
+        .current_dir(&worktree_path)
+        .output();
+
+    if let Ok(view_out) = view_output {
+        if view_out.status.success() {
+            if let Ok(view_json) = serde_json::from_slice::<serde_json::Value>(&view_out.stdout) {
+                let pr_number = view_json["number"].as_u64().unwrap_or(0) as u32;
+                let pr_url = view_json["url"].as_str().unwrap_or("").to_string();
+                let title = view_json["title"].as_str().unwrap_or("").to_string();
+
+                if pr_number > 0 && !pr_url.is_empty() {
+                    log::trace!("Found existing PR #{pr_number} for worktree {worktree_id}");
+
+                    // Save PR info to worktree
+                    if let Ok(mut data) = load_projects_data(&app) {
+                        if let Some(wt) = data.worktrees.iter_mut().find(|w| w.id == worktree_id) {
+                            wt.pr_number = Some(pr_number);
+                            wt.pr_url = Some(pr_url.clone());
+                            let _ = save_projects_data(&app, &data);
+                        }
+                    }
+
+                    return Ok(Some(DetectPrResponse {
+                        pr_number,
+                        pr_url,
+                        title,
+                    }));
+                }
+            }
+        }
+    }
+
+    log::trace!("No PR found for worktree {worktree_id}");
+    Ok(None)
+}
+
 /// Clear PR information from a worktree
 ///
 /// Called when a PR is closed or merged and the user wants to create a new one.
@@ -4908,9 +5082,13 @@ fn truncate_diff_at_file_boundaries(diff: &str, max_chars: usize) -> String {
 }
 
 /// Get git diff between current branch and target branch
-fn get_branch_diff(repo_path: &str, target_branch: &str) -> Result<String, String> {
+fn get_branch_diff(repo_path: &str, target_branch: &str, head_ref: &str) -> Result<String, String> {
     let output = silent_command("git")
-        .args(["diff", "-U10", &format!("origin/{target_branch}...HEAD")])
+        .args([
+            "diff",
+            "-U10",
+            &format!("origin/{target_branch}...{head_ref}"),
+        ])
         .current_dir(repo_path)
         .output()
         .map_err(|e| format!("Failed to get git diff: {e}"))?;
@@ -4926,9 +5104,17 @@ fn get_branch_diff(repo_path: &str, target_branch: &str) -> Result<String, Strin
 }
 
 /// Get commit messages between current branch and target branch
-fn get_branch_commits(repo_path: &str, target_branch: &str) -> Result<String, String> {
+fn get_branch_commits(
+    repo_path: &str,
+    target_branch: &str,
+    head_ref: &str,
+) -> Result<String, String> {
     let output = silent_command("git")
-        .args(["log", "--oneline", &format!("origin/{target_branch}..HEAD")])
+        .args([
+            "log",
+            "--oneline",
+            &format!("origin/{target_branch}..{head_ref}"),
+        ])
         .current_dir(repo_path)
         .output()
         .map_err(|e| format!("Failed to get git log: {e}"))?;
@@ -4942,12 +5128,16 @@ fn get_branch_commits(repo_path: &str, target_branch: &str) -> Result<String, St
 }
 
 /// Count commits between current branch and target branch
-fn count_branch_commits(repo_path: &str, target_branch: &str) -> Result<u32, String> {
+fn count_branch_commits(
+    repo_path: &str,
+    target_branch: &str,
+    head_ref: &str,
+) -> Result<u32, String> {
     let output = silent_command("git")
         .args([
             "rev-list",
             "--count",
-            &format!("origin/{target_branch}..HEAD"),
+            &format!("origin/{target_branch}..{head_ref}"),
         ])
         .current_dir(repo_path)
         .output()
@@ -4977,15 +5167,16 @@ fn generate_pr_content(
     worktree_id: Option<&str>,
     magic_backend: Option<&str>,
     reasoning_effort: Option<&str>,
+    head_ref: &str,
 ) -> Result<PrContentResponse, String> {
     // Get diff and commits
-    let diff = get_branch_diff(repo_path, target_branch)?;
+    let diff = get_branch_diff(repo_path, target_branch, head_ref)?;
     if diff.trim().is_empty() {
         return Err("No changes to create PR for".to_string());
     }
 
-    let commits = get_branch_commits(repo_path, target_branch)?;
-    let commit_count = count_branch_commits(repo_path, target_branch)?;
+    let commits = get_branch_commits(repo_path, target_branch, head_ref)?;
+    let commit_count = count_branch_commits(repo_path, target_branch, head_ref)?;
 
     // Build prompt - use custom if provided and non-empty, otherwise use default
     let prompt_template = custom_prompt
@@ -5187,14 +5378,15 @@ pub async fn create_pr_with_ai_content(
         let commit_msg = match (|| -> Result<String, String> {
             let status = get_git_status(&worktree_path)?;
             let diff = get_staged_diff(&worktree_path)?;
-            let recent_commits = get_recent_commits(&worktree_path, 10)?;
-            let remote_info = get_remote_info(&worktree_path)?;
+            let diff_stat = get_staged_diff_stat(&worktree_path)?;
+            let recent_commits = get_recent_commits(&worktree_path, 5)?;
 
             let prompt = COMMIT_MESSAGE_PROMPT
+                .replace("{diff_stat}", &diff_stat)
                 .replace("{status}", &status)
                 .replace("{diff}", &diff)
                 .replace("{recent_commits}", &recent_commits)
-                .replace("{remote_info}", &remote_info);
+                .replace("{remote_info}", "");
 
             let commit_magic_backend = crate::get_preferences_path(&app)
                 .ok()
@@ -5349,6 +5541,7 @@ pub async fn create_pr_with_ai_content(
         Some(worktree_id),
         pr_magic_backend.as_deref(),
         reasoning_effort.as_deref(),
+        "HEAD",
     )?;
 
     // Gather Linear identifiers
@@ -5619,7 +5812,8 @@ pub async fn generate_pr_update_content(
         }
     }
 
-    // Generate PR content using Claude CLI
+    // Generate PR content using Claude CLI — only include pushed commits
+    let remote_head = format!("origin/{current_branch}");
     let pr_magic_backend = crate::get_preferences_path(&app)
         .ok()
         .and_then(|p| std::fs::read_to_string(p).ok())
@@ -5637,6 +5831,7 @@ pub async fn generate_pr_update_content(
         Some(worktree_id),
         pr_magic_backend.as_deref(),
         reasoning_effort.as_deref(),
+        &remote_head,
     )?;
 
     // Gather Linear identifiers
@@ -5724,23 +5919,19 @@ pub async fn update_pr_description(
 const COMMIT_MESSAGE_SCHEMA: &str = r#"{"type":"object","properties":{"message":{"type":"string","description":"Commit message using Conventional Commits format. First line: type(scope): description (max 72 chars). Types: feat, fix, docs, style, refactor, perf, test, chore. Followed by blank line and optional body explaining what and why."}},"required":["message"],"additionalProperties":false}"#;
 
 /// Prompt template for commit message generation
-const COMMIT_MESSAGE_PROMPT: &str = r#"<task>Generate a commit message for the following changes</task>
+const COMMIT_MESSAGE_PROMPT: &str = r#"Generate a conventional commit message for these staged changes.
 
-<git_status>
+Files changed:
+{diff_stat}
+
+Git status:
 {status}
-</git_status>
 
-<staged_diff>
+Diff:
 {diff}
-</staged_diff>
 
-<recent_commits>
-{recent_commits}
-</recent_commits>
-
-<remote_info>
-{remote_info}
-</remote_info>"#;
+Recent commits (style reference):
+{recent_commits}"#;
 
 /// Structured response from commit message generation
 #[derive(Debug, Deserialize)]
@@ -5788,7 +5979,27 @@ fn get_git_status(repo_path: &str) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
-/// Get staged diff
+/// Get compact diff stat summary (e.g. "src/main.rs | 5 ++--")
+fn get_staged_diff_stat(repo_path: &str) -> Result<String, String> {
+    let output = silent_command("git")
+        .args(["diff", "--cached", "--stat"])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| format!("Failed to get staged diff stat: {e}"))?;
+
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+/// Max lines of hunk content to keep per file
+const DIFF_MAX_LINES_PER_FILE: usize = 50;
+/// Global char budget for the truncated diff
+const DIFF_MAX_CHARS: usize = 15_000;
+
+/// Get staged diff with smart per-file truncation.
+///
+/// Splits the raw diff by file, keeps headers + up to DIFF_MAX_LINES_PER_FILE
+/// lines of hunk content per file, and stops adding files once DIFF_MAX_CHARS
+/// is reached.
 fn get_staged_diff(repo_path: &str) -> Result<String, String> {
     let output = silent_command("git")
         .args(["diff", "--cached"])
@@ -5796,23 +6007,70 @@ fn get_staged_diff(repo_path: &str) -> Result<String, String> {
         .output()
         .map_err(|e| format!("Failed to get staged diff: {e}"))?;
 
-    let diff = String::from_utf8_lossy(&output.stdout).to_string();
+    let raw = String::from_utf8_lossy(&output.stdout).to_string();
 
-    // Truncate very long diffs (char-safe for multi-byte UTF-8)
-    if diff.len() > 50000 {
-        let end = diff
-            .char_indices()
-            .nth(50000)
-            .map(|(i, _)| i)
-            .unwrap_or(diff.len());
-        Ok(format!(
-            "{}...\n\n[Diff truncated - {} chars total]",
-            &diff[..end],
-            diff.len()
-        ))
-    } else {
-        Ok(diff)
+    // Fast path: small diffs need no processing
+    if raw.len() <= DIFF_MAX_CHARS {
+        return Ok(raw);
     }
+
+    // Split into per-file chunks on "diff --git" boundaries
+    let mut file_chunks: Vec<&str> = Vec::new();
+    let mut last = 0;
+    for (i, _) in raw.match_indices("\ndiff --git ") {
+        if last < i {
+            file_chunks.push(&raw[last..i]);
+        }
+        last = i + 1; // skip the leading newline
+    }
+    if last < raw.len() {
+        file_chunks.push(&raw[last..]);
+    }
+
+    let total_files = file_chunks.len();
+    let mut result = String::with_capacity(DIFF_MAX_CHARS + 256);
+
+    for (files_included, chunk) in file_chunks.iter().enumerate() {
+        let lines: Vec<&str> = chunk.lines().collect();
+
+        // Find where hunk content starts (after header lines like diff, index, ---, +++)
+        let hunk_start = lines
+            .iter()
+            .position(|l| l.starts_with("@@"))
+            .unwrap_or(lines.len());
+
+        // Header always kept; hunk content truncated
+        let header = &lines[..hunk_start];
+        let hunks = &lines[hunk_start..];
+
+        let mut file_result = header.join("\n");
+        if hunks.len() > DIFF_MAX_LINES_PER_FILE {
+            let kept: String = hunks[..DIFF_MAX_LINES_PER_FILE].join("\n");
+            file_result.push('\n');
+            file_result.push_str(&kept);
+            file_result.push_str(&format!(
+                "\n[... {} more lines in this file]",
+                hunks.len() - DIFF_MAX_LINES_PER_FILE
+            ));
+        } else if !hunks.is_empty() {
+            file_result.push('\n');
+            file_result.push_str(&hunks.join("\n"));
+        }
+
+        // Check global budget before adding
+        if result.len() + file_result.len() > DIFF_MAX_CHARS && files_included > 0 {
+            let remaining = total_files - files_included;
+            result.push_str(&format!("\n[... {remaining} more files omitted]"));
+            break;
+        }
+
+        if files_included > 0 {
+            result.push('\n');
+        }
+        result.push_str(&file_result);
+    }
+
+    Ok(result)
 }
 
 /// Get recent commit messages for style reference
@@ -5826,15 +6084,41 @@ fn get_recent_commits(repo_path: &str, count: u32) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
-/// Get remote info
-fn get_remote_info(repo_path: &str) -> Result<String, String> {
-    let output = silent_command("git")
-        .args(["remote", "-v"])
+/// Stage only specific files. Resets the index first to ensure a clean state.
+fn stage_specific_files(repo_path: &str, files: &[String]) -> Result<(), String> {
+    // Reset staging area to ensure only the specified files are staged
+    let reset_output = silent_command("git")
+        .args(["reset", "HEAD"])
         .current_dir(repo_path)
         .output()
-        .map_err(|e| format!("Failed to get remote info: {e}"))?;
+        .map_err(|e| format!("Failed to reset staging area: {e}"))?;
 
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    if !reset_output.status.success() {
+        let stderr = String::from_utf8_lossy(&reset_output.stderr);
+        // "Failed to resolve 'HEAD'" happens on initial commit — safe to ignore
+        if !stderr.contains("Failed to resolve") {
+            return Err(format!("Failed to reset staging area: {stderr}"));
+        }
+    }
+
+    // Stage only the specified files
+    let mut args = vec!["add", "--"];
+    for f in files {
+        args.push(f.as_str());
+    }
+
+    let output = silent_command("git")
+        .args(&args)
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| format!("Failed to stage files: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Failed to stage files: {stderr}"));
+    }
+
+    Ok(())
 }
 
 /// Stage all changes
@@ -5927,7 +6211,7 @@ fn generate_commit_message(
     magic_backend: Option<&str>,
     reasoning_effort: Option<&str>,
 ) -> Result<CommitMessageResponse, String> {
-    let model_str = model.unwrap_or("haiku");
+    let model_str = model.unwrap_or("sonnet");
 
     // Per-operation backend > project/global default_backend
     let backend = crate::chat::resolve_magic_prompt_backend(app, magic_backend, worktree_id);
@@ -6049,6 +6333,7 @@ pub async fn create_commit_with_ai(
     model: Option<String>,
     custom_profile_name: Option<String>,
     reasoning_effort: Option<String>,
+    specific_files: Option<Vec<String>>,
 ) -> Result<CreateCommitResponse, String> {
     log::trace!("Creating commit for: {worktree_path}");
 
@@ -6074,8 +6359,11 @@ pub async fn create_commit_with_ai(
         return Err("No changes to commit".to_string());
     }
 
-    // 2. Stage all changes
-    stage_all_changes(&worktree_path)?;
+    // 2. Stage changes (specific files or all)
+    match &specific_files {
+        Some(files) if !files.is_empty() => stage_specific_files(&worktree_path, files)?,
+        _ => stage_all_changes(&worktree_path)?,
+    }
 
     // 3. Get staged diff
     let diff = get_staged_diff(&worktree_path)?;
@@ -6084,8 +6372,8 @@ pub async fn create_commit_with_ai(
     }
 
     // 4. Get context for commit message generation
-    let recent_commits = get_recent_commits(&worktree_path, 10)?;
-    let remote_info = get_remote_info(&worktree_path)?;
+    let diff_stat = get_staged_diff_stat(&worktree_path)?;
+    let recent_commits = get_recent_commits(&worktree_path, 5)?;
 
     // 5. Build prompt - use custom if provided and non-empty, otherwise use default
     let prompt_template = custom_prompt
@@ -6095,10 +6383,11 @@ pub async fn create_commit_with_ai(
         .unwrap_or(COMMIT_MESSAGE_PROMPT);
 
     let prompt = prompt_template
+        .replace("{diff_stat}", &diff_stat)
         .replace("{status}", &status)
         .replace("{diff}", &diff)
         .replace("{recent_commits}", &recent_commits)
-        .replace("{remote_info}", &remote_info);
+        .replace("{remote_info}", "");
 
     // 6. Generate commit message with Claude CLI
     let commit_magic_backend = crate::get_preferences_path(&app)
@@ -6577,7 +6866,7 @@ pub async fn run_review_with_ai(
         "Collecting branch diff...",
         20,
     );
-    let diff = get_branch_diff(&worktree_path, target_branch).unwrap_or_default();
+    let diff = get_branch_diff(&worktree_path, target_branch, "HEAD").unwrap_or_default();
 
     // Get commit history (non-fatal — same reason)
     emit_review_progress(
@@ -6587,7 +6876,7 @@ pub async fn run_review_with_ai(
         "Collecting commit history...",
         30,
     );
-    let commits = get_branch_commits(&worktree_path, target_branch).unwrap_or_default();
+    let commits = get_branch_commits(&worktree_path, target_branch, "HEAD").unwrap_or_default();
 
     // Get uncommitted changes (staged + unstaged for tracked files)
     emit_review_progress(
@@ -7215,15 +7504,16 @@ pub async fn merge_worktree_to_base(
         // Get context for commit message generation
         let status = get_git_status(&worktree.path).unwrap_or_default();
         let diff = get_staged_diff(&worktree.path).unwrap_or_default();
-        let recent_commits = get_recent_commits(&worktree.path, 10).unwrap_or_default();
-        let remote_info = get_remote_info(&worktree.path).unwrap_or_default();
+        let diff_stat = get_staged_diff_stat(&worktree.path).unwrap_or_default();
+        let recent_commits = get_recent_commits(&worktree.path, 5).unwrap_or_default();
 
         // Build prompt and generate commit message
         let prompt = COMMIT_MESSAGE_PROMPT
+            .replace("{diff_stat}", &diff_stat)
             .replace("{status}", &status)
             .replace("{diff}", &diff)
             .replace("{recent_commits}", &recent_commits)
-            .replace("{remote_info}", &remote_info);
+            .replace("{remote_info}", "");
 
         let merge_magic_backend = crate::get_preferences_path(&app)
             .ok()
@@ -7594,11 +7884,12 @@ pub async fn cleanup_old_archives(
                 .map(|ws| ws.sessions.iter().map(|s| s.id.clone()).collect())
                 .unwrap_or_default();
 
-        // Delete session data directories
+        // Delete session data directories and combined-context files
         for sid in &session_ids {
             if let Err(e) = crate::chat::storage::delete_session_data(&app, sid) {
                 log::warn!("Failed to delete session data for {sid}: {e}");
             }
+            crate::chat::storage::cleanup_combined_context_files(&app, sid);
         }
 
         // Delete the sessions index file
@@ -7660,12 +7951,13 @@ pub async fn cleanup_old_archives(
                 }
             });
 
-        // Delete session data directories for removed sessions
+        // Delete session data directories and combined-context files for removed sessions
         if let Ok(ids) = removed_ids.lock() {
             for sid in ids.iter() {
                 if let Err(e) = crate::chat::storage::delete_session_data(&app, sid) {
                     log::warn!("Failed to delete session data for {sid}: {e}");
                 }
+                crate::chat::storage::cleanup_combined_context_files(&app, sid);
             }
         }
 
@@ -7682,6 +7974,12 @@ pub async fn cleanup_old_archives(
     let deleted_contexts =
         super::github_issues::cleanup_orphaned_contexts(&app, retention_days as u64).unwrap_or(0);
 
+    // --- Clean up orphaned combined-context files ---
+    let _ = crate::chat::storage::cleanup_orphaned_combined_contexts(&app);
+
+    // --- Clean up orphaned pasted images and text files ---
+    let _ = crate::chat::storage::cleanup_orphaned_pasted_files(&app);
+
     log::trace!(
         "Archive cleanup complete: deleted {} worktrees, {} sessions, and {} contexts",
         deleted_worktrees,
@@ -7694,6 +7992,15 @@ pub async fn cleanup_old_archives(
         deleted_sessions,
         deleted_contexts,
     })
+}
+
+/// Clean up orphaned combined-context files.
+///
+/// Removes combined-context files whose session IDs are not referenced
+/// by any worktree index file. Returns the number of deleted files.
+#[tauri::command]
+pub async fn cleanup_combined_contexts(app: AppHandle) -> Result<u32, String> {
+    crate::chat::storage::cleanup_orphaned_combined_contexts(&app)
 }
 
 /// Delete ALL archived worktrees and sessions (manual cleanup)
@@ -7751,11 +8058,12 @@ pub async fn delete_all_archives(app: AppHandle) -> Result<CleanupResult, String
                 .map(|ws| ws.sessions.iter().map(|s| s.id.clone()).collect())
                 .unwrap_or_default();
 
-        // Delete session data directories
+        // Delete session data directories and combined-context files
         for sid in &session_ids {
             if let Err(e) = crate::chat::storage::delete_session_data(&app, sid) {
                 log::warn!("Failed to delete session data for {sid}: {e}");
             }
+            crate::chat::storage::cleanup_combined_context_files(&app, sid);
         }
 
         // Delete the sessions index file
@@ -7810,12 +8118,13 @@ pub async fn delete_all_archives(app: AppHandle) -> Result<CleanupResult, String
                 }
             });
 
-        // Delete session data directories for removed sessions
+        // Delete session data directories and combined-context files for removed sessions
         if let Ok(ids) = removed_ids.lock() {
             for sid in ids.iter() {
                 if let Err(e) = crate::chat::storage::delete_session_data(&app, sid) {
                     log::warn!("Failed to delete session data for {sid}: {e}");
                 }
+                crate::chat::storage::cleanup_combined_context_files(&app, sid);
             }
         }
 
@@ -7826,6 +8135,12 @@ pub async fn delete_all_archives(app: AppHandle) -> Result<CleanupResult, String
 
     // Also clean up orphaned contexts (pass 0 for retention_days to clean all orphans)
     let deleted_contexts = super::github_issues::cleanup_orphaned_contexts(&app, 0).unwrap_or(0);
+
+    // Clean up orphaned combined-context files
+    let _ = crate::chat::storage::cleanup_orphaned_combined_contexts(&app);
+
+    // Clean up orphaned pasted images and text files
+    let _ = crate::chat::storage::cleanup_orphaned_pasted_files(&app);
 
     log::trace!(
         "Deleted all archives: {} worktrees, {} sessions, and {} contexts",
@@ -7909,6 +8224,7 @@ pub async fn create_folder(
         worktrees_dir: None,
         linear_api_key: None,
         linear_team_id: None,
+        linked_project_ids: Vec::new(),
     };
 
     data.add_project(folder.clone());
@@ -8417,15 +8733,13 @@ fn resolve_command_interpolations(content: &str, working_dir: &str) -> String {
     resolved
 }
 
-/// List Claude CLI skills from ~/.claude/skills/
-/// Skills are directories containing a SKILL.md file
-#[tauri::command]
-pub async fn list_claude_skills() -> Result<Vec<ClaudeSkill>, String> {
-    log::trace!("Listing Claude CLI skills");
-
-    let home = dirs::home_dir().ok_or_else(|| "Failed to get home directory".to_string())?;
-    let skills_dir = home.join(".claude").join("skills");
-    list_skills_in_directory(skills_dir)
+/// Get home directory with Windows USERPROFILE fallback
+fn get_home_dir() -> Option<std::path::PathBuf> {
+    dirs::home_dir().or_else(|| {
+        std::env::var("USERPROFILE")
+            .ok()
+            .map(std::path::PathBuf::from)
+    })
 }
 
 /// List Codex CLI skills from global skill directories plus the active repo.
@@ -8438,6 +8752,7 @@ pub async fn list_codex_skills(worktree_path: Option<String>) -> Result<Vec<Clau
     list_codex_skills_from_sources(home.as_deref(), worktree_path)
 }
 
+#[allow(dead_code)]
 fn list_skills_in_directory(skills_dir: std::path::PathBuf) -> Result<Vec<ClaudeSkill>, String> {
     if !skills_dir.exists() {
         log::trace!("Skills directory does not exist: {:?}", skills_dir);
@@ -8597,23 +8912,88 @@ fn sort_skills(skills: &mut [ClaudeSkill]) {
     skills.sort_by(|a, b| a.name.cmp(&b.name).then(a.path.cmp(&b.path)));
 }
 
-/// List Claude CLI custom commands from ~/.claude/commands/
-#[tauri::command]
-pub async fn list_claude_commands() -> Result<Vec<ClaudeCommand>, String> {
-    log::trace!("Listing Claude CLI custom commands");
-
-    let home = dirs::home_dir().ok_or_else(|| "Failed to get home directory".to_string())?;
-    let commands_dir = home.join(".claude").join("commands");
-
-    if !commands_dir.exists() {
-        log::trace!("Commands directory does not exist: {:?}", commands_dir);
-        return Ok(Vec::new());
+/// Collect skills from a directory into a map (later inserts override earlier ones)
+fn collect_skills_from_dir(
+    dir: &std::path::Path,
+    skills: &mut std::collections::HashMap<String, ClaudeSkill>,
+) {
+    if !dir.exists() {
+        return;
     }
 
-    let mut commands = Vec::new();
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(e) => {
+            log::warn!("Failed to read skills directory {dir:?}: {e}");
+            return;
+        }
+    };
 
-    let entries = std::fs::read_dir(&commands_dir)
-        .map_err(|e| format!("Failed to read commands directory: {e}"))?;
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(e) => {
+                log::warn!("Failed to read directory entry: {e}");
+                continue;
+            }
+        };
+
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+
+        let skill_file = path.join("SKILL.md");
+        if !skill_file.exists() {
+            continue;
+        }
+
+        let name = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .map(|s| s.to_string())
+            .unwrap_or_default();
+
+        if name.is_empty() {
+            continue;
+        }
+
+        let description = std::fs::read_to_string(&skill_file)
+            .ok()
+            .and_then(|content| {
+                content
+                    .lines()
+                    .next()
+                    .and_then(|line| line.strip_prefix("# ").map(|s| s.to_string()))
+            });
+
+        skills.insert(
+            name.clone(),
+            ClaudeSkill {
+                name,
+                path: skill_file.to_string_lossy().to_string(),
+                description,
+            },
+        );
+    }
+}
+
+/// Collect commands from a directory into a map (later inserts override earlier ones)
+fn collect_commands_from_dir(
+    dir: &std::path::Path,
+    commands: &mut std::collections::HashMap<String, ClaudeCommand>,
+) {
+    if !dir.exists() {
+        return;
+    }
+
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(e) => {
+            log::warn!("Failed to read commands directory {dir:?}: {e}");
+            return;
+        }
+    };
 
     for entry in entries {
         let entry = match entry {
@@ -8625,8 +9005,6 @@ pub async fn list_claude_commands() -> Result<Vec<ClaudeCommand>, String> {
         };
 
         let path = entry.path();
-
-        // Only process .md files
         if path.extension().is_none_or(|ext| ext != "md") {
             continue;
         }
@@ -8646,13 +9024,63 @@ pub async fn list_claude_commands() -> Result<Vec<ClaudeCommand>, String> {
             description
         });
 
-        commands.push(ClaudeCommand {
-            name,
-            path: path.to_string_lossy().to_string(),
-            description,
-        });
+        commands.insert(
+            name.clone(),
+            ClaudeCommand {
+                name,
+                path: path.to_string_lossy().to_string(),
+                description,
+            },
+        );
+    }
+}
+
+/// List Claude CLI skills from ~/.claude/skills/ and optionally <worktree>/.claude/skills/
+/// Skills are directories containing a SKILL.md file
+#[tauri::command]
+pub async fn list_claude_skills(worktree_path: Option<String>) -> Result<Vec<ClaudeSkill>, String> {
+    log::trace!("Listing Claude CLI skills (worktree: {worktree_path:?})");
+
+    let mut skills_map = std::collections::HashMap::new();
+
+    // Global skills (~/.claude/skills/)
+    if let Some(home) = get_home_dir() {
+        collect_skills_from_dir(&home.join(".claude").join("skills"), &mut skills_map);
     }
 
+    // Project-level skills (<worktree>/.claude/skills/)
+    if let Some(ref wt) = worktree_path {
+        let project_skills_dir = Path::new(wt).join(".claude").join("skills");
+        collect_skills_from_dir(&project_skills_dir, &mut skills_map);
+    }
+
+    let mut skills: Vec<ClaudeSkill> = skills_map.into_values().collect();
+    skills.sort_by(|a, b| a.name.cmp(&b.name));
+    log::trace!("Found {} Claude CLI skills", skills.len());
+    Ok(skills)
+}
+
+/// List Claude CLI custom commands from ~/.claude/commands/ and optionally <worktree>/.claude/commands/
+#[tauri::command]
+pub async fn list_claude_commands(
+    worktree_path: Option<String>,
+) -> Result<Vec<ClaudeCommand>, String> {
+    log::trace!("Listing Claude CLI custom commands (worktree: {worktree_path:?})");
+
+    let mut commands_map = std::collections::HashMap::new();
+
+    // Global commands (~/.claude/commands/)
+    if let Some(home) = get_home_dir() {
+        collect_commands_from_dir(&home.join(".claude").join("commands"), &mut commands_map);
+    }
+
+    // Project-level commands (<worktree>/.claude/commands/)
+    if let Some(ref wt) = worktree_path {
+        let project_commands_dir = Path::new(wt).join(".claude").join("commands");
+        collect_commands_from_dir(&project_commands_dir, &mut commands_map);
+    }
+
+    let mut commands: Vec<ClaudeCommand> = commands_map.into_values().collect();
     commands.sort_by(|a, b| a.name.cmp(&b.name));
     log::trace!("Found {} Claude CLI custom commands", commands.len());
     Ok(commands)
@@ -8828,6 +9256,56 @@ pub async fn save_jean_config(project_path: String, config: JeanConfig) -> Resul
         .map_err(|e| format!("Failed to write jean.json: {e}"))?;
     log::trace!("Saved jean.json to {}", config_path.display());
     Ok(())
+}
+
+/// Response from reverting the last local commit
+#[derive(Debug, Clone, Serialize)]
+pub struct RevertCommitResponse {
+    pub commit_hash: String,
+    pub commit_message: String,
+}
+
+#[tauri::command]
+pub async fn revert_last_local_commit(
+    worktree_path: String,
+) -> Result<RevertCommitResponse, String> {
+    // Get the current HEAD commit hash and message before reverting
+    let log_output = silent_command("git")
+        .args(["log", "-1", "--format=%H%n%s"])
+        .current_dir(&worktree_path)
+        .output()
+        .map_err(|e| format!("Failed to get current commit: {e}"))?;
+
+    if !log_output.status.success() {
+        let stderr = String::from_utf8_lossy(&log_output.stderr);
+        return Err(format!("No commits to revert: {stderr}"));
+    }
+
+    let log_text = String::from_utf8_lossy(&log_output.stdout);
+    let mut lines = log_text.trim().lines();
+    let commit_hash = lines.next().unwrap_or("").to_string();
+    let commit_message = lines.next().unwrap_or("").to_string();
+
+    if commit_hash.is_empty() {
+        return Err("No commits to revert".to_string());
+    }
+
+    // Reset soft: undo the commit but keep changes staged
+    let reset_output = silent_command("git")
+        .args(["reset", "--soft", "HEAD~1"])
+        .current_dir(&worktree_path)
+        .output()
+        .map_err(|e| format!("Failed to revert commit: {e}"))?;
+
+    if !reset_output.status.success() {
+        let stderr = String::from_utf8_lossy(&reset_output.stderr);
+        return Err(format!("Failed to revert commit: {stderr}"));
+    }
+
+    Ok(RevertCommitResponse {
+        commit_hash,
+        commit_message,
+    })
 }
 
 #[cfg(test)]

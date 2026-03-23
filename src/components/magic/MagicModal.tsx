@@ -15,6 +15,8 @@ import {
   Bug,
   RefreshCw,
   Sparkles,
+  Undo2,
+  Link2,
 } from 'lucide-react'
 import {
   Dialog,
@@ -42,7 +44,9 @@ import {
 } from '@/services/git-status'
 import type {
   CreateCommitResponse,
+  RevertCommitResponse,
   CreatePrResponse,
+  DetectPrResponse,
   MergeConflictsResponse,
   MergePrResponse,
   ReviewResponse,
@@ -60,6 +64,7 @@ import { useQueryClient } from '@tanstack/react-query'
 type MagicOption =
   | 'save-context'
   | 'load-context'
+  | 'linked-projects'
   | 'create-recap'
   | 'commit'
   | 'commit-and-push'
@@ -75,12 +80,14 @@ type MagicOption =
   | 'investigate-pr'
   | 'merge-pr'
   | 'review-comments'
+  | 'revert-last-commit'
 
 /** Options that work on canvas without an open session (git-only operations) */
 const CANVAS_ALLOWED_OPTIONS = new Set<MagicOption>([
   'create-recap',
   'commit',
   'commit-and-push',
+  'revert-last-commit',
   'pull',
   'push',
   'open-pr',
@@ -91,6 +98,7 @@ const CANVAS_ALLOWED_OPTIONS = new Set<MagicOption>([
   'merge',
   'merge-pr',
   'resolve-conflicts',
+  'linked-projects',
 ])
 
 /** Canvas options that navigate to worktree chat and dispatch a magic-command event */
@@ -132,6 +140,12 @@ function buildMagicColumns(hasOpenPr: boolean): MagicColumns {
           key: 'L',
         },
         {
+          id: 'linked-projects',
+          label: 'Linked Projects',
+          icon: Link2,
+          key: 'K',
+        },
+        {
           id: 'create-recap',
           label: 'Create Recap',
           icon: Sparkles,
@@ -148,6 +162,12 @@ function buildMagicColumns(hasOpenPr: boolean): MagicColumns {
           label: 'Commit & Push',
           icon: GitCommitHorizontal,
           key: 'P',
+        },
+        {
+          id: 'revert-last-commit',
+          label: 'Revert Commit',
+          icon: Undo2,
+          key: 'Z',
         },
       ],
     },
@@ -173,7 +193,7 @@ function buildMagicColumns(hasOpenPr: boolean): MagicColumns {
         { id: 'review', label: 'Review', icon: Eye, key: 'R' },
         {
           id: 'review-comments',
-          label: 'Review Comments',
+          label: 'PR Comments',
           icon: MessageSquare,
           key: 'V',
         },
@@ -230,6 +250,7 @@ function buildMagicColumns(hasOpenPr: boolean): MagicColumns {
 const KEY_TO_OPTION: Record<string, MagicOption> = {
   s: 'save-context',
   l: 'load-context',
+  k: 'linked-projects',
   t: 'create-recap',
   c: 'commit',
   p: 'commit-and-push',
@@ -245,6 +266,7 @@ const KEY_TO_OPTION: Record<string, MagicOption> = {
   i: 'investigate-issue',
   a: 'investigate-pr',
   n: 'merge-pr',
+  z: 'revert-last-commit',
 }
 
 export function MagicModal() {
@@ -338,6 +360,12 @@ export function MagicModal() {
       const doCommit = async (isPush: boolean, remote?: string) => {
         setWorktreeLoading(selectedWorktreeId, 'commit')
         const branch = worktree.branch ?? ''
+        const { gitDiffSelectedFiles, clearGitDiffSelectedFiles } =
+          useUIStore.getState()
+        const specificFiles =
+          gitDiffSelectedFiles.size > 0
+            ? Array.from(gitDiffSelectedFiles)
+            : null
         const toastId = toast.loading(
           isPush
             ? `Committing and pushing on ${branch}...`
@@ -361,9 +389,12 @@ export function MagicModal() {
               reasoningEffort:
                 preferences?.magic_prompt_efforts?.commit_message_effort ??
                 null,
+              specificFiles,
             }
           )
+          clearGitDiffSelectedFiles()
           triggerImmediateGitPoll()
+          window.dispatchEvent(new CustomEvent('git-commit-completed'))
           if (worktree.project_id) fetchWorktreesStatus(worktree.project_id)
           if (result.push_fell_back) {
             toast.warning(
@@ -397,6 +428,23 @@ export function MagicModal() {
             await doCommit(true)
           } else {
             await pickRemoteOrRun(remote => doCommit(true, remote))
+          }
+          break
+        }
+        case 'revert-last-commit': {
+          const revertToastId = toast.loading('Reverting last commit...')
+          try {
+            const result = await invoke<RevertCommitResponse>(
+              'revert_last_local_commit',
+              { worktreePath: worktree.path }
+            )
+            triggerImmediateGitPoll()
+            if (worktree.project_id) fetchWorktreesStatus(worktree.project_id)
+            toast.success(`Reverted: ${result.commit_message}`, {
+              id: revertToastId,
+            })
+          } catch (error) {
+            toast.error(`Failed to revert: ${error}`, { id: revertToastId })
           }
           break
         }
@@ -573,7 +621,7 @@ export function MagicModal() {
             )
 
             const {
-              setActiveWorktree,
+              registerWorktreePath,
               setActiveSession,
               setInputDraft,
               copySessionSettings,
@@ -591,10 +639,17 @@ export function MagicModal() {
             if (currentSessionId)
               copySessionSettings(currentSessionId, newSession.id)
 
-            // Navigate to session in chat view
-            useProjectsStore.getState().selectWorktree(selectedWorktreeId)
-            setActiveWorktree(selectedWorktreeId, worktree.path)
+            // Open in SessionChatModal on canvas (not full ChatWindow)
+            registerWorktreePath(selectedWorktreeId, worktree.path)
             setActiveSession(selectedWorktreeId, newSession.id)
+            window.dispatchEvent(
+              new CustomEvent('open-worktree-modal', {
+                detail: {
+                  worktreeId: selectedWorktreeId,
+                  worktreePath: worktree.path,
+                },
+              })
+            )
 
             // Build conflict resolution prompt
             const conflictFiles = result.conflicts.join('\n- ')
@@ -658,6 +713,32 @@ ${resolveInstructions}`
               },
             },
           })
+
+          // Fire-and-forget: detect and link PR if not already linked
+          if (!worktree.pr_number) {
+            invoke<DetectPrResponse | null>('detect_and_link_pr', {
+              worktreeId: selectedWorktreeId,
+              worktreePath: worktree.path,
+            })
+              .then(result => {
+                if (result && worktree.project_id) {
+                  queryClient.invalidateQueries({
+                    queryKey: projectsQueryKeys.worktrees(worktree.project_id),
+                  })
+                  queryClient.invalidateQueries({
+                    queryKey: [
+                      ...projectsQueryKeys.all,
+                      'worktree',
+                      selectedWorktreeId,
+                    ],
+                  })
+                }
+              })
+              .catch(() => {
+                /* noop - PR detection is best-effort */
+              })
+          }
+
           try {
             const result = await invoke<ReviewResponse>('run_review_with_ai', {
               worktreePath: worktree.path,
@@ -789,6 +870,18 @@ ${resolveInstructions}`
           return
         }
         useUIStore.getState().setReleaseNotesModalOpen(true)
+        setMagicModalOpen(false)
+        return
+      }
+
+      // linked-projects only needs a project selected, not a worktree
+      if (option === 'linked-projects') {
+        if (!selectedProjectId) {
+          notify('No project selected', undefined, { type: 'error' })
+          setMagicModalOpen(false)
+          return
+        }
+        useUIStore.getState().setLinkedProjectsModalOpen(true)
         setMagicModalOpen(false)
         return
       }

@@ -85,7 +85,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for full development setup and guidelines
 
 - **macOS**: Tested
 - **Windows**: Not fully tested
-- **Linux**: Not tested at all
+- **Linux**: Community tested (Arch Linux + Hyprland/Wayland)
 
 ## Roadmap
 

@@ -109,22 +109,8 @@ export const StreamingMessage = memo(function StreamingMessage({
   onStreamingWorktreeYoloApproval,
   hideApproveButtons,
 }: StreamingMessageProps) {
-  const hasVisibleStreamingContent =
-    contentBlocks.length > 0 ||
-    toolCalls.length > 0 ||
-    streamingContent.trim().length > 0
-
   return (
-    <div className="min-h-4 text-muted-foreground">
-      {!hasVisibleStreamingContent && (
-        <div
-          className="py-1"
-          aria-hidden="true"
-          data-testid="streaming-response-placeholder"
-        >
-          <div className="h-4 w-[min(20rem,52%)]" />
-        </div>
-      )}
+    <div className="text-foreground/90">
       {/* Render streaming content blocks inline if available */}
       {contentBlocks.length > 0 ? (
         (() => {
@@ -186,8 +172,33 @@ export const StreamingMessage = memo(function StreamingMessage({
                                 isStreaming={true}
                               />
                             )
-                          case 'text':
-                            return <Markdown streaming>{item.text}</Markdown>
+                          case 'text': {
+                            // Split at last newline: completed lines → markdown, trailing partial → plain div
+                            // This prevents reflow when remend reinterprets incomplete markdown
+                            const lastNewline = item.text.lastIndexOf('\n')
+                            const rawComplete =
+                              lastNewline !== -1
+                                ? item.text.slice(0, lastNewline + 1)
+                                : ''
+                            // Trim trailing whitespace so markdown doesn't render a trailing <br> from "  \n"
+                            const completePart = rawComplete.trimEnd()
+                            const trailingPart =
+                              lastNewline !== -1
+                                ? item.text.slice(lastNewline + 1)
+                                : item.text
+                            return (
+                              <div>
+                                {completePart && (
+                                  <Markdown streaming>{completePart}</Markdown>
+                                )}
+                                {trailingPart && (
+                                  <p className="my-0 leading-relaxed">
+                                    {trailingPart}
+                                  </p>
+                                )}
+                              </div>
+                            )
+                          }
                           case 'task':
                             return (
                               <TaskCallInline
@@ -352,9 +363,16 @@ export const StreamingMessage = memo(function StreamingMessage({
             areQuestionsSkipped={areQuestionsSkipped}
           />
           {/* Streaming content */}
-          {streamingContent && (
+          {streamingContent ? (
             <Markdown streaming>{streamingContent}</Markdown>
-          )}
+          ) : toolCalls.length === 0 ? (
+            <div
+              data-testid="streaming-response-placeholder"
+              className="text-sm text-muted-foreground italic"
+            >
+              Waiting for response...
+            </div>
+          ) : null}
         </>
       )}
 

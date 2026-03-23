@@ -54,7 +54,9 @@ if (process.argv.includes('--help') || process.argv.includes('-h')) {
 }
 
 if (process.platform !== 'darwin') {
-  fail(`This command only supports macOS. Current platform: ${process.platform}`)
+  fail(
+    `This command only supports macOS. Current platform: ${process.platform}`
+  )
 }
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url))
@@ -82,18 +84,10 @@ const stagedAppPath = path.join(applicationsDir, `.${productName}.app.new`)
 const backupAppPath = path.join(applicationsDir, `.${productName}.app.old`)
 
 console.log('==> Building unsigned macOS app bundle...')
-run(
-  'bun',
-  [
-    'run',
-    'tauri:build',
-    '--',
-    '--no-sign',
-    '--bundles',
-    'app',
-  ],
-  { cwd: projectDir, env: process.env }
-)
+run('bun', ['run', 'tauri:build', '--', '--no-sign', '--bundles', 'app'], {
+  cwd: projectDir,
+  env: process.env,
+})
 
 if (!fs.existsSync(builtAppPath)) {
   fail(`Built app bundle not found at ${builtAppPath}`)
@@ -103,7 +97,10 @@ console.log(`==> Installing ${productName}.app into ${applicationsDir}...`)
 removePath(stagedAppPath)
 removePath(backupAppPath)
 
-run('ditto', [builtAppPath, stagedAppPath], { cwd: projectDir, env: process.env })
+run('ditto', [builtAppPath, stagedAppPath], {
+  cwd: projectDir,
+  env: process.env,
+})
 
 let movedExistingApp = false
 

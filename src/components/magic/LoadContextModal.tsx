@@ -108,14 +108,12 @@ export function LoadContextModal({
         ...tab,
         key: String(index + 1),
       })),
-    [
-      showGitHubIssuesTab,
-      showGitHubPRsTab,
-      showLinearTab,
-      showSecurityTab,
-    ]
+    [showGitHubIssuesTab, showGitHubPRsTab, showLinearTab, showSecurityTab]
   )
-  const visibleTabIds = useMemo(() => visibleTabs.map(tab => tab.id), [visibleTabs])
+  const visibleTabIds = useMemo(
+    () => visibleTabs.map(tab => tab.id),
+    [visibleTabs]
+  )
 
   // Stable callback for handlers to reset search/selection
   const onClearSearch = useCallback(() => {

@@ -143,9 +143,7 @@ export function WorktreeDropdownMenu({
   const hasDiff = uncommittedAdded > 0 || uncommittedRemoved > 0
   const hasBranchDiff = branchDiffAdded > 0 || branchDiffRemoved > 0
   const hasGitHubStatusItems =
-    (isMobile &&
-      !hideIssueAndPrSources &&
-      (issueCount > 0 || prCount > 0)) ||
+    (isMobile && !hideIssueAndPrSources && (issueCount > 0 || prCount > 0)) ||
     securityCount > 0 ||
     workflowRunCount > 0 ||
     (isMobile && (hasDiff || hasBranchDiff))

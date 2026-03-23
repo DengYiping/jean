@@ -5025,6 +5025,9 @@ pub struct CreatePrResponse {
 /// Extract structured output from Claude CLI stream-json response
 /// Handles the StructuredOutput tool call pattern used with --json-schema
 fn extract_structured_output(output: &str) -> Result<String, String> {
+    let mut saw_assistant_message = false;
+    let mut saw_result_message = false;
+
     for line in output.lines() {
         let line = line.trim();
         if line.is_empty() {
@@ -5037,6 +5040,7 @@ fn extract_structured_output(output: &str) -> Result<String, String> {
         };
 
         if parsed.get("type").and_then(|t| t.as_str()) == Some("assistant") {
+            saw_assistant_message = true;
             if let Some(message) = parsed.get("message") {
                 if let Some(content) = message.get("content").and_then(|c| c.as_array()) {
                     for block in content {
@@ -5045,6 +5049,9 @@ fn extract_structured_output(output: &str) -> Result<String, String> {
                                 == Some("StructuredOutput")
                         {
                             if let Some(input) = block.get("input") {
+                                log::trace!(
+                                    "Extracted structured output from StructuredOutput tool call"
+                                );
                                 return Ok(input.to_string());
                             }
                         }
@@ -5052,9 +5059,22 @@ fn extract_structured_output(output: &str) -> Result<String, String> {
                 }
             }
         }
+
+        if parsed.get("type").and_then(|t| t.as_str()) == Some("result") {
+            saw_result_message = true;
+            if let Some(result) = parsed.get("result") {
+                if result.is_object() {
+                    log::trace!("Extracted structured output from result object");
+                    return Ok(result.to_string());
+                }
+            }
+        }
     }
 
-    Err("No structured output found in Claude response".to_string())
+    Err(format!(
+        "No structured output found in Claude response (assistant_seen={}, result_seen={})",
+        saw_assistant_message, saw_result_message
+    ))
 }
 
 /// Truncate a diff at file boundaries instead of mid-file.
@@ -5259,7 +5279,7 @@ fn generate_pr_content(
         "--tools",
         "",
         "--max-turns",
-        "1",
+        "2",
         "--json-schema",
         PR_CONTENT_SCHEMA,
     ]);
@@ -5308,7 +5328,14 @@ fn generate_pr_content(
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    log::trace!(
+        "Claude CLI PR generation output sizes: stdout={} bytes, stderr={} bytes",
+        stdout.len(),
+        stderr.len()
+    );
     log::trace!("Claude CLI PR generation stdout: {stdout}");
+    log::trace!("Claude CLI PR generation stderr: {stderr}");
 
     let json_content = extract_structured_output(&stdout)?;
     log::trace!("Extracted PR content JSON: {json_content}");
@@ -6279,7 +6306,7 @@ fn generate_commit_message(
         "--tools",
         "",
         "--max-turns",
-        "1",
+        "2",
         "--json-schema",
         COMMIT_MESSAGE_SCHEMA,
     ]);
@@ -6320,7 +6347,14 @@ fn generate_commit_message(
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    log::trace!(
+        "Claude CLI commit generation output sizes: stdout={} bytes, stderr={} bytes",
+        stdout.len(),
+        stderr.len()
+    );
     log::trace!("Claude CLI commit generation stdout: {stdout}");
+    log::trace!("Claude CLI commit generation stderr: {stderr}");
 
     let json_content = extract_structured_output(&stdout)?;
     log::trace!("Extracted commit message JSON: {json_content}");
@@ -7356,7 +7390,7 @@ fn generate_release_notes_content(
         "--tools",
         "",
         "--max-turns",
-        "1",
+        "2",
         "--json-schema",
         RELEASE_NOTES_SCHEMA,
     ]);
@@ -7397,7 +7431,14 @@ fn generate_release_notes_content(
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    log::trace!(
+        "Claude CLI release notes output sizes: stdout={} bytes, stderr={} bytes",
+        stdout.len(),
+        stderr.len()
+    );
     log::trace!("Claude CLI release notes stdout: {stdout}");
+    log::trace!("Claude CLI release notes stderr: {stderr}");
 
     let json_content = extract_structured_output(&stdout)?;
     log::trace!("Extracted release notes JSON: {json_content}");
@@ -9395,6 +9436,18 @@ Body
         assert!(result.is_ok());
         let json = result.unwrap();
         assert!(json.contains("Fix bug"));
+    }
+
+    #[test]
+    fn test_extract_structured_output_result_object_fallback() {
+        let output = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"Working on it"}]}}
+{"type":"result","result":{"title":"Fallback title","body":"Fallback body"}}"#;
+
+        let result = extract_structured_output(output);
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        assert!(json.contains("Fallback title"));
+        assert!(json.contains("Fallback body"));
     }
 
     #[test]

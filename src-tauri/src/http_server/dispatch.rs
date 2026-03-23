@@ -136,9 +136,16 @@ pub async fn dispatch_command(
                 field_opt(&args, "linearApiKey", "linear_api_key")?;
             let linear_team_id: Option<String> =
                 field_opt(&args, "linearTeamId", "linear_team_id")?;
-            let hide_github_issues_and_prs: Option<bool> =
-                field_opt(&args, "hideGithubIssuesAndPrs", "hide_github_issues_and_prs")?
-                    .or(field_opt(&args, "hideGithubIssuesAndPRs", "hide_github_issues_and_prs")?);
+            let hide_github_issues_and_prs: Option<bool> = field_opt(
+                &args,
+                "hideGithubIssuesAndPrs",
+                "hide_github_issues_and_prs",
+            )?
+            .or(field_opt(
+                &args,
+                "hideGithubIssuesAndPRs",
+                "hide_github_issues_and_prs",
+            )?);
             let result = crate::projects::update_project_settings(
                 app.clone(),
                 project_id,

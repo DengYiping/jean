@@ -1046,7 +1046,9 @@ export function GitHubDashboardModal() {
   const authError = activeResults.find(r => isGhAuthError(r.error))
   const filterProjects = useMemo(
     () =>
-      activeTab === 'issues' || activeTab === 'prs' ? issuePrProjects : projects,
+      activeTab === 'issues' || activeTab === 'prs'
+        ? issuePrProjects
+        : projects,
     [activeTab, issuePrProjects, projects]
   )
 

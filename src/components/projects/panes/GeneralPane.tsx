@@ -117,6 +117,8 @@ export function GeneralPane({
     null
   )
   const [showLinearApiKey, setShowLinearApiKey] = useState(false)
+  const [localHideGitHubIssuesAndPRs, setLocalHideGitHubIssuesAndPRs] =
+    useState<boolean | null>(null)
 
   // Linear has access if either project key or global key is set
   const hasLinearAccess =
@@ -299,10 +301,17 @@ export function GeneralPane({
 
   const handleHideGitHubIssuesAndPRsChange = useCallback(
     (checked: boolean) => {
-      updateSettings.mutate({
-        projectId,
-        hideGithubIssuesAndPRs: checked,
-      })
+      setLocalHideGitHubIssuesAndPRs(checked)
+      updateSettings.mutate(
+        {
+          projectId,
+          hideGithubIssuesAndPRs: checked,
+        },
+        {
+          onSuccess: () => setLocalHideGitHubIssuesAndPRs(null),
+          onError: () => setLocalHideGitHubIssuesAndPRs(null),
+        }
+      )
     },
     [projectId, updateSettings]
   )
@@ -318,6 +327,9 @@ export function GeneralPane({
       setLocalWorktreesDir(selected)
     }
   }, [])
+
+  const displayedHideGitHubIssuesAndPRs =
+    localHideGitHubIssuesAndPRs ?? hideGitHubIssuesAndPRs(project)
 
   return (
     <div className="space-y-6">
@@ -629,7 +641,7 @@ export function GeneralPane({
               </div>
             </div>
             <Switch
-              checked={hideGitHubIssuesAndPRs(project)}
+              checked={displayedHideGitHubIssuesAndPRs}
               onCheckedChange={handleHideGitHubIssuesAndPRsChange}
               disabled={updateSettings.isPending}
               aria-label="Hide GitHub issues and PRs in Jean"

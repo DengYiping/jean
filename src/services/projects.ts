@@ -2546,7 +2546,7 @@ export function useUpdateProjectSettings() {
         worktreesDir,
         linearApiKey,
         linearTeamId,
-        hideGithubIssuesAndPRs,
+        hideGithubIssuesAndPrs: hideGithubIssuesAndPRs,
         linkedProjectIds,
       })
       logger.info('Project settings updated', { project })

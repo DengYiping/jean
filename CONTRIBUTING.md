@@ -27,6 +27,12 @@ sudo apt install libayatana-appindicator3-dev
 # sudo apt install libappindicator3-dev
 ```
 
+**Linux** (Arch Linux/Manjaro):
+
+```bash
+sudo pacman -S webkit2gtk-4.1 librsvg patchelf libayatana-appindicator
+```
+
 **Linux Remote Desktop (RDP/xrdp)**: See [Linux Remote Development](#linux-remote-development-rdpxrdp) section below.
 
 **Windows**: No additional dependencies

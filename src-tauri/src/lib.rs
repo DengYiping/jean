@@ -83,7 +83,7 @@ pub struct AppPreferences {
     #[serde(default = "default_effort_level")]
     pub default_effort_level: String, // Effort level for Opus 4.6: low, medium, high, max
     #[serde(default = "default_terminal")]
-    pub terminal: String, // Terminal app: terminal, warp, ghostty, iterm2
+    pub terminal: String, // Terminal app: terminal, warp, ghostty, iterm2, powershell, windows-terminal
     #[serde(default = "default_editor")]
     pub editor: String, // Editor app: zed, vscode, cursor, xcode, intellij
     #[serde(default = "default_open_in")]
@@ -158,6 +158,8 @@ pub struct AppPreferences {
     pub http_server_token_required: bool, // Require token for web access (default true)
     #[serde(default = "default_removal_behavior")]
     pub removal_behavior: String, // What happens when closing sessions/worktrees: archive, delete
+    #[serde(default = "default_auto_save_context")]
+    pub auto_save_context: bool, // Auto-save context after each session completion
     #[serde(default = "default_auto_pull_base_branch")]
     pub auto_pull_base_branch: bool, // Auto-pull base branch before creating a new worktree
     #[serde(default = "default_show_create_page_issue_sources")]
@@ -186,6 +188,8 @@ pub struct AppPreferences {
     pub canvas_layout: String, // Canvas display mode: grid or list
     #[serde(default = "default_confirm_session_close")]
     pub confirm_session_close: bool, // Show confirmation dialog before closing sessions/worktrees
+    #[serde(default = "default_execution_mode")]
+    pub default_execution_mode: String, // Default execution mode: "plan", "build", or "yolo"
     #[serde(default = "default_backend")]
     pub default_backend: String, // Default CLI backend: "claude", "codex", or "opencode"
     #[serde(default = "default_codex_model")]
@@ -200,8 +204,8 @@ pub struct AppPreferences {
     pub codex_multi_agent_enabled: bool, // Enable multi-agent collaboration (experimental)
     #[serde(default = "default_codex_max_agent_threads")]
     pub codex_max_agent_threads: u32, // Max concurrent agent threads (1-8)
-    #[serde(default)]
-    pub restore_last_session: bool, // Restore last session when switching projects (default: false)
+    #[serde(default = "default_restore_last_session")]
+    pub restore_last_session: bool, // Restore last session when switching projects (default: true)
     #[serde(default)]
     pub close_original_on_clear_context: bool, // Close original session when using Clear Context and yolo (default: true)
     #[serde(default)]
@@ -218,10 +222,22 @@ pub struct AppPreferences {
     pub yolo_thinking_level: Option<String>, // Thinking level override for yolo mode, None = use session thinking level
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub linear_api_key: Option<String>, // Global Linear personal API key (inherited by all projects)
+    #[serde(default = "default_cli_source")]
+    pub claude_cli_source: String, // Claude CLI source: "jean" (managed) or "path" (system PATH)
+    #[serde(default = "default_cli_source")]
+    pub codex_cli_source: String, // Codex CLI source: "jean" (managed) or "path" (system PATH)
+    #[serde(default = "default_cli_source")]
+    pub opencode_cli_source: String, // OpenCode CLI source: "jean" (managed) or "path" (system PATH)
+    #[serde(default = "default_cli_source")]
+    pub gh_cli_source: String, // GitHub CLI source: "jean" (managed) or "path" (system PATH)
 }
 
 fn default_true() -> Option<bool> {
     None
+}
+
+fn default_restore_last_session() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -298,7 +314,7 @@ fn default_effort_level() -> String {
 fn default_terminal() -> String {
     #[cfg(target_os = "windows")]
     {
-        "windows-terminal".to_string()
+        "powershell".to_string()
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -370,8 +386,16 @@ fn default_confirm_session_close() -> bool {
     true // Enabled by default
 }
 
+fn default_execution_mode() -> String {
+    "plan".to_string()
+}
+
 fn default_backend() -> String {
     "claude".to_string()
+}
+
+fn default_cli_source() -> String {
+    "jean".to_string()
 }
 
 fn default_codex_model() -> String {
@@ -416,6 +440,10 @@ fn default_http_server_token_required() -> bool {
 
 fn default_removal_behavior() -> String {
     "delete".to_string()
+}
+
+fn default_auto_save_context() -> bool {
+    true // Enabled by default
 }
 
 fn default_auto_pull_base_branch() -> bool {
@@ -1094,6 +1122,7 @@ impl Default for AppPreferences {
             http_server_localhost_only: true, // Default to localhost-only for security
             http_server_token_required: default_http_server_token_required(),
             removal_behavior: default_removal_behavior(),
+            auto_save_context: default_auto_save_context(),
             auto_pull_base_branch: default_auto_pull_base_branch(),
             show_create_page_issue_sources: default_show_create_page_issue_sources(),
             auto_archive_on_pr_merged: default_auto_archive_on_pr_merged(),
@@ -1109,6 +1138,7 @@ impl Default for AppPreferences {
             default_provider: None,
             canvas_layout: default_canvas_layout(),
             confirm_session_close: default_confirm_session_close(),
+            default_execution_mode: default_execution_mode(),
             default_backend: default_backend(),
             selected_codex_model: default_codex_model(),
             selected_opencode_model: default_opencode_model(),
@@ -1116,7 +1146,7 @@ impl Default for AppPreferences {
             default_codex_reasoning_effort: default_codex_reasoning_effort(),
             codex_multi_agent_enabled: false,
             codex_max_agent_threads: default_codex_max_agent_threads(),
-            restore_last_session: false,
+            restore_last_session: true,
             close_original_on_clear_context: true,
             build_model: None,
             yolo_model: None,
@@ -1125,6 +1155,10 @@ impl Default for AppPreferences {
             build_thinking_level: None,
             yolo_thinking_level: None,
             linear_api_key: None,
+            claude_cli_source: default_cli_source(),
+            codex_cli_source: default_cli_source(),
+            opencode_cli_source: default_cli_source(),
+            gh_cli_source: default_cli_source(),
         }
     }
 }
@@ -1421,6 +1455,13 @@ async fn save_preferences(app: AppHandle, mut preferences: AppPreferences) -> Re
 
     crate::platform::set_git_binary_override(git_cli_override.as_deref());
     log::trace!("Successfully saved preferences to {prefs_path:?}");
+
+    // Sync native menu accelerator for magic menu (macOS only)
+    #[cfg(target_os = "macos")]
+    if let Some(shortcut) = prefs_for_disk.keybindings.get("open_magic_modal") {
+        sync_magic_menu_accelerator(&app, shortcut);
+    }
+
     Ok(())
 }
 
@@ -1938,6 +1979,48 @@ async fn regenerate_http_token(app: AppHandle) -> Result<String, String> {
     Ok(new_token)
 }
 
+/// Convert a frontend shortcut string (e.g. "mod+shift+m") to Tauri accelerator format (e.g. "CmdOrCtrl+Shift+M")
+#[cfg(target_os = "macos")]
+fn shortcut_to_accelerator(shortcut: &str) -> String {
+    shortcut
+        .split('+')
+        .map(|part| match part {
+            "mod" => "CmdOrCtrl",
+            "shift" => "Shift",
+            "alt" => "Alt",
+            "arrowup" => "Up",
+            "arrowdown" => "Down",
+            "arrowleft" => "Left",
+            "arrowright" => "Right",
+            "backspace" => "Backspace",
+            "enter" => "Enter",
+            "escape" => "Escape",
+            "tab" => "Tab",
+            "space" => "Space",
+            "comma" => ",",
+            "period" => ".",
+            other => other, // single letters/digits pass through as-is
+        })
+        .collect::<Vec<_>>()
+        .join("+")
+}
+
+/// Update the native magic menu accelerator to match the user's keybinding preference
+#[cfg(target_os = "macos")]
+fn sync_magic_menu_accelerator(app: &AppHandle, shortcut: &str) {
+    use tauri::menu::MenuItemKind;
+    if let Some(menu) = app.menu() {
+        if let Some(MenuItemKind::MenuItem(item)) = menu.get("magic-menu") {
+            let accel = shortcut_to_accelerator(shortcut);
+            if let Err(e) = item.set_accelerator(Some(&accel)) {
+                log::error!("Failed to set magic menu accelerator to '{accel}': {e}");
+            } else {
+                log::trace!("Updated magic menu accelerator to '{accel}'");
+            }
+        }
+    }
+}
+
 #[cfg(target_os = "macos")]
 // Create the native menu system
 fn create_app_menu(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
@@ -1980,11 +2063,25 @@ fn create_app_menu(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error
         .item(&MenuItemBuilder::with_id("toggle-right-sidebar", "Toggle Right Sidebar").build(app)?)
         .build()?;
 
+    // Build the Window submenu
+    // CMD+M is overridden to open the magic menu instead of macOS minimize
+    let window_submenu = SubmenuBuilder::new(app, "Window")
+        .item(
+            &MenuItemBuilder::with_id("magic-menu", "Magic Menu")
+                .accelerator("CmdOrCtrl+M")
+                .build(app)?,
+        )
+        .separator()
+        .item(&PredefinedMenuItem::minimize(app, None)?)
+        .item(&PredefinedMenuItem::maximize(app, None)?)
+        .build()?;
+
     // Build the main menu with submenus
     let menu = MenuBuilder::new(app)
         .item(&app_submenu)
         .item(&edit_submenu)
         .item(&view_submenu)
+        .item(&window_submenu)
         .build()?;
 
     // Set the menu for the app
@@ -2255,6 +2352,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_window_state::Builder::new().build())
         .setup(move |app| {
             let setup_start = std::time::Instant::now();
             log::info!("Startup: setup() begin");
@@ -2279,6 +2377,26 @@ pub fn run() {
                 log::info!("Running in headless mode");
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.close();
+                }
+            }
+
+            // FIX: Remove system (GTK/WM) title bar on Linux to prevent double title bar.
+            //
+            // The app has its own custom title bar component (TitleBar.tsx) with window
+            // controls for non-macOS platforms. On macOS, `titleBarStyle: "Overlay"` merges
+            // the native title bar with the content area. On Linux, this setting is ignored
+            // by WebKitGTK, so both the system decorations and the custom title bar appear.
+            //
+            // Disabling decorations lets the custom title bar handle everything, matching
+            // the behavior users expect from the macOS overlay style.
+            #[cfg(target_os = "linux")]
+            if !headless {
+                if let Some(window) = app.get_webview_window("main") {
+                    if let Err(e) = window.set_decorations(false) {
+                        log::warn!("Failed to disable window decorations on Linux: {e}");
+                    } else {
+                        log::trace!("Disabled system decorations on Linux (custom title bar active)");
+                    }
                 }
             }
 
@@ -2415,6 +2533,13 @@ pub fn run() {
                                 }
                             }
                         }
+                        "magic-menu" => {
+                            log::trace!("Magic Menu menu item clicked");
+                            match app.emit("menu-magic-menu", ()) {
+                                Ok(_) => log::trace!("Successfully emitted menu-magic-menu event"),
+                                Err(e) => log::error!("Failed to emit menu-magic-menu event: {e}"),
+                            }
+                        }
                         _ => {
                             log::trace!("Unhandled menu event: {:?}", event.id());
                         }
@@ -2543,6 +2668,7 @@ pub fn run() {
             projects::import_worktree,
             projects::permanently_delete_worktree,
             projects::cleanup_old_archives,
+            projects::cleanup_combined_contexts,
             projects::delete_all_archives,
             projects::rename_worktree,
             projects::update_worktree_label,
@@ -2558,6 +2684,7 @@ pub fn run() {
             projects::generate_pr_update_content,
             projects::update_pr_description,
             projects::create_commit_with_ai,
+            projects::revert_last_local_commit,
             projects::run_review_with_ai,
             projects::cancel_review_with_ai,
             projects::list_github_releases,
@@ -2578,6 +2705,7 @@ pub fn run() {
             projects::get_pr_prompt,
             projects::get_review_prompt,
             projects::save_worktree_pr,
+            projects::detect_and_link_pr,
             projects::clear_worktree_pr,
             projects::update_worktree_cached_status,
             projects::rebase_worktree,
@@ -2669,7 +2797,8 @@ pub fn run() {
             terminal::stop_terminal,
             terminal::get_active_terminals,
             terminal::has_active_terminal,
-            terminal::get_run_script,
+            terminal::get_run_scripts,
+            terminal::get_ports,
             terminal::get_build_script,
             terminal::kill_all_terminals,
             // Chat commands - Session management
@@ -2749,23 +2878,27 @@ pub fn run() {
             // Claude CLI management commands
             claude_cli::check_claude_cli_installed,
             claude_cli::check_claude_cli_auth,
+            claude_cli::detect_claude_in_path,
             claude_cli::get_claude_usage,
             claude_cli::get_available_cli_versions,
             claude_cli::install_claude_cli,
             // Codex CLI management commands
             codex_cli::check_codex_cli_installed,
+            codex_cli::detect_codex_in_path,
             codex_cli::check_codex_cli_auth,
             codex_cli::get_codex_usage,
             codex_cli::get_available_codex_versions,
             codex_cli::install_codex_cli,
             // OpenCode CLI management commands
             opencode_cli::check_opencode_cli_installed,
+            opencode_cli::detect_opencode_in_path,
             opencode_cli::check_opencode_cli_auth,
             opencode_cli::get_available_opencode_versions,
             opencode_cli::install_opencode_cli,
             opencode_cli::list_opencode_models,
             // GitHub CLI management commands
             gh_cli::check_gh_cli_installed,
+            gh_cli::detect_gh_in_path,
             gh_cli::check_gh_cli_auth,
             gh_cli::list_gh_cli_accounts,
             gh_cli::get_available_gh_versions,

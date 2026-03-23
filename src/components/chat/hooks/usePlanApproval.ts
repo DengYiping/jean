@@ -133,11 +133,15 @@ export function usePlanApproval({
         ? `[Build: ${buildInfo}]\n${rawMessage}`
         : rawMessage
 
-      // Chain: mark_plan_approved → update_session_state → sendMessage
+      // Chain: mark_plan_approved → update_session_state → broadcast → sendMessage
       // On WebSocket, commands dispatch concurrently via tokio::spawn.
       // update_session_state emits cache:invalidate which triggers refetch on
       // other clients. mark_plan_approved must complete first so the refetch
       // includes plan_approved=true (from approved_plan_message_ids).
+      // Broadcasts are sequenced AFTER update_session_state so that any
+      // refetch triggered by the self-received session:setting-changed event
+      // returns the already-updated backend data (prevents stale overwrites
+      // of optimistic TanStack cache on web access).
       const markPromise = messageId
         ? markPlanApproved(
             worktreeId,
@@ -160,6 +164,28 @@ export function usePlanApproval({
             selectedExecutionMode: 'build',
           })
         )
+        .then(() => {
+          invoke('broadcast_session_setting', {
+            sessionId,
+            key: 'executionMode',
+            value: 'build',
+          }).catch(err => {
+            console.error(
+              '[usePlanApproval] Broadcast executionMode=build failed:',
+              err
+            )
+          })
+          invoke('broadcast_session_setting', {
+            sessionId,
+            key: 'waitingForInput',
+            value: 'false',
+          }).catch(err => {
+            console.error(
+              '[usePlanApproval] Broadcast waitingForInput=false failed:',
+              err
+            )
+          })
+        })
         .catch(err => {
           logger.error('[usePlanApproval] Failed to clear waiting state:', err)
         })
@@ -291,7 +317,7 @@ export function usePlanApproval({
         ? `[Yolo: ${yoloInfo}]\n${rawMessage}`
         : rawMessage
 
-      // Chain: mark_plan_approved → update_session_state → sendMessage
+      // Chain: mark_plan_approved → update_session_state → broadcast → sendMessage
       // See handlePlanApproval comment for why sequencing matters.
       const markPromise = messageId
         ? markPlanApproved(

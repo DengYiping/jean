@@ -22,6 +22,7 @@ import { invoke } from '@/lib/transport'
 import { toast } from 'sonner'
 import { isNativeApp } from '@/lib/environment'
 import { openExternal } from '@/lib/platform'
+import { copyToClipboard } from '@/lib/clipboard'
 
 const SettingsSection: React.FC<{
   title: string
@@ -143,7 +144,7 @@ export const WebAccessPane: React.FC = () => {
         tokenRequired && serverStatus?.token
           ? `${url}?token=${serverStatus.token}`
           : url
-      navigator.clipboard.writeText(fullUrl)
+      copyToClipboard(fullUrl)
       toast.success('URL copied to clipboard')
     },
     [serverStatus?.token, tokenRequired]
@@ -176,7 +177,7 @@ export const WebAccessPane: React.FC = () => {
   const handleCopyToken = useCallback(() => {
     const token = serverStatus?.token ?? preferences?.http_server_token
     if (!token) return
-    navigator.clipboard.writeText(token)
+    copyToClipboard(token)
     toast.success('Token copied to clipboard')
   }, [serverStatus, preferences?.http_server_token])
 
@@ -217,16 +218,11 @@ export const WebAccessPane: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-lg border border-yellow-500/20 bg-yellow-500/5 p-4">
-        <p className="text-sm text-muted-foreground">
-          <strong className="text-yellow-600 dark:text-yellow-400">
-            Experimental.
-          </strong>{' '}
-          Enable HTTP server to access Jean from a web browser on your local
-          network. All commands are routed over WebSocket with token
-          authentication.
-        </p>
-      </div>
+      <p className="text-sm text-muted-foreground">
+        Enable HTTP server to access Jean from a web browser on your local
+        network. All commands are routed over WebSocket with token
+        authentication.
+      </p>
 
       <SettingsSection title="Server">
         <div className="space-y-4">

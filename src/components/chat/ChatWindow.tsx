@@ -37,7 +37,7 @@ import {
   markPlanApproved as markPlanApprovedService,
   chatQueryKeys,
 } from '@/services/chat'
-import { useWorktree, useProjects, useRunScript } from '@/services/projects'
+import { useWorktree, useProjects, useRunScripts } from '@/services/projects'
 import { useProjectsStore } from '@/store/projects-store'
 import type {
   Worktree,
@@ -481,8 +481,8 @@ export function ChatWindow({
     (worktree?.cached_check_status as CheckStatus | undefined)
   const mergeableStatus = prStatus?.mergeable ?? undefined
 
-  // Run script for this worktree (used by CMD+R keybinding)
-  const { data: runScript } = useRunScript(activeWorktreePath ?? null)
+  // Run scripts for this worktree (used by keyboard shortcuts and quick actions)
+  const { data: runScripts = [] } = useRunScripts(activeWorktreePath ?? null)
 
   // Per-session provider selection: persisted session → zustand → project default → global default
   const projectDefaultProvider = project?.default_provider ?? null
@@ -821,6 +821,7 @@ export function ChatWindow({
     isAtBottom,
     areFindingsVisible,
     scrollToBottom,
+    markAtBottom,
     beginKeyboardScroll,
     endKeyboardScroll,
     scrollToFindings,
@@ -931,6 +932,8 @@ export function ChatWindow({
     isCodexBackendRef,
     mcpServersDataRef,
     enabledMcpServersRef,
+    selectedBackendRef,
+    markAtBottom,
   })
 
   const openBuildCustomPromptDialog = useCallback(() => {
@@ -1660,7 +1663,7 @@ export function ChatWindow({
     preferences,
     sendMessage,
     queryClient,
-    scrollToBottom,
+    markAtBottom,
     sessionsData,
     setInputDraft,
     clearInputDraft,
@@ -2325,6 +2328,8 @@ export function ChatWindow({
     handleReview,
     handleMerge,
     handleResolveConflicts,
+    handleLinkedProjects: () =>
+      useUIStore.getState().setLinkedProjectsModalOpen(true),
     handleInvestigateWorkflowRun,
     handleInvestigate,
     handleReviewComments,
@@ -2403,6 +2408,7 @@ export function ChatWindow({
     selectedEffortLevelRef,
     useAdaptiveThinkingRef,
     getMcpConfig,
+    markAtBottom,
     sendMessage,
     createSession,
     queryClient,
@@ -2486,7 +2492,7 @@ export function ChatWindow({
     patchPreferences,
     handleSaveContext,
     handleLoadContext,
-    runScript,
+    runScripts,
     hasStreamingPlan,
     pendingPlanMessage,
     handleStreamingPlanApproval,
@@ -2595,6 +2601,7 @@ export function ChatWindow({
     isCodexBackendRef,
     mcpServersDataRef,
     enabledMcpServersRef,
+    selectedBackendRef,
     setInputDraft,
     sendMessageNow,
   })

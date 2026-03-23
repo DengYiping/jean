@@ -12,13 +12,14 @@ import { invoke } from '@/lib/transport'
 import { cn } from '@/lib/utils'
 import {
   Search,
+  X,
   MoreHorizontal,
   Settings,
   Plus,
   FileJson,
   Clock3,
   GitBranch,
-  MessageSquare,
+  GitPullRequestArrow,
   Code,
   ExternalLink,
   Folder,
@@ -97,9 +98,15 @@ import {
 import { usePreferences } from '@/services/preferences'
 import { DEFAULT_KEYBINDINGS, formatShortcutDisplay } from '@/types/keybindings'
 import { CloseWorktreeDialog } from '@/components/chat/CloseWorktreeDialog'
+import { useIsMobile } from '@/hooks/use-mobile'
 const GitDiffModal = lazy(() =>
   import('@/components/chat/GitDiffModal').then(mod => ({
     default: mod.GitDiffModal,
+  }))
+)
+const LinkedProjectsModal = lazy(() =>
+  import('@/components/magic/LinkedProjectsModal').then(mod => ({
+    default: mod.LinkedProjectsModal,
   }))
 )
 import type { DiffRequest } from '@/types/git-diff'
@@ -214,6 +221,7 @@ function WorktreeSectionHeader({
   isSelected,
   shortcutNumber,
   onRowClick,
+  onDiffClick,
 }: {
   worktree: Worktree
   projectId: string
@@ -223,16 +231,14 @@ function WorktreeSectionHeader({
   isSelected?: boolean
   shortcutNumber?: number
   onRowClick?: () => void
+  onDiffClick?: (
+    worktreePath: string,
+    baseBranch: string,
+    type: 'uncommitted' | 'branch'
+  ) => void
 }) {
   const isBase = isBaseSession(worktree)
   const { data: gitStatus } = useGitStatus(worktree.id)
-  const [diffRequest, setDiffRequest] = useState<DiffRequest | null>(null)
-
-  // Sync git diff modal open state to UI store (blocks execute_run keybinding)
-  useEffect(() => {
-    useUIStore.getState().setGitDiffModalOpen(!!diffRequest)
-    return () => useUIStore.getState().setGitDiffModalOpen(false)
-  }, [diffRequest])
 
   const hasRunningTerminal = useTerminalStore(state => {
     const terminals = state.terminals[worktree.id] ?? []
@@ -308,12 +314,12 @@ function WorktreeSectionHeader({
   )
 
   const handleDiffClick = useCallback(() => {
-    setDiffRequest({
-      type: isBase ? 'uncommitted' : 'branch',
-      worktreePath: worktree.path,
-      baseBranch: defaultBranch,
-    })
-  }, [isBase, worktree.path, defaultBranch])
+    onDiffClick?.(
+      worktree.path,
+      defaultBranch,
+      isBase ? 'uncommitted' : 'branch'
+    )
+  }, [onDiffClick, isBase, worktree.path, defaultBranch])
 
   const sessionMetrics = useMemo(
     () => (cards && cards.length > 0 ? getSessionMetrics(cards) : null),
@@ -371,7 +377,7 @@ function WorktreeSectionHeader({
         )}
 
         <div className={cn(showDetails ? 'flex flex-col gap-1.5' : 'contents')}>
-          <div className="flex min-w-0 items-start gap-2 sm:items-center">
+          <div className="flex min-w-0 items-center gap-2">
             {shortcutNumber !== undefined && (
               <kbd className="hidden shrink-0 h-4 min-w-4 items-center justify-center rounded border border-border/50 bg-muted/50 px-0.5 font-mono text-muted-foreground sm:inline-flex">
                 <span className="text-[9px]">⌘{shortcutNumber}</span>
@@ -389,24 +395,20 @@ function WorktreeSectionHeader({
             )}
             <span className="flex min-w-0 flex-1 flex-col gap-1 font-medium sm:flex-row sm:items-center sm:gap-1.5">
               <span className="flex min-w-0 items-center gap-1.5">
-                <span className="min-w-0 flex-1 truncate">
+                <span className="min-w-0 truncate sm:flex-1">
                   {isBase ? 'Base Session' : worktree.name}
                 </span>
                 {displayBranch && (
-                  <span className="hidden items-center gap-1 rounded-full border border-border/50 px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground sm:inline-flex">
+                  <span className="hidden items-center gap-1 rounded border border-border/50 px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground sm:inline-flex">
                     <GitBranch className="h-2.5 w-2.5" />
                     <span className="max-w-40 truncate">{displayBranch}</span>
-                  </span>
-                )}
-                {worktree.label && (
-                  <span
-                    className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium"
-                    style={{
-                      backgroundColor: worktree.label.color,
-                      color: getLabelTextColor(worktree.label.color),
-                    }}
-                  >
-                    {worktree.label.name}
+                    {worktree.pr_number && (
+                      <>
+                        <span className="text-border">·</span>
+                        <GitPullRequestArrow className="h-2.5 w-2.5" />#
+                        {worktree.pr_number}
+                      </>
+                    )}
                   </span>
                 )}
                 <span
@@ -425,19 +427,33 @@ function WorktreeSectionHeader({
                 </span>
               </span>
               {displayBranch && (
-                <span className="inline-flex max-w-full items-center gap-1 self-start rounded-full border border-border/50 px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground sm:hidden">
+                <span className="inline-flex max-w-full items-center gap-1 self-start rounded border border-border/50 px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground sm:hidden">
                   <GitBranch className="h-2.5 w-2.5 shrink-0" />
                   <span className="max-w-full truncate">{displayBranch}</span>
+                  {worktree.pr_number && (
+                    <>
+                      <span className="text-border">·</span>
+                      <GitPullRequestArrow className="h-2.5 w-2.5 shrink-0" />#
+                      {worktree.pr_number}
+                    </>
+                  )}
                 </span>
               )}
             </span>
+            {worktree.label && (
+              <span
+                className="ml-auto self-start shrink-0 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium"
+                style={{
+                  backgroundColor: worktree.label.color,
+                  color: getLabelTextColor(worktree.label.color),
+                }}
+              >
+                {worktree.label.name}
+              </span>
+            )}
           </div>
           {showDetails && sessionMetrics && (
             <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-              <span className="inline-flex items-center gap-1 rounded bg-muted/50 border border-border/50 px-2 py-0.5">
-                <MessageSquare className="h-3 w-3" />
-                {sessionMetrics.totalCount} sessions
-              </span>
               {sessionMetrics.reviewCount > 0 && (
                 <span className="rounded  bg-green-500/10 px-2 py-0.5 text-green-600">
                   {sessionMetrics.reviewCount} review
@@ -480,17 +496,6 @@ function WorktreeSectionHeader({
           )}
         </div>
       </div>
-      <Suspense fallback={null}>
-        <GitDiffModal
-          diffRequest={diffRequest}
-          onClose={() => setDiffRequest(null)}
-          uncommittedStats={{
-            added: uncommittedAdded,
-            removed: uncommittedRemoved,
-          }}
-          branchStats={{ added: branchDiffAdded, removed: branchDiffRemoved }}
-        />
-      </Suspense>
     </>
   )
 }
@@ -508,6 +513,8 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
   const openInEditor = useOpenWorktreeInEditor()
 
   const [searchQuery, setSearchQuery] = useState('')
+  const isMobile = useIsMobile()
+  const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false)
 
   // Get project info
   const { data: projects = [], isLoading: projectsLoading } = useProjects()
@@ -612,25 +619,22 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
       const sessionData = sessionsByWorktreeId.get(worktree.id)
       const sessions = sessionData?.sessions ?? []
 
-      // Base sessions are always visible (not searchable)
-      const isBase = isBaseSession(worktree)
-
-      // Filter sessions based on search query
-      const filteredSessions =
-        searchQuery.trim() && !isBase
-          ? sessions.filter(
-              session =>
-                session.name
-                  .toLowerCase()
-                  .includes(searchQuery.toLowerCase()) ||
-                worktree.name
-                  .toLowerCase()
-                  .includes(searchQuery.toLowerCase()) ||
-                worktree.branch
-                  .toLowerCase()
-                  .includes(searchQuery.toLowerCase())
+      // Filter sessions based on search query (includes labels)
+      const filteredSessions = searchQuery.trim()
+        ? sessions.filter(session => {
+            const q = searchQuery.toLowerCase()
+            return (
+              session.name.toLowerCase().includes(q) ||
+              worktree.name.toLowerCase().includes(q) ||
+              worktree.branch.toLowerCase().includes(q) ||
+              (session.label?.name ?? '').toLowerCase().includes(q) ||
+              (storeState.sessionLabels[session.id]?.name ?? '')
+                .toLowerCase()
+                .includes(q) ||
+              (worktree.label?.name ?? '').toLowerCase().includes(q)
             )
-          : sessions
+          })
+        : sessions
 
       // Compute card data for each session
       const cards = filteredSessions.map(session =>
@@ -801,11 +805,23 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
 
   // Listen for focus-canvas-search event
   useEffect(() => {
-    const handleFocusSearch = () => searchInputRef.current?.focus()
+    const handleFocusSearch = () => {
+      if (isMobile) {
+        setIsMobileSearchOpen(true)
+      }
+      setTimeout(() => searchInputRef.current?.focus(), 0)
+    }
     window.addEventListener('focus-canvas-search', handleFocusSearch)
     return () =>
       window.removeEventListener('focus-canvas-search', handleFocusSearch)
-  }, [])
+  }, [isMobile])
+
+  // Auto-focus search input when mobile search overlay opens
+  useEffect(() => {
+    if (isMobileSearchOpen) {
+      requestAnimationFrame(() => searchInputRef.current?.focus())
+    }
+  }, [isMobileSearchOpen])
 
   // Track session modal open state for magic command keybindings
   useEffect(() => {
@@ -1300,11 +1316,24 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
       window.removeEventListener('toggle-session-label', handleToggleLabel)
   }, [selectedWorktreeModal, selectedIndex, flatCards, worktreeSections])
 
+  // Linked projects modal (opened by MagicModal via UI store)
+  const linkedProjectsModalOpen = useUIStore(
+    state => state.linkedProjectsModalOpen
+  )
+  const handleLinkedProjectsModalChange = useCallback((open: boolean) => {
+    useUIStore.getState().setLinkedProjectsModalOpen(open)
+  }, [])
+
   // CMD+G: Open git diff for selected worktree
   useEffect(() => {
     if (!!selectedWorktreeModal || selectedIndex === null) return
 
-    const handleOpenGitDiff = () => {
+    const handleOpenGitDiff = (e: Event) => {
+      const requestedType = (e as CustomEvent).detail?.type as
+        | 'uncommitted'
+        | 'branch'
+        | undefined
+
       const flatCard = flatCards[selectedIndex]
       if (!flatCard) return
 
@@ -1317,6 +1346,13 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
       const baseBranch = project?.default_branch ?? 'main'
 
       setCanvasDiffRequest(prev => {
+        if (requestedType) {
+          return {
+            type: requestedType,
+            worktreePath: section.worktree.path,
+            baseBranch,
+          }
+        }
         if (prev) {
           return {
             ...prev,
@@ -1358,6 +1394,35 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
       }
     },
     [worktreeLabelTarget, queryClient, projectId]
+  )
+
+  const handleLabelColorChange = useCallback(
+    async (labelName: string, newColor: string) => {
+      const worktreesToUpdate = worktreeSections
+        .filter(s => s.worktree.label?.name === labelName)
+        .map(s => s.worktree)
+
+      if (worktreesToUpdate.length === 0) return
+
+      const results = await Promise.allSettled(
+        worktreesToUpdate.map(wt =>
+          invoke('update_worktree_label', {
+            worktreeId: wt.id,
+            label: { name: labelName, color: newColor },
+          })
+        )
+      )
+
+      const failures = results.filter(r => r.status === 'rejected')
+      if (failures.length > 0) {
+        toast.error(`Failed to update color for ${failures.length} worktree(s)`)
+      }
+
+      queryClient.invalidateQueries({
+        queryKey: projectsQueryKeys.worktrees(projectId),
+      })
+    },
+    [worktreeSections, queryClient, projectId]
   )
 
   // Keyboard navigation - disable when any modal/dialog is open
@@ -1548,7 +1613,9 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
       // If worktreeId/worktreePath provided, open the modal for that worktree
       // (e.g. from UnreadBell navigating to a session on the project canvas)
       if (worktreeId && worktreePath) {
-        useChatStore.getState().setActiveSession(worktreeId, sessionId)
+        if (sessionId) {
+          useChatStore.getState().setActiveSession(worktreeId, sessionId)
+        }
         setSelectedWorktreeModal({ worktreeId, worktreePath })
         return
       }
@@ -1630,7 +1697,7 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
     <div className="relative flex h-full flex-col">
       <div className="flex-1 flex flex-col overflow-auto">
         {/* Header with Search - sticky over content */}
-        <div className="sticky top-0 z-10 flex items-center gap-4 bg-background/60 backdrop-blur-md px-4 py-3 border-b border-border/30 min-h-[61px]">
+        <div className="sticky top-0 z-10 relative grid grid-cols-[auto_1fr_auto] items-center gap-4 bg-background/60 backdrop-blur-md px-4 py-2 sm:py-3 border-b border-border/30 sm:min-h-[61px]">
           <div className="flex flex-col shrink-0">
             <div className="flex items-center gap-2">
               <h2 className="truncate text-lg font-semibold">{project.name}</h2>
@@ -1753,6 +1820,23 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+              {/* Mobile: magnifier icon inline with badges */}
+              {isMobile &&
+                (worktreeSections.length > 0 || searchQuery) &&
+                !isMobileSearchOpen && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="relative h-7 w-7 text-muted-foreground"
+                    onClick={() => setIsMobileSearchOpen(true)}
+                    aria-label="Open search"
+                  >
+                    <Search className="h-4 w-4" />
+                    {searchQuery && (
+                      <span className="absolute top-0.5 right-0.5 h-2 w-2 rounded-full bg-primary" />
+                    )}
+                  </Button>
+                )}
             </div>
             <p className="text-xs text-muted-foreground whitespace-nowrap">
               {projectSummary.totalReady > 0 ? (
@@ -1772,25 +1856,73 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
           </div>
           {(worktreeSections.length > 0 || searchQuery) && (
             <>
-              <div className="flex-1 flex justify-center max-w-md mx-auto">
-                <div className="relative w-full">
-                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    ref={searchInputRef}
-                    placeholder="Search worktrees and sessions..."
-                    value={searchQuery}
-                    onChange={e => setSearchQuery(e.target.value)}
-                    aria-label="Search worktrees and sessions"
-                    name="worktree-search"
-                    className="pl-9 bg-transparent border-border/30"
-                  />
+              {/* Desktop: inline search bar */}
+              {!isMobile && (
+                <div className="flex justify-center">
+                  <div className="relative w-full max-w-md">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      ref={searchInputRef}
+                      placeholder="Search worktrees and sessions..."
+                      value={searchQuery}
+                      onChange={e => setSearchQuery(e.target.value)}
+                      aria-label="Search worktrees and sessions"
+                      name="worktree-search"
+                      className="pl-9 bg-transparent border-border/30"
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
 
-              <div className="flex items-center gap-2 shrink-0">
-                <OpenInButton worktreePath={project.path} />
-              </div>
+              {/* Mobile: full-width search overlay */}
+              {isMobile && isMobileSearchOpen && (
+                <div className="absolute inset-0 z-20 flex items-center gap-2 bg-background/95 backdrop-blur-md px-4">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      ref={searchInputRef}
+                      placeholder="Search worktrees and sessions..."
+                      value={searchQuery}
+                      onChange={e => setSearchQuery(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Escape') {
+                          setIsMobileSearchOpen(false)
+                        }
+                      }}
+                      aria-label="Search worktrees and sessions"
+                      name="worktree-search"
+                      className="pl-9 bg-transparent border-border/30"
+                    />
+                  </div>
+                  {searchQuery && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 shrink-0 text-muted-foreground"
+                      onClick={() => setSearchQuery('')}
+                      aria-label="Clear search"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="shrink-0 text-muted-foreground text-sm"
+                    onClick={() => setIsMobileSearchOpen(false)}
+                    aria-label="Close search"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              )}
             </>
+          )}
+          {/* OpenInButton always visible on desktop (grid column 3) */}
+          {!isMobile && (
+            <div className="flex items-center gap-2 shrink-0 justify-end col-start-3">
+              <OpenInButton worktreePath={project.path} />
+            </div>
           )}
         </div>
 
@@ -1852,6 +1984,13 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
                             section.worktree.id,
                             section.worktree.path
                           )
+                        }}
+                        onDiffClick={(worktreePath, baseBranch, type) => {
+                          setCanvasDiffRequest({
+                            type,
+                            worktreePath,
+                            baseBranch,
+                          })
                         }}
                       />
                     </div>
@@ -1928,6 +2067,7 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
         sessionId={null}
         currentLabel={worktreeLabelTarget?.currentLabel ?? null}
         onApply={handleWorktreeLabelApply}
+        onColorChange={handleLabelColorChange}
         extraLabels={worktreeSections
           .map(s => s.worktree.label)
           .filter((l): l is LabelData => !!l)}
@@ -1957,6 +2097,15 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
         onConfirm={handleConfirmCloseWorktree}
         branchName={closeWorktreeTarget?.branchName}
       />
+
+      {/* Linked Projects modal (triggered from MagicModal on canvas) */}
+      <Suspense fallback={null}>
+        <LinkedProjectsModal
+          open={linkedProjectsModalOpen}
+          onOpenChange={handleLinkedProjectsModalChange}
+          projectId={projectId}
+        />
+      </Suspense>
     </div>
   )
 }

@@ -1,5 +1,6 @@
-import type { ThinkingLevel, EffortLevel } from './chat'
+import type { ThinkingLevel, EffortLevel, ExecutionMode } from './chat'
 import { DEFAULT_KEYBINDINGS, type KeybindingsMap } from './keybindings'
+import { isMacOS, isWindows } from '../lib/platform'
 
 // =============================================================================
 // Notification Sounds
@@ -184,23 +185,19 @@ export const DEFAULT_PR_CONTENT_PROMPT = `<task>Generate a pull request title an
 </diff>`
 
 /** Default prompt for commit message generation */
-export const DEFAULT_COMMIT_MESSAGE_PROMPT = `<task>Generate a commit message for the following changes</task>
+export const DEFAULT_COMMIT_MESSAGE_PROMPT = `Generate a conventional commit message for these staged changes.
 
-<git_status>
+Files changed:
+{diff_stat}
+
+Git status:
 {status}
-</git_status>
 
-<staged_diff>
+Diff:
 {diff}
-</staged_diff>
 
-<recent_commits>
-{recent_commits}
-</recent_commits>
-
-<remote_info>
-{remote_info}
-</remote_info>`
+Recent commits (style reference):
+{recent_commits}`
 
 /** Default prompt for code review */
 export const DEFAULT_CODE_REVIEW_PROMPT = `<task>Review the following code changes and provide structured feedback</task>
@@ -889,7 +886,7 @@ export interface AppPreferences {
   selected_model: ClaudeModel // Claude model ID passed to --model flag
   thinking_level: ThinkingLevel // Thinking level: 'off' | 'think' | 'megathink' | 'ultrathink'
   default_effort_level: EffortLevel // Effort level for Opus 4.6 adaptive thinking: 'low' | 'medium' | 'high' | 'max'
-  terminal: TerminalApp // Terminal app: 'terminal' | 'warp' | 'ghostty' | 'iterm2'
+  terminal: TerminalApp // Terminal app: 'terminal' | 'warp' | 'ghostty' | 'iterm2' | 'powershell' | 'windows-terminal'
   editor: EditorApp // Editor app: 'zed' | 'vscode' | 'cursor' | 'xcode'
   open_in: OpenInDefault // Default Open In action: 'editor' | 'terminal' | 'finder' | 'github'
   auto_branch_naming: boolean // Automatically generate branch names from first message
@@ -926,6 +923,7 @@ export interface AppPreferences {
   http_server_localhost_only: boolean // Bind to localhost only (more secure)
   http_server_token_required: boolean // Require token for web access (default true)
   removal_behavior: RemovalBehavior // What happens when closing sessions/worktrees: 'archive' or 'delete'
+  auto_save_context: boolean // Auto-save context after each session completion
   auto_pull_base_branch: boolean // Auto-pull base branch before creating a new worktree
   show_create_page_issue_sources: boolean // Show GitHub issues, security, and Linear on the create page
   auto_archive_on_pr_merged: boolean // Auto-archive worktrees when their PR is merged
@@ -940,6 +938,7 @@ export interface AppPreferences {
   default_provider: string | null // Default provider profile name (null = Anthropic direct)
 
   confirm_session_close: boolean // Show confirmation dialog before closing sessions/worktrees
+  default_execution_mode: ExecutionMode // Default execution mode for new sessions: 'plan', 'build', or 'yolo'
   default_backend: CliBackend // Default CLI backend for new sessions: 'claude', 'codex', or 'opencode'
   selected_codex_model: CodexModel // Default Codex model
   selected_opencode_model: string // Default OpenCode model (provider/model)
@@ -947,7 +946,7 @@ export interface AppPreferences {
   default_codex_reasoning_effort: CodexReasoningEffort // Default reasoning effort for Codex: 'low' | 'medium' | 'high' | 'xhigh'
   codex_multi_agent_enabled: boolean // Enable Codex multi-agent collaboration (experimental)
   codex_max_agent_threads: number // Max concurrent agent threads (1-8) when multi-agent is enabled
-  restore_last_session: boolean // Restore last session when switching projects (default: false)
+  restore_last_session: boolean // Restore last session when switching projects (default: true)
   close_original_on_clear_context: boolean // Close original session when using Clear Context and yolo (default: true)
   build_model: string | null // Model override for plan approval (build mode), null = use session model
   yolo_model: string | null // Model override for yolo plan approval, null = use session model
@@ -957,6 +956,10 @@ export interface AppPreferences {
   yolo_thinking_level: string | null // Thinking level override for yolo mode, null = use session thinking level
   linear_api_key: string | null // Global Linear personal API key (inherited by all projects)
   magic_models_auto_initialized: boolean // Whether magic prompt models were auto-set based on installed backends
+  claude_cli_source: 'jean' | 'path' // Claude CLI source: 'jean' (managed) or 'path' (system PATH)
+  codex_cli_source: 'jean' | 'path' // Codex CLI source: 'jean' (managed) or 'path' (system PATH)
+  opencode_cli_source: 'jean' | 'path' // OpenCode CLI source: 'jean' (managed) or 'path' (system PATH)
+  gh_cli_source: 'jean' | 'path' // GitHub CLI source: 'jean' (managed) or 'path' (system PATH)
 }
 
 export interface CustomCliProfile {
@@ -1049,16 +1052,20 @@ export const fileEditModeOptions: { value: FileEditMode; label: string }[] = [
 
 export type ClaudeModel =
   | 'opus'
-  | 'opus-4.5'
+  | 'claude-opus-4-6[1m]'
+  | 'opus-fast'
+  | 'claude-opus-4-6[1m]-fast'
   | 'sonnet'
-  | 'sonnet-4.5'
+  | 'claude-sonnet-4-6[1m]'
   | 'haiku'
 
 export const modelOptions: { value: ClaudeModel; label: string }[] = [
   { value: 'opus', label: 'Claude Opus 4.6' },
-  { value: 'opus-4.5', label: 'Claude Opus 4.5' },
+  { value: 'claude-opus-4-6[1m]', label: 'Claude Opus 4.6 (1M)' },
+  { value: 'opus-fast', label: 'Claude Opus 4.6 Fast' },
+  { value: 'claude-opus-4-6[1m]-fast', label: 'Claude Opus 4.6 (1M) Fast' },
   { value: 'sonnet', label: 'Claude Sonnet 4.6' },
-  { value: 'sonnet-4.5', label: 'Claude Sonnet 4.5' },
+  { value: 'claude-sonnet-4-6[1m]', label: 'Claude Sonnet 4.6 (1M)' },
   { value: 'haiku', label: 'Claude Haiku' },
 ]
 
@@ -1174,33 +1181,65 @@ export type TerminalApp =
   | 'warp'
   | 'ghostty'
   | 'iterm2'
-  | 'windows-terminal'
   | 'powershell'
-  | 'cmd'
+  | 'windows-terminal'
+
+type Platform = 'mac' | 'windows' | 'linux'
+
+function getCurrentPlatform(): Platform {
+  if (isMacOS) return 'mac'
+  if (isWindows) return 'windows'
+  return 'linux'
+}
+
+const allTerminalOptions: {
+  value: TerminalApp
+  label: string
+  platforms: Platform[]
+}[] = [
+  { value: 'terminal', label: 'Terminal', platforms: ['mac', 'linux'] },
+  { value: 'warp', label: 'Warp', platforms: ['mac', 'windows'] },
+  { value: 'ghostty', label: 'Ghostty', platforms: ['mac', 'linux'] },
+  { value: 'iterm2', label: 'iTerm2', platforms: ['mac'] },
+  { value: 'powershell', label: 'PowerShell', platforms: ['windows'] },
+  {
+    value: 'windows-terminal',
+    label: 'Windows Terminal',
+    platforms: ['windows'],
+  },
+]
 
 export const terminalOptions: { value: TerminalApp; label: string }[] =
-  navigator.platform.startsWith('Win')
-    ? [
-        { value: 'windows-terminal', label: 'Windows Terminal' },
-        { value: 'powershell', label: 'PowerShell' },
-        { value: 'cmd', label: 'Command Prompt' },
-      ]
-    : [
-        { value: 'terminal', label: 'Terminal' },
-        { value: 'warp', label: 'Warp' },
-        { value: 'ghostty', label: 'Ghostty' },
-        { value: 'iterm2', label: 'iTerm2' },
-      ]
+  allTerminalOptions.filter(opt => opt.platforms.includes(getCurrentPlatform()))
 
 export type EditorApp = 'zed' | 'vscode' | 'cursor' | 'xcode' | 'intellij'
 
-export const editorOptions: { value: EditorApp; label: string }[] = [
-  { value: 'zed', label: 'Zed' },
-  { value: 'vscode', label: 'VS Code' },
-  { value: 'cursor', label: 'Cursor' },
-  { value: 'xcode', label: 'Xcode' },
-  { value: 'intellij', label: 'IntelliJ IDEA' },
+const allEditorOptions: {
+  value: EditorApp
+  label: string
+  platforms: Platform[]
+}[] = [
+  { value: 'zed', label: 'Zed', platforms: ['mac', 'windows', 'linux'] },
+  {
+    value: 'vscode',
+    label: 'VS Code',
+    platforms: ['mac', 'windows', 'linux'],
+  },
+  {
+    value: 'cursor',
+    label: 'Cursor',
+    platforms: ['mac', 'windows', 'linux'],
+  },
+  { value: 'xcode', label: 'Xcode', platforms: ['mac'] },
+  {
+    value: 'intellij',
+    label: 'IntelliJ IDEA',
+    platforms: ['mac', 'windows', 'linux'],
+  },
 ]
+
+export const editorOptions: { value: EditorApp; label: string }[] =
+  allEditorOptions.filter(opt => opt.platforms.includes(getCurrentPlatform()))
 
 export type OpenInDefault = 'editor' | 'terminal' | 'finder' | 'github'
 
@@ -1399,12 +1438,14 @@ export const syntaxThemeLightOptions: { value: SyntaxTheme; label: string }[] =
 
 // Helper functions to get display labels
 export function getTerminalLabel(terminal: TerminalApp | undefined): string {
-  const option = terminalOptions.find(opt => opt.value === terminal)
+  // Search all options (not just platform-filtered) so saved cross-platform values resolve
+  const option = allTerminalOptions.find(opt => opt.value === terminal)
   return option?.label ?? 'Terminal'
 }
 
 export function getEditorLabel(editor: EditorApp | undefined): string {
-  const option = editorOptions.find(opt => opt.value === editor)
+  // Search all options (not just platform-filtered) so saved cross-platform values resolve
+  const option = allEditorOptions.find(opt => opt.value === editor)
   return option?.label ?? 'Editor'
 }
 
@@ -1413,7 +1454,7 @@ export const defaultPreferences: AppPreferences = {
   selected_model: 'opus',
   thinking_level: 'ultrathink',
   default_effort_level: 'high',
-  terminal: 'terminal',
+  terminal: isWindows ? 'powershell' : 'terminal',
   editor: 'zed',
   open_in: 'editor',
   auto_branch_naming: true,
@@ -1450,6 +1491,7 @@ export const defaultPreferences: AppPreferences = {
   http_server_localhost_only: true, // Default to localhost-only for security
   http_server_token_required: true, // Default: require token for security
   removal_behavior: 'delete', // Default: delete (permanent)
+  auto_save_context: true, // Default: enabled
   auto_pull_base_branch: true, // Default: enabled
   show_create_page_issue_sources: true, // Default: enabled
   auto_archive_on_pr_merged: true, // Default: enabled
@@ -1463,6 +1505,7 @@ export const defaultPreferences: AppPreferences = {
   custom_cli_profiles: [],
   default_provider: null,
   confirm_session_close: true, // Default: enabled (show confirmation)
+  default_execution_mode: 'plan', // Default: plan mode
   default_backend: 'claude', // Default: Claude
   selected_codex_model: 'gpt-5.4', // Default: latest Codex model
   selected_opencode_model: 'opencode/gpt-5.3-codex', // Default OpenCode model
@@ -1470,7 +1513,7 @@ export const defaultPreferences: AppPreferences = {
   default_codex_reasoning_effort: 'high', // Default: high reasoning
   codex_multi_agent_enabled: false, // Default: disabled
   codex_max_agent_threads: 3, // Default: 3 threads
-  restore_last_session: false, // Default: disabled
+  restore_last_session: true, // Default: enabled
   close_original_on_clear_context: true, // Default: enabled
   build_model: null, // Default: use session model
   yolo_model: null, // Default: use session model
@@ -1480,4 +1523,8 @@ export const defaultPreferences: AppPreferences = {
   yolo_thinking_level: null, // Default: use session thinking level
   linear_api_key: null, // Default: no global Linear API key
   magic_models_auto_initialized: false, // Default: not yet auto-set
+  claude_cli_source: 'jean', // Default: Jean-managed
+  codex_cli_source: 'jean', // Default: Jean-managed
+  opencode_cli_source: 'jean', // Default: Jean-managed
+  gh_cli_source: 'jean', // Default: Jean-managed
 }

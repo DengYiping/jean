@@ -48,7 +48,7 @@ interface UseMessageSendingParams {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   sendMessage: { mutate: (args: any, opts?: any) => void }
   queryClient: QueryClient
-  scrollToBottom: (instant?: boolean) => void
+  markAtBottom: () => void
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   sessionsData: any
   setInputDraft: (sessionId: string, draft: string) => void
@@ -78,7 +78,7 @@ export function useMessageSending({
   preferences,
   sendMessage,
   queryClient,
-  scrollToBottom,
+  markAtBottom,
   sessionsData,
   setInputDraft,
   clearInputDraft,
@@ -251,7 +251,8 @@ export function useMessageSending({
               : undefined,
           mcpConfig: buildMcpConfigJson(
             mcpServersDataRef.current ?? [],
-            enabledMcpServersRef.current
+            enabledMcpServersRef.current,
+            selectedBackendRef.current
           ),
           parallelExecutionPrompt:
             preferences?.parallel_execution_prompt_enabled
@@ -380,7 +381,8 @@ export function useMessageSending({
             : undefined,
         mcpConfig: buildMcpConfigJson(
           mcpServersDataRef.current ?? [],
-          enabledMcpServersRef.current
+          enabledMcpServersRef.current,
+          selectedBackendRef.current
         ),
         backend:
           selectedBackendRef.current !== 'claude'
@@ -389,7 +391,7 @@ export function useMessageSending({
         queuedAt: Date.now(),
       }
 
-      scrollToBottom(true)
+      markAtBottom()
 
       const isSendingNow = checkIsSendingNow(activeSessionId)
       if (isSendingNow) {
@@ -411,7 +413,7 @@ export function useMessageSending({
       activeWorktreePath,
       clearInputDraft,
       clearChatInputState,
-      scrollToBottom,
+      markAtBottom,
       sendMessageNow,
       sessionsData,
     ]

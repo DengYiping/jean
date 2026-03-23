@@ -42,6 +42,15 @@ import {
 import type { CustomCliProfile } from '@/types/preferences'
 import type { EffortLevel, ExecutionMode, ThinkingLevel } from '@/types/chat'
 import type { CheckStatus, PrDisplayStatus } from '@/types/pr-status'
+import type { McpServerInfo } from '@/types/chat'
+import type {
+  AttachedSavedContext,
+  LoadedIssueContext,
+  LoadedPullRequestContext,
+  LoadedSecurityAlertContext,
+  LoadedAdvisoryContext,
+} from '@/types/github'
+import type { LoadedLinearIssueContext } from '@/types/linear'
 import { CheckStatusButton } from '@/components/chat/toolbar/CheckStatusButton'
 import {
   EFFORT_LEVEL_OPTIONS,
@@ -80,6 +89,22 @@ interface MobileToolbarMenuProps {
   displayStatus: PrDisplayStatus | undefined
   checkStatus: CheckStatus | undefined
   activeWorktreePath: string | undefined
+  loadedIssueContexts?: LoadedIssueContext[]
+  loadedPRContexts?: LoadedPullRequestContext[]
+  loadedSecurityContexts?: LoadedSecurityAlertContext[]
+  loadedAdvisoryContexts?: LoadedAdvisoryContext[]
+  loadedLinearContexts?: LoadedLinearIssueContext[]
+  attachedSavedContexts?: AttachedSavedContext[]
+  handleViewIssue?: (ctx: LoadedIssueContext) => void
+  handleViewPR?: (ctx: LoadedPullRequestContext) => void
+  handleViewSecurityAlert?: (ctx: LoadedSecurityAlertContext) => void
+  handleViewAdvisory?: (ctx: LoadedAdvisoryContext) => void
+  handleViewLinear?: (ctx: LoadedLinearIssueContext) => void
+  handleViewSavedContext?: (ctx: AttachedSavedContext) => void
+  availableMcpServers?: McpServerInfo[]
+  enabledMcpServers?: string[]
+  activeMcpCount?: number
+  onToggleMcpServer?: (serverName: string) => void
 
   onSaveContext: () => void
   onLoadContext: () => void

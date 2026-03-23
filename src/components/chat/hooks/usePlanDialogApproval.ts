@@ -39,6 +39,8 @@ interface UsePlanDialogApprovalParams {
   isCodexBackendRef: RefObject<boolean>
   mcpServersDataRef: RefObject<McpServerInfo[] | undefined>
   enabledMcpServersRef: RefObject<string[]>
+  selectedBackendRef: RefObject<'claude' | 'codex' | 'opencode'>
+  markAtBottom: () => void
 }
 
 /**
@@ -62,6 +64,8 @@ export function usePlanDialogApproval({
   isCodexBackendRef,
   mcpServersDataRef,
   enabledMcpServersRef,
+  selectedBackendRef,
+  markAtBottom,
 }: UsePlanDialogApprovalParams) {
   const queryClient = useQueryClient()
 
@@ -132,10 +136,19 @@ export function usePlanDialogApproval({
       clearStreamingContentBlocks(activeSessionId)
       setSessionReviewing(activeSessionId, false)
 
-      // Chain: mark_plan_approved → update_session_state
+      // Mark as at-bottom so Tier 4 / Tier 2 auto-scroll kicks in when
+      // streaming starts. Don't physically scroll — let native CSS scroll
+      // anchoring handle the plan collapse layout shift smoothly.
+      markAtBottom()
+
+      // Chain: mark_plan_approved → update_session_state → broadcast
       // On WebSocket, commands dispatch concurrently. update_session_state emits
       // cache:invalidate which triggers refetch on other clients. mark_plan_approved
       // must complete first so the refetch includes plan_approved=true.
+      // Broadcasts are sequenced AFTER update_session_state so that any
+      // refetch triggered by the self-received session:setting-changed event
+      // returns the already-updated backend data (prevents stale overwrites
+      // of optimistic TanStack cache on web access).
       const markPromise = pendingPlanMessage
         ? markPlanApprovedService(
             activeWorktreeId,
@@ -161,6 +174,30 @@ export function usePlanDialogApproval({
             selectedExecutionMode: mode,
           })
         )
+        .then(() => {
+          invoke('broadcast_session_setting', {
+            sessionId: activeSessionId,
+            key: 'executionMode',
+            value: mode,
+          }).catch(err => {
+            console.error(
+              '[usePlanDialogApproval] Broadcast executionMode=' +
+                mode +
+                ' failed:',
+              err
+            )
+          })
+          invoke('broadcast_session_setting', {
+            sessionId: activeSessionId,
+            key: 'waitingForInput',
+            value: 'false',
+          }).catch(err => {
+            console.error(
+              '[usePlanDialogApproval] Broadcast waitingForInput=false failed:',
+              err
+            )
+          })
+        })
         .catch(err => {
           logger.error(
             '[usePlanDialogApproval] Failed to clear waiting state:',
@@ -235,7 +272,8 @@ export function usePlanDialogApproval({
             : undefined,
         mcpConfig: buildMcpConfigJson(
           mcpServersDataRef.current ?? [],
-          enabledMcpServersRef.current
+          enabledMcpServersRef.current,
+          (backendOverride as string) ?? selectedBackendRef.current
         ),
         queuedAt: Date.now(),
       }
@@ -264,6 +302,7 @@ export function usePlanDialogApproval({
       isCodexBackendRef,
       mcpServersDataRef,
       enabledMcpServersRef,
+      markAtBottom,
     ]
   )
 

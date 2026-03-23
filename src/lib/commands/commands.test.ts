@@ -5,6 +5,8 @@ const { registerCommands, getAllCommands, executeCommand, clearRegistry } =
   await import('./registry')
 const { notificationCommands } = await import('./notification-commands')
 const { projectCommands } = await import('./project-commands')
+const { githubCommands } = await import('./github-commands')
+const { useProjectsStore } = await import('@/store/projects-store')
 
 const createMockContext = (): CommandContext => ({
   // Query client - return debug_mode_enabled for notification commands
@@ -264,5 +266,46 @@ describe('All Commands Combined', () => {
   it('keyword search works', () => {
     const results = getAllCommands(mockContext, 'git')
     expect(results.length).toBeGreaterThan(0)
+  })
+})
+
+describe('GitHub Commands', () => {
+  let mockContext: CommandContext
+
+  beforeEach(() => {
+    clearRegistry()
+    mockContext = createMockContext()
+    vi.spyOn(useProjectsStore, 'getState').mockReturnValue({
+      selectedProjectId: 'project-1',
+    } as unknown as ReturnType<typeof useProjectsStore.getState>)
+    ;(
+      mockContext.queryClient.getQueryData as ReturnType<typeof vi.fn>
+    ).mockImplementation((key: string[]) => {
+      if (key[0] === 'projects') {
+        return [
+          {
+            id: 'project-1',
+            name: 'Hidden Project',
+            path: '/tmp/hidden',
+            default_branch: 'main',
+            added_at: 0,
+            order: 0,
+            hide_github_issues_and_prs: true,
+          },
+        ]
+      }
+      return undefined
+    })
+    registerCommands(githubCommands)
+  })
+
+  it('hides issue and pr commands for excluded projects', () => {
+    const commands = getAllCommands(mockContext)
+
+    expect(commands.find(command => command.id === 'open-github-issues')).toBeUndefined()
+    expect(
+      commands.find(command => command.id === 'open-github-pull-requests')
+    ).toBeUndefined()
+    expect(commands.find(command => command.id === 'open-github-dashboard')).toBeDefined()
   })
 })

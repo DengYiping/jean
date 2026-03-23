@@ -43,6 +43,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button'
 import type { Worktree } from '@/types/projects'
+import { hideGitHubIssuesAndPRs } from '@/types/projects'
 import { getEditorLabel, getTerminalLabel } from '@/types/preferences'
 import { ghCliQueryKeys } from '@/services/gh-cli'
 import {
@@ -52,6 +53,7 @@ import {
   useRepositoryAdvisories,
   useWorkflowRuns,
 } from '@/services/github'
+import { useProjects } from '@/services/projects'
 import { isNativeApp } from '@/lib/environment'
 import { useProjectsStore } from '@/store/projects-store'
 import { useUIStore } from '@/store/ui-store'
@@ -85,6 +87,7 @@ export function WorktreeDropdownMenu({
   onBranchDiffClick,
 }: WorktreeDropdownMenuProps) {
   const queryClient = useQueryClient()
+  const { data: projects } = useProjects()
   const {
     showDeleteConfirm,
     setShowDeleteConfirm,
@@ -106,12 +109,14 @@ export function WorktreeDropdownMenu({
   } = useWorktreeMenuActions({ worktree, projectId })
   const authData = queryClient.getQueryData<GhAuthStatus>(ghCliQueryKeys.auth())
   const isGitHubAuthenticated = authData?.authenticated ?? false
+  const project = projects?.find(candidate => candidate.id === projectId)
+  const hideIssueAndPrSources = hideGitHubIssuesAndPRs(project)
   const { data: issueResult } = useGitHubIssues(projectPath, 'open', {
-    enabled: isGitHubAuthenticated,
+    enabled: isGitHubAuthenticated && !hideIssueAndPrSources,
     staleTime: BADGE_STALE_TIME,
   })
   const { data: prs } = useGitHubPRs(projectPath, 'open', {
-    enabled: isGitHubAuthenticated,
+    enabled: isGitHubAuthenticated && !hideIssueAndPrSources,
     staleTime: BADGE_STALE_TIME,
   })
   const { data: alerts } = useDependabotAlerts(projectPath, 'open', {
@@ -126,8 +131,8 @@ export function WorktreeDropdownMenu({
     enabled: isGitHubAuthenticated,
     staleTime: BADGE_STALE_TIME,
   })
-  const issueCount = issueResult?.totalCount ?? 0
-  const prCount = prs?.length ?? 0
+  const issueCount = hideIssueAndPrSources ? 0 : (issueResult?.totalCount ?? 0)
+  const prCount = hideIssueAndPrSources ? 0 : (prs?.length ?? 0)
   const securityCount =
     (alerts?.length ?? 0) +
     (advisories?.filter(a => a.state === 'draft' || a.state === 'triage')
@@ -138,7 +143,9 @@ export function WorktreeDropdownMenu({
   const hasDiff = uncommittedAdded > 0 || uncommittedRemoved > 0
   const hasBranchDiff = branchDiffAdded > 0 || branchDiffRemoved > 0
   const hasGitHubStatusItems =
-    (isMobile && (issueCount > 0 || prCount > 0)) ||
+    (isMobile &&
+      !hideIssueAndPrSources &&
+      (issueCount > 0 || prCount > 0)) ||
     securityCount > 0 ||
     workflowRunCount > 0 ||
     (isMobile && (hasDiff || hasBranchDiff))
@@ -273,14 +280,14 @@ export function WorktreeDropdownMenu({
             </DropdownMenuItem>
           )}
 
-          {isMobile && issueCount > 0 && (
+          {isMobile && !hideIssueAndPrSources && issueCount > 0 && (
             <DropdownMenuItem onClick={handleOpenIssues}>
               <CircleDot className="mr-2 h-4 w-4 text-green-600" />
               {issueCount} Open Issue{issueCount === 1 ? '' : 's'}
             </DropdownMenuItem>
           )}
 
-          {isMobile && prCount > 0 && (
+          {isMobile && !hideIssueAndPrSources && prCount > 0 && (
             <DropdownMenuItem onClick={handleOpenPRs}>
               <GitPullRequestArrow className="mr-2 h-4 w-4 text-blue-600" />
               {prCount} Open PR{prCount === 1 ? '' : 's'}

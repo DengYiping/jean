@@ -11,8 +11,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { useProjectsStore } from '@/store/projects-store'
 import { useUIStore } from '@/store/ui-store'
 import { usePreferences } from '@/services/preferences'
+import { useProjects } from '@/services/projects'
+import { hideGitHubIssuesAndPRs } from '@/types/projects'
 import { useNewWorktreeData } from './hooks/useNewWorktreeData'
 import { useNewWorktreeHandlers } from './hooks/useNewWorktreeHandlers'
 import { useNewWorktreeKeyboard } from './hooks/useNewWorktreeKeyboard'
@@ -54,8 +57,10 @@ export function NewWorktreeModal() {
   const { triggerLogin: triggerGhLogin, isGhInstalled } = useGhLogin()
   const { newWorktreeModalOpen } = useUIStore()
   const { data: preferences } = usePreferences()
+  const { data: projects } = useProjects()
   const isMobile = useIsMobile()
   const showIssueSources = preferences?.show_create_page_issue_sources ?? true
+  const selectedProjectId = useProjectsStore(state => state.selectedProjectId)
 
   // Local state
   const [activeTab, setActiveTab] = useState<TabId>('quick')
@@ -72,7 +77,42 @@ export function NewWorktreeModal() {
   const previewOpenRef = useRef(false)
 
   // Hooks
-  const data = useNewWorktreeData(searchQuery, includeClosed, showIssueSources)
+  const selectedProject = useMemo(() => {
+    return projects?.find(project => project.id === selectedProjectId)
+  }, [projects, selectedProjectId])
+  const showGitHubIssuePrSources = !hideGitHubIssuesAndPRs(selectedProject)
+  const showGitHubIssuesTab = showIssueSources && showGitHubIssuePrSources
+  const showGitHubPRsTab = showGitHubIssuePrSources
+  const showSecurityTab = showIssueSources
+  const showLinearTab = showIssueSources
+
+  const visibleTabs = useMemo(() => {
+    const tabs = TABS.filter(tab => {
+      if (tab.id === 'issues') return showGitHubIssuesTab
+      if (tab.id === 'prs') return showGitHubPRsTab
+      if (tab.id === 'security') return showSecurityTab
+      if (tab.id === 'linear') return showLinearTab
+      return true
+    })
+
+    return tabs.map((tab, index) => ({
+      ...tab,
+      key: String(index + 1),
+    }))
+  }, [
+    showGitHubIssuesTab,
+    showGitHubPRsTab,
+    showLinearTab,
+    showSecurityTab,
+  ])
+  const visibleTabIds = useMemo(() => visibleTabs.map(tab => tab.id), [visibleTabs])
+
+  const data = useNewWorktreeData(
+    searchQuery,
+    includeClosed,
+    showIssueSources,
+    showGitHubIssuePrSources
+  )
   const handlers = useNewWorktreeHandlers(data, {
     setActiveTab,
     setSearchQuery,
@@ -103,6 +143,7 @@ export function NewWorktreeModal() {
 
   const { handleKeyDown } = useNewWorktreeKeyboard({
     activeTab,
+    visibleTabs: visibleTabIds,
     setActiveTab,
     filteredIssues: data.filteredIssues,
     filteredPRs: data.filteredPRs,
@@ -133,22 +174,7 @@ export function NewWorktreeModal() {
     handleSelectLinearIssue: handlers.handleSelectLinearIssue,
     handleSelectLinearIssueAndInvestigate:
       handlers.handleSelectLinearIssueAndInvestigate,
-    showIssueSources,
   })
-
-  const visibleTabs = useMemo(() => {
-    const tabs = showIssueSources
-      ? TABS
-      : TABS.filter(
-          tab =>
-            tab.id !== 'issues' && tab.id !== 'security' && tab.id !== 'linear'
-        )
-
-    return tabs.map((tab, index) => ({
-      ...tab,
-      key: String(index + 1),
-    }))
-  }, [showIssueSources])
 
   // Apply store-provided default tab when modal opens
   useEffect(() => {
@@ -157,30 +183,21 @@ export function NewWorktreeModal() {
         useUIStore.getState()
       if (newWorktreeModalDefaultTab) {
         // eslint-disable-next-line react-hooks/set-state-in-effect
-        if (
-          !showIssueSources &&
-          (newWorktreeModalDefaultTab === 'issues' ||
-            newWorktreeModalDefaultTab === 'security')
-        ) {
-          setActiveTab('quick')
-        } else {
-          setActiveTab(newWorktreeModalDefaultTab)
-        }
+        setActiveTab(
+          visibleTabIds.includes(newWorktreeModalDefaultTab)
+            ? newWorktreeModalDefaultTab
+            : 'quick'
+        )
         setNewWorktreeModalDefaultTab(null)
       }
     }
-  }, [newWorktreeModalOpen, showIssueSources])
+  }, [newWorktreeModalOpen, visibleTabIds])
 
   useEffect(() => {
-    if (
-      !showIssueSources &&
-      (activeTab === 'issues' ||
-        activeTab === 'security' ||
-        activeTab === 'linear')
-    ) {
+    if (!visibleTabIds.includes(activeTab)) {
       setActiveTab('quick')
     }
-  }, [activeTab, showIssueSources])
+  }, [activeTab, visibleTabIds])
 
   // Focus search input when switching to searchable tabs
   useEffect(() => {
@@ -260,7 +277,7 @@ export function NewWorktreeModal() {
               />
             )}
 
-            {showIssueSources && activeTab === 'issues' && (
+            {showGitHubIssuesTab && activeTab === 'issues' && (
               <GitHubIssuesTab
                 searchQuery={searchQuery}
                 setSearchQuery={setSearchQuery}
@@ -284,7 +301,7 @@ export function NewWorktreeModal() {
               />
             )}
 
-            {activeTab === 'prs' && (
+            {showGitHubPRsTab && activeTab === 'prs' && (
               <GitHubPRsTab
                 searchQuery={searchQuery}
                 setSearchQuery={setSearchQuery}
@@ -308,7 +325,7 @@ export function NewWorktreeModal() {
               />
             )}
 
-            {showIssueSources && activeTab === 'security' && (
+            {showSecurityTab && activeTab === 'security' && (
               <SecurityAlertsTab
                 searchQuery={searchQuery}
                 setSearchQuery={setSearchQuery}
@@ -345,7 +362,7 @@ export function NewWorktreeModal() {
               />
             )}
 
-            {showIssueSources && activeTab === 'linear' && (
+            {showLinearTab && activeTab === 'linear' && (
               <LinearIssuesTab
                 searchQuery={searchQuery}
                 setSearchQuery={setSearchQuery}

@@ -33,12 +33,13 @@ import {
   useCreateWorktreeFromExistingBranch,
   useJeanConfig,
 } from '@/services/projects'
-import { isBaseSession } from '@/types/projects'
+import { hideGitHubIssuesAndPRs, isBaseSession } from '@/types/projects'
 
 export function useNewWorktreeData(
   searchQuery: string,
   includeClosed: boolean,
-  showIssueSources: boolean
+  showIssueSources: boolean,
+  showGitHubIssuePrSources: boolean
 ) {
   const queryClient = useQueryClient()
   const selectedProjectId = useProjectsStore(state => state.selectedProjectId)
@@ -70,7 +71,7 @@ export function useNewWorktreeData(
     error: issuesError,
     refetch: refetchIssues,
   } = useGitHubIssues(selectedProject?.path ?? null, issueState, {
-    enabled: showIssueSources,
+    enabled: showIssueSources && showGitHubIssuePrSources,
   })
   const issues = issueResult?.issues
 
@@ -82,7 +83,10 @@ export function useNewWorktreeData(
     isFetching: isRefetchingPRs,
     error: prsError,
     refetch: refetchPRs,
-  } = useGitHubPRs(selectedProject?.path ?? null, prState)
+  } = useGitHubPRs(selectedProject?.path ?? null, prState, {
+    enabled: showGitHubIssuePrSources,
+  })
+  const hideIssueAndPrSources = hideGitHubIssuesAndPRs(selectedProject)
 
   // Debounced search for GitHub API
   const debouncedSearchQuery = useDebouncedValue(searchQuery, 300)
@@ -90,26 +94,27 @@ export function useNewWorktreeData(
   const { data: searchedIssues, isFetching: isSearchingIssues } =
     useSearchGitHubIssues(
       selectedProject?.path ?? null,
-      showIssueSources ? debouncedSearchQuery : ''
+      showIssueSources && showGitHubIssuePrSources ? debouncedSearchQuery : ''
     )
 
   const { data: searchedPRs, isFetching: isSearchingPRs } = useSearchGitHubPRs(
     selectedProject?.path ?? null,
-    debouncedSearchQuery
+    showGitHubIssuePrSources ? debouncedSearchQuery : ''
   )
 
   // Exact number lookups (finds any issue/PR regardless of age or state)
   const { data: exactIssue } = useGetGitHubIssueByNumber(
     selectedProject?.path ?? null,
-    showIssueSources ? debouncedSearchQuery : ''
+    showIssueSources && showGitHubIssuePrSources ? debouncedSearchQuery : ''
   )
   const { data: exactPR } = useGetGitHubPRByNumber(
     selectedProject?.path ?? null,
-    debouncedSearchQuery
+    showGitHubIssuePrSources ? debouncedSearchQuery : ''
   )
 
   // Filtered issues
   const filteredIssues = useMemo(() => {
+    if (!showGitHubIssuePrSources) return []
     if (parseItemNumber(searchQuery) !== null) {
       return exactIssue ? [exactIssue] : []
     }
@@ -123,10 +128,18 @@ export function useNewWorktreeData(
       ),
       exactIssue
     )
-  }, [issues, searchQuery, searchedIssues, exactIssue, includeClosed])
+  }, [
+    exactIssue,
+    includeClosed,
+    issues,
+    searchQuery,
+    searchedIssues,
+    showGitHubIssuePrSources,
+  ])
 
   // Filtered PRs
   const filteredPRs = useMemo(() => {
+    if (!showGitHubIssuePrSources) return []
     if (parseItemNumber(searchQuery) !== null) {
       return exactPR ? [exactPR] : []
     }
@@ -140,7 +153,14 @@ export function useNewWorktreeData(
       ),
       exactPR
     )
-  }, [prs, searchQuery, searchedPRs, exactPR, includeClosed])
+  }, [
+    exactPR,
+    includeClosed,
+    prs,
+    searchQuery,
+    searchedPRs,
+    showGitHubIssuePrSources,
+  ])
 
   // Branches
   const {
@@ -294,5 +314,6 @@ export function useNewWorktreeData(
     createWorktree,
     createBaseSession,
     createWorktreeFromBranch,
+    hideIssueAndPrSources,
   }
 }

@@ -9,6 +9,21 @@ import { useUIStore } from '@/store/ui-store'
 import { useProjectsStore } from '@/store/projects-store'
 import { projectsQueryKeys } from '@/services/projects'
 import type { Project } from '@/types/projects'
+import { hideGitHubIssuesAndPRs } from '@/types/projects'
+
+function getSelectedProject(context: {
+  queryClient: {
+    getQueryData: <T>(key: readonly unknown[]) => T | undefined
+  }
+}) {
+  const { selectedProjectId } = useProjectsStore.getState()
+  if (!selectedProjectId) return null
+
+  const projects = context.queryClient.getQueryData<Project[]>(
+    projectsQueryKeys.list()
+  )
+  return projects?.find(project => project.id === selectedProjectId) ?? null
+}
 
 export const githubCommands: AppCommand[] = [
   {
@@ -19,13 +34,16 @@ export const githubCommands: AppCommand[] = [
     group: 'github',
     keywords: ['github', 'issues', 'bugs', 'tickets'],
 
-    execute: () => {
+    execute: context => {
+      if (hideGitHubIssuesAndPRs(getSelectedProject(context))) return
       const { setNewWorktreeModalDefaultTab, setNewWorktreeModalOpen } =
         useUIStore.getState()
       setNewWorktreeModalDefaultTab('issues')
       setNewWorktreeModalOpen(true)
     },
-    isAvailable: context => context.hasSelectedProject(),
+    isAvailable: context =>
+      context.hasSelectedProject() &&
+      !hideGitHubIssuesAndPRs(getSelectedProject(context)),
   },
 
   {
@@ -36,13 +54,16 @@ export const githubCommands: AppCommand[] = [
     group: 'github',
     keywords: ['github', 'pull', 'requests', 'pr', 'merge'],
 
-    execute: () => {
+    execute: context => {
+      if (hideGitHubIssuesAndPRs(getSelectedProject(context))) return
       const { setNewWorktreeModalDefaultTab, setNewWorktreeModalOpen } =
         useUIStore.getState()
       setNewWorktreeModalDefaultTab('prs')
       setNewWorktreeModalOpen(true)
     },
-    isAvailable: context => context.hasSelectedProject(),
+    isAvailable: context =>
+      context.hasSelectedProject() &&
+      !hideGitHubIssuesAndPRs(getSelectedProject(context)),
   },
 
   {

@@ -2505,6 +2505,7 @@ export function useUpdateProjectSettings() {
       worktreesDir,
       linearApiKey,
       linearTeamId,
+      hideGithubIssuesAndPRs,
     }: {
       projectId: string
       name?: string
@@ -2519,6 +2520,7 @@ export function useUpdateProjectSettings() {
       worktreesDir?: string
       linearApiKey?: string
       linearTeamId?: string
+      hideGithubIssuesAndPRs?: boolean
       linkedProjectIds?: string[]
     }): Promise<Project> => {
       if (!isTauri()) {
@@ -2544,6 +2546,7 @@ export function useUpdateProjectSettings() {
         worktreesDir,
         linearApiKey,
         linearTeamId,
+        hideGithubIssuesAndPRs,
         linkedProjectIds,
       })
       logger.info('Project settings updated', { project })

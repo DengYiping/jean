@@ -95,6 +95,7 @@ export function ExitPlanModeButton({
           label="Approve"
           tooltip={approveTooltip}
           onClick={() => onPlanApproval?.()}
+          buttonRef={buttonRef}
         >
           {onCustomBuildPrompt && (
             <DropdownMenuItem onClick={() => onCustomBuildPrompt()}>

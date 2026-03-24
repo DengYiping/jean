@@ -26,6 +26,8 @@ interface FloatingButtonsProps {
   approveShortcut: string
   /** Callback for approve (build mode) */
   onApprove: () => void
+  /** Callback to open custom prompt dialog before build approval */
+  onCustomBuildPrompt?: () => void
   /** Callback for approve (yolo mode) */
   onYoloApprove: () => void
   /** Callback for clear context build approval */
@@ -52,6 +54,7 @@ export const FloatingButtons = memo(function FloatingButtons({
   isAtBottom,
   approveShortcut,
   onApprove,
+  onCustomBuildPrompt,
   onYoloApprove,
   onClearContextBuildApprove,
   onClearContextApprove,
@@ -60,8 +63,6 @@ export const FloatingButtons = memo(function FloatingButtons({
   onScrollToFindings,
   onScrollToBottom,
 }: FloatingButtonsProps) {
-  const showApproveButton = showApprove && !isAtBottom
-
   const withScroll = useCallback(
     (fn?: () => void) => () => {
       fn?.()
@@ -75,7 +76,7 @@ export const FloatingButtons = memo(function FloatingButtons({
       {/* Right side - Approve, Findings, Bottom buttons */}
       <div className="absolute bottom-4 right-4 flex gap-2">
         {/* Floating Approve button with dropdown - shown when main approve button is not visible */}
-        {showApproveButton && (
+        {showApprove && (
           <div className="inline-flex shadow-md rounded-lg">
             <Tooltip>
               <TooltipTrigger asChild>
@@ -100,6 +101,11 @@ export const FloatingButtons = memo(function FloatingButtons({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                {onCustomBuildPrompt && (
+                  <DropdownMenuItem onClick={withScroll(onCustomBuildPrompt)}>
+                    Custom Prompt...
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem onClick={withScroll(onYoloApprove)}>
                   YOLO
                   <DropdownMenuShortcut>

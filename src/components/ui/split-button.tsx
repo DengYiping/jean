@@ -1,4 +1,5 @@
 import { ChevronDown } from 'lucide-react'
+import type { Ref } from 'react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import {
@@ -16,6 +17,7 @@ interface SplitButtonProps {
   label: string
   tooltip?: string
   onClick: () => void
+  buttonRef?: Ref<HTMLButtonElement>
   disabled?: boolean
   variant?: 'default' | 'outline'
   size?: 'sm' | 'default'
@@ -27,6 +29,7 @@ export function SplitButton({
   label,
   tooltip,
   onClick,
+  buttonRef,
   disabled,
   variant = 'default',
   size = 'sm',
@@ -35,6 +38,7 @@ export function SplitButton({
 }: SplitButtonProps) {
   const mainButton = (
     <Button
+      ref={buttonRef}
       variant={variant}
       size={size}
       disabled={disabled}

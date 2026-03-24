@@ -461,6 +461,21 @@ fn start_new_thread(
     Ok(thread_id)
 }
 
+fn codex_turn_idle_timeout(
+    has_pending_tool_execution: bool,
+    awaiting_server_response: bool,
+) -> std::time::Duration {
+    if awaiting_server_response {
+        // Waiting on user approval/input is an intentional paused state.
+        std::time::Duration::from_secs(60 * 60)
+    } else if has_pending_tool_execution {
+        // Long-running commands may not emit output for several minutes.
+        std::time::Duration::from_secs(30 * 60)
+    } else {
+        std::time::Duration::from_secs(5 * 60)
+    }
+}
+
 /// Process turn events from the app-server, emitting Tauri events.
 #[allow(clippy::too_many_arguments)]
 fn process_turn_events(
@@ -493,6 +508,7 @@ fn process_turn_events(
     let mut turn_start_resolved = false;
     let mut last_activity = Instant::now();
     let mut received_completed_agent_message = false;
+    let mut awaiting_server_response = false;
 
     // Open output file for history
     let mut output_writer = std::fs::OpenOptions::new()
@@ -547,7 +563,9 @@ fn process_turn_events(
         let event = match event_rx.recv_timeout(Duration::from_millis(200)) {
             Ok(e) => e,
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                if last_activity.elapsed() >= Duration::from_secs(300) {
+                let idle_timeout =
+                    codex_turn_idle_timeout(!pending_tool_ids.is_empty(), awaiting_server_response);
+                if last_activity.elapsed() >= idle_timeout {
                     log::warn!("Turn event timeout for session {session_id}");
                     let _ = app.emit_all(
                         "chat:error",
@@ -572,6 +590,7 @@ fn process_turn_events(
 
         match event {
             ServerEvent::Notification { method, params } => {
+                awaiting_server_response = false;
                 // Write to output file for history replay
                 if let Some(ref mut writer) = output_writer {
                     // Convert to old-format JSONL for backward-compatible history
@@ -620,6 +639,7 @@ fn process_turn_events(
                 }
             }
             ServerEvent::ServerRequest { id, method, params } => {
+                awaiting_server_response = true;
                 // Write to output file
                 if let Some(ref mut writer) = output_writer {
                     let line = serde_json::json!({
@@ -3108,6 +3128,26 @@ mod tests {
         assert_eq!(
             params["collaborationMode"]["settings"]["reasoningEffort"],
             "medium"
+        );
+    }
+
+    #[test]
+    fn idle_timeout_extends_while_waiting_for_user_response() {
+        assert_eq!(
+            codex_turn_idle_timeout(false, true),
+            std::time::Duration::from_secs(60 * 60)
+        );
+    }
+
+    #[test]
+    fn idle_timeout_extends_while_command_execution_is_in_flight() {
+        assert_eq!(
+            codex_turn_idle_timeout(true, false),
+            std::time::Duration::from_secs(30 * 60)
+        );
+        assert_eq!(
+            codex_turn_idle_timeout(false, false),
+            std::time::Duration::from_secs(5 * 60)
         );
     }
 

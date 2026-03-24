@@ -15,8 +15,6 @@ describe('shouldSkipInstalledCliVersionCheck', () => {
   it('does not skip non-Codex CLIs', () => {
     expect(shouldSkipInstalledCliVersionCheck('claude', '0.0.0')).toBe(false)
     expect(shouldSkipInstalledCliVersionCheck('gh', '0.0.0')).toBe(false)
-    expect(shouldSkipInstalledCliVersionCheck('opencode', '0.0.0')).toBe(
-      false
-    )
+    expect(shouldSkipInstalledCliVersionCheck('opencode', '0.0.0')).toBe(false)
   })
 })

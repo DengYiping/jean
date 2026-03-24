@@ -233,7 +233,8 @@ export function useMessageHandlers({
       sessionId: string,
       worktreeId: string,
       worktreePath: string,
-      selectedExecutionMode?: ExecutionMode
+      selectedExecutionMode?: ExecutionMode,
+      clearPermissionState = false
     ) => {
       queryClient.setQueryData<Session>(
         chatQueryKeys.session(sessionId),
@@ -244,6 +245,12 @@ export function useMessageHandlers({
                 waiting_for_input: false,
                 waiting_for_input_type: null,
                 pending_plan_message_id: undefined,
+                ...(clearPermissionState
+                  ? {
+                      pending_permission_denials: [],
+                      denied_message_context: undefined,
+                    }
+                  : {}),
                 ...(selectedExecutionMode
                   ? { selected_execution_mode: selectedExecutionMode }
                   : {}),
@@ -263,6 +270,12 @@ export function useMessageHandlers({
                     waiting_for_input: false,
                     waiting_for_input_type: null,
                     pending_plan_message_id: undefined,
+                    ...(clearPermissionState
+                      ? {
+                          pending_permission_denials: [],
+                          denied_message_context: undefined,
+                        }
+                      : {}),
                     ...(selectedExecutionMode
                       ? { selected_execution_mode: selectedExecutionMode }
                       : {}),
@@ -279,6 +292,12 @@ export function useMessageHandlers({
         sessionId,
         waitingForInput: false,
         waitingForInputType: null,
+        ...(clearPermissionState
+          ? {
+              pendingPermissionDenials: [],
+              deniedMessageContext: null,
+            }
+          : {}),
         selectedExecutionMode,
       }).catch(err => {
         logger.error(
@@ -2218,7 +2237,13 @@ export function useMessageHandlers({
         clearPendingDenials(sessionId)
         clearDeniedMessageContext(sessionId)
         setWaitingForInput(sessionId, false)
-        clearCachedWaitingState(sessionId, worktreeId, worktreePath, nextMode)
+        clearCachedWaitingState(
+          sessionId,
+          worktreeId,
+          worktreePath,
+          nextMode,
+          true
+        )
         addSendingSession(sessionId)
         if (nextMode !== currentMode) {
           setExecutionMode(sessionId, nextMode)
@@ -2406,7 +2431,13 @@ export function useMessageHandlers({
         clearPendingDenials(sessionId)
         clearDeniedMessageContext(sessionId)
         setWaitingForInput(sessionId, false)
-        clearCachedWaitingState(sessionId, worktreeId, worktreePath, nextMode)
+        clearCachedWaitingState(
+          sessionId,
+          worktreeId,
+          worktreePath,
+          nextMode,
+          true
+        )
         addSendingSession(sessionId)
         setMode(sessionId, nextMode)
         invoke('broadcast_session_setting', {
@@ -2577,7 +2608,13 @@ export function useMessageHandlers({
         const worktreeId = activeWorktreeIdRef.current
         const worktreePath = activeWorktreePathRef.current
         if (worktreeId && worktreePath) {
-          clearCachedWaitingState(sessionId, worktreeId, worktreePath)
+          clearCachedWaitingState(
+            sessionId,
+            worktreeId,
+            worktreePath,
+            undefined,
+            true
+          )
         }
         toast.info('Request cancelled')
         return

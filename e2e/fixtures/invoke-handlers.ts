@@ -138,6 +138,13 @@ export const defaultResponses: Record<string, unknown> = {
   rename_session: null,
   send_chat_message: null,
   cancel_chat_message: false,
+  list_automations: [],
+  create_automation: null,
+  update_automation: null,
+  delete_automation: true,
+  run_automation_now: null,
+  pause_automation: null,
+  resume_automation: null,
 
   // Misc
   save_emergency_data: null,

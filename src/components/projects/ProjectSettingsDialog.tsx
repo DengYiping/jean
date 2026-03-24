@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import { Settings, Plug, FileJson } from 'lucide-react'
+import { Settings, Plug, FileJson, Bot } from 'lucide-react'
 import { ModalCloseButton } from '@/components/ui/modal-close-button'
 import {
   Breadcrumb,
@@ -37,13 +37,19 @@ import { useProjects } from '@/services/projects'
 import { GeneralPane } from './panes/GeneralPane'
 import { McpServersPane } from './panes/McpServersPane'
 import { JeanJsonPane } from './panes/JeanJsonPane'
+import { AutomationsPane } from './panes/AutomationsPane'
 
-type ProjectSettingsPane = 'general' | 'mcp-servers' | 'jean-json'
+type ProjectSettingsPane =
+  | 'general'
+  | 'mcp-servers'
+  | 'jean-json'
+  | 'automations'
 
 const navigationItems = [
   { id: 'general' as const, name: 'General', icon: Settings },
   { id: 'mcp-servers' as const, name: 'MCP Servers', icon: Plug },
   { id: 'jean-json' as const, name: 'Jean.json', icon: FileJson },
+  { id: 'automations' as const, name: 'Automations', icon: Bot },
 ]
 
 const getPaneTitle = (pane: ProjectSettingsPane): string => {
@@ -54,6 +60,8 @@ const getPaneTitle = (pane: ProjectSettingsPane): string => {
       return 'MCP Servers'
     case 'jean-json':
       return 'Jean.json'
+    case 'automations':
+      return 'Automations'
   }
 }
 
@@ -209,6 +217,12 @@ function ProjectSettingsDialogContent({
                   )}
                   {activePane === 'jean-json' && (
                     <JeanJsonPane
+                      projectId={safeProjectId}
+                      projectPath={projectPath}
+                    />
+                  )}
+                  {activePane === 'automations' && (
+                    <AutomationsPane
                       projectId={safeProjectId}
                       projectPath={projectPath}
                     />

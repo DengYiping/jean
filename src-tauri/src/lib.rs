@@ -8,6 +8,7 @@ use tauri::{AppHandle, Emitter, Manager};
 #[cfg(target_os = "macos")]
 use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
 
+mod automations;
 mod background_tasks;
 mod chat;
 mod claude_cli;
@@ -2553,6 +2554,11 @@ pub fn run() {
             app.manage(task_manager);
             log::trace!("Background task manager initialized");
 
+            let automation_manager = automations::AutomationManager::new(app.handle().clone());
+            automation_manager.start();
+            app.manage(automation_manager);
+            log::trace!("Automation manager initialized");
+
             // Initialize HTTP server infrastructure
             let (broadcaster, _) = http_server::WsBroadcaster::new();
             app.manage(broadcaster);
@@ -2914,6 +2920,14 @@ pub fn run() {
             background_tasks::commands::set_remote_poll_interval,
             background_tasks::commands::get_remote_poll_interval,
             background_tasks::commands::trigger_immediate_remote_poll,
+            // Automations
+            automations::commands::list_automations,
+            automations::commands::create_automation,
+            automations::commands::update_automation,
+            automations::commands::delete_automation,
+            automations::commands::run_automation_now,
+            automations::commands::pause_automation,
+            automations::commands::resume_automation,
             // HTTP server commands
             start_http_server,
             stop_http_server,
@@ -2937,6 +2951,9 @@ pub fn run() {
                     Err(e) => eprintln!("[OPENCODE CLEANUP] Failed during Exit: {e}"),
                 }
                 chat::codex_server::shutdown_server();
+                if let Some(manager) = _app_handle.try_state::<automations::AutomationManager>() {
+                    manager.shutdown();
+                }
             }
             tauri::RunEvent::ExitRequested { api, .. } => {
                 // In headless mode, prevent exit when window closes

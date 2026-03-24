@@ -1,6 +1,7 @@
 import { forwardRef, useCallback } from 'react'
 import {
   Archive,
+  Bot,
   Eye,
   EyeOff,
   FileText,
@@ -15,6 +16,7 @@ import { cn } from '@/lib/utils'
 import { getLabelTextColor } from '@/lib/label-colors'
 import { copyToClipboard } from '@/lib/clipboard'
 import { toast } from 'sonner'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
 import { StatusIndicator } from '@/components/ui/status-indicator'
@@ -123,6 +125,16 @@ export const SessionListRow = forwardRef<HTMLDivElement, SessionCardProps>(
               <span className="flex-1 truncate text-sm">
                 {card.session.name}
               </span>
+            )}
+
+            {card.isAutomation && (
+              <Badge
+                variant="outline"
+                className="h-5 shrink-0 gap-1 border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-300"
+              >
+                <Bot className="h-3 w-3" />
+                {card.automationName ?? 'Automation'}
+              </Badge>
             )}
 
             {/* Blocked badge */}

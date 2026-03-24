@@ -436,6 +436,18 @@ pub struct Session {
     /// Unix timestamp when session was last opened/viewed by the user
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_opened_at: Option<u64>,
+    /// ID of the automation that owns this session, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub automation_id: Option<String>,
+    /// Human-readable automation name persisted on automation-owned sessions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub automation_name: Option<String>,
+    /// Target worktree ID for automation-owned sessions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub automation_target_worktree_id: Option<String>,
+    /// Whether this session is owned by an automation run loop.
+    #[serde(default)]
+    pub automation_owned: bool,
 
     // ========================================================================
     // Session-specific UI state (moved from ui-state.json)
@@ -537,6 +549,10 @@ impl Session {
             archived_at: None,
             archived_by_base_close: None,
             last_opened_at: None,
+            automation_id: None,
+            automation_name: None,
+            automation_target_worktree_id: None,
+            automation_owned: false,
             // Session-specific UI state
             answered_questions: vec![],
             submitted_answers: HashMap::new(),
@@ -719,6 +735,10 @@ impl SessionMetadata {
             archived_at: self.archived_at,
             archived_by_base_close: self.archived_by_base_close,
             last_opened_at: self.last_opened_at,
+            automation_id: self.automation_id.clone(),
+            automation_name: self.automation_name.clone(),
+            automation_target_worktree_id: self.automation_target_worktree_id.clone(),
+            automation_owned: self.automation_owned,
             answered_questions: self.answered_questions.clone(),
             submitted_answers: self.submitted_answers.clone(),
             fixed_findings: self.fixed_findings.clone(),
@@ -756,6 +776,10 @@ impl SessionMetadata {
         self.session_naming_completed = session.session_naming_completed;
         self.archived_at = session.archived_at;
         self.archived_by_base_close = session.archived_by_base_close;
+        self.automation_id = session.automation_id.clone();
+        self.automation_name = session.automation_name.clone();
+        self.automation_target_worktree_id = session.automation_target_worktree_id.clone();
+        self.automation_owned = session.automation_owned;
         self.answered_questions = session.answered_questions.clone();
         self.submitted_answers = session.submitted_answers.clone();
         self.fixed_findings = session.fixed_findings.clone();
@@ -1095,6 +1119,18 @@ pub struct SessionMetadata {
     /// Unix timestamp when session was last opened/viewed by the user
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_opened_at: Option<u64>,
+    /// ID of the automation that owns this session, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub automation_id: Option<String>,
+    /// Human-readable automation name persisted on automation-owned sessions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub automation_name: Option<String>,
+    /// Target worktree ID for automation-owned sessions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub automation_target_worktree_id: Option<String>,
+    /// Whether this session is owned by an automation run loop.
+    #[serde(default)]
+    pub automation_owned: bool,
 
     /// Run history - each entry corresponds to one Claude CLI execution
     #[serde(default)]
@@ -1191,6 +1227,10 @@ impl SessionMetadata {
             label: None,
             queued_messages: vec![],
             last_opened_at: None,
+            automation_id: None,
+            automation_name: None,
+            automation_target_worktree_id: None,
+            automation_owned: false,
             runs: vec![],
             version: 1,
         }

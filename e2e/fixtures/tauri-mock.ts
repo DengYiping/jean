@@ -43,6 +43,7 @@ export const test = base.extend<TauriMockFixtures>({
             active_session_id: string | null
           }
         > = {}
+        const automationStore: Array<Record<string, unknown>> = []
 
         function getWorktreeStore(worktreeId: string) {
           if (!sessionStore[worktreeId]) {
@@ -139,6 +140,127 @@ export const test = base.extend<TauriMockFixtures>({
               tool_calls: [],
               cancelled: false,
             }
+          },
+          list_automations: args => {
+            const projectId = (args?.projectId as string) ?? null
+            return projectId
+              ? automationStore.filter(item => item.project_id === projectId)
+              : automationStore
+          },
+          create_automation: args => {
+            const automation = {
+              id: `automation-${Date.now()}`,
+              project_id: (args?.projectId as string) ?? 'project-1',
+              name: args?.name ?? 'Automation',
+              prompt: args?.prompt ?? '',
+              target_worktree_ids: structuredClone(
+                (args?.target_worktree_ids as string[]) ??
+                  (args?.targetWorktreeIds as string[]) ??
+                  []
+              ),
+              backend: (args?.backend as string) ?? 'codex',
+              model: (args?.model as string) ?? null,
+              provider: (args?.provider as string) ?? null,
+              execution_mode:
+                (args?.execution_mode as string) ??
+                (args?.executionMode as string) ??
+                'plan',
+              thinking_level:
+                (args?.thinking_level as string) ??
+                (args?.thinkingLevel as string) ??
+                null,
+              effort_level:
+                (args?.effort_level as string) ??
+                (args?.effortLevel as string) ??
+                null,
+              schedule_rrule:
+                (args?.schedule_rrule as string) ??
+                (args?.scheduleRrule as string) ??
+                'FREQ=DAILY;INTERVAL=1;BYHOUR=9;BYMINUTE=0',
+              status: (args?.status as string) ?? 'enabled',
+              last_run_at: null,
+              next_run_at: Math.floor(Date.now() / 1000) + 3600,
+              last_run_status: null,
+              last_error: null,
+              session_ids_by_worktree_id: {},
+              created_at: Math.floor(Date.now() / 1000),
+              updated_at: Math.floor(Date.now() / 1000),
+            }
+            automationStore.unshift(automation)
+            return structuredClone(automation)
+          },
+          update_automation: args => {
+            const automation = automationStore.find(
+              item => item.id === args?.id
+            )
+            if (!automation) return null
+            Object.assign(automation, {
+              name: args?.name,
+              prompt: args?.prompt,
+              target_worktree_ids: structuredClone(
+                (args?.target_worktree_ids as string[]) ??
+                  (args?.targetWorktreeIds as string[]) ??
+                  []
+              ),
+              backend: args?.backend ?? automation.backend,
+              model: args?.model ?? automation.model,
+              provider: args?.provider ?? automation.provider,
+              execution_mode:
+                args?.execution_mode ??
+                args?.executionMode ??
+                automation.execution_mode,
+              thinking_level:
+                args?.thinking_level ??
+                args?.thinkingLevel ??
+                automation.thinking_level,
+              effort_level:
+                args?.effort_level ??
+                args?.effortLevel ??
+                automation.effort_level,
+              schedule_rrule:
+                args?.schedule_rrule ??
+                args?.scheduleRrule ??
+                automation.schedule_rrule,
+              status: args?.status ?? automation.status,
+              updated_at: Math.floor(Date.now() / 1000),
+            })
+            return structuredClone(automation)
+          },
+          delete_automation: args => {
+            const idx = automationStore.findIndex(item => item.id === args?.id)
+            if (idx >= 0) {
+              automationStore.splice(idx, 1)
+              return true
+            }
+            return false
+          },
+          run_automation_now: args => {
+            const automation = automationStore.find(
+              item => item.id === args?.id
+            )
+            if (automation) {
+              automation.last_run_status = 'running'
+              automation.last_run_at = Math.floor(Date.now() / 1000)
+            }
+            return null
+          },
+          pause_automation: args => {
+            const automation = automationStore.find(
+              item => item.id === args?.id
+            )
+            if (automation) {
+              automation.status = 'paused'
+            }
+            return structuredClone(automation)
+          },
+          resume_automation: args => {
+            const automation = automationStore.find(
+              item => item.id === args?.id
+            )
+            if (automation) {
+              automation.status = 'enabled'
+            }
+            return structuredClone(automation)
           },
         }
 

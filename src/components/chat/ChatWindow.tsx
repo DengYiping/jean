@@ -24,7 +24,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary'
 import { invoke, listen } from '@/lib/transport'
-import { GitBranch, GitMerge, Layers } from 'lucide-react'
+import { Bot, GitBranch, GitMerge, Layers } from 'lucide-react'
 import {
   useSession,
   useSessions,
@@ -393,6 +393,9 @@ export function ChatWindow({
     activeWorktreeId,
     activeWorktreePath
   )
+  const automationBadge = session?.automation_owned
+    ? (session.automation_name ?? 'Automation')
+    : null
 
   const { data: preferences } = usePreferences()
   const patchPreferences = usePatchPreferences()
@@ -2761,6 +2764,12 @@ export function ChatWindow({
                         }}
                       >
                         {sessionLabel.name}
+                      </span>
+                    )}
+                    {automationBadge && (
+                      <span className="absolute top-2 left-4 z-20 inline-flex items-center gap-1 rounded-md border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-xs font-medium text-sky-700 dark:text-sky-300">
+                        <Bot className="h-3 w-3" />
+                        {automationBadge}
                       </span>
                     )}
                     {/* Bottom fade gradient so messages don't hard-cut at the input area */}

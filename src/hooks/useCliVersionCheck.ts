@@ -29,6 +29,7 @@ import {
 } from '@/services/opencode-cli'
 import { useUIStore } from '@/store/ui-store'
 import { isNewerVersion } from '@/lib/version-utils'
+import { shouldSkipInstalledCliVersionCheck } from '@/lib/cli-version-check'
 import { logger } from '@/lib/logger'
 import { isNativeApp } from '@/lib/environment'
 import { usePreferences } from '@/services/preferences'
@@ -105,8 +106,19 @@ export function useCliVersionCheck() {
     })
   const { data: claudeVersions, isLoading: claudeVersionsLoading } =
     useAvailableCliVersions({ enabled: shouldCheck && versionCheckReady })
+  const shouldSkipCodexVersionCheck = shouldSkipInstalledCliVersionCheck(
+    'codex',
+    codexStatus?.version
+  )
   const { data: codexVersions, isLoading: codexVersionsLoading } =
-    useAvailableCodexVersions({ enabled: shouldCheck && versionCheckReady })
+    useAvailableCodexVersions({
+      enabled:
+        shouldCheck &&
+        versionCheckReady &&
+        !!codexStatus?.installed &&
+        !!codexStatus.version &&
+        !shouldSkipCodexVersionCheck,
+    })
   const { data: opencodeVersions, isLoading: opencodeVersionsLoading } =
     useAvailableOpencodeVersions({ enabled: shouldCheck && versionCheckReady })
   const { data: ghVersions, isLoading: ghVersionsLoading } =
@@ -183,6 +195,7 @@ export function useCliVersionCheck() {
     if (
       codexStatus?.installed &&
       codexStatus.version &&
+      !shouldSkipCodexVersionCheck &&
       codexVersions?.length
     ) {
       const latestStable = codexVersions.find(v => !v.prerelease)
@@ -261,6 +274,7 @@ export function useCliVersionCheck() {
     ghVersionsLoading,
     codexVersionsLoading,
     opencodeVersionsLoading,
+    shouldSkipCodexVersionCheck,
     preferences?.claude_cli_source,
     preferences?.codex_cli_source,
     preferences?.opencode_cli_source,

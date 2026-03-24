@@ -27,6 +27,8 @@ export type SessionStatus =
 export interface SessionCardData {
   session: Session
   status: SessionStatus
+  automationName: string | null
+  isAutomation: boolean
   executionMode: ExecutionMode
   isSending: boolean
   isWaiting: boolean
@@ -327,6 +329,8 @@ export function computeSessionCardData(
   return {
     session,
     status,
+    automationName: session.automation_name ?? null,
+    isAutomation: session.automation_owned ?? false,
     executionMode: executionMode as ExecutionMode,
     isSending: sessionSending,
     isWaiting,

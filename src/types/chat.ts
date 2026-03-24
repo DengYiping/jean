@@ -191,6 +191,14 @@ export interface Session {
   digest?: SessionDigest
   /** Unix timestamp when session was last opened/viewed by the user */
   last_opened_at?: number
+  /** Automation owner ID for automation-created sessions. */
+  automation_id?: string
+  /** Human-readable automation name for session badges. */
+  automation_name?: string
+  /** Target worktree ID associated with the automation run. */
+  automation_target_worktree_id?: string
+  /** Whether this session is owned by an automation. */
+  automation_owned?: boolean
   /** Status of the last run (for immediate status on app restart) */
   last_run_status?: RunStatus
   /** Execution mode of the last run (plan/build/yolo) */

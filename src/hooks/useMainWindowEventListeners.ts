@@ -805,6 +805,11 @@ export function useMainWindowEventListeners() {
                     queryKey: ['saved-contexts'],
                   })
                   break
+                case 'automations':
+                  queryClient.invalidateQueries({
+                    queryKey: ['automations'],
+                  })
+                  break
               }
             }
             pendingKeys.clear()

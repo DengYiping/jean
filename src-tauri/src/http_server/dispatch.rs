@@ -2337,6 +2337,103 @@ pub async fn dispatch_command(
             crate::background_tasks::commands::set_pr_worktrees_for_polling(state, worktrees)?;
             Ok(Value::Null)
         }
+        "list_automations" => {
+            let project_id = field_opt(&args, "projectId", "project_id")?;
+            let result =
+                crate::automations::commands::list_automations(app.clone(), project_id).await?;
+            to_value(result)
+        }
+        "create_automation" => {
+            let project_id = field(&args, "projectId", "project_id")?;
+            let name = from_field(&args, "name")?;
+            let prompt = from_field(&args, "prompt")?;
+            let target_worktree_ids = field(&args, "targetWorktreeIds", "target_worktree_ids")?;
+            let backend = field_opt(&args, "backend", "backend")?;
+            let model = field_opt(&args, "model", "model")?;
+            let provider = field_opt(&args, "provider", "provider")?;
+            let execution_mode = field_opt(&args, "executionMode", "execution_mode")?;
+            let thinking_level = field_opt(&args, "thinkingLevel", "thinking_level")?;
+            let effort_level = field_opt(&args, "effortLevel", "effort_level")?;
+            let schedule_rrule = field(&args, "scheduleRrule", "schedule_rrule")?;
+            let state = app.state::<crate::automations::AutomationManager>();
+            let result = crate::automations::commands::create_automation(
+                app.clone(),
+                state,
+                project_id,
+                name,
+                prompt,
+                target_worktree_ids,
+                backend,
+                model,
+                provider,
+                execution_mode,
+                thinking_level,
+                effort_level,
+                schedule_rrule,
+            )
+            .await?;
+            to_value(result)
+        }
+        "update_automation" => {
+            let id = from_field(&args, "id")?;
+            let name = from_field(&args, "name")?;
+            let prompt = from_field(&args, "prompt")?;
+            let target_worktree_ids = field(&args, "targetWorktreeIds", "target_worktree_ids")?;
+            let backend = field_opt(&args, "backend", "backend")?;
+            let model = field_opt(&args, "model", "model")?;
+            let provider = field_opt(&args, "provider", "provider")?;
+            let execution_mode = field_opt(&args, "executionMode", "execution_mode")?;
+            let thinking_level = field_opt(&args, "thinkingLevel", "thinking_level")?;
+            let effort_level = field_opt(&args, "effortLevel", "effort_level")?;
+            let schedule_rrule = field(&args, "scheduleRrule", "schedule_rrule")?;
+            let status = field_opt(&args, "status", "status")?;
+            let state = app.state::<crate::automations::AutomationManager>();
+            let result = crate::automations::commands::update_automation(
+                app.clone(),
+                state,
+                id,
+                name,
+                prompt,
+                target_worktree_ids,
+                backend,
+                model,
+                provider,
+                execution_mode,
+                thinking_level,
+                effort_level,
+                schedule_rrule,
+                status,
+            )
+            .await?;
+            to_value(result)
+        }
+        "delete_automation" => {
+            let id = from_field(&args, "id")?;
+            let state = app.state::<crate::automations::AutomationManager>();
+            let result =
+                crate::automations::commands::delete_automation(app.clone(), state, id).await?;
+            to_value(result)
+        }
+        "run_automation_now" => {
+            let id = from_field(&args, "id")?;
+            let state = app.state::<crate::automations::AutomationManager>();
+            crate::automations::commands::run_automation_now(state, id).await?;
+            Ok(Value::Null)
+        }
+        "pause_automation" => {
+            let id = from_field(&args, "id")?;
+            let state = app.state::<crate::automations::AutomationManager>();
+            let result =
+                crate::automations::commands::pause_automation(app.clone(), state, id).await?;
+            to_value(result)
+        }
+        "resume_automation" => {
+            let id = from_field(&args, "id")?;
+            let state = app.state::<crate::automations::AutomationManager>();
+            let result =
+                crate::automations::commands::resume_automation(app.clone(), state, id).await?;
+            to_value(result)
+        }
 
         // =====================================================================
         // Unknown command

@@ -625,6 +625,7 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
             const q = searchQuery.toLowerCase()
             return (
               session.name.toLowerCase().includes(q) ||
+              (session.automation_name ?? '').toLowerCase().includes(q) ||
               worktree.name.toLowerCase().includes(q) ||
               worktree.branch.toLowerCase().includes(q) ||
               (session.label?.name ?? '').toLowerCase().includes(q) ||

@@ -39,6 +39,8 @@ interface StreamingMessageProps {
   approveShortcutClearContext?: string
   /** Keyboard shortcut for clear context and build button */
   approveShortcutClearContextBuild?: string
+  /** Ref to attach to approve button for visibility tracking */
+  approveButtonRef?: RefObject<HTMLButtonElement | null>
   /** Callback when user answers a question */
   onQuestionAnswer: (
     toolCallId: string,
@@ -95,6 +97,7 @@ export const StreamingMessage = memo(function StreamingMessage({
   approveShortcutYolo,
   approveShortcutClearContext,
   approveShortcutClearContextBuild,
+  approveButtonRef,
   onQuestionAnswer,
   onQuestionSkip,
   onFileClick,
@@ -332,6 +335,7 @@ export const StreamingMessage = memo(function StreamingMessage({
                                   shortcutClearContextBuild={
                                     approveShortcutClearContextBuild
                                   }
+                                  buttonRef={approveButtonRef}
                                   hideApproveButtons={hideApproveButtons}
                                 />
                               </div>

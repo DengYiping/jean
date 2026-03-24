@@ -809,6 +809,7 @@ export function ChatWindow({
 
   // Ref for approve button (passed to VirtualizedMessageList)
   const approveButtonRef = useRef<HTMLButtonElement>(null)
+  const [isInlineApproveVisible, setIsInlineApproveVisible] = useState(false)
 
   // Terminal panel ref for imperative collapse/expand
   const terminalPanelRef = useRef<ImperativePanelHandle>(null)
@@ -878,12 +879,49 @@ export function ChatWindow({
     latestPlanContent,
     latestPlanFilePath,
   } = usePlanState({
-    sessionMessages: session?.messages,
+    session,
     currentToolCalls,
     isSending,
     activeSessionId,
     isStreamingPlanApproved,
   })
+  const approvedPlanMessageIds = useMemo(
+    () => new Set(session?.approved_plan_message_ids ?? []),
+    [session?.approved_plan_message_ids]
+  )
+
+  useEffect(() => {
+    const hasPendingPlan = !!pendingPlanMessage || hasStreamingPlan
+    if (!hasPendingPlan) {
+      setIsInlineApproveVisible(false)
+      return
+    }
+
+    const viewport = scrollViewportRef.current
+    const button = approveButtonRef.current
+    if (!viewport || !button) {
+      setIsInlineApproveVisible(false)
+      return
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setIsInlineApproveVisible(entry?.isIntersecting ?? false)
+      },
+      {
+        root: viewport,
+        threshold: 0.01,
+      }
+    )
+
+    observer.observe(button)
+    return () => observer.disconnect()
+  }, [
+    pendingPlanMessage?.id,
+    hasStreamingPlan,
+    activeSessionId,
+    session?.messages?.length,
+  ])
 
   // When the approval UI appears after the final render, keep the viewport pinned
   // so the inline Approve controls stay visible instead of requiring a manual scroll.
@@ -2788,6 +2826,7 @@ export function ChatWindow({
                                 approveShortcutClearContextBuild
                               }
                               approveButtonRef={approveButtonRef}
+                              approvedPlanMessageIds={approvedPlanMessageIds}
                               isSending={isSending}
                               onPlanApproval={handlePlanApproval}
                               onCustomBuildPrompt={openBuildCustomPromptDialog}
@@ -2841,6 +2880,7 @@ export function ChatWindow({
                               approveShortcutClearContextBuild={
                                 approveShortcutClearContextBuild
                               }
+                              approveButtonRef={approveButtonRef}
                               onQuestionAnswer={handleQuestionAnswer}
                               onQuestionSkip={handleSkipQuestion}
                               onFileClick={setViewingFilePath}
@@ -2895,12 +2935,14 @@ export function ChatWindow({
                     {/* Floating scroll buttons */}
                     <FloatingButtons
                       showApproveButton={
-                        !!pendingPlanMessage || hasStreamingPlan
+                        (!!pendingPlanMessage || hasStreamingPlan) &&
+                        !isInlineApproveVisible
                       }
                       showFindingsButton={!areFindingsVisible}
                       isAtBottom={isAtBottom}
                       approveShortcut={approveShortcut}
                       onApprove={floatingApprove}
+                      onCustomBuildPrompt={openBuildCustomPromptDialog}
                       onYoloApprove={floatingYoloApprove}
                       onClearContextBuildApprove={
                         floatingClearContextBuildApprove

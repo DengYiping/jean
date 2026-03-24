@@ -71,6 +71,8 @@ interface MessageItemProps {
   approveShortcutClearContextBuild?: string
   /** Ref to attach to approve button for visibility tracking */
   approveButtonRef?: React.RefObject<HTMLButtonElement | null>
+  /** Persisted approved plan IDs for this session */
+  approvedPlanMessageIds?: ReadonlySet<string>
   /** Whether Claude is currently streaming (affects last message rendering) */
   isSending: boolean
   /** Callback when user approves a plan */
@@ -143,6 +145,7 @@ export const MessageItem = memo(function MessageItem({
   approveShortcutClearContext,
   approveShortcutClearContextBuild,
   approveButtonRef,
+  approvedPlanMessageIds,
   isSending,
   onPlanApproval,
   onCustomBuildPrompt,
@@ -168,6 +171,9 @@ export const MessageItem = memo(function MessageItem({
 }: MessageItemProps) {
   // Only show Approve button for the last message with ExitPlanMode
   const isLatestPlanRequest = messageIndex === lastPlanMessageIndex
+  const isPlanApproved =
+    (message.plan_approved ?? false) ||
+    approvedPlanMessageIds?.has(message.id) === true
 
   // Extract image, text file, file mention, and skill paths and clean content for user messages
   const imagePaths =
@@ -462,7 +468,7 @@ export const MessageItem = memo(function MessageItem({
                             <PlanDisplay
                               content={inlinePlan}
                               defaultCollapsed={
-                                message.plan_approved || hasFollowUpMessage
+                                isPlanApproved || hasFollowUpMessage
                               }
                             />
                           )
@@ -475,7 +481,7 @@ export const MessageItem = memo(function MessageItem({
                           <PlanDisplay
                             filePath={planFilePath}
                             defaultCollapsed={
-                              message.plan_approved || hasFollowUpMessage
+                              isPlanApproved || hasFollowUpMessage
                             }
                           />
                         )
@@ -498,7 +504,7 @@ export const MessageItem = memo(function MessageItem({
           {/* Show ExitPlanMode button after all content blocks */}
           <ExitPlanModeButton
             toolCalls={message.tool_calls}
-            isApproved={message.plan_approved ?? false}
+            isApproved={isPlanApproved}
             isLatestPlanRequest={isLatestPlanRequest}
             hasFollowUpMessage={hasFollowUpMessage}
             onPlanApproval={handlePlanApproval}
@@ -568,7 +574,7 @@ export const MessageItem = memo(function MessageItem({
             !skipToolCalls && (
               <ExitPlanModeButton
                 toolCalls={message.tool_calls}
-                isApproved={message.plan_approved ?? false}
+                isApproved={isPlanApproved}
                 isLatestPlanRequest={isLatestPlanRequest}
                 hasFollowUpMessage={hasFollowUpMessage}
                 onPlanApproval={handlePlanApproval}

@@ -18,6 +18,7 @@ interface MessageListProps {
   approveShortcutClearContext?: string
   approveShortcutClearContextBuild?: string
   approveButtonRef?: React.RefObject<HTMLButtonElement | null>
+  approvedPlanMessageIds?: ReadonlySet<string>
   isSending: boolean
   onPlanApproval: (messageId: string) => void
   onCustomBuildPrompt?: (messageId: string) => void
@@ -65,6 +66,7 @@ export const MessageList = memo(function MessageList({
   approveShortcutClearContext,
   approveShortcutClearContextBuild,
   approveButtonRef,
+  approvedPlanMessageIds,
   isSending,
   onPlanApproval,
   onCustomBuildPrompt,
@@ -144,6 +146,7 @@ export const MessageList = memo(function MessageList({
               approveButtonRef={
                 index === lastPlanMessageIndex ? approveButtonRef : undefined
               }
+              approvedPlanMessageIds={approvedPlanMessageIds}
               isSending={isSending}
               onPlanApproval={onPlanApproval}
               onCustomBuildPrompt={onCustomBuildPrompt}

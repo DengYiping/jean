@@ -59,6 +59,8 @@ interface VirtualizedMessageListProps {
   approveShortcutClearContextBuild?: string
   /** Ref for approve button visibility tracking */
   approveButtonRef?: React.RefObject<HTMLButtonElement | null>
+  /** Persisted approved plan IDs for this session */
+  approvedPlanMessageIds?: ReadonlySet<string>
   /** Whether Claude is currently streaming */
   isSending: boolean
   /** Callback when user approves a plan */
@@ -136,6 +138,7 @@ export const VirtualizedMessageList = memo(
         approveShortcutClearContext,
         approveShortcutClearContextBuild,
         approveButtonRef,
+        approvedPlanMessageIds,
         isSending,
         onPlanApproval,
         onCustomBuildPrompt,
@@ -357,6 +360,7 @@ export const VirtualizedMessageList = memo(
                       ? approveButtonRef
                       : undefined
                   }
+                  approvedPlanMessageIds={approvedPlanMessageIds}
                   isSending={isSending}
                   onPlanApproval={onPlanApproval}
                   onCustomBuildPrompt={onCustomBuildPrompt}

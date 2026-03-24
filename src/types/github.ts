@@ -74,6 +74,7 @@ export interface GitHubPullRequest {
   number: number
   title: string
   body?: string
+  url: string
   state: string
   headRefName: string
   baseRefName: string

@@ -8,6 +8,7 @@ import {
 import { useQueries } from '@tanstack/react-query'
 import {
   CircleDot,
+  ExternalLink,
   GitPullRequest,
   Shield,
   ShieldAlert,
@@ -18,7 +19,7 @@ import {
   Eye,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { getModifierSymbol } from '@/lib/platform'
+import { getModifierSymbol, openExternal } from '@/lib/platform'
 import {
   Dialog,
   DialogContent,
@@ -161,6 +162,34 @@ function InvestigateButton({
   )
 }
 
+function OpenPRButton({
+  isCreating,
+  url,
+}: {
+  isCreating: boolean
+  url: string
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label="Open PR on GitHub"
+          onClick={e => {
+            e.stopPropagation()
+            void openExternal(url)
+          }}
+          disabled={isCreating}
+          className="inline-flex h-6 w-6 items-center justify-center rounded px-1 text-foreground/80 transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          <ExternalLink className="h-3.5 w-3.5" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>Open PR on GitHub</TooltipContent>
+    </Tooltip>
+  )
+}
+
 // =============================================================================
 // Item renderers
 // =============================================================================
@@ -255,7 +284,7 @@ function IssueRow({
   )
 }
 
-function PRRow({
+export function PRRow({
   pr,
   isCreating,
   onClick,
@@ -403,9 +432,11 @@ function PRRow({
         )}
       </button>
       <div className="shrink-0 flex items-center gap-1 self-center">
+        <OpenPRButton isCreating={isCreating} url={pr.url} />
         <Tooltip>
           <TooltipTrigger asChild>
             <button
+              type="button"
               onClick={e => {
                 e.stopPropagation()
                 onPreview()

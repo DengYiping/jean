@@ -1333,25 +1333,12 @@ export const useChatStore = create<ChatUIState>()(
       setExecutionMode: (sessionId, mode) =>
         set(
           state => {
-            const newState: Partial<ChatUIState> = {
+            return {
               executionModes: {
                 ...state.executionModes,
                 [sessionId]: mode,
               },
             }
-            // Clear pending denials when switching to yolo mode (no approvals needed)
-            if (
-              mode === 'yolo' &&
-              state.pendingPermissionDenials[sessionId]?.length
-            ) {
-              const { [sessionId]: _, ...restDenials } =
-                state.pendingPermissionDenials
-              newState.pendingPermissionDenials = restDenials
-              const { [sessionId]: __, ...restContext } =
-                state.deniedMessageContext
-              newState.deniedMessageContext = restContext
-            }
-            return newState
           },
           undefined,
           'setExecutionMode'

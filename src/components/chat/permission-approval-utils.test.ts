@@ -38,13 +38,24 @@ describe('permission approval utils', () => {
     ).toBe(false)
   })
 
-  it('hides approval in yolo mode', () => {
+  it('keeps codex approval visible in yolo mode when a denial is pending', () => {
     expect(
       shouldShowPermissionApproval({
         pendingDenialsCount: 1,
         isSending: true,
         executionMode: 'yolo',
         isCodexBackend: true,
+      })
+    ).toBe(true)
+  })
+
+  it('hides non-codex approval in yolo mode', () => {
+    expect(
+      shouldShowPermissionApproval({
+        pendingDenialsCount: 1,
+        isSending: false,
+        executionMode: 'yolo',
+        isCodexBackend: false,
       })
     ).toBe(false)
   })

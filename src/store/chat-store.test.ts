@@ -503,7 +503,7 @@ describe('ChatStore', () => {
       expect(getExecutionMode('session-1')).toBe('yolo')
     })
 
-    it('clears pending denials when switching to yolo', () => {
+    it('preserves pending denials when switching to yolo', () => {
       const { setPendingDenials, setExecutionMode, getPendingDenials } =
         useChatStore.getState()
 
@@ -514,7 +514,7 @@ describe('ChatStore', () => {
 
       setExecutionMode('session-1', 'yolo')
 
-      expect(getPendingDenials('session-1')).toHaveLength(0)
+      expect(getPendingDenials('session-1')).toEqual(denials)
     })
   })
 

@@ -14,7 +14,7 @@ export function shouldShowPermissionApproval({
   isCodexBackend,
 }: PermissionApprovalVisibilityParams): boolean {
   if (pendingDenialsCount === 0) return false
-  if (executionMode === 'yolo') return false
+  if (executionMode === 'yolo' && !isCodexBackend) return false
 
   return !isSending || isCodexBackend
 }

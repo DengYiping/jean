@@ -10,6 +10,7 @@ import {
 import type { AppPreferences } from '@/types/preferences'
 import {
   FONT_SIZE_DEFAULT,
+  defaultPreferences,
   DEFAULT_MAGIC_PROMPTS,
   DEFAULT_MAGIC_PROMPT_MODELS,
   DEFAULT_MAGIC_PROMPT_PROVIDERS,
@@ -388,6 +389,43 @@ describe('preferences service', () => {
 
       expect(result.current.data?.selected_codex_model).toBe('gpt-5.3')
     })
+
+    it('migrates gpt-5.4-fast to gpt-5.4', async () => {
+      const { invoke } = await import('@/lib/transport')
+      const prefsWithDeprecatedFastModel = {
+        ...defaultPreferences,
+        selected_codex_model:
+          'gpt-5.4-fast' as AppPreferences['selected_codex_model'],
+      }
+      vi.mocked(invoke).mockResolvedValueOnce(prefsWithDeprecatedFastModel)
+
+      const { result } = renderHook(() => usePreferences(), {
+        wrapper: createWrapper(queryClient),
+      })
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+      expect(result.current.data?.selected_codex_model).toBe('gpt-5.4')
+    })
+
+    it.each(['gpt-5.4-pro', 'gpt-5-mini', 'gpt-5-nano'] as const)(
+      'accepts %s without migration',
+      async model => {
+        const { invoke } = await import('@/lib/transport')
+        vi.mocked(invoke).mockResolvedValueOnce({
+          ...defaultPreferences,
+          selected_codex_model: model,
+        })
+
+        const localQueryClient = createTestQueryClient()
+        const { result } = renderHook(() => usePreferences(), {
+          wrapper: createWrapper(localQueryClient),
+        })
+
+        await waitFor(() => expect(result.current.isSuccess).toBe(true))
+        expect(result.current.data?.selected_codex_model).toBe(model)
+      }
+    )
   })
 
   describe('useSavePreferences', () => {

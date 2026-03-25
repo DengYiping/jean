@@ -1093,7 +1093,9 @@ export const effortLevelOptions: {
 
 export type CodexModel =
   | 'gpt-5.4'
-  | 'gpt-5.4-fast'
+  | 'gpt-5.4-pro'
+  | 'gpt-5-mini'
+  | 'gpt-5-nano'
   | 'gpt-5.3'
   | 'gpt-5.3-codex'
   | 'gpt-5.2-codex'
@@ -1103,7 +1105,9 @@ export type CodexModel =
 
 export const codexModelOptions: { value: CodexModel; label: string }[] = [
   { value: 'gpt-5.4', label: 'GPT 5.4' },
-  { value: 'gpt-5.4-fast', label: 'GPT 5.4 - Fast' },
+  { value: 'gpt-5.4-pro', label: 'GPT 5.4 Pro' },
+  { value: 'gpt-5-mini', label: 'GPT 5 Mini' },
+  { value: 'gpt-5-nano', label: 'GPT 5 Nano' },
   { value: 'gpt-5.3', label: 'GPT 5.3' },
   { value: 'gpt-5.3-codex', label: 'GPT 5.3 Codex' },
   { value: 'gpt-5.2-codex', label: 'GPT 5.2 Codex' },
@@ -1113,6 +1117,7 @@ export const codexModelOptions: { value: CodexModel; label: string }[] = [
 ]
 
 const deprecatedCodexFastModelMap = {
+  'gpt-5.4-fast': 'gpt-5.4',
   'gpt-5.3-fast': 'gpt-5.3',
   'gpt-5.3-codex-fast': 'gpt-5.3-codex',
   'gpt-5.2-codex-fast': 'gpt-5.2-codex',

@@ -268,7 +268,7 @@ export const ChatToolbar = memo(function ChatToolbar({
   const canSend = hasInputValue || hasPendingAttachments
 
   return (
-    <div className="@container flex justify-start px-4 py-2 md:px-6">
+    <div className="@container flex justify-center px-4 py-2 md:px-6">
       <div className="inline-flex max-w-full flex-nowrap items-center overflow-hidden whitespace-nowrap rounded-lg bg-muted/50">
         <MobileToolbarMenu
           isDisabled={isSending || hasPendingQuestions}

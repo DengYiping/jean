@@ -1,19 +1,12 @@
 import { useEffect, useRef, useCallback, useMemo } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
 import { useChatStore } from '@/store/chat-store'
 import { useUIStore } from '@/store/ui-store'
-import {
-  useUpdateSessionState,
-  useSessions,
-  chatQueryKeys,
-} from '@/services/chat'
+import { useUpdateSessionState, useSessions } from '@/services/chat'
 import { logger } from '@/lib/logger'
 import type {
   QuestionAnswer,
   PermissionDenial,
   ExecutionMode,
-  Session,
-  WorktreeSessions,
 } from '@/types/chat'
 
 // Simple debounce implementation with flush support
@@ -149,7 +142,6 @@ export function useSessionStatePersistence() {
     effectiveWorktreePath
   )
 
-  const queryClient = useQueryClient()
   const { mutate: updateSessionState } = useUpdateSessionState()
 
   // Track if we're loading from session (to avoid save loop)
@@ -436,72 +428,6 @@ export function useSessionStatePersistence() {
     // (useMainWindowEventListeners). Loading from TanStack cache is redundant
     // and can restore stale data, causing double execution.
 
-    // When opening a session that's in plan-waiting state (Codex/Opencode plan mode),
-    // transition it to review — viewing the session acts as acknowledgment.
-    if (
-      session.waiting_for_input &&
-      session.waiting_for_input_type === 'plan' &&
-      session.backend !== 'claude'
-    ) {
-      updates.waitingForInputSessionIds = {
-        ...(updates.waitingForInputSessionIds ??
-          currentState.waitingForInputSessionIds),
-        [activeSessionId]: false,
-      }
-      updates.reviewingSessions = {
-        ...(updates.reviewingSessions ?? currentState.reviewingSessions),
-        [activeSessionId]: true,
-      }
-      // Update TanStack Query cache immediately to prevent timing gap
-      // where persistedWaitingForInput keeps status as "waiting"
-      queryClient.setQueryData<Session>(
-        chatQueryKeys.session(activeSessionId),
-        old =>
-          old
-            ? {
-                ...old,
-                waiting_for_input: false,
-                is_reviewing: true,
-                waiting_for_input_type: null,
-                pending_plan_message_id: undefined,
-              }
-            : old
-      )
-      if (effectiveWorktreeId) {
-        queryClient.setQueryData<WorktreeSessions>(
-          chatQueryKeys.sessions(effectiveWorktreeId),
-          old => {
-            if (!old) return old
-            return {
-              ...old,
-              sessions: old.sessions.map(s =>
-                s.id === activeSessionId
-                  ? {
-                      ...s,
-                      waiting_for_input: false,
-                      is_reviewing: true,
-                      waiting_for_input_type: null,
-                      pending_plan_message_id: undefined,
-                    }
-                  : s
-              ),
-            }
-          }
-        )
-      }
-      // Persist the transition to disk
-      if (effectiveWorktreeId && effectiveWorktreePath) {
-        updateSessionState({
-          worktreeId: effectiveWorktreeId,
-          worktreePath: effectiveWorktreePath,
-          sessionId: activeSessionId,
-          isReviewing: true,
-          waitingForInput: false,
-          waitingForInputType: null,
-        })
-      }
-    }
-
     // Apply all updates at once
     if (Object.keys(updates).length > 0) {
       useChatStore.setState(updates)
@@ -517,102 +443,6 @@ export function useSessionStatePersistence() {
 
     logger.debug('Session state loaded', { sessionId: activeSessionId })
   }, [activeSessionId, sessionsData, getCurrentSessionState])
-
-  // Auto-transition plan-waiting codex/opencode sessions to review when viewed.
-  // This runs independently of the load effect and is NOT blocked by loadedSessionRef,
-  // handling cases where the session was already loaded when it entered plan-waiting.
-  useEffect(() => {
-    if (
-      !activeSessionId ||
-      !sessionsData ||
-      !effectiveWorktreeId ||
-      !effectiveWorktreePath
-    )
-      return
-
-    const session = sessionsData.sessions.find(s => s.id === activeSessionId)
-    if (!session) return
-
-    // Only for non-claude sessions in plan-waiting state
-    if (
-      !session.waiting_for_input ||
-      session.waiting_for_input_type !== 'plan' ||
-      session.backend === 'claude'
-    )
-      return
-
-    // Guard: if Zustand already shows review + not waiting, skip (prevents loops)
-    const state = useChatStore.getState()
-    if (
-      (state.reviewingSessions[activeSessionId] ?? false) &&
-      !(state.waitingForInputSessionIds[activeSessionId] ?? false)
-    )
-      return
-
-    // Transition Zustand state
-    useChatStore.setState({
-      waitingForInputSessionIds: {
-        ...state.waitingForInputSessionIds,
-        [activeSessionId]: false,
-      },
-      reviewingSessions: {
-        ...state.reviewingSessions,
-        [activeSessionId]: true,
-      },
-    })
-
-    // Update TanStack Query cache immediately to prevent timing gap
-    queryClient.setQueryData<Session>(
-      chatQueryKeys.session(activeSessionId),
-      old =>
-        old
-          ? {
-              ...old,
-              waiting_for_input: false,
-              is_reviewing: true,
-              waiting_for_input_type: null,
-              pending_plan_message_id: undefined,
-            }
-          : old
-    )
-    queryClient.setQueryData<WorktreeSessions>(
-      chatQueryKeys.sessions(effectiveWorktreeId),
-      old => {
-        if (!old) return old
-        return {
-          ...old,
-          sessions: old.sessions.map(s =>
-            s.id === activeSessionId
-              ? {
-                  ...s,
-                  waiting_for_input: false,
-                  is_reviewing: true,
-                  waiting_for_input_type: null,
-                  pending_plan_message_id: undefined,
-                }
-              : s
-          ),
-        }
-      }
-    )
-
-    // Persist to disk
-    updateSessionState({
-      worktreeId: effectiveWorktreeId,
-      worktreePath: effectiveWorktreePath,
-      sessionId: activeSessionId,
-      isReviewing: true,
-      waitingForInput: false,
-      waitingForInputType: null,
-    })
-  }, [
-    activeSessionId,
-    sessionsData,
-    effectiveWorktreeId,
-    effectiveWorktreePath,
-    updateSessionState,
-    queryClient,
-  ])
 
   // Subscribe to Zustand changes and save to session file
   useEffect(() => {

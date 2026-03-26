@@ -24,6 +24,7 @@ import {
   extractSkillPaths,
   extractTextFilePaths,
 } from '../message-content-utils'
+import { applyOptimisticPlanApproval } from './optimistic-plan-approval'
 
 const THINKING_LEVEL_VALUES = new Set<ThinkingLevel>([
   'off',
@@ -107,43 +108,12 @@ export function useClearContextApproval({
       // Step 1: Mark plan approved on original session
       if (messageId) {
         markPlanApproved(worktreeId, worktreePath, sessionId, messageId)
-
-        queryClient.setQueryData<Session>(
-          chatQueryKeys.session(sessionId),
-          old => {
-            if (!old) return old
-            return {
-              ...old,
-              approved_plan_message_ids: [
-                ...(old.approved_plan_message_ids ?? []),
-                messageId,
-              ],
-              messages: old.messages.map(msg =>
-                msg.id === messageId ? { ...msg, plan_approved: true } : msg
-              ),
-            }
-          }
-        )
-
-        queryClient.setQueryData<WorktreeSessions>(
-          chatQueryKeys.sessions(worktreeId),
-          old => {
-            if (!old) return old
-            return {
-              ...old,
-              sessions: old.sessions.map(s =>
-                s.id === sessionId
-                  ? {
-                      ...s,
-                      waiting_for_input: false,
-                      pending_plan_message_id: undefined,
-                      waiting_for_input_type: undefined,
-                    }
-                  : s
-              ),
-            }
-          }
-        )
+        applyOptimisticPlanApproval({
+          queryClient,
+          sessionId,
+          worktreeId,
+          messageId,
+        })
 
         queryClient.invalidateQueries({
           queryKey: chatQueryKeys.sessions(worktreeId),

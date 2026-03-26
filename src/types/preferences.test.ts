@@ -35,24 +35,20 @@ describe('magic prompt backend resolution', () => {
 
 describe('magic prompt model compatibility', () => {
   it('accepts Claude models only for the Claude backend', () => {
-    expect(isMagicPromptModelCompatibleWithBackend('opus', 'claude')).toBe(
-      true
-    )
-    expect(isMagicPromptModelCompatibleWithBackend('opus', 'codex')).toBe(
-      false
-    )
+    expect(isMagicPromptModelCompatibleWithBackend('opus', 'claude')).toBe(true)
+    expect(isMagicPromptModelCompatibleWithBackend('opus', 'codex')).toBe(false)
     expect(isMagicPromptModelCompatibleWithBackend('opus', 'opencode')).toBe(
       false
     )
   })
 
   it('accepts Codex models only for the Codex backend', () => {
-    expect(
-      isMagicPromptModelCompatibleWithBackend('gpt-5.4', 'codex')
-    ).toBe(true)
-    expect(
-      isMagicPromptModelCompatibleWithBackend('gpt-5.4', 'claude')
-    ).toBe(false)
+    expect(isMagicPromptModelCompatibleWithBackend('gpt-5.4', 'codex')).toBe(
+      true
+    )
+    expect(isMagicPromptModelCompatibleWithBackend('gpt-5.4', 'claude')).toBe(
+      false
+    )
   })
 
   it('accepts OpenCode models only for the OpenCode backend', () => {

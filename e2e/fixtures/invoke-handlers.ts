@@ -41,6 +41,11 @@ export const defaultResponses: Record<string, unknown> = {
   list_projects: [project],
   list_worktrees: [worktree1, worktree2],
   add_project: project,
+  create_worktree: createWorktree(project.id, {
+    name: 'new-worktree',
+    branch: 'new-worktree',
+    order: 2,
+  }),
 
   // Sessions
   get_sessions: { sessions: [], active_session_id: null },

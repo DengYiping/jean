@@ -169,6 +169,7 @@ import { usePlanState } from './hooks/usePlanState'
 import { useActiveTodosAndAgents } from './hooks/useActiveTodosAndAgents'
 import { usePendingAttachments } from './hooks/usePendingAttachments'
 import { useQueuedMessages } from './hooks/useQueuedMessages'
+import { applyOptimisticPlanApproval } from './hooks/optimistic-plan-approval'
 import { dedupeInFlightAssistantMessage } from './in-flight-message-dedupe'
 import { shouldShowPermissionApproval } from './permission-approval-utils'
 
@@ -1000,24 +1001,12 @@ export function ChatWindow({
           activeSessionId,
           pendingPlanMessage.id
         )
-        queryClient.setQueryData<Session>(
-          chatQueryKeys.session(activeSessionId),
-          old => {
-            if (!old) return old
-            return {
-              ...old,
-              approved_plan_message_ids: [
-                ...(old.approved_plan_message_ids ?? []),
-                pendingPlanMessage.id,
-              ],
-              messages: old.messages.map(msg =>
-                msg.id === pendingPlanMessage.id
-                  ? { ...msg, plan_approved: true }
-                  : msg
-              ),
-            }
-          }
-        )
+        applyOptimisticPlanApproval({
+          queryClient,
+          sessionId: activeSessionId,
+          worktreeId: activeWorktreeId,
+          messageId: pendingPlanMessage.id,
+        })
       }
 
       const store = useChatStore.getState()
@@ -1169,24 +1158,12 @@ export function ChatWindow({
           activeSessionId,
           pendingPlanMessage.id
         )
-        queryClient.setQueryData<Session>(
-          chatQueryKeys.session(activeSessionId),
-          old => {
-            if (!old) return old
-            return {
-              ...old,
-              approved_plan_message_ids: [
-                ...(old.approved_plan_message_ids ?? []),
-                pendingPlanMessage.id,
-              ],
-              messages: old.messages.map(msg =>
-                msg.id === pendingPlanMessage.id
-                  ? { ...msg, plan_approved: true }
-                  : msg
-              ),
-            }
-          }
-        )
+        applyOptimisticPlanApproval({
+          queryClient,
+          sessionId: activeSessionId,
+          worktreeId: activeWorktreeId,
+          messageId: pendingPlanMessage.id,
+        })
       }
 
       const store = useChatStore.getState()
@@ -1347,24 +1324,12 @@ export function ChatWindow({
           activeSessionId,
           pendingPlanMessage.id
         )
-        queryClient.setQueryData<Session>(
-          chatQueryKeys.session(activeSessionId),
-          old => {
-            if (!old) return old
-            return {
-              ...old,
-              approved_plan_message_ids: [
-                ...(old.approved_plan_message_ids ?? []),
-                pendingPlanMessage.id,
-              ],
-              messages: old.messages.map(msg =>
-                msg.id === pendingPlanMessage.id
-                  ? { ...msg, plan_approved: true }
-                  : msg
-              ),
-            }
-          }
-        )
+        applyOptimisticPlanApproval({
+          queryClient,
+          sessionId: activeSessionId,
+          worktreeId: activeWorktreeId,
+          messageId: pendingPlanMessage.id,
+        })
       }
 
       const store = useChatStore.getState()

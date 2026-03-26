@@ -1,4 +1,6 @@
 import { test, expect } from '../fixtures/tauri-mock'
+import { createWorktree } from '../fixtures/mock-data'
+import { project } from '../fixtures/invoke-handlers'
 
 test.describe('Keyboard shortcuts', () => {
   test('Cmd+K opens command palette', async ({ mockPage }) => {
@@ -49,5 +51,36 @@ test.describe('Keyboard shortcuts', () => {
 
     await mockPage.keyboard.press('Escape')
     await expect(input).not.toBeVisible({ timeout: 2000 })
+  })
+
+  test.use({
+    responseOverrides: {
+      create_worktree: createWorktree(project.id, {
+        name: 'new-worktree',
+        branch: 'new-worktree',
+        order: 2,
+      }),
+    },
+  })
+
+  test('Cmd+N opens quick actions and N creates a worktree', async ({
+    mockPage,
+  }) => {
+    await expect(mockPage.getByText('Test Project')).toBeVisible({
+      timeout: 5000,
+    })
+
+    await mockPage.keyboard.press('Meta+n')
+
+    const quickActionButton = mockPage.getByRole('button', {
+      name: /New Worktree/i,
+    })
+    await expect(quickActionButton).toBeVisible({ timeout: 3000 })
+
+    await mockPage.keyboard.press('n')
+
+    await expect(
+      mockPage.getByRole('dialog', { name: /New Session for Test Project/i })
+    ).not.toBeVisible({ timeout: 3000 })
   })
 })

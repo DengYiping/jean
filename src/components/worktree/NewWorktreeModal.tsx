@@ -75,6 +75,7 @@ export function NewWorktreeModal() {
   const searchInputRef = useRef<HTMLInputElement>(null)
   // Track preview-was-open across the same event cycle (ref survives after state clears)
   const previewOpenRef = useRef(false)
+  const wasOpenRef = useRef(false)
 
   // Hooks
   const selectedProject = useMemo(() => {
@@ -174,21 +175,28 @@ export function NewWorktreeModal() {
       handlers.handleSelectLinearIssueAndInvestigate,
   })
 
-  // Apply store-provided default tab when modal opens
+  // Initialize modal-local state on each open so generic entry points
+  // (for example Cmd+N) always start from the quick actions screen.
   useEffect(() => {
-    if (newWorktreeModalOpen) {
+    const isOpening = newWorktreeModalOpen && !wasOpenRef.current
+
+    if (isOpening) {
       const { newWorktreeModalDefaultTab, setNewWorktreeModalDefaultTab } =
         useUIStore.getState()
-      if (newWorktreeModalDefaultTab) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setActiveTab(
-          visibleTabIds.includes(newWorktreeModalDefaultTab)
-            ? newWorktreeModalDefaultTab
-            : 'quick'
-        )
-        setNewWorktreeModalDefaultTab(null)
-      }
+      const nextTab =
+        newWorktreeModalDefaultTab &&
+        visibleTabIds.includes(newWorktreeModalDefaultTab)
+          ? newWorktreeModalDefaultTab
+          : 'quick'
+
+      setActiveTab(nextTab)
+      setSearchQuery('')
+      setSelectedItemIndex(0)
+      setIncludeClosed(false)
+      setNewWorktreeModalDefaultTab(null)
     }
+
+    wasOpenRef.current = newWorktreeModalOpen
   }, [newWorktreeModalOpen, visibleTabIds])
 
   useEffect(() => {

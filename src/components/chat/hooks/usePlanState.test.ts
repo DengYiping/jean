@@ -108,4 +108,27 @@ describe('usePlanState', () => {
 
     expect(result.current.pendingPlanMessage?.id).toBe('plan-msg-2')
   })
+
+  it('keeps a persisted codex plan pending when the session is reopened', () => {
+    const session = createSession({
+      backend: 'codex',
+      waiting_for_input: true,
+      waiting_for_input_type: 'plan',
+      pending_plan_message_id: 'plan-msg-1',
+      is_reviewing: false,
+      messages: [createPlanMessage()],
+    })
+
+    const { result } = renderHook(() =>
+      usePlanState({
+        session,
+        currentToolCalls: [],
+        isSending: false,
+        activeSessionId: 'session-1',
+        isStreamingPlanApproved: vi.fn(() => false),
+      })
+    )
+
+    expect(result.current.pendingPlanMessage?.id).toBe('plan-msg-1')
+  })
 })

@@ -4,7 +4,6 @@ import { toast } from 'sonner'
 import { logger } from '@/lib/logger'
 import { useChatStore } from '@/store/chat-store'
 import {
-  chatQueryKeys,
   markPlanApproved as markPlanApprovedService,
   persistEnqueue,
 } from '@/services/chat'
@@ -16,11 +15,11 @@ import type {
   QueuedMessage,
   ThinkingLevel,
   EffortLevel,
-  WorktreeSessions,
 } from '@/types/chat'
 import type { Session } from '@/types/chat'
 import type { McpServerInfo } from '@/types/chat'
 import { buildPlanApprovalMessage } from '../plan-approval-message'
+import { applyOptimisticPlanApproval } from './optimistic-plan-approval'
 
 interface UsePlanDialogApprovalParams {
   activeSessionId: string | null | undefined
@@ -79,44 +78,12 @@ export function usePlanDialogApproval({
 
       // Optimistic updates: apply immediately so the approving client's UI updates
       if (pendingPlanMessage) {
-        queryClient.setQueryData<Session>(
-          chatQueryKeys.session(activeSessionId),
-          old => {
-            if (!old) return old
-            return {
-              ...old,
-              approved_plan_message_ids: [
-                ...(old.approved_plan_message_ids ?? []),
-                pendingPlanMessage.id,
-              ],
-              messages: old.messages.map(msg =>
-                msg.id === pendingPlanMessage.id
-                  ? { ...msg, plan_approved: true }
-                  : msg
-              ),
-            }
-          }
-        )
-
-        queryClient.setQueryData<WorktreeSessions>(
-          chatQueryKeys.sessions(activeWorktreeId),
-          old => {
-            if (!old) return old
-            return {
-              ...old,
-              sessions: old.sessions.map(s =>
-                s.id === activeSessionId
-                  ? {
-                      ...s,
-                      waiting_for_input: false,
-                      pending_plan_message_id: undefined,
-                      waiting_for_input_type: undefined,
-                    }
-                  : s
-              ),
-            }
-          }
-        )
+        applyOptimisticPlanApproval({
+          queryClient,
+          sessionId: activeSessionId,
+          worktreeId: activeWorktreeId,
+          messageId: pendingPlanMessage.id,
+        })
       }
 
       // Clear Zustand waiting state so the queue processor can process the message

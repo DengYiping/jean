@@ -3,15 +3,11 @@ import { useQueryClient } from '@tanstack/react-query'
 import { logger } from '@/lib/logger'
 import { useChatStore } from '@/store/chat-store'
 import { usePreferences } from '@/services/preferences'
-import {
-  useSendMessage,
-  markPlanApproved,
-  chatQueryKeys,
-} from '@/services/chat'
+import { useSendMessage, markPlanApproved } from '@/services/chat'
 import { invoke } from '@/lib/transport'
-import type { Session, WorktreeSessions } from '@/types/chat'
 import type { SessionCardData } from '../session-card-utils'
 import { buildPlanApprovalMessage } from '../plan-approval-message'
+import { applyOptimisticPlanApproval } from './optimistic-plan-approval'
 
 interface UsePlanApprovalParams {
   worktreeId: string
@@ -51,42 +47,12 @@ export function usePlanApproval({
 
       // Optimistic updates: apply immediately so the approving client's UI updates
       if (messageId) {
-        queryClient.setQueryData<Session>(
-          chatQueryKeys.session(sessionId),
-          old => {
-            if (!old) return old
-            return {
-              ...old,
-              approved_plan_message_ids: [
-                ...(old.approved_plan_message_ids ?? []),
-                messageId,
-              ],
-              messages: old.messages.map(msg =>
-                msg.id === messageId ? { ...msg, plan_approved: true } : msg
-              ),
-            }
-          }
-        )
-
-        queryClient.setQueryData<WorktreeSessions>(
-          chatQueryKeys.sessions(worktreeId),
-          old => {
-            if (!old) return old
-            return {
-              ...old,
-              sessions: old.sessions.map(s =>
-                s.id === sessionId
-                  ? {
-                      ...s,
-                      waiting_for_input: false,
-                      pending_plan_message_id: undefined,
-                      waiting_for_input_type: undefined,
-                    }
-                  : s
-              ),
-            }
-          }
-        )
+        applyOptimisticPlanApproval({
+          queryClient,
+          sessionId,
+          worktreeId,
+          messageId,
+        })
       }
 
       setExecutionMode(sessionId, 'build')
@@ -236,42 +202,12 @@ export function usePlanApproval({
 
       // Optimistic updates: apply immediately so the approving client's UI updates
       if (messageId) {
-        queryClient.setQueryData<Session>(
-          chatQueryKeys.session(sessionId),
-          old => {
-            if (!old) return old
-            return {
-              ...old,
-              approved_plan_message_ids: [
-                ...(old.approved_plan_message_ids ?? []),
-                messageId,
-              ],
-              messages: old.messages.map(msg =>
-                msg.id === messageId ? { ...msg, plan_approved: true } : msg
-              ),
-            }
-          }
-        )
-
-        queryClient.setQueryData<WorktreeSessions>(
-          chatQueryKeys.sessions(worktreeId),
-          old => {
-            if (!old) return old
-            return {
-              ...old,
-              sessions: old.sessions.map(s =>
-                s.id === sessionId
-                  ? {
-                      ...s,
-                      waiting_for_input: false,
-                      pending_plan_message_id: undefined,
-                      waiting_for_input_type: undefined,
-                    }
-                  : s
-              ),
-            }
-          }
-        )
+        applyOptimisticPlanApproval({
+          queryClient,
+          sessionId,
+          worktreeId,
+          messageId,
+        })
       }
 
       setExecutionMode(sessionId, 'yolo')

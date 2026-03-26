@@ -900,6 +900,7 @@ export interface AppPreferences {
   git_cli_path?: string | null // Optional git executable override (null = use git from PATH)
   git_poll_interval: number // Git status polling interval in seconds (10-600)
   remote_poll_interval: number // Remote API polling interval in seconds (30-600)
+  github_dashboard_fetch_interval: number // GitHub Dashboard refresh interval in seconds (30-600)
   keybindings: KeybindingsMap // User-configurable keyboard shortcuts
   archive_retention_days: number // Days to keep archived items (0 = never delete)
   syntax_theme_dark: SyntaxTheme // Syntax highlighting theme for dark mode
@@ -1505,6 +1506,7 @@ export const defaultPreferences: AppPreferences = {
   git_cli_path: null,
   git_poll_interval: 60,
   remote_poll_interval: 60,
+  github_dashboard_fetch_interval: 60,
   keybindings: DEFAULT_KEYBINDINGS,
   archive_retention_days: 7,
   syntax_theme_dark: 'vitesse-black',

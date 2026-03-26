@@ -8,6 +8,7 @@ import type {
   QuestionAnswer,
   ThinkingLevel,
 } from '@/types/chat'
+import { isAskUserQuestion } from '@/types/chat'
 import { AskUserQuestion } from './AskUserQuestion'
 import { ToolCallInline, TaskCallInline, StackedGroup } from './ToolCallInline'
 import { buildTimeline, findPlanFilePath } from './tool-call-utils'
@@ -116,6 +117,10 @@ export const StreamingMessage = memo(function StreamingMessage({
   onStreamingWorktreeYoloApproval,
   hideApproveButtons,
 }: StreamingMessageProps) {
+  const hasUnresolvedQuestions = toolCalls.some(
+    tc => isAskUserQuestion(tc) && !isQuestionAnswered(sessionId, tc.id)
+  )
+
   return (
     <div className="text-foreground/90">
       {/* Render streaming content blocks inline if available */}
@@ -308,6 +313,9 @@ export const StreamingMessage = memo(function StreamingMessage({
                                 <ExitPlanModeButton
                                   toolCalls={toolCalls}
                                   isApproved={isApproved}
+                                  hasUnresolvedQuestions={
+                                    hasUnresolvedQuestions
+                                  }
                                   onPlanApproval={onStreamingPlanApproval}
                                   onCustomBuildPrompt={
                                     onStreamingCustomBuildPrompt

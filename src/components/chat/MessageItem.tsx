@@ -10,6 +10,7 @@ import type {
   QuestionAnswer,
   ReviewFinding,
 } from '@/types/chat'
+import { isAskUserQuestion } from '@/types/chat'
 import { AskUserQuestion } from './AskUserQuestion'
 import { ToolCallInline, TaskCallInline, StackedGroup } from './ToolCallInline'
 import { buildTimeline, findPlanFilePath } from './tool-call-utils'
@@ -53,8 +54,8 @@ interface MessageItemProps {
   messageIndex: number
   /** Total number of messages (to determine if this is the last message) */
   totalMessages: number
-  /** Index of the last plan message (for approve button logic) */
-  lastPlanMessageIndex: number
+  /** Message ID of the currently pending plan awaiting approval */
+  pendingPlanMessageId?: string | null
   /** Pre-computed: does a user message follow this one? */
   hasFollowUpMessage: boolean
   /** Session ID for this message */
@@ -136,7 +137,7 @@ export const MessageItem = memo(function MessageItem({
   message,
   messageIndex,
   totalMessages,
-  lastPlanMessageIndex,
+  pendingPlanMessageId,
   hasFollowUpMessage,
   sessionId,
   worktreePath,
@@ -169,11 +170,16 @@ export const MessageItem = memo(function MessageItem({
   hideApproveButtons,
   durationMs,
 }: MessageItemProps) {
-  // Only show Approve button for the last message with ExitPlanMode
-  const isLatestPlanRequest = messageIndex === lastPlanMessageIndex
+  // Only show Approve for the session's actively pending plan, never stale history.
+  const isLatestPlanRequest = pendingPlanMessageId === message.id
   const isPlanApproved =
     (message.plan_approved ?? false) ||
     approvedPlanMessageIds?.has(message.id) === true
+  const hasUnresolvedQuestions =
+    message.tool_calls?.some(
+      tc =>
+        isAskUserQuestion(tc) && !isQuestionAnswered(message.session_id, tc.id)
+    ) ?? false
 
   // Extract image, text file, file mention, and skill paths and clean content for user messages
   const imagePaths =
@@ -507,6 +513,7 @@ export const MessageItem = memo(function MessageItem({
             isApproved={isPlanApproved}
             isLatestPlanRequest={isLatestPlanRequest}
             hasFollowUpMessage={hasFollowUpMessage}
+            hasUnresolvedQuestions={hasUnresolvedQuestions}
             onPlanApproval={handlePlanApproval}
             onCustomBuildPrompt={handleCustomBuildPrompt}
             onPlanApprovalYolo={handlePlanApprovalYolo}
@@ -577,6 +584,7 @@ export const MessageItem = memo(function MessageItem({
                 isApproved={isPlanApproved}
                 isLatestPlanRequest={isLatestPlanRequest}
                 hasFollowUpMessage={hasFollowUpMessage}
+                hasUnresolvedQuestions={hasUnresolvedQuestions}
                 onPlanApproval={handlePlanApproval}
                 onCustomBuildPrompt={handleCustomBuildPrompt}
                 onPlanApprovalYolo={handlePlanApprovalYolo}
@@ -589,6 +597,7 @@ export const MessageItem = memo(function MessageItem({
                 shortcutYolo={approveShortcutYolo}
                 shortcutClearContext={approveShortcutClearContext}
                 shortcutClearContextBuild={approveShortcutClearContextBuild}
+                hideApproveButtons={hideApproveButtons}
               />
             )}
         </>

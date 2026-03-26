@@ -43,8 +43,8 @@ interface VirtualizedMessageListProps {
   scrollContainerRef: React.RefObject<HTMLDivElement | null>
   /** Total number of messages */
   totalMessages: number
-  /** Index of the last message with ExitPlanMode tool */
-  lastPlanMessageIndex: number
+  /** Message ID of the currently pending plan awaiting approval */
+  pendingPlanMessageId?: string | null
   /** Current session ID */
   sessionId: string
   /** Worktree path for resolving file mentions */
@@ -130,7 +130,7 @@ export const VirtualizedMessageList = memo(
         messages,
         scrollContainerRef,
         totalMessages,
-        lastPlanMessageIndex,
+        pendingPlanMessageId,
         sessionId,
         worktreePath,
         approveShortcut,
@@ -345,7 +345,7 @@ export const VirtualizedMessageList = memo(
                   message={message}
                   messageIndex={globalIndex}
                   totalMessages={totalMessages}
-                  lastPlanMessageIndex={lastPlanMessageIndex}
+                  pendingPlanMessageId={pendingPlanMessageId}
                   hasFollowUpMessage={hasFollowUpMessage}
                   sessionId={sessionId}
                   worktreePath={worktreePath}
@@ -356,7 +356,7 @@ export const VirtualizedMessageList = memo(
                     approveShortcutClearContextBuild
                   }
                   approveButtonRef={
-                    globalIndex === lastPlanMessageIndex
+                    pendingPlanMessageId === message.id
                       ? approveButtonRef
                       : undefined
                   }

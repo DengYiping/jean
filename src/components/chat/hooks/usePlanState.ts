@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { isExitPlanMode } from '@/types/chat'
+import { isAskUserQuestion, isExitPlanMode } from '@/types/chat'
 import type { ToolCall, Session } from '@/types/chat'
 import { findPlanFilePath, findPlanContent } from '../tool-call-utils'
 
@@ -9,6 +9,7 @@ interface UsePlanStateParams {
   isSending: boolean
   activeSessionId: string | null | undefined
   isStreamingPlanApproved: (sessionId: string) => boolean
+  isQuestionAnswered: (sessionId: string, toolCallId: string) => boolean
 }
 
 /**
@@ -20,6 +21,7 @@ export function usePlanState({
   isSending,
   activeSessionId,
   isStreamingPlanApproved,
+  isQuestionAnswered,
 }: UsePlanStateParams) {
   // Returns the message that has an unapproved plan awaiting action, if any
   const pendingPlanMessage = useMemo(() => {
@@ -27,74 +29,104 @@ export function usePlanState({
     const approvedPlanMessageIds = new Set(
       session?.approved_plan_message_ids ?? []
     )
-    const isWaitingForPlan =
-      session?.waiting_for_input === true &&
-      session.waiting_for_input_type === 'plan'
 
-    if (!isWaitingForPlan) {
-      return null
+    const hasResolvedQuestions = (toolCalls: ToolCall[] | undefined) => {
+      if (!activeSessionId || !toolCalls) return false
+      const questionCalls = toolCalls.filter(isAskUserQuestion)
+      return (
+        questionCalls.length > 0 &&
+        questionCalls.every(tc => isQuestionAnswered(activeSessionId, tc.id))
+      )
     }
 
-    const pendingPlanMessageId = session?.pending_plan_message_id ?? null
-    if (pendingPlanMessageId) {
-      const pendingMessage = messages.find(
-        msg => msg?.id === pendingPlanMessageId
-      )
+    const isPendingPlanCandidate = (
+      message: Session['messages'][number] | undefined,
+      allowRecoveryWithoutWaitingType = false
+    ) => {
       if (
-        pendingMessage?.role !== 'assistant' ||
-        !pendingMessage.tool_calls?.some(tc => isExitPlanMode(tc))
+        message?.role !== 'assistant' ||
+        !message.tool_calls?.some(tc => isExitPlanMode(tc))
       ) {
-        return null
+        return false
       }
 
       const isApproved =
-        (pendingMessage.plan_approved ?? false) ||
-        approvedPlanMessageIds.has(pendingMessage.id)
+        (message.plan_approved ?? false) ||
+        approvedPlanMessageIds.has(message.id)
       if (isApproved) {
-        return null
+        return false
       }
 
-      const pendingIndex = messages.findIndex(
+      const hasQuestionCalls = message.tool_calls.some(isAskUserQuestion)
+      const canShowPendingPlan =
+        session?.waiting_for_input_type === 'plan' ||
+        hasResolvedQuestions(message.tool_calls) ||
+        (allowRecoveryWithoutWaitingType && !hasQuestionCalls)
+      return canShowPendingPlan
+    }
+
+    const pendingPlanMessageId = session?.pending_plan_message_id ?? null
+    let hasExplicitPendingPlanId = false
+    if (session?.waiting_for_input === true && pendingPlanMessageId) {
+      const pendingMessage = messages.find(
         msg => msg?.id === pendingPlanMessageId
       )
-      for (let i = pendingIndex + 1; i < messages.length; i++) {
-        if (messages[i]?.role === 'user') {
-          return null
+      if (isPendingPlanCandidate(pendingMessage)) {
+        const pendingIndex = messages.findIndex(
+          msg => msg?.id === pendingPlanMessageId
+        )
+        if (pendingIndex === messages.length - 1) {
+          return pendingMessage
         }
       }
-
-      return pendingMessage
+      hasExplicitPendingPlanId = true
     }
 
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const m = messages[i]
-      if (
-        m &&
-        m.role === 'assistant' &&
-        m.tool_calls?.some(tc => isExitPlanMode(tc))
-      ) {
-        let hasFollowUp = false
-        for (let j = i + 1; j < messages.length; j++) {
-          if (messages[j]?.role === 'user') {
-            hasFollowUp = true
-            break
+    if (session?.waiting_for_input === true) {
+      for (let i = messages.length - 1; i >= 0; i--) {
+        const m = messages[i]
+        if (m && m.role === 'assistant' && m.tool_calls?.some(isExitPlanMode)) {
+          if (i !== messages.length - 1) {
+            return null
           }
+          return isPendingPlanCandidate(m) ? m : null
         }
-        const isApproved =
-          (m.plan_approved ?? false) || approvedPlanMessageIds.has(m.id)
-        if (!isApproved && !hasFollowUp) {
-          return m
-        }
-        break
       }
+      if (hasExplicitPendingPlanId) {
+        return null
+      }
+      return null
     }
-    return null
+
+    const canRecoverCompletedPlanWithoutWaiting =
+      session?.is_reviewing !== true &&
+      session?.last_run_status === 'completed' &&
+      (session?.last_run_execution_mode === 'plan' ||
+        (session?.last_run_execution_mode == null &&
+          session?.selected_execution_mode === 'plan'))
+
+    if (!canRecoverCompletedPlanWithoutWaiting) {
+      return null
+    }
+
+    const lastMessage = messages[messages.length - 1]
+    if (!isPendingPlanCandidate(lastMessage, true)) {
+      return null
+    }
+
+    return lastMessage
   }, [
     session?.messages,
     session?.approved_plan_message_ids,
     session?.waiting_for_input,
     session?.waiting_for_input_type,
     session?.pending_plan_message_id,
+    session?.is_reviewing,
+    session?.last_run_status,
+    session?.last_run_execution_mode,
+    session?.selected_execution_mode,
+    activeSessionId,
+    isQuestionAnswered,
   ])
 
   // Check if there's a streaming plan awaiting approval

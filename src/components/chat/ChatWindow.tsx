@@ -75,7 +75,7 @@ import type {
   PermissionDenial,
   PendingFile,
 } from '@/types/chat'
-import { isAskUserQuestion, isExitPlanMode } from '@/types/chat'
+import { isAskUserQuestion } from '@/types/chat'
 import { getSkillName } from '@/lib/path-utils'
 import { cn } from '@/lib/utils'
 import { PermissionApproval } from './PermissionApproval'
@@ -888,6 +888,7 @@ export function ChatWindow({
     isSending,
     activeSessionId,
     isStreamingPlanApproved,
+    isQuestionAnswered,
   })
   const approvedPlanMessageIds = useMemo(
     () => new Set(session?.approved_plan_message_ids ?? []),
@@ -2623,33 +2624,6 @@ export function ChatWindow({
     selectedBackend,
   })
 
-  // Pre-calculate last plan message index for approve button logic
-  const lastPlanMessageIndex = useMemo(() => {
-    const messages = dedupeInFlightAssistantMessage(session?.messages ?? [], {
-      isSending,
-      streamingContent,
-      streamingContentBlocks: currentStreamingContentBlocks,
-      streamingToolCalls: currentToolCalls,
-    })
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const m = messages[i]
-      if (
-        m &&
-        m.role === 'assistant' &&
-        m.tool_calls?.some(tc => isExitPlanMode(tc))
-      ) {
-        return i
-      }
-    }
-    return -1
-  }, [
-    session?.messages,
-    isSending,
-    streamingContent,
-    currentStreamingContentBlocks,
-    currentToolCalls,
-  ])
-
   // Messages for rendering - memoize to ensure stable reference
   const messages = useMemo(
     () =>
@@ -2788,7 +2762,9 @@ export function ChatWindow({
                               messages={messages}
                               scrollContainerRef={scrollViewportRef}
                               totalMessages={messages.length}
-                              lastPlanMessageIndex={lastPlanMessageIndex}
+                              pendingPlanMessageId={
+                                pendingPlanMessage?.id ?? null
+                              }
                               sessionId={deferredSessionId ?? ''}
                               worktreePath={activeWorktreePath ?? ''}
                               approveShortcut={approveShortcut}

@@ -432,6 +432,13 @@ export const GeneralPane: React.FC = () => {
     }
   }
 
+  const handleGitHubDashboardFetchIntervalChange = (value: string) => {
+    const seconds = parseInt(value, 10)
+    if (preferences && !isNaN(seconds)) {
+      patchPreferences.mutate({ github_dashboard_fetch_interval: seconds })
+    }
+  }
+
   const handleArchiveRetentionChange = (value: string) => {
     const days = parseInt(value, 10)
     if (preferences && !isNaN(days)) {
@@ -1677,6 +1684,27 @@ export const GeneralPane: React.FC = () => {
             <Select
               value={String(preferences?.remote_poll_interval ?? 60)}
               onValueChange={handleRemotePollIntervalChange}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {remotePollIntervalOptions.map(option => (
+                  <SelectItem key={option.value} value={String(option.value)}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </InlineField>
+
+          <InlineField
+            label="GitHub dashboard refresh interval"
+            description="Refresh GitHub Dashboard issues, PRs, and alerts"
+          >
+            <Select
+              value={String(preferences?.github_dashboard_fetch_interval ?? 60)}
+              onValueChange={handleGitHubDashboardFetchIntervalChange}
             >
               <SelectTrigger>
                 <SelectValue />

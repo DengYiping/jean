@@ -10,7 +10,7 @@ import { MessageItem } from './MessageItem'
 interface MessageListProps {
   messages: ChatMessage[]
   totalMessages: number
-  lastPlanMessageIndex: number
+  pendingPlanMessageId?: string | null
   sessionId: string
   worktreePath: string
   approveShortcut: string
@@ -58,7 +58,7 @@ interface MessageListProps {
 export const MessageList = memo(function MessageList({
   messages,
   totalMessages,
-  lastPlanMessageIndex,
+  pendingPlanMessageId,
   sessionId,
   worktreePath,
   approveShortcut,
@@ -133,7 +133,7 @@ export const MessageList = memo(function MessageList({
               message={message}
               messageIndex={index}
               totalMessages={totalMessages}
-              lastPlanMessageIndex={lastPlanMessageIndex}
+              pendingPlanMessageId={pendingPlanMessageId}
               hasFollowUpMessage={hasFollowUpMessage}
               sessionId={sessionId}
               worktreePath={worktreePath}
@@ -144,7 +144,9 @@ export const MessageList = memo(function MessageList({
                 approveShortcutClearContextBuild
               }
               approveButtonRef={
-                index === lastPlanMessageIndex ? approveButtonRef : undefined
+                pendingPlanMessageId === message.id
+                  ? approveButtonRef
+                  : undefined
               }
               approvedPlanMessageIds={approvedPlanMessageIds}
               isSending={isSending}

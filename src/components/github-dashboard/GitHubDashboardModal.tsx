@@ -639,6 +639,8 @@ export function GitHubDashboardModal() {
   )
   const { data: preferences } = usePreferences()
   const showIssueSources = preferences?.show_create_page_issue_sources ?? true
+  const dashboardFetchIntervalMs =
+    (preferences?.github_dashboard_fetch_interval ?? 60) * 1000
   const [activeTab, setActiveTab] = useState<DashboardTab>(
     showIssueSources ? 'issues' : 'prs'
   )
@@ -709,9 +711,11 @@ export function GitHubDashboardModal() {
           return { issues: [], totalCount: 0 }
         }
       },
-      enabled: issuePrProjects.length > 0,
-      staleTime: 5 * 60 * 1000,
+      enabled: githubDashboardOpen && issuePrProjects.length > 0,
+      staleTime: 0,
       gcTime: 10 * 60 * 1000,
+      refetchInterval: githubDashboardOpen ? dashboardFetchIntervalMs : false,
+      refetchIntervalInBackground: false,
       retry: 1,
     })),
   })
@@ -732,9 +736,11 @@ export function GitHubDashboardModal() {
           return []
         }
       },
-      enabled: issuePrProjects.length > 0,
-      staleTime: 5 * 60 * 1000,
+      enabled: githubDashboardOpen && issuePrProjects.length > 0,
+      staleTime: 0,
       gcTime: 10 * 60 * 1000,
+      refetchInterval: githubDashboardOpen ? dashboardFetchIntervalMs : false,
+      refetchIntervalInBackground: false,
       retry: 1,
     })),
   })
@@ -755,9 +761,11 @@ export function GitHubDashboardModal() {
           return []
         }
       },
-      enabled: projects.length > 0,
-      staleTime: 5 * 60 * 1000,
+      enabled: githubDashboardOpen && projects.length > 0,
+      staleTime: 0,
       gcTime: 10 * 60 * 1000,
+      refetchInterval: githubDashboardOpen ? dashboardFetchIntervalMs : false,
+      refetchIntervalInBackground: false,
       retry: 1,
     })),
   })
@@ -781,9 +789,11 @@ export function GitHubDashboardModal() {
           return []
         }
       },
-      enabled: projects.length > 0,
-      staleTime: 5 * 60 * 1000,
+      enabled: githubDashboardOpen && projects.length > 0,
+      staleTime: 0,
       gcTime: 10 * 60 * 1000,
+      refetchInterval: githubDashboardOpen ? dashboardFetchIntervalMs : false,
+      refetchIntervalInBackground: false,
       retry: 1,
     })),
   })

@@ -20,6 +20,7 @@ interface ExitPlanModeButtonProps {
   isApproved: boolean
   isLatestPlanRequest?: boolean
   hasFollowUpMessage?: boolean
+  hasUnresolvedQuestions?: boolean
   onPlanApproval?: () => void
   onCustomBuildPrompt?: () => void
   onPlanApprovalYolo?: () => void
@@ -40,6 +41,7 @@ export function ExitPlanModeButton({
   isApproved,
   isLatestPlanRequest = true,
   hasFollowUpMessage = false,
+  hasUnresolvedQuestions,
   onPlanApproval,
   onCustomBuildPrompt,
   onPlanApprovalYolo,
@@ -63,7 +65,8 @@ export function ExitPlanModeButton({
   if (!tool) return null
 
   const hasQuestions = toolCalls.some(isAskUserQuestion)
-  if (hasQuestions && !isApproved) return null
+  const hasBlockingQuestions = hasUnresolvedQuestions ?? hasQuestions
+  if (hasBlockingQuestions && !isApproved) return null
 
   if (
     isApproved ||

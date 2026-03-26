@@ -111,6 +111,8 @@ pub struct AppPreferences {
     pub git_poll_interval: u64, // Git status polling interval in seconds (10-600)
     #[serde(default = "default_remote_poll_interval")]
     pub remote_poll_interval: u64, // Remote API polling interval in seconds (30-600)
+    #[serde(default = "default_github_dashboard_fetch_interval")]
+    pub github_dashboard_fetch_interval: u64, // GitHub Dashboard refresh interval in seconds (30-600)
     #[serde(default = "default_keybindings")]
     pub keybindings: std::collections::HashMap<String, String>, // User-configurable keyboard shortcuts
     #[serde(default = "default_archive_retention_days")]
@@ -337,6 +339,10 @@ fn default_git_poll_interval() -> u64 {
 
 fn default_remote_poll_interval() -> u64 {
     60 // 1 minute default for remote API calls (PR status, etc.)
+}
+
+fn default_github_dashboard_fetch_interval() -> u64 {
+    60 // 1 minute default for GitHub Dashboard refreshes
 }
 
 fn default_keybindings() -> std::collections::HashMap<String, String> {
@@ -1099,6 +1105,7 @@ impl Default for AppPreferences {
             git_cli_path: None,
             git_poll_interval: default_git_poll_interval(),
             remote_poll_interval: default_remote_poll_interval(),
+            github_dashboard_fetch_interval: default_github_dashboard_fetch_interval(),
             keybindings: default_keybindings(),
             archive_retention_days: default_archive_retention_days(),
             syntax_theme_dark: default_syntax_theme_dark(),

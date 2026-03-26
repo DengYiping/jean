@@ -408,7 +408,7 @@ describe('preferences service', () => {
       expect(result.current.data?.selected_codex_model).toBe('gpt-5.4')
     })
 
-    it.each(['gpt-5.4-pro', 'gpt-5-mini', 'gpt-5-nano'] as const)(
+    it.each(['gpt-5.4-pro', 'gpt-5.4-mini', 'gpt-5.4-nano'] as const)(
       'accepts %s without migration',
       async model => {
         const { invoke } = await import('@/lib/transport')

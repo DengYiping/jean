@@ -648,6 +648,21 @@ export function SessionChatModal({
     })
   }, [setDiffRequest, worktreePath, defaultBranch])
 
+  const handleGitDiffAddToPrompt = useCallback(
+    (reference: string) => {
+      if (!currentSessionId) return
+      const store = useChatStore.getState()
+      const currentInput = store.inputDrafts[currentSessionId] ?? ''
+      const separator = currentInput.length > 0 ? '\n' : ''
+      store.setInputDraft(
+        currentSessionId,
+        `${currentInput}${separator}${reference}`
+      )
+      window.dispatchEvent(new CustomEvent('focus-chat-input'))
+    },
+    [currentSessionId]
+  )
+
   const handleRun = useCallback(() => {
     if (!runScript) {
       notify('No run script configured in jean.json', undefined, {
@@ -1323,6 +1338,7 @@ export function SessionChatModal({
             <GitDiffModal
               diffRequest={diffRequest}
               onClose={() => setDiffRequest(null)}
+              onAddToPrompt={handleGitDiffAddToPrompt}
               uncommittedStats={{
                 added: uncommittedAdded,
                 removed: uncommittedRemoved,

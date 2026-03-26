@@ -55,12 +55,14 @@ import {
   CODEX_DEFAULT_MAGIC_PROMPT_MODELS,
   OPENCODE_DEFAULT_MAGIC_PROMPT_MODELS,
   codexModelOptions,
-  isCodexModel,
+  isMagicPromptModelCompatibleWithBackend,
+  resolveMagicPromptBackend,
   type MagicPrompts,
   type MagicPromptModels,
   type MagicPromptProviders,
   type MagicPromptBackends,
   type MagicPromptModel,
+  type CliBackend,
 } from '@/types/preferences'
 import { cn } from '@/lib/utils'
 
@@ -459,6 +461,24 @@ const CLAUDE_MODEL_OPTIONS: { value: MagicPromptModel; label: string }[] = [
 const CODEX_MODEL_OPTIONS: { value: MagicPromptModel; label: string }[] =
   codexModelOptions.map(o => ({ value: o.value, label: o.label }))
 
+function getDefaultModelForBackend(
+  backend: CliBackend,
+  config: PromptConfig,
+  opencodeModelOptions: { value: MagicPromptModel; label: string }[]
+): MagicPromptModel | undefined {
+  if (!config.modelKey) return undefined
+  if (backend === 'claude') {
+    return config.defaultModel ?? 'haiku'
+  }
+  if (backend === 'codex') {
+    return CODEX_DEFAULT_MAGIC_PROMPT_MODELS[config.modelKey]
+  }
+  return (
+    OPENCODE_DEFAULT_MAGIC_PROMPT_MODELS[config.modelKey] ??
+    opencodeModelOptions[0]?.value
+  )
+}
+
 export const MagicPromptsPane: React.FC = () => {
   const { data: preferences } = usePreferences()
   const patchPreferences = usePatchPreferences()
@@ -512,15 +532,25 @@ export const MagicPromptsPane: React.FC = () => {
   const currentBackend = selectedConfig.backendKey
     ? (currentBackends[selectedConfig.backendKey] ?? null)
     : undefined
-  // Resolve effective backend for model filtering: per-operation override > global default_backend
-  const effectiveBackend =
-    currentBackend ?? preferences?.default_backend ?? 'claude'
-  const currentModelIsCodex = currentModel ? isCodexModel(currentModel) : false
-  const currentModelIsOpenCode = currentModel
-    ? currentModel.startsWith('opencode/')
-    : false
+  const effectiveBackend = selectedConfig.backendKey
+    ? resolveMagicPromptBackend(
+        currentBackends,
+        selectedConfig.backendKey,
+        preferences?.default_backend
+      )
+    : undefined
+  const resolvedModel =
+    currentModel && effectiveBackend
+      ? isMagicPromptModelCompatibleWithBackend(currentModel, effectiveBackend)
+        ? currentModel
+        : getDefaultModelForBackend(
+            effectiveBackend,
+            selectedConfig,
+            opencodeModelOptions
+          )
+      : currentModel
   const filteredClaudeOptions = useMemo(() => {
-    if (!currentProvider || currentModelIsCodex || currentModelIsOpenCode) {
+    if (!currentProvider || effectiveBackend !== 'claude') {
       return CLAUDE_MODEL_OPTIONS
     }
     const profile = profiles.find(p => p.name === currentProvider)
@@ -547,7 +577,7 @@ export const MagicPromptsPane: React.FC = () => {
     } catch {
       return CLAUDE_MODEL_OPTIONS
     }
-  }, [currentProvider, currentModelIsCodex, currentModelIsOpenCode, profiles])
+  }, [currentProvider, effectiveBackend, profiles])
 
   const isModified = currentPrompts[selectedKey] !== null
 
@@ -668,21 +698,16 @@ export const MagicPromptsPane: React.FC = () => {
   const handleBackendChange = useCallback(
     (backend: string) => {
       if (!preferences || !selectedConfig.backendKey) return
-      // Pick a sensible default model for the new backend
-      let defaultModel: MagicPromptModel | undefined
-      if (selectedConfig.modelKey) {
-        if (backend === 'claude') {
-          defaultModel = selectedConfig.defaultModel ?? 'haiku'
-        } else if (backend === 'codex') {
-          defaultModel = CODEX_MODEL_OPTIONS[0]?.value
-        } else if (backend === 'opencode') {
-          defaultModel = opencodeModelOptions[0]?.value
-        }
-      }
+      const nextBackend = backend as CliBackend
+      const defaultModel = getDefaultModelForBackend(
+        nextBackend,
+        selectedConfig,
+        opencodeModelOptions
+      )
       patchPreferences.mutate({
         magic_prompt_backends: {
           ...currentBackends,
-          [selectedConfig.backendKey]: backend,
+          [selectedConfig.backendKey]: nextBackend,
         },
         ...(defaultModel && selectedConfig.modelKey
           ? {
@@ -864,10 +889,7 @@ export const MagicPromptsPane: React.FC = () => {
             )}
             {currentProvider !== undefined &&
               profiles.length > 0 &&
-              !currentModelIsCodex &&
-              !currentModelIsOpenCode &&
-              effectiveBackend !== 'opencode' &&
-              effectiveBackend !== 'codex' && (
+              effectiveBackend === 'claude' && (
                 <>
                   <span className="text-xs text-muted-foreground">
                     Provider
@@ -890,7 +912,7 @@ export const MagicPromptsPane: React.FC = () => {
                   </Select>
                 </>
               )}
-            {currentModel && (
+            {resolvedModel && (
               <>
                 <span className="text-xs text-muted-foreground">Model</span>
                 <Popover
@@ -912,11 +934,11 @@ export const MagicPromptsPane: React.FC = () => {
                             ...opencodeModelOptions,
                           ]
                           return (
-                            allOptions.find(o => o.value === currentModel)
+                            allOptions.find(o => o.value === resolvedModel)
                               ?.label ??
-                            (currentModel.startsWith('opencode/')
-                              ? formatOpenCodeLabel(currentModel)
-                              : currentModel)
+                            (resolvedModel.startsWith('opencode/')
+                              ? formatOpenCodeLabel(resolvedModel)
+                              : resolvedModel)
                           )
                         })()}
                       </span>
@@ -949,7 +971,7 @@ export const MagicPromptsPane: React.FC = () => {
                                 <Check
                                   className={cn(
                                     'ml-auto h-3 w-3',
-                                    currentModel === opt.value
+                                    resolvedModel === opt.value
                                       ? 'opacity-100'
                                       : 'opacity-0'
                                   )}
@@ -973,7 +995,7 @@ export const MagicPromptsPane: React.FC = () => {
                                 <Check
                                   className={cn(
                                     'ml-auto h-3 w-3',
-                                    currentModel === opt.value
+                                    resolvedModel === opt.value
                                       ? 'opacity-100'
                                       : 'opacity-0'
                                   )}
@@ -997,7 +1019,7 @@ export const MagicPromptsPane: React.FC = () => {
                                 <Check
                                   className={cn(
                                     'ml-auto h-3 w-3',
-                                    currentModel === opt.value
+                                    resolvedModel === opt.value
                                       ? 'opacity-100'
                                       : 'opacity-0'
                                   )}

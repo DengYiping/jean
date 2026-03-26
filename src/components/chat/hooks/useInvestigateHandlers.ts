@@ -10,13 +10,18 @@ import { projectsQueryKeys } from '@/services/projects'
 import { buildMcpConfigJson } from '@/services/mcp'
 import { resolveBackend, supportsAdaptiveThinking } from '@/lib/model-utils'
 import {
+  CODEX_DEFAULT_MAGIC_PROMPT_MODELS,
+  DEFAULT_MAGIC_PROMPT_MODELS,
   DEFAULT_INVESTIGATE_ISSUE_PROMPT,
   DEFAULT_INVESTIGATE_PR_PROMPT,
   DEFAULT_INVESTIGATE_SECURITY_ALERT_PROMPT,
   DEFAULT_INVESTIGATE_ADVISORY_PROMPT,
   DEFAULT_INVESTIGATE_WORKFLOW_RUN_PROMPT,
   DEFAULT_INVESTIGATE_LINEAR_ISSUE_PROMPT,
+  isMagicPromptModelCompatibleWithBackend,
+  OPENCODE_DEFAULT_MAGIC_PROMPT_MODELS,
   DEFAULT_PARALLEL_EXECUTION_PROMPT,
+  resolveMagicPromptBackend,
   resolveMagicPromptProvider,
 } from '@/types/preferences'
 import type { Project, Worktree } from '@/types/projects'
@@ -677,14 +682,32 @@ export function useInvestigateHandlers({
       const worktreePath = activeWorktreePathRef.current
       if (!worktreeId || !worktreePath) return
 
-      const reviewCommentsModel =
+      const reviewCommentsBackend = resolveMagicPromptBackend(
+        preferences?.magic_prompt_backends,
+        'review_comments_backend',
+        preferences?.default_backend
+      )
+      const storedReviewCommentsModel =
         preferences?.magic_prompt_models?.review_comments_model ??
         selectedModelRef.current
-      const reviewCommentsProvider = resolveMagicPromptProvider(
-        preferences?.magic_prompt_providers,
-        'review_comments_provider',
-        preferences?.default_provider
+      const reviewCommentsModel = isMagicPromptModelCompatibleWithBackend(
+        storedReviewCommentsModel,
+        reviewCommentsBackend
       )
+        ? storedReviewCommentsModel
+        : reviewCommentsBackend === 'codex'
+          ? CODEX_DEFAULT_MAGIC_PROMPT_MODELS.review_comments_model
+          : reviewCommentsBackend === 'opencode'
+            ? OPENCODE_DEFAULT_MAGIC_PROMPT_MODELS.review_comments_model
+            : DEFAULT_MAGIC_PROMPT_MODELS.review_comments_model
+      const reviewCommentsProvider =
+        reviewCommentsBackend === 'claude'
+          ? resolveMagicPromptProvider(
+              preferences?.magic_prompt_providers,
+              'review_comments_provider',
+              preferences?.default_provider
+            )
+          : null
       const { customProfileName: resolvedProfile } = resolveCustomProfile(
         reviewCommentsModel,
         reviewCommentsProvider
@@ -695,7 +718,6 @@ export function useInvestigateHandlers({
       )
       const useAdaptive =
         !isCustom && supportsAdaptiveThinking(reviewCommentsModel, cliVersion)
-      const reviewCommentsBackend = resolveBackend(reviewCommentsModel)
 
       // Helper to send the message once we have a session ID
       const sendInSession = (sessionId: string) => {

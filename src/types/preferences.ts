@@ -1181,6 +1181,38 @@ export const backendOptions: { value: CliBackend; label: string }[] = [
   { value: 'opencode', label: 'OpenCode' },
 ]
 
+export function resolveMagicPromptBackend(
+  backends: MagicPromptBackends | undefined,
+  key: keyof MagicPromptBackends,
+  globalDefaultBackend: string | null | undefined
+): CliBackend {
+  const merged = { ...DEFAULT_MAGIC_PROMPT_BACKENDS, ...backends }
+  const value = merged[key]
+
+  if (value === 'claude' || value === 'codex' || value === 'opencode') {
+    return value
+  }
+
+  if (
+    globalDefaultBackend === 'claude' ||
+    globalDefaultBackend === 'codex' ||
+    globalDefaultBackend === 'opencode'
+  ) {
+    return globalDefaultBackend
+  }
+
+  return 'claude'
+}
+
+export function isMagicPromptModelCompatibleWithBackend(
+  model: string,
+  backend: CliBackend
+): boolean {
+  if (backend === 'codex') return isCodexModel(model)
+  if (backend === 'opencode') return isOpenCodeModel(model)
+  return !isCodexModel(model) && !isOpenCodeModel(model)
+}
+
 export type TerminalApp =
   | 'terminal'
   | 'warp'

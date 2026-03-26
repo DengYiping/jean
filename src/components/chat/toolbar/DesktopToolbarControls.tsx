@@ -575,8 +575,7 @@ export function DesktopToolbarControls({
                           ? 'Codex'
                           : 'OpenCode'}
                     </span>
-                    {(selectedBackend === 'codex' ||
-                      selectedBackend === 'opencode') && (
+                    {selectedBackend === 'opencode' && (
                       <span className="rounded bg-primary/15 px-1 py-px text-[9px] font-semibold uppercase text-primary">
                         BETA
                       </span>
@@ -606,9 +605,6 @@ export function DesktopToolbarControls({
                 {installedBackends.includes('codex') && (
                   <DropdownMenuRadioItem value="codex">
                     Codex
-                    <span className="ml-auto rounded bg-primary/15 px-1 py-px text-[9px] font-semibold uppercase text-primary">
-                      BETA
-                    </span>
                   </DropdownMenuRadioItem>
                 )}
                 {installedBackends.includes('opencode') && (

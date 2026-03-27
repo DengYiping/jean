@@ -110,6 +110,26 @@ export const test = base.extend<TauriMockFixtures>({
             }
             return null
           },
+          update_session_state: args => {
+            const wid = (args?.worktreeId as string) ?? 'unknown'
+            const store = getWorktreeStore(wid)
+            const session = store.sessions.find(s => s.id === args?.sessionId)
+            if (session) {
+              if (args?.enabledMcpServers !== undefined) {
+                session.enabled_mcp_servers = structuredClone(
+                  args.enabledMcpServers as unknown
+                )
+              }
+              if (args?.selectedExecutionMode !== undefined) {
+                session.selected_execution_mode = args.selectedExecutionMode
+              }
+              if (args?.parallelExecutionPromptEnabled !== undefined) {
+                session.parallel_execution_prompt_enabled =
+                  args.parallelExecutionPromptEnabled
+              }
+            }
+            return null
+          },
           get_session: args => {
             const wid = (args?.worktreeId as string) ?? 'unknown'
             const store = getWorktreeStore(wid)

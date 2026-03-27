@@ -157,6 +157,7 @@ export async function prefetchSessions(
     const reviewingUpdates: Record<string, boolean> = {}
     const waitingUpdates: Record<string, boolean> = {}
     const executionModeUpdates: Record<string, ExecutionMode> = {}
+    const parallelExecutionPromptUpdates: Record<string, boolean> = {}
     const labelUpdates: Record<string, LabelData> = {}
     const reviewResultsUpdates: Record<string, ReviewResponse> = {}
     const fixedFindingsUpdates: Record<string, Set<string>> = {}
@@ -178,6 +179,10 @@ export async function prefetchSessions(
       }
       if (session.selected_execution_mode) {
         executionModeUpdates[session.id] = session.selected_execution_mode
+      }
+      if (session.parallel_execution_prompt_enabled !== undefined) {
+        parallelExecutionPromptUpdates[session.id] =
+          session.parallel_execution_prompt_enabled
       }
       if (session.label) {
         labelUpdates[session.id] = session.label
@@ -228,6 +233,12 @@ export async function prefetchSessions(
       storeUpdates.executionModes = {
         ...currentState.executionModes,
         ...executionModeUpdates,
+      }
+    }
+    if (Object.keys(parallelExecutionPromptUpdates).length > 0) {
+      storeUpdates.parallelExecutionPromptEnabledBySession = {
+        ...currentState.parallelExecutionPromptEnabledBySession,
+        ...parallelExecutionPromptUpdates,
       }
     }
     if (Object.keys(labelUpdates).length > 0) {
@@ -487,6 +498,7 @@ export function useUpdateSessionState() {
       pendingPlanMessageId,
       enabledMcpServers,
       selectedExecutionMode,
+      parallelExecutionPromptEnabled,
     }: {
       worktreeId: string
       worktreePath: string
@@ -511,6 +523,7 @@ export function useUpdateSessionState() {
       pendingPlanMessageId?: string | null
       enabledMcpServers?: string[] | null
       selectedExecutionMode?: ExecutionMode | null
+      parallelExecutionPromptEnabled?: boolean | null
     }): Promise<void> => {
       if (!isTauri()) {
         throw new Error('Not in Tauri context')
@@ -532,6 +545,7 @@ export function useUpdateSessionState() {
         pendingPlanMessageId,
         enabledMcpServers,
         selectedExecutionMode,
+        parallelExecutionPromptEnabled,
       })
       logger.debug('Session state updated')
     },

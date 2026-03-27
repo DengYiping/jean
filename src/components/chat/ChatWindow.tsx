@@ -13,6 +13,7 @@ import { toast } from 'sonner'
 import { formatShortcutDisplay, DEFAULT_KEYBINDINGS } from '@/types/keybindings'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
 import {
   AlertDialog,
   AlertDialogContent,
@@ -36,6 +37,7 @@ import {
   useCreateSession,
   markPlanApproved as markPlanApprovedService,
   chatQueryKeys,
+  useUpdateSessionState,
 } from '@/services/chat'
 import { useWorktree, useProjects, useRunScripts } from '@/services/projects'
 import { useProjectsStore } from '@/store/projects-store'
@@ -58,11 +60,7 @@ import {
 } from '@/store/chat-store'
 import { usePreferences, usePatchPreferences } from '@/services/preferences'
 import { getLabelTextColor } from '@/lib/label-colors'
-import {
-  DEFAULT_PARALLEL_EXECUTION_PROMPT,
-  PREDEFINED_CLI_PROFILES,
-  type CliBackend,
-} from '@/types/preferences'
+import { PREDEFINED_CLI_PROFILES, type CliBackend } from '@/types/preferences'
 import type {
   ChatMessage,
   ToolCall,
@@ -77,6 +75,7 @@ import type {
 } from '@/types/chat'
 import { isAskUserQuestion } from '@/types/chat'
 import { getSkillName } from '@/lib/path-utils'
+import { resolveParallelExecutionPromptForSession } from '@/lib/parallel-execution-prompt'
 import { cn } from '@/lib/utils'
 import { PermissionApproval } from './PermissionApproval'
 import { SetupScriptOutput } from './SetupScriptOutput'
@@ -233,6 +232,11 @@ export function ChatWindow({
   // Without this, ChatWindow wouldn't know when to re-render on tab switch
   let activeSessionId = useChatStore(state =>
     activeWorktreeId ? state.activeSessionIds[activeWorktreeId] : undefined
+  )
+  const sessionParallelExecutionPromptEnabled = useChatStore(state =>
+    activeSessionId
+      ? state.parallelExecutionPromptEnabledBySession[activeSessionId]
+      : undefined
   )
 
   // PERF: Direct data subscription for isSending - triggers re-render when sendingSessionIds changes
@@ -423,6 +427,7 @@ export function ChatWindow({
   )
   const sendMessage = useSendMessage()
   const createSession = useCreateSession()
+  const updateSessionState = useUpdateSessionState()
   const setSessionModel = useSetSessionModel()
   const setSessionThinkingLevel = useSetSessionThinkingLevel()
   const setSessionBackend = useSetSessionBackend()
@@ -742,6 +747,29 @@ export function ChatWindow({
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSessionId, lastAssistantMessage, isSending, answeredQuestionsSize])
+
+  const effectiveParallelExecutionPromptEnabled =
+    sessionParallelExecutionPromptEnabled ??
+    preferences?.parallel_execution_prompt_enabled ??
+    false
+
+  const handleParallelExecutionPromptToggle = useCallback(
+    (checked: boolean) => {
+      if (!activeSessionId || !activeWorktreeId || !activeWorktreePath) return
+
+      useChatStore
+        .getState()
+        .setParallelExecutionPromptEnabled(activeSessionId, checked)
+
+      updateSessionState.mutate({
+        worktreeId: activeWorktreeId,
+        worktreePath: activeWorktreePath,
+        sessionId: activeSessionId,
+        parallelExecutionPromptEnabled: checked,
+      })
+    },
+    [activeSessionId, activeWorktreeId, activeWorktreePath, updateSessionState]
+  )
 
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const formRef = useRef<HTMLFormElement>(null)
@@ -1979,10 +2007,10 @@ export function ChatWindow({
         executionMode: mode,
         thinkingLevel,
         effortLevel,
-        parallelExecutionPrompt: preferences?.parallel_execution_prompt_enabled
-          ? (preferences.magic_prompts?.parallel_execution ??
-            DEFAULT_PARALLEL_EXECUTION_PROMPT)
-          : undefined,
+        parallelExecutionPrompt: resolveParallelExecutionPromptForSession(
+          targetSessionId,
+          preferences
+        ),
         aiLanguage: preferences?.ai_language,
         mcpConfig: buildMcpConfigJson(
           mcpServersDataRef.current ?? [],
@@ -1998,8 +2026,6 @@ export function ChatWindow({
       buildMessageWithPendingRefs,
       clearPendingInputSnapshot,
       queryClient,
-      preferences?.parallel_execution_prompt_enabled,
-      preferences?.magic_prompts?.parallel_execution,
       preferences?.ai_language,
       preferences?.chrome_enabled,
       mcpServersDataRef,
@@ -3068,6 +3094,32 @@ export function ChatWindow({
                               inputRef={inputRef}
                             />
                           </div>
+
+                          {activeSessionId && (
+                            <div className="px-4 pb-2 md:px-6">
+                              <div className="flex items-center justify-between gap-3 rounded-md border border-border/60 bg-background/40 px-3 py-2">
+                                <div className="min-w-0">
+                                  <div className="text-sm font-medium text-foreground">
+                                    Parallel execution prompting
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">
+                                    Encourage parallel sub-agent execution for
+                                    this session.
+                                  </div>
+                                </div>
+                                <Switch
+                                  checked={
+                                    effectiveParallelExecutionPromptEnabled
+                                  }
+                                  onCheckedChange={
+                                    handleParallelExecutionPromptToggle
+                                  }
+                                  disabled={isSending}
+                                  aria-label="Toggle parallel execution prompting for this session"
+                                />
+                              </div>
+                            </div>
+                          )}
 
                           {/* Bottom toolbar */}
                           <ChatToolbar

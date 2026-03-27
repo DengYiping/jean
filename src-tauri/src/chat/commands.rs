@@ -503,6 +503,7 @@ pub async fn update_session_state(
     review_results: Option<Option<serde_json::Value>>,
     enabled_mcp_servers: Option<Option<Vec<String>>>,
     selected_execution_mode: Option<Option<String>>,
+    parallel_execution_prompt_enabled: Option<Option<bool>>,
 ) -> Result<(), String> {
     log::trace!("Updating session state for: {session_id}");
 
@@ -556,6 +557,9 @@ pub async fn update_session_state(
             }
             if let Some(v) = selected_execution_mode {
                 session.selected_execution_mode = v;
+            }
+            if let Some(v) = parallel_execution_prompt_enabled {
+                session.parallel_execution_prompt_enabled = v;
             }
             if clear_waiting_metadata {
                 session.waiting_for_input_type = None;

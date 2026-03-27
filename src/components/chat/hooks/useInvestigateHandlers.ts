@@ -20,7 +20,6 @@ import {
   DEFAULT_INVESTIGATE_LINEAR_ISSUE_PROMPT,
   isMagicPromptModelCompatibleWithBackend,
   OPENCODE_DEFAULT_MAGIC_PROMPT_MODELS,
-  DEFAULT_PARALLEL_EXECUTION_PROMPT,
   resolveMagicPromptBackend,
   resolveMagicPromptProvider,
 } from '@/types/preferences'
@@ -33,6 +32,7 @@ import type {
   McpServerInfo,
 } from '@/types/chat'
 import type { AppPreferences } from '@/types/preferences'
+import { resolveParallelExecutionPromptForSession } from '@/lib/parallel-execution-prompt'
 
 // Re-export for the caller
 export interface WorkflowRunDetail {
@@ -371,11 +371,10 @@ export function useInvestigateHandlers({
             investigateBackend
           ),
           customProfileName: resolvedInvestigateProfile,
-          parallelExecutionPrompt:
-            preferences?.parallel_execution_prompt_enabled
-              ? (preferences.magic_prompts?.parallel_execution ??
-                DEFAULT_PARALLEL_EXECUTION_PROMPT)
-              : undefined,
+          parallelExecutionPrompt: resolveParallelExecutionPromptForSession(
+            activeSessionId,
+            preferences
+          ),
           chromeEnabled: preferences?.chrome_enabled ?? false,
           aiLanguage: preferences?.ai_language,
           backend: investigateBackend,
@@ -608,11 +607,10 @@ export function useInvestigateHandlers({
               investigateBackend
             ),
             customProfileName: resolvedInvestigateProfile,
-            parallelExecutionPrompt:
-              preferences?.parallel_execution_prompt_enabled
-                ? (preferences.magic_prompts?.parallel_execution ??
-                  DEFAULT_PARALLEL_EXECUTION_PROMPT)
-                : undefined,
+            parallelExecutionPrompt: resolveParallelExecutionPromptForSession(
+              targetSessionId,
+              preferences
+            ),
             chromeEnabled: preferences?.chrome_enabled ?? false,
             aiLanguage: preferences?.ai_language,
             backend: investigateBackend,
@@ -790,11 +788,10 @@ export function useInvestigateHandlers({
               reviewCommentsBackend
             ),
             customProfileName: resolvedProfile,
-            parallelExecutionPrompt:
-              preferences?.parallel_execution_prompt_enabled
-                ? (preferences.magic_prompts?.parallel_execution ??
-                  DEFAULT_PARALLEL_EXECUTION_PROMPT)
-                : undefined,
+            parallelExecutionPrompt: resolveParallelExecutionPromptForSession(
+              sessionId,
+              preferences
+            ),
             chromeEnabled: preferences?.chrome_enabled ?? false,
             aiLanguage: preferences?.ai_language,
             backend: reviewCommentsBackend,

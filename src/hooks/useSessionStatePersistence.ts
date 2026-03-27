@@ -66,6 +66,7 @@ interface SessionState {
   pendingPlanMessageId: string | null
   enabledMcpServers: string[] | null
   selectedExecutionMode: ExecutionMode | null
+  parallelExecutionPromptEnabled: boolean | null
 }
 
 export function resolveSessionPersistenceContext(params: {
@@ -171,6 +172,7 @@ export function useSessionStatePersistence() {
         pendingPlanMessageIds,
         enabledMcpServers,
         executionModes,
+        parallelExecutionPromptEnabledBySession,
       } = useChatStore.getState()
 
       const ctx = deniedMessageContext[sessionId]
@@ -198,6 +200,8 @@ export function useSessionStatePersistence() {
             : null,
         enabledMcpServers: enabledMcpServers[sessionId] ?? null,
         selectedExecutionMode: executionModes[sessionId] ?? null,
+        parallelExecutionPromptEnabled:
+          parallelExecutionPromptEnabledBySession[sessionId] ?? null,
       }
     },
     []
@@ -238,6 +242,7 @@ export function useSessionStatePersistence() {
         pendingPlanMessageId: state.pendingPlanMessageId,
         enabledMcpServers: state.enabledMcpServers,
         selectedExecutionMode: state.selectedExecutionMode,
+        parallelExecutionPromptEnabled: state.parallelExecutionPromptEnabled,
       })
     }, 500)
 
@@ -415,6 +420,13 @@ export function useSessionStatePersistence() {
       }
     }
 
+    if (session.parallel_execution_prompt_enabled !== undefined) {
+      updates.parallelExecutionPromptEnabledBySession = {
+        ...currentState.parallelExecutionPromptEnabledBySession,
+        [activeSessionId]: session.parallel_execution_prompt_enabled,
+      }
+    }
+
     // Load selected execution mode
     if (session.selected_execution_mode) {
       updates.executionModes = {
@@ -471,6 +483,8 @@ export function useSessionStatePersistence() {
     let prevEnabledMcpServers =
       useChatStore.getState().enabledMcpServers[sessionId]
     let prevExecutionMode = useChatStore.getState().executionModes[sessionId]
+    let prevParallelExecutionPromptEnabled =
+      useChatStore.getState().parallelExecutionPromptEnabledBySession[sessionId]
 
     const unsubscribe = useChatStore.subscribe(state => {
       if (isLoadingRef.current) return
@@ -486,6 +500,8 @@ export function useSessionStatePersistence() {
       const currentPendingPlanMessageId = state.pendingPlanMessageIds[sessionId]
       const currentEnabledMcpServers = state.enabledMcpServers[sessionId]
       const currentExecutionMode = state.executionModes[sessionId]
+      const currentParallelExecutionPromptEnabled =
+        state.parallelExecutionPromptEnabledBySession[sessionId]
 
       const hasChanges =
         currentAnswered !== prevAnsweredQuestions ||
@@ -498,7 +514,9 @@ export function useSessionStatePersistence() {
         currentPlanFilePath !== prevPlanFilePath ||
         currentPendingPlanMessageId !== prevPendingPlanMessageId ||
         currentEnabledMcpServers !== prevEnabledMcpServers ||
-        currentExecutionMode !== prevExecutionMode
+        currentExecutionMode !== prevExecutionMode ||
+        currentParallelExecutionPromptEnabled !==
+          prevParallelExecutionPromptEnabled
 
       if (hasChanges) {
         prevAnsweredQuestions = currentAnswered
@@ -512,6 +530,8 @@ export function useSessionStatePersistence() {
         prevPendingPlanMessageId = currentPendingPlanMessageId
         prevEnabledMcpServers = currentEnabledMcpServers
         prevExecutionMode = currentExecutionMode
+        prevParallelExecutionPromptEnabled =
+          currentParallelExecutionPromptEnabled
 
         const currentState = getCurrentSessionState(sessionId)
         debouncedSaveRef.current?.(currentState)

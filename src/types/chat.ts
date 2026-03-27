@@ -187,6 +187,8 @@ export interface Session {
   pending_plan_message_id?: string
   /** Per-session MCP server override (undefined = inherit from project/global) */
   enabled_mcp_servers?: string[]
+  /** Per-session override for parallel execution prompting (undefined = inherit global preference) */
+  parallel_execution_prompt_enabled?: boolean
   /** Persisted session digest (recap summary) */
   digest?: SessionDigest
   /** Unix timestamp when session was last opened/viewed by the user */

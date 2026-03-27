@@ -2,11 +2,11 @@ import { useCallback, useEffect, useRef } from 'react'
 import { useChatStore } from '@/store/chat-store'
 import { useSendMessage, persistDequeue } from '@/services/chat'
 import { usePreferences } from '@/services/preferences'
-import { DEFAULT_PARALLEL_EXECUTION_PROMPT } from '@/types/preferences'
 import { isTauri } from '@/services/projects'
 import { useWsConnectionStatus } from '@/lib/transport'
 import { logger } from '@/lib/logger'
 import { buildQueuedMessageWithRefs } from '@/lib/queued-message'
+import { resolveParallelExecutionPromptForSession } from '@/lib/parallel-execution-prompt'
 
 // GIT_ALLOWED_TOOLS duplicated from ChatWindow - tools always allowed for git operations
 const GIT_ALLOWED_TOOLS = ['Bash', 'Read', 'Glob', 'Grep']
@@ -155,11 +155,10 @@ export function useQueueProcessor(): void {
               effortLevel: msg.effortLevel,
               mcpConfig: msg.mcpConfig,
               customProfileName: msg.provider ?? undefined,
-              parallelExecutionPrompt:
-                preferences?.parallel_execution_prompt_enabled
-                  ? (preferences.magic_prompts?.parallel_execution ??
-                    DEFAULT_PARALLEL_EXECUTION_PROMPT)
-                  : undefined,
+              parallelExecutionPrompt: resolveParallelExecutionPromptForSession(
+                capturedSessionId,
+                preferences
+              ),
               chromeEnabled: preferences?.chrome_enabled ?? false,
               allowedTools,
             },
@@ -180,12 +179,7 @@ export function useQueueProcessor(): void {
           queueMicrotask(() => processQueuesRef.current())
         })
     }
-  }, [
-    sendMessage,
-    preferences?.parallel_execution_prompt_enabled,
-    preferences?.magic_prompts?.parallel_execution,
-    preferences?.chrome_enabled,
-  ])
+  }, [sendMessage, preferences?.chrome_enabled])
 
   useEffect(() => {
     processQueuesRef.current = processQueues

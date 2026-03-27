@@ -26,6 +26,7 @@ export type KeybindingAction =
   | 'focus_canvas_search'
   | 'toggle_terminal'
   | 'toggle_session_label'
+  | 'toggle_parallel_execution_prompting'
   | 'open_provider_dropdown'
   | 'open_model_dropdown'
   | 'open_thinking_dropdown'
@@ -81,6 +82,7 @@ export const DEFAULT_KEYBINDINGS: KeybindingsMap = {
   focus_canvas_search: 'slash',
   toggle_terminal: 'mod+backquote',
   toggle_session_label: 'mod+s',
+  toggle_parallel_execution_prompting: 'mod+alt+p',
   open_provider_dropdown: 'mod+shift+p',
   open_model_dropdown: 'mod+shift+m',
   open_thinking_dropdown: 'mod+shift+e',
@@ -276,6 +278,14 @@ export const KEYBINDING_DEFINITIONS: KeybindingDefinition[] = [
     label: 'Toggle label',
     description: 'Mark/unmark session with "Needs testing" label',
     default_shortcut: 'mod+s',
+    category: 'chat',
+  },
+  {
+    action: 'toggle_parallel_execution_prompting',
+    label: 'Toggle parallel prompting',
+    description:
+      'Enable or disable parallel execution prompting for the current session',
+    default_shortcut: 'mod+alt+p',
     category: 'chat',
   },
   {

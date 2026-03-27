@@ -98,6 +98,7 @@ interface UseChatWindowEventsParams {
   handleInputNewSessionBuild: () => void
   handleInputNewWorktreeBuild: () => void
   handleInputNewWorktreeYolo: () => void
+  handleToggleParallelExecutionPrompting: () => void
   /** Ref to the chat scroll viewport for keyboard scrolling */
   scrollViewportRef: RefObject<HTMLDivElement | null>
   /** Begin a user-initiated keyboard scroll: cancels auto-scroll, blocks handleScroll */
@@ -159,6 +160,7 @@ export function useChatWindowEvents({
   handleInputNewSessionBuild,
   handleInputNewWorktreeBuild,
   handleInputNewWorktreeYolo,
+  handleToggleParallelExecutionPrompting,
   scrollViewportRef,
   beginKeyboardScroll,
   endKeyboardScroll,
@@ -343,6 +345,17 @@ export function useChatWindowEvents({
     window.addEventListener('cycle-execution-mode', handler)
     return () => window.removeEventListener('cycle-execution-mode', handler)
   }, [activeSessionId, activeWorktreeId, activeWorktreePath])
+
+  useEffect(() => {
+    const handler = () => {
+      if (!isModal && useUIStore.getState().sessionChatModalOpen) return
+      handleToggleParallelExecutionPrompting()
+    }
+
+    window.addEventListener('toggle-parallel-execution-prompting', handler)
+    return () =>
+      window.removeEventListener('toggle-parallel-execution-prompting', handler)
+  }, [isModal, handleToggleParallelExecutionPrompting])
 
   // CMD+G: Open git diff (also handles button clicks that dispatch with detail.type)
   useEffect(() => {

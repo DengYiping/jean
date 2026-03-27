@@ -13,7 +13,6 @@ import { toast } from 'sonner'
 import { formatShortcutDisplay, DEFAULT_KEYBINDINGS } from '@/types/keybindings'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Button } from '@/components/ui/button'
-import { Switch } from '@/components/ui/switch'
 import {
   AlertDialog,
   AlertDialogContent,
@@ -770,6 +769,15 @@ export function ChatWindow({
     },
     [activeSessionId, activeWorktreeId, activeWorktreePath, updateSessionState]
   )
+
+  const handleToggleParallelExecutionPrompting = useCallback(() => {
+    handleParallelExecutionPromptToggle(
+      !effectiveParallelExecutionPromptEnabled
+    )
+  }, [
+    effectiveParallelExecutionPromptEnabled,
+    handleParallelExecutionPromptToggle,
+  ])
 
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const formRef = useRef<HTMLFormElement>(null)
@@ -2544,6 +2552,7 @@ export function ChatWindow({
     handleInputNewSessionBuild: handleInputNewBuildSession,
     handleInputNewWorktreeBuild: handleInputNewBuildWorktree,
     handleInputNewWorktreeYolo: handleInputNewYoloWorktree,
+    handleToggleParallelExecutionPrompting,
     scrollViewportRef,
     beginKeyboardScroll,
     endKeyboardScroll,
@@ -3095,32 +3104,6 @@ export function ChatWindow({
                             />
                           </div>
 
-                          {activeSessionId && (
-                            <div className="px-4 pb-2 md:px-6">
-                              <div className="flex items-center justify-between gap-3 rounded-md border border-border/60 bg-background/40 px-3 py-2">
-                                <div className="min-w-0">
-                                  <div className="text-sm font-medium text-foreground">
-                                    Parallel execution prompting
-                                  </div>
-                                  <div className="text-xs text-muted-foreground">
-                                    Encourage parallel sub-agent execution for
-                                    this session.
-                                  </div>
-                                </div>
-                                <Switch
-                                  checked={
-                                    effectiveParallelExecutionPromptEnabled
-                                  }
-                                  onCheckedChange={
-                                    handleParallelExecutionPromptToggle
-                                  }
-                                  disabled={isSending}
-                                  aria-label="Toggle parallel execution prompting for this session"
-                                />
-                              </div>
-                            </div>
-                          )}
-
                           {/* Bottom toolbar */}
                           <ChatToolbar
                             isSending={isSending}
@@ -3183,6 +3166,12 @@ export function ChatWindow({
                             }
                             onEffortLevelChange={handleToolbarEffortLevelChange}
                             onSetExecutionMode={handleToolbarSetExecutionMode}
+                            parallelExecutionPromptEnabled={
+                              effectiveParallelExecutionPromptEnabled
+                            }
+                            onParallelExecutionPromptChange={
+                              handleParallelExecutionPromptToggle
+                            }
                             onCancel={handleCancel}
                             queuedMessageCount={currentQueuedMessages.length}
                             availableMcpServers={availableMcpServers}

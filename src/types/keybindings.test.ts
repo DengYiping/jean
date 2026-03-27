@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { eventToShortcutString } from '@/types/keybindings'
+import {
+  DEFAULT_KEYBINDINGS,
+  KEYBINDING_DEFINITIONS,
+  eventToShortcutString,
+} from '@/types/keybindings'
 
 describe('eventToShortcutString', () => {
   it('maps alt-modified letter keys using physical key code', () => {
@@ -56,5 +60,21 @@ describe('eventToShortcutString', () => {
     })
 
     expect(eventToShortcutString(altOnlyEvent)).toBeNull()
+  })
+
+  it('registers the parallel execution prompting shortcut in defaults and settings metadata', () => {
+    expect(DEFAULT_KEYBINDINGS.toggle_parallel_execution_prompting).toBe(
+      'mod+alt+p'
+    )
+    expect(
+      KEYBINDING_DEFINITIONS.find(
+        definition =>
+          definition.action === 'toggle_parallel_execution_prompting'
+      )
+    ).toMatchObject({
+      label: 'Toggle parallel prompting',
+      default_shortcut: 'mod+alt+p',
+      category: 'chat',
+    })
   })
 })

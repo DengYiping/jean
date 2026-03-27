@@ -1,4 +1,5 @@
 import { memo, useCallback, useState } from 'react'
+import { Workflow } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   gitPush,
@@ -28,6 +29,14 @@ import { useToolbarDerivedState } from '@/components/chat/toolbar/useToolbarDeri
 import { useContextViewer } from '@/components/chat/toolbar/useContextViewer'
 import { formatOpencodeModelLabel } from '@/components/chat/toolbar/toolbar-utils'
 import { useAvailableOpencodeModels } from '@/services/opencode-cli'
+import { cn } from '@/lib/utils'
+import { DEFAULT_KEYBINDINGS, formatShortcutDisplay } from '@/types/keybindings'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import { usePreferences } from '@/services/preferences'
 
 // eslint-disable-next-line react-refresh/only-export-components
 export {
@@ -94,6 +103,8 @@ export const ChatToolbar = memo(function ChatToolbar({
   onThinkingLevelChange,
   onEffortLevelChange,
   onSetExecutionMode,
+  parallelExecutionPromptEnabled,
+  onParallelExecutionPromptChange,
   onCancel,
   queuedMessageCount,
   availableMcpServers,
@@ -101,6 +112,7 @@ export const ChatToolbar = memo(function ChatToolbar({
   onToggleMcpServer,
   onOpenProjectSettings,
 }: ChatToolbarProps) {
+  const { data: preferences } = usePreferences()
   const {
     statuses: mcpStatuses,
     isFetching: isHealthChecking,
@@ -111,6 +123,10 @@ export const ChatToolbar = memo(function ChatToolbar({
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false)
   const [thinkingDropdownOpen, setThinkingDropdownOpen] = useState(false)
   const [mcpDropdownOpen, setMcpDropdownOpen] = useState(false)
+  const parallelPromptShortcut = formatShortcutDisplay(
+    (preferences?.keybindings?.toggle_parallel_execution_prompting ??
+      DEFAULT_KEYBINDINGS.toggle_parallel_execution_prompting) as string
+  )
 
   const pickRemoteOrRun = useRemotePicker(activeWorktreePath)
 
@@ -392,6 +408,37 @@ export const ChatToolbar = memo(function ChatToolbar({
           handleViewLinear={handleViewLinear}
           handleViewSavedContext={handleViewSavedContext}
         />
+
+        <div className="h-4 w-px shrink-0 bg-border/50" />
+
+        <div className="flex h-8 shrink-0 items-center px-2">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                disabled={isSending}
+                aria-label="Parallel execution prompting"
+                aria-pressed={parallelExecutionPromptEnabled}
+                onClick={() =>
+                  onParallelExecutionPromptChange(
+                    !parallelExecutionPromptEnabled
+                  )
+                }
+                className={cn(
+                  'flex h-7 w-7 items-center justify-center rounded-md transition-colors disabled:pointer-events-none disabled:opacity-50',
+                  parallelExecutionPromptEnabled
+                    ? 'bg-primary/15 text-primary'
+                    : 'text-muted-foreground hover:bg-muted/80 hover:text-foreground'
+                )}
+              >
+                <Workflow className="h-3.5 w-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>
+              Parallel execution prompting ({parallelPromptShortcut})
+            </TooltipContent>
+          </Tooltip>
+        </div>
 
         <div className="h-4 w-px shrink-0 bg-border/50" />
 

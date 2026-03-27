@@ -383,9 +383,7 @@ interface ChatUIState {
     sessionId: string,
     enabled: boolean | undefined
   ) => void
-  getParallelExecutionPromptEnabled: (
-    sessionId: string
-  ) => boolean | undefined
+  getParallelExecutionPromptEnabled: (sessionId: string) => boolean | undefined
 
   // Actions - Question answering (session-based)
   markQuestionAnswered: (
@@ -1474,8 +1472,7 @@ export const useChatStore = create<ChatUIState>()(
                 [toId]: ms,
               }
             }
-            const pe =
-              state.parallelExecutionPromptEnabledBySession[fromId]
+            const pe = state.parallelExecutionPromptEnabledBySession[fromId]
             if (pe !== undefined) {
               updates.parallelExecutionPromptEnabledBySession = {
                 ...state.parallelExecutionPromptEnabledBySession,

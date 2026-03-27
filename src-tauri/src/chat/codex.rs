@@ -705,6 +705,7 @@ fn process_turn_events(
                     app,
                     session_id,
                     worktree_id,
+                    is_plan_mode,
                     &method,
                     &params,
                     &mut full_content,
@@ -952,6 +953,7 @@ fn process_server_notification(
     app: &tauri::AppHandle,
     session_id: &str,
     worktree_id: &str,
+    is_plan_mode: bool,
     method: &str,
     params: &serde_json::Value,
     full_content: &mut String,
@@ -1007,6 +1009,7 @@ fn process_server_notification(
                 app,
                 session_id,
                 worktree_id,
+                is_plan_mode,
                 &event_msg,
                 event_type,
                 full_content,
@@ -1032,6 +1035,7 @@ fn process_server_notification(
                 app,
                 session_id,
                 worktree_id,
+                is_plan_mode,
                 &event_msg,
                 event_type,
                 full_content,
@@ -1054,6 +1058,7 @@ fn process_server_notification(
                 app,
                 session_id,
                 worktree_id,
+                is_plan_mode,
                 &event_msg,
                 event_type,
                 full_content,
@@ -1088,6 +1093,7 @@ fn process_server_notification(
                     app,
                     session_id,
                     worktree_id,
+                    is_plan_mode,
                     &event_msg,
                     event_type,
                     full_content,
@@ -1799,6 +1805,7 @@ fn process_codex_event(
     app: &tauri::AppHandle,
     session_id: &str,
     worktree_id: &str,
+    is_plan_mode: bool,
     msg: &serde_json::Value,
     event_type: &str,
     full_content: &mut String,
@@ -1916,7 +1923,7 @@ fn process_codex_event(
                     if !item_id.is_empty() && !initial_plan.is_empty() {
                         pending_plan_texts.insert(item_id.to_string(), initial_plan.clone());
                     }
-                    if !initial_plan.is_empty() {
+                    if is_plan_mode && !initial_plan.is_empty() {
                         upsert_codex_plan_tool(
                             app,
                             session_id,
@@ -1979,17 +1986,19 @@ fn process_codex_event(
                             tool_call_id: tool_id,
                         },
                     );
-                    if let Some(plan_text) = item.get("plan").and_then(|v| v.as_str()) {
-                        if !plan_text.is_empty() {
-                            upsert_codex_plan_tool(
-                                app,
-                                session_id,
-                                worktree_id,
-                                item_id,
-                                plan_text.to_string(),
-                                tool_calls,
-                                content_blocks,
-                            );
+                    if is_plan_mode {
+                        if let Some(plan_text) = item.get("plan").and_then(|v| v.as_str()) {
+                            if !plan_text.is_empty() {
+                                upsert_codex_plan_tool(
+                                    app,
+                                    session_id,
+                                    worktree_id,
+                                    item_id,
+                                    plan_text.to_string(),
+                                    tool_calls,
+                                    content_blocks,
+                                );
+                            }
                         }
                     }
                 }
@@ -2236,7 +2245,7 @@ fn process_codex_event(
                         }
                         item_text
                     };
-                    if !final_plan.is_empty() {
+                    if is_plan_mode && !final_plan.is_empty() {
                         upsert_codex_plan_tool(
                             app,
                             session_id,
@@ -2393,7 +2402,7 @@ fn process_codex_event(
             let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
             let item_id = item.get("id").and_then(|v| v.as_str()).unwrap_or("");
 
-            if item_type == "plan" {
+            if is_plan_mode && item_type == "plan" {
                 if let Some(plan_text) = item.get("text").and_then(|v| v.as_str()) {
                     if !plan_text.is_empty() {
                         upsert_codex_plan_tool(
@@ -2407,7 +2416,7 @@ fn process_codex_event(
                         );
                     }
                 }
-            } else if item_type == "todo_list" {
+            } else if item_type == "todo_list" && is_plan_mode {
                 if let Some(plan_text) = item.get("plan").and_then(|v| v.as_str()) {
                     if !plan_text.is_empty() {
                         upsert_codex_plan_tool(
@@ -2528,6 +2537,7 @@ pub fn parse_codex_run_to_message(
     use super::types::{ChatMessage, MessageRole};
     use uuid::Uuid;
 
+    let is_plan_mode = run.execution_mode.as_deref() == Some("plan");
     let mut content = String::new();
     let mut tool_calls: Vec<ToolCall> = Vec::new();
     let mut content_blocks: Vec<ContentBlock> = Vec::new();
@@ -2653,7 +2663,7 @@ pub fn parse_codex_run_to_message(
                         if !item_id.is_empty() && !plan_text.is_empty() {
                             pending_plan_texts.insert(item_id.to_string(), plan_text.clone());
                         }
-                        if !plan_text.is_empty() {
+                        if is_plan_mode && !plan_text.is_empty() {
                             let history_item_id = history_plan_item_id(item_id);
                             upsert_history_tool_call(
                                 &mut tool_calls,
@@ -2744,17 +2754,19 @@ pub fn parse_codex_run_to_message(
                         if !item_id.is_empty() {
                             pending_tool_ids.insert(item_id.to_string(), tool_id);
                         }
-                        if let Some(plan_text) = item.get("plan").and_then(|v| v.as_str()) {
-                            if !plan_text.is_empty() {
-                                let history_item_id = history_plan_item_id(item_id);
-                                upsert_history_tool_call(
-                                    &mut tool_calls,
-                                    &mut content_blocks,
-                                    &mut pending_tool_ids,
-                                    &history_item_id,
-                                    "ExitPlanMode",
-                                    serde_json::json!({ "plan": plan_text }),
-                                );
+                        if is_plan_mode {
+                            if let Some(plan_text) = item.get("plan").and_then(|v| v.as_str()) {
+                                if !plan_text.is_empty() {
+                                    let history_item_id = history_plan_item_id(item_id);
+                                    upsert_history_tool_call(
+                                        &mut tool_calls,
+                                        &mut content_blocks,
+                                        &mut pending_tool_ids,
+                                        &history_item_id,
+                                        "ExitPlanMode",
+                                        serde_json::json!({ "plan": plan_text }),
+                                    );
+                                }
                             }
                         }
                     }
@@ -2828,7 +2840,7 @@ pub fn parse_codex_run_to_message(
                             }
                             item_text
                         };
-                        if !plan_text.is_empty() {
+                        if is_plan_mode && !plan_text.is_empty() {
                             upsert_history_tool_call(
                                 &mut tool_calls,
                                 &mut content_blocks,
@@ -2912,7 +2924,7 @@ pub fn parse_codex_run_to_message(
                 let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
                 let item_id = item.get("id").and_then(|v| v.as_str()).unwrap_or("");
 
-                if item_type == "plan" {
+                if is_plan_mode && item_type == "plan" {
                     if let Some(plan_text) = item.get("text").and_then(|v| v.as_str()) {
                         let history_item_id = history_plan_item_id(item_id);
                         upsert_history_tool_call(
@@ -2925,17 +2937,19 @@ pub fn parse_codex_run_to_message(
                         );
                     }
                 } else if item_type == "todo_list" {
-                    if let Some(plan_text) = item.get("plan").and_then(|v| v.as_str()) {
-                        if !plan_text.is_empty() {
-                            let history_item_id = history_plan_item_id(item_id);
-                            upsert_history_tool_call(
-                                &mut tool_calls,
-                                &mut content_blocks,
-                                &mut pending_tool_ids,
-                                &history_item_id,
-                                "ExitPlanMode",
-                                serde_json::json!({ "plan": plan_text }),
-                            );
+                    if is_plan_mode {
+                        if let Some(plan_text) = item.get("plan").and_then(|v| v.as_str()) {
+                            if !plan_text.is_empty() {
+                                let history_item_id = history_plan_item_id(item_id);
+                                upsert_history_tool_call(
+                                    &mut tool_calls,
+                                    &mut content_blocks,
+                                    &mut pending_tool_ids,
+                                    &history_item_id,
+                                    "ExitPlanMode",
+                                    serde_json::json!({ "plan": plan_text }),
+                                );
+                            }
                         }
                     }
                     if let Some(tool_id) = pending_tool_ids.get(item_id) {
@@ -3427,6 +3441,92 @@ mod tests {
             .expect("plan tool should be restored");
 
         assert_eq!(plan_tool.input["plan"], "- [ ] Inspect bridge");
+    }
+
+    #[test]
+    fn parse_codex_build_run_ignores_plan_items_for_approval() {
+        let run = crate::chat::types::RunEntry {
+            run_id: "run-1".to_string(),
+            started_at: 1,
+            ended_at: Some(2),
+            status: crate::chat::types::RunStatus::Completed,
+            user_message_id: "user-1".to_string(),
+            assistant_message_id: Some("assistant-1".to_string()),
+            user_message: "Build this".to_string(),
+            model: None,
+            execution_mode: Some("build".to_string()),
+            thinking_level: None,
+            effort_level: None,
+            claude_session_id: None,
+            pid: None,
+            cancelled: false,
+            recovered: false,
+            usage: None,
+        };
+
+        let lines = vec![
+            serde_json::json!({
+                "type": "item.started",
+                "item": { "type": "plan", "id": "plan-1", "text": "internal plan" }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "item.completed",
+                "item": { "type": "plan", "id": "plan-1", "text": "internal plan" }
+            })
+            .to_string(),
+        ];
+
+        let message = parse_codex_run_to_message(&lines, &run).expect("message should parse");
+
+        assert!(message
+            .tool_calls
+            .iter()
+            .all(|tool| tool.name != "ExitPlanMode"));
+    }
+
+    #[test]
+    fn parse_codex_build_run_keeps_todo_list_without_exit_plan_mode() {
+        let run = crate::chat::types::RunEntry {
+            run_id: "run-1".to_string(),
+            started_at: 1,
+            ended_at: Some(2),
+            status: crate::chat::types::RunStatus::Completed,
+            user_message_id: "user-1".to_string(),
+            assistant_message_id: Some("assistant-1".to_string()),
+            user_message: "Build this".to_string(),
+            model: None,
+            execution_mode: Some("build".to_string()),
+            thinking_level: None,
+            effort_level: None,
+            claude_session_id: None,
+            pid: None,
+            cancelled: false,
+            recovered: false,
+            usage: None,
+        };
+
+        let lines = vec![serde_json::json!({
+            "type": "item.started",
+            "item": {
+                "type": "todo_list",
+                "id": "plan-1",
+                "plan": "- [ ] Internal step",
+                "items": [{ "text": "Internal step", "status": "pending", "completed": false }]
+            }
+        })
+        .to_string()];
+
+        let message = parse_codex_run_to_message(&lines, &run).expect("message should parse");
+
+        assert!(message
+            .tool_calls
+            .iter()
+            .any(|tool| tool.name == "CodexTodoList"));
+        assert!(message
+            .tool_calls
+            .iter()
+            .all(|tool| tool.name != "ExitPlanMode"));
     }
 
     #[test]

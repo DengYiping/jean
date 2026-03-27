@@ -12,6 +12,7 @@ use super::types::{ContentBlock, PermissionDenial, PermissionDeniedEvent, ToolCa
 use crate::http_server::EmitExt;
 
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 
 // =============================================================================
 // Response type (same shape as ClaudeResponse)
@@ -97,6 +98,107 @@ struct ErrorEvent {
 // =============================================================================
 // App-server param builders
 // =============================================================================
+
+const JEAN_SKILL_MARKER_PREFIX: &str = "[Skill: ";
+const JEAN_SKILL_MARKER_SUFFIX: &str = " - Read and use this skill to guide your response]";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CodexSkillInput {
+    pub(crate) name: String,
+    pub(crate) path: String,
+}
+
+fn codex_skill_name_from_path(path: &str) -> String {
+    let skill_path = Path::new(path);
+    skill_path
+        .parent()
+        .and_then(|parent| parent.file_name())
+        .and_then(|name| name.to_str())
+        .or_else(|| skill_path.file_stem().and_then(|name| name.to_str()))
+        .unwrap_or("skill")
+        .to_string()
+}
+
+fn normalize_codex_prompt_text(prompt: &str) -> String {
+    prompt
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
+}
+
+fn extract_codex_skill_inputs(prompt: &str) -> (String, Vec<CodexSkillInput>) {
+    let mut cleaned = String::with_capacity(prompt.len());
+    let mut remaining = prompt;
+    let mut skills = Vec::new();
+    let mut seen_paths = HashSet::new();
+
+    loop {
+        let Some(start) = remaining.find(JEAN_SKILL_MARKER_PREFIX) else {
+            cleaned.push_str(remaining);
+            break;
+        };
+
+        cleaned.push_str(&remaining[..start]);
+        let after_prefix = &remaining[start + JEAN_SKILL_MARKER_PREFIX.len()..];
+
+        let Some(end) = after_prefix.find(JEAN_SKILL_MARKER_SUFFIX) else {
+            cleaned.push_str(&remaining[start..]);
+            break;
+        };
+
+        let path = after_prefix[..end].trim();
+        if !path.is_empty() && seen_paths.insert(path.to_string()) {
+            skills.push(CodexSkillInput {
+                name: codex_skill_name_from_path(path),
+                path: path.to_string(),
+            });
+        }
+
+        remaining = &after_prefix[end + JEAN_SKILL_MARKER_SUFFIX.len()..];
+    }
+
+    (normalize_codex_prompt_text(&cleaned), skills)
+}
+
+fn codex_prompt_mentions_skill(text: &str, skill_name: &str) -> bool {
+    text.contains(&format!("${skill_name}"))
+}
+
+pub(crate) fn build_codex_user_input(prompt: &str) -> Vec<serde_json::Value> {
+    let (cleaned_prompt, skills) = extract_codex_skill_inputs(prompt);
+    let missing_tokens = skills
+        .iter()
+        .filter(|skill| !codex_prompt_mentions_skill(&cleaned_prompt, &skill.name))
+        .map(|skill| format!("${}", skill.name))
+        .collect::<Vec<_>>();
+
+    let text = if missing_tokens.is_empty() {
+        cleaned_prompt
+    } else if cleaned_prompt.is_empty() {
+        missing_tokens.join(" ")
+    } else {
+        format!("{} {}", missing_tokens.join(" "), cleaned_prompt)
+    };
+
+    let mut input = vec![serde_json::json!({
+        "type": "text",
+        "text": text,
+        "text_elements": [],
+    })];
+
+    for skill in skills {
+        input.push(serde_json::json!({
+            "type": "skill",
+            "name": skill.name,
+            "path": skill.path,
+        }));
+    }
+
+    input
+}
 
 /// Split "gpt-5.4-fast" → ("gpt-5.4", true). Only gpt-5.4-fast is recognised;
 /// older models that happened to end in `-fast` are left unchanged.
@@ -201,11 +303,7 @@ pub fn build_turn_start_params(
 ) -> serde_json::Value {
     let mut params = serde_json::json!({
         "threadId": thread_id,
-        "input": [{
-            "type": "text",
-            "text": prompt,
-            "text_elements": [],
-        }],
+        "input": build_codex_user_input(prompt),
     });
 
     // Reasoning effort (per-turn override)
@@ -3129,6 +3227,42 @@ mod tests {
             params["collaborationMode"]["settings"]["reasoningEffort"],
             "medium"
         );
+    }
+
+    #[test]
+    fn build_codex_user_input_converts_skill_markers_to_structured_items() {
+        let input = build_codex_user_input(
+            "Add tests\n\n[Skill: /tmp/skill-creator/SKILL.md - Read and use this skill to guide your response]",
+        );
+
+        assert_eq!(input.len(), 2);
+        assert_eq!(input[0]["type"], "text");
+        assert_eq!(input[0]["text"], "$skill-creator Add tests");
+        assert_eq!(input[1]["type"], "skill");
+        assert_eq!(input[1]["name"], "skill-creator");
+        assert_eq!(input[1]["path"], "/tmp/skill-creator/SKILL.md");
+    }
+
+    #[test]
+    fn build_codex_user_input_deduplicates_skill_paths_and_preserves_existing_mentions() {
+        let input = build_codex_user_input(
+            "$skill-creator Add tests\n\n[Skill: /tmp/skill-creator/SKILL.md - Read and use this skill to guide your response]\n[Skill: /tmp/skill-creator/SKILL.md - Read and use this skill to guide your response]",
+        );
+
+        assert_eq!(input.len(), 2);
+        assert_eq!(input[0]["text"], "$skill-creator Add tests");
+        assert_eq!(input[1]["name"], "skill-creator");
+    }
+
+    #[test]
+    fn build_codex_user_input_supports_skill_only_prompts() {
+        let input = build_codex_user_input(
+            "[Skill: /tmp/skill-creator/SKILL.md - Read and use this skill to guide your response]",
+        );
+
+        assert_eq!(input.len(), 2);
+        assert_eq!(input[0]["text"], "$skill-creator");
+        assert_eq!(input[1]["type"], "skill");
     }
 
     #[test]

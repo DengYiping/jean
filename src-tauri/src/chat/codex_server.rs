@@ -562,13 +562,7 @@ pub fn steer_turn(thread_id: &str, turn_id: &str, input: &str) -> Result<String,
     let params = serde_json::json!({
         "threadId": thread_id,
         "expectedTurnId": turn_id,
-        "input": [
-            {
-                "type": "text",
-                "text": input,
-                "text_elements": [],
-            }
-        ],
+        "input": super::codex::build_codex_user_input(input),
     });
 
     let response = send_request("turn/steer", params)?;

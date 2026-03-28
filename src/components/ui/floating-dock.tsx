@@ -17,6 +17,9 @@ import {
   Terminal,
   Sparkles,
   FileText,
+  Github,
+  GitPullRequest,
+  ShieldAlert,
 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -325,6 +328,60 @@ export function FloatingDock() {
       .catch(() => toast.error('Failed to copy resume command'))
   }, [getActiveResumeCommand, resumeCommand])
 
+  const handleOpenGitHub = useCallback(() => {
+    const branch = worktree?.branch
+    if (!branch) {
+      if (isNativeApp()) {
+        if (selectedProjectId) {
+          invoke('open_project_on_github', { projectId: selectedProjectId })
+        }
+      } else {
+        // Web access: get URL and open client-side (open_project_on_github opens on the server)
+        const targetPath = worktree?.path
+        if (targetPath) {
+          const win = preOpenWindow()
+          invoke<string>('get_github_repo_url', { repoPath: targetPath })
+            .then(url => openExternal(url, win))
+            .catch(() => {
+              win?.close()
+              toast.error('Failed to open GitHub')
+            })
+        }
+      }
+      return
+    }
+    const targetPath = worktree?.path
+    if (!targetPath) return
+    // Pre-open window to avoid mobile popup blockers
+    const win = preOpenWindow()
+    invoke<GitHubRemote[]>('get_github_remotes', { repoPath: targetPath })
+      .then(remotes => {
+        if (!remotes || remotes.length <= 1) {
+          const url = remotes?.[0]?.url
+          if (url) openExternal(`${url}/tree/${branch}`, win)
+          else win?.close()
+        } else {
+          win?.close()
+          useUIStore.getState().openRemotePicker(targetPath, remoteName => {
+            const remote = remotes.find(r => r.name === remoteName)
+            if (remote) openExternal(`${remote.url}/tree/${branch}`)
+          })
+        }
+      })
+      .catch(() => {
+        win?.close()
+        toast.error('Failed to fetch remotes')
+      })
+  }, [worktree?.branch, worktree?.path, selectedProjectId])
+
+  const handleOpenPR = useCallback(() => {
+    if (worktree?.pr_url) openExternal(worktree.pr_url)
+  }, [worktree?.pr_url])
+
+  const handleOpenSecurityAlert = useCallback(() => {
+    const url = worktree?.security_alert_url ?? worktree?.advisory_url
+    if (url) openExternal(url)
+  }, [worktree?.security_alert_url, worktree?.advisory_url])
   // Listen for keyboard shortcut event
   useEffect(() => {
     const handler = () => toggleMenu()
@@ -444,6 +501,29 @@ export function FloatingDock() {
             <FileText className="mr-2 h-4 w-4" />
             View Plan
           </DropdownMenuItem>
+          {isMobile && currentWorktreeId && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleOpenGitHub}>
+                <Github className="mr-2 h-4 w-4" />
+                GitHub
+              </DropdownMenuItem>
+              {worktree?.pr_url && (
+                <DropdownMenuItem onClick={handleOpenPR}>
+                  <GitPullRequest className="mr-2 h-4 w-4" />
+                  PR #{worktree.pr_number}
+                </DropdownMenuItem>
+              )}
+              {(worktree?.security_alert_url || worktree?.advisory_url) && (
+                <DropdownMenuItem onClick={handleOpenSecurityAlert}>
+                  <ShieldAlert className="mr-2 h-4 w-4" />
+                  {worktree?.security_alert_number
+                    ? `Alert #${worktree.security_alert_number}`
+                    : worktree?.advisory_ghsa_id}
+                </DropdownMenuItem>
+              )}
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
 

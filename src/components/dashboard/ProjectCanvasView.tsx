@@ -21,6 +21,7 @@ import {
   Clock3,
   GitBranch,
   GitPullRequestArrow,
+  ShieldAlert,
   Code,
   ExternalLink,
   Folder,
@@ -441,6 +442,20 @@ function WorktreeSectionHeader({
                         {worktree.pr_number}
                       </>
                     )}
+                    {worktree.security_alert_number && (
+                      <>
+                        <span className="text-border">·</span>
+                        <ShieldAlert className="h-2.5 w-2.5 text-orange-500" />#
+                        {worktree.security_alert_number}
+                      </>
+                    )}
+                    {worktree.advisory_ghsa_id && (
+                      <>
+                        <span className="text-border">·</span>
+                        <ShieldAlert className="h-2.5 w-2.5 text-orange-500" />
+                        <span className="max-w-20 truncate">{worktree.advisory_ghsa_id}</span>
+                      </>
+                    )}
                   </span>
                 )}
                 <span
@@ -467,6 +482,20 @@ function WorktreeSectionHeader({
                       <span className="text-border">·</span>
                       <GitPullRequestArrow className="h-2.5 w-2.5 shrink-0" />#
                       {worktree.pr_number}
+                    </>
+                  )}
+                  {worktree.security_alert_number && (
+                    <>
+                      <span className="text-border">·</span>
+                      <ShieldAlert className="h-2.5 w-2.5 shrink-0 text-orange-500" />#
+                      {worktree.security_alert_number}
+                    </>
+                  )}
+                  {worktree.advisory_ghsa_id && (
+                    <>
+                      <span className="text-border">·</span>
+                      <ShieldAlert className="h-2.5 w-2.5 shrink-0 text-orange-500" />
+                      <span className="max-w-20 truncate">{worktree.advisory_ghsa_id}</span>
                     </>
                   )}
                 </span>

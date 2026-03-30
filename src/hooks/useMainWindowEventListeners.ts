@@ -436,6 +436,21 @@ function executeKeybindingAction(
       window.dispatchEvent(new CustomEvent('toggle-session-label'))
       break
     }
+    case 'toggle_parallel_execution_prompting': {
+      logger.debug('Keybinding: toggle_parallel_execution_prompting')
+      const uiStoreForParallel = useUIStore.getState()
+      const chatStoreForParallel = useChatStore.getState()
+      if (
+        !uiStoreForParallel.sessionChatModalOpen &&
+        !chatStoreForParallel.activeWorktreePath
+      ) {
+        break
+      }
+      window.dispatchEvent(
+        new CustomEvent('toggle-parallel-execution-prompting')
+      )
+      break
+    }
   }
 }
 

@@ -52,11 +52,11 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { resolveBackend } from '@/lib/model-utils'
 import {
   DEFAULT_INVESTIGATE_WORKFLOW_RUN_PROMPT,
-  DEFAULT_PARALLEL_EXECUTION_PROMPT,
   resolveMagicPromptProvider,
 } from '@/types/preferences'
 import type { WorkflowRun } from '@/types/github'
 import type { Project, Worktree } from '@/types/projects'
+import { resolveParallelExecutionPromptForSession } from '@/lib/parallel-execution-prompt'
 
 function timeAgo(dateString: string): string {
   const seconds = Math.floor(
@@ -475,11 +475,10 @@ export function WorkflowRunsModal() {
           thinkingLevel: 'think',
           backend: investigateBackend,
           customProfileName: investigateCustomProfile,
-          parallelExecutionPrompt:
-            preferences?.parallel_execution_prompt_enabled
-              ? (preferences.magic_prompts?.parallel_execution ??
-                DEFAULT_PARALLEL_EXECUTION_PROMPT)
-              : undefined,
+          parallelExecutionPrompt: resolveParallelExecutionPromptForSession(
+            sessionId,
+            preferences
+          ),
           chromeEnabled: preferences?.chrome_enabled ?? false,
           aiLanguage: preferences?.ai_language,
         })

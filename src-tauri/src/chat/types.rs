@@ -491,6 +491,9 @@ pub struct Session {
     /// Per-session MCP server override (None = inherit from project/global)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled_mcp_servers: Option<Vec<String>>,
+    /// Per-session override for parallel execution prompting (None = inherit global preference)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parallel_execution_prompt_enabled: Option<bool>,
     /// Persisted session digest (recap summary)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub digest: Option<SessionDigest>,
@@ -567,6 +570,7 @@ impl Session {
             plan_file_path: None,
             pending_plan_message_id: None,
             enabled_mcp_servers: None,
+            parallel_execution_prompt_enabled: None,
             digest: None,
             last_run_status: None,
             last_run_execution_mode: None,
@@ -752,6 +756,7 @@ impl SessionMetadata {
             plan_file_path: self.plan_file_path.clone(),
             pending_plan_message_id: self.pending_plan_message_id.clone(),
             enabled_mcp_servers: self.enabled_mcp_servers.clone(),
+            parallel_execution_prompt_enabled: self.parallel_execution_prompt_enabled,
             digest: self.digest.clone(),
             // Populate from last run for status recovery on app restart
             last_run_status: last_run.map(|r| r.status.clone()),
@@ -793,6 +798,7 @@ impl SessionMetadata {
         self.plan_file_path = session.plan_file_path.clone();
         self.pending_plan_message_id = session.pending_plan_message_id.clone();
         self.enabled_mcp_servers = session.enabled_mcp_servers.clone();
+        self.parallel_execution_prompt_enabled = session.parallel_execution_prompt_enabled;
         self.label = session.label.clone();
         // NOTE: Do NOT overwrite queued_messages here. Queue state is managed
         // exclusively by enqueue/dequeue/remove/clear operations which use
@@ -1101,6 +1107,9 @@ pub struct SessionMetadata {
     /// Per-session MCP server override (None = inherit from project/global)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled_mcp_servers: Option<Vec<String>>,
+    /// Per-session override for parallel execution prompting (None = inherit global preference)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parallel_execution_prompt_enabled: Option<bool>,
     /// Persisted session digest (recap summary)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub digest: Option<SessionDigest>,
@@ -1223,6 +1232,7 @@ impl SessionMetadata {
             plan_file_path: None,
             pending_plan_message_id: None,
             enabled_mcp_servers: None,
+            parallel_execution_prompt_enabled: None,
             digest: None,
             label: None,
             queued_messages: vec![],

@@ -8,8 +8,8 @@ import {
   persistEnqueue,
 } from '@/services/chat'
 import { buildMcpConfigJson } from '@/services/mcp'
-import { DEFAULT_PARALLEL_EXECUTION_PROMPT } from '@/types/preferences'
 import { buildQueuedMessageWithRefs } from '@/lib/queued-message'
+import { resolveParallelExecutionPromptForSession } from '@/lib/parallel-execution-prompt'
 import type {
   QueuedMessage,
   ExecutionMode,
@@ -156,11 +156,10 @@ export function useMessageSending({
           effortLevel: queuedMsg.effortLevel,
           mcpConfig: queuedMsg.mcpConfig,
           customProfileName: resolved.customProfileName,
-          parallelExecutionPrompt:
-            preferences?.parallel_execution_prompt_enabled
-              ? (preferences.magic_prompts?.parallel_execution ??
-                DEFAULT_PARALLEL_EXECUTION_PROMPT)
-              : undefined,
+          parallelExecutionPrompt: resolveParallelExecutionPromptForSession(
+            activeSessionId,
+            preferences
+          ),
           chromeEnabled: preferences?.chrome_enabled ?? false,
           aiLanguage: preferences?.ai_language,
           allowedTools,
@@ -179,10 +178,8 @@ export function useMessageSending({
       activeWorktreePath,
       sendMessage,
       queryClient,
-      preferences?.parallel_execution_prompt_enabled,
       preferences?.chrome_enabled,
       preferences?.ai_language,
-      preferences?.magic_prompts?.parallel_execution,
       resolveCustomProfile,
     ]
   )
@@ -254,11 +251,10 @@ export function useMessageSending({
             enabledMcpServersRef.current,
             selectedBackendRef.current
           ),
-          parallelExecutionPrompt:
-            preferences?.parallel_execution_prompt_enabled
-              ? (preferences.magic_prompts?.parallel_execution ??
-                DEFAULT_PARALLEL_EXECUTION_PROMPT)
-              : undefined,
+          parallelExecutionPrompt: resolveParallelExecutionPromptForSession(
+            activeSessionId,
+            preferences
+          ),
           chromeEnabled: preferences?.chrome_enabled ?? false,
           aiLanguage: preferences?.ai_language,
           backend:

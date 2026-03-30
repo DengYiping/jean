@@ -135,6 +135,9 @@ interface ChatUIState {
   // Enabled MCP servers per session (server names that are active)
   enabledMcpServers: Record<string, string[]>
 
+  // Per-session parallel execution prompt override (undefined = inherit global preference)
+  parallelExecutionPromptEnabledBySession: Record<string, boolean>
+
   // Answered questions per session (to make them read-only after answering)
   answeredQuestions: Record<string, Set<string>>
 
@@ -376,6 +379,11 @@ interface ChatUIState {
     serverName: string,
     currentDefaults?: string[]
   ) => void
+  setParallelExecutionPromptEnabled: (
+    sessionId: string,
+    enabled: boolean | undefined
+  ) => void
+  getParallelExecutionPromptEnabled: (sessionId: string) => boolean | undefined
 
   // Actions - Question answering (session-based)
   markQuestionAnswered: (
@@ -590,6 +598,7 @@ export const useChatStore = create<ChatUIState>()(
       selectedModels: {},
       selectedProviders: {},
       enabledMcpServers: {},
+      parallelExecutionPromptEnabledBySession: {},
       answeredQuestions: {},
       submittedAnswers: {},
       errors: {},
@@ -1463,6 +1472,13 @@ export const useChatStore = create<ChatUIState>()(
                 [toId]: ms,
               }
             }
+            const pe = state.parallelExecutionPromptEnabledBySession[fromId]
+            if (pe !== undefined) {
+              updates.parallelExecutionPromptEnabledBySession = {
+                ...state.parallelExecutionPromptEnabledBySession,
+                [toId]: pe,
+              }
+            }
             if (Object.keys(updates).length === 0) return state
             return updates
           },
@@ -1501,6 +1517,44 @@ export const useChatStore = create<ChatUIState>()(
           undefined,
           'toggleMcpServer'
         ),
+
+      setParallelExecutionPromptEnabled: (sessionId, enabled) =>
+        set(
+          state => {
+            if (enabled === undefined) {
+              if (
+                state.parallelExecutionPromptEnabledBySession[sessionId] ===
+                undefined
+              ) {
+                return state
+              }
+              const { [sessionId]: _, ...rest } =
+                state.parallelExecutionPromptEnabledBySession
+              return {
+                parallelExecutionPromptEnabledBySession: rest,
+              }
+            }
+
+            if (
+              state.parallelExecutionPromptEnabledBySession[sessionId] ===
+              enabled
+            ) {
+              return state
+            }
+
+            return {
+              parallelExecutionPromptEnabledBySession: {
+                ...state.parallelExecutionPromptEnabledBySession,
+                [sessionId]: enabled,
+              },
+            }
+          },
+          undefined,
+          'setParallelExecutionPromptEnabled'
+        ),
+
+      getParallelExecutionPromptEnabled: sessionId =>
+        get().parallelExecutionPromptEnabledBySession[sessionId],
 
       // Question answering (session-based)
       markQuestionAnswered: (sessionId, toolCallId, answers) =>
@@ -2375,6 +2429,8 @@ export const useChatStore = create<ChatUIState>()(
             const { [sessionId]: _fixed, ...restFixed } = state.fixedFindings
             const { [sessionId]: _effort, ...restEffort } = state.effortLevels
             const { [sessionId]: _mcp, ...restMcp } = state.enabledMcpServers
+            const { [sessionId]: _parallel, ...restParallelExecutionPrompt } =
+              state.parallelExecutionPromptEnabledBySession
             const { [sessionId]: _label, ...restLabels } = state.sessionLabels
             const { [sessionId]: _ttu, ...restThreadTokenUsage } =
               state.threadTokenUsage
@@ -2390,6 +2446,8 @@ export const useChatStore = create<ChatUIState>()(
               fixedFindings: restFixed,
               effortLevels: restEffort,
               enabledMcpServers: restMcp,
+              parallelExecutionPromptEnabledBySession:
+                restParallelExecutionPrompt,
               sessionLabels: restLabels,
               threadTokenUsage: restThreadTokenUsage,
             }

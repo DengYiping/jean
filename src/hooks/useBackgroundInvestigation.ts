@@ -11,7 +11,6 @@ import {
   DEFAULT_INVESTIGATE_SECURITY_ALERT_PROMPT,
   DEFAULT_INVESTIGATE_ADVISORY_PROMPT,
   DEFAULT_INVESTIGATE_LINEAR_ISSUE_PROMPT,
-  DEFAULT_PARALLEL_EXECUTION_PROMPT,
   resolveMagicPromptProvider,
 } from '@/types/preferences'
 import type { WorktreeSessions } from '@/types/chat'
@@ -19,6 +18,7 @@ import { logger } from '@/lib/logger'
 import { useQueryClient } from '@tanstack/react-query'
 import { projectsQueryKeys } from '@/services/projects'
 import type { Worktree } from '@/types/projects'
+import { resolveParallelExecutionPromptForSession } from '@/lib/parallel-execution-prompt'
 
 type InvestigationType =
   | 'issue'
@@ -481,10 +481,10 @@ async function processBackgroundInvestigation(
     thinkingLevel: 'think',
     effortLevel: useAdaptive ? 'high' : undefined,
     customProfileName,
-    parallelExecutionPrompt: preferences?.parallel_execution_prompt_enabled
-      ? (preferences.magic_prompts?.parallel_execution ??
-        DEFAULT_PARALLEL_EXECUTION_PROMPT)
-      : undefined,
+    parallelExecutionPrompt: resolveParallelExecutionPromptForSession(
+      sessionId,
+      preferences
+    ),
     chromeEnabled: preferences?.chrome_enabled ?? false,
     aiLanguage: preferences?.ai_language,
     backend,

@@ -86,6 +86,8 @@ export interface ChatToolbarProps {
   onThinkingLevelChange: (level: ThinkingLevel) => void
   onEffortLevelChange: (level: EffortLevel) => void
   onSetExecutionMode: (mode: ExecutionMode) => void
+  parallelExecutionPromptEnabled: boolean
+  onParallelExecutionPromptChange: (enabled: boolean) => void
   onCancel: () => void
   queuedMessageCount?: number
 

@@ -156,7 +156,9 @@ pub struct AppPreferences {
     #[serde(default)]
     pub http_server_token: Option<String>, // Persisted auth token (generated once)
     #[serde(default)]
-    pub http_server_localhost_only: bool, // Bind to localhost only (more secure)
+    pub http_server_bind_host: Option<String>, // Explicit bind host (localhost or specific IP)
+    #[serde(default)]
+    pub http_server_localhost_only: bool, // Legacy fallback when no explicit bind host is set
     #[serde(default = "default_http_server_token_required")]
     pub http_server_token_required: bool, // Require token for web access (default true)
     #[serde(default = "default_removal_behavior")]
@@ -443,6 +445,48 @@ fn default_http_server_port() -> u16 {
 
 fn default_http_server_token_required() -> bool {
     true // Require token by default for security
+}
+
+fn normalize_http_bind_host(bind_host: Option<&str>) -> Option<String> {
+    bind_host
+        .map(str::trim)
+        .filter(|host| !host.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn resolve_http_server_bind_host(prefs: &AppPreferences) -> String {
+    normalize_http_bind_host(prefs.http_server_bind_host.as_deref()).unwrap_or_else(|| {
+        if prefs.http_server_localhost_only {
+            "127.0.0.1".to_string()
+        } else {
+            "0.0.0.0".to_string()
+        }
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{resolve_http_server_bind_host, AppPreferences};
+
+    #[test]
+    fn resolve_http_server_bind_host_prefers_explicit_host() {
+        let mut prefs = AppPreferences::default();
+        prefs.http_server_bind_host = Some(" 100.110.76.47 ".to_string());
+        prefs.http_server_localhost_only = true;
+
+        assert_eq!(resolve_http_server_bind_host(&prefs), "100.110.76.47");
+    }
+
+    #[test]
+    fn resolve_http_server_bind_host_falls_back_to_legacy_boolean() {
+        let mut prefs = AppPreferences::default();
+        prefs.http_server_bind_host = None;
+        prefs.http_server_localhost_only = true;
+        assert_eq!(resolve_http_server_bind_host(&prefs), "127.0.0.1");
+
+        prefs.http_server_localhost_only = false;
+        assert_eq!(resolve_http_server_bind_host(&prefs), "0.0.0.0");
+    }
 }
 
 fn default_removal_behavior() -> String {
@@ -1127,6 +1171,7 @@ impl Default for AppPreferences {
             http_server_auto_start: false,
             http_server_port: default_http_server_port(),
             http_server_token: None,
+            http_server_bind_host: None,
             http_server_localhost_only: true, // Default to localhost-only for security
             http_server_token_required: default_http_server_token_required(),
             removal_behavior: default_removal_behavior(),
@@ -1818,7 +1863,7 @@ async fn start_http_server(
 
     let prefs = load_preferences(app.clone()).await?;
     let actual_port = port.unwrap_or(prefs.http_server_port);
-    let localhost_only = prefs.http_server_localhost_only;
+    let bind_host = resolve_http_server_bind_host(&prefs);
     let token_required = prefs.http_server_token_required;
 
     // Generate or load token
@@ -1851,7 +1896,7 @@ async fn start_http_server(
         app.clone(),
         actual_port,
         token,
-        localhost_only,
+        bind_host,
         token_required,
     )
     .await?;
@@ -1860,8 +1905,11 @@ async fn start_http_server(
         url: Some(handle.url.clone()),
         token: Some(handle.token.clone()),
         port: Some(handle.port),
+        bind_host: Some(handle.bind_host.clone()),
         localhost_only: Some(handle.localhost_only),
     };
+    let bind_host_for_log = handle.bind_host.clone();
+    let localhost_only_for_log = handle.localhost_only;
 
     // Store the handle
     let handle_state = app.try_state::<Arc<Mutex<Option<http_server::server::HttpServerHandle>>>>();
@@ -1871,9 +1919,10 @@ async fn start_http_server(
     }
 
     log::info!(
-        "HTTP server started: {} (localhost_only: {})",
+        "HTTP server started: {} (bind_host: {}, localhost_only: {})",
         status.url.as_deref().unwrap_or("unknown"),
-        localhost_only
+        bind_host_for_log,
+        localhost_only_for_log
     );
     Ok(status)
 }
@@ -1911,12 +1960,12 @@ async fn start_http_server_headless(
     let port = overrides.port.unwrap_or(default_port);
 
     // Host: CLI --host overrides bind_all_interfaces and preference
-    let localhost_only = if let Some(ref host) = overrides.host {
-        host == "127.0.0.1" || host == "localhost" || host == "::1"
+    let bind_host = if let Some(ref host) = overrides.host {
+        host.clone()
     } else if bind_all_interfaces {
-        false
+        "0.0.0.0".to_string()
     } else {
-        prefs.http_server_localhost_only
+        resolve_http_server_bind_host(&prefs)
     };
 
     // Token required: --no-token overrides preference
@@ -1957,15 +2006,18 @@ async fn start_http_server_headless(
 
     // Start the server
     let handle =
-        http_server::server::start_server(app.clone(), port, token, localhost_only, token_required)
+        http_server::server::start_server(app.clone(), port, token, bind_host, token_required)
             .await?;
     let status = http_server::server::ServerStatus {
         running: true,
         url: Some(handle.url.clone()),
         token: Some(handle.token.clone()),
         port: Some(handle.port),
+        bind_host: Some(handle.bind_host.clone()),
         localhost_only: Some(handle.localhost_only),
     };
+    let bind_host_for_log = handle.bind_host.clone();
+    let localhost_only_for_log = handle.localhost_only;
 
     // Store the handle
     let handle_state = app.try_state::<Arc<Mutex<Option<http_server::server::HttpServerHandle>>>>();
@@ -1975,9 +2027,10 @@ async fn start_http_server_headless(
     }
 
     log::info!(
-        "HTTP server started: {} (localhost_only: {})",
+        "HTTP server started: {} (bind_host: {}, localhost_only: {})",
         status.url.as_deref().unwrap_or("unknown"),
-        localhost_only
+        bind_host_for_log,
+        localhost_only_for_log
     );
     Ok(status)
 }
@@ -1987,6 +2040,16 @@ async fn get_http_server_status(
     app: AppHandle,
 ) -> Result<http_server::server::ServerStatus, String> {
     Ok(http_server::server::get_server_status(app).await)
+}
+
+#[tauri::command]
+fn list_http_bind_host_options() -> Result<Vec<http_server::server::BindHostOption>, String> {
+    Ok(http_server::server::list_bind_host_options())
+}
+
+#[tauri::command]
+fn validate_http_bind_host(host: String) -> Result<String, String> {
+    http_server::server::validate_bind_host(&host)
 }
 
 #[tauri::command]
@@ -2950,6 +3013,8 @@ pub fn run() {
             start_http_server,
             stop_http_server,
             get_http_server_status,
+            list_http_bind_host_options,
+            validate_http_bind_host,
             regenerate_http_token,
             // OpenCode server commands
             opencode_server::start_opencode_server,

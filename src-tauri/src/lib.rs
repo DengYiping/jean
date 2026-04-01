@@ -2241,7 +2241,9 @@ fn print_cli_help() {
     println!();
     println!("Options:");
     println!("  --headless          Run without GUI (HTTP server only)");
-    println!("  --host <addr>       Bind address (default: 0.0.0.0 in headless)");
+    println!(
+        "  --host <addr>       Bind to an IP address or localhost (default: 0.0.0.0 in headless)"
+    );
     println!("  --port <port>       HTTP server port (overrides saved preference)");
     println!("  --token <token>     Use specific auth token (not persisted)");
     println!("  --no-token          Disable token authentication");

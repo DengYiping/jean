@@ -166,21 +166,21 @@ pub async fn start_server(
     let addr = SocketAddr::new(bind_ip, port);
     let listener = tokio::net::TcpListener::bind(addr)
         .await
-        .map_err(|e| format!("Failed to bind {bind_host}:{port}: {e}"))?;
+        .map_err(|e| format!("Failed to bind to {bind_host}:{port}: {e}"))?;
 
     let local_addr = listener
         .local_addr()
         .map_err(|e| format!("Failed to get local address: {e}"))?;
 
-    let display_host = display_host_for_bind_ip(bind_ip);
-    let url = format_http_url(&display_host, local_addr.port());
+    let url = format_http_url(&display_host_for_bind_ip(bind_ip), local_addr.port());
 
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+    let bind_host_for_log = bind_host.clone();
 
     // Spawn the server
     tokio::spawn(async move {
         log::info!(
-            "HTTP server listening on {local_addr} (bind_host: {bind_host}, localhost_only: {localhost_only})"
+            "HTTP server listening on {local_addr} (bind_host: {bind_host_for_log}, localhost_only: {localhost_only})"
         );
         axum::serve(listener, router)
             .with_graceful_shutdown(async {
@@ -690,7 +690,6 @@ pub(crate) fn validate_bind_host(host: &str) -> Result<String, String> {
         Ok(trimmed.to_string())
     }
 }
-
 fn display_host_for_bind_ip(bind_ip: IpAddr) -> String {
     if bind_ip == IpAddr::V4(Ipv4Addr::UNSPECIFIED) {
         get_local_ip().unwrap_or_else(|| Ipv4Addr::LOCALHOST.to_string())

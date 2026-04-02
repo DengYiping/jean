@@ -534,6 +534,10 @@ function WorktreeSectionHeader({
 
 export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
   const { data: preferences } = usePreferences()
+  const worktreeSortMode = useProjectsStore(
+    state =>
+      state.projectCanvasSettings[projectId]?.worktreeSortMode ?? 'created'
+  )
 
   // Project action mutations
   const createBaseSession = useCreateBaseSession()
@@ -545,8 +549,6 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
   const openInEditor = useOpenWorktreeInEditor()
 
   const [searchQuery, setSearchQuery] = useState('')
-  const [worktreeSortMode, setWorktreeSortMode] =
-    useState<WorktreeSortMode>('created')
   const isMobile = useIsMobile()
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false)
 
@@ -2008,12 +2010,17 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
                 <DropdownMenuContent align="start" className="w-48">
                   <DropdownMenuLabel>Sort worktrees</DropdownMenuLabel>
                   <DropdownMenuSeparator />
-                  <DropdownMenuRadioGroup
-                    value={worktreeSortMode}
-                    onValueChange={value =>
-                      setWorktreeSortMode(value as WorktreeSortMode)
-                    }
-                  >
+                    <DropdownMenuRadioGroup
+                      value={worktreeSortMode}
+                      onValueChange={value =>
+                        useProjectsStore
+                          .getState()
+                          .setProjectCanvasWorktreeSortMode(
+                            projectId,
+                            value as WorktreeSortMode
+                          )
+                      }
+                    >
                     <DropdownMenuRadioItem value="created">
                       Creation date
                     </DropdownMenuRadioItem>

@@ -304,6 +304,7 @@ pub async fn get_session(
         }
     }
 
+    session.last_message_at = messages.iter().map(|message| message.timestamp).max();
     session.messages = messages;
     Ok(session)
 }
@@ -951,6 +952,10 @@ pub async fn restore_session_with_base(
         pr_url: None,
         issue_number: None,
         linear_issue_identifier: None,
+        security_alert_number: None,
+        security_alert_url: None,
+        advisory_ghsa_id: None,
+        advisory_url: None,
         cached_pr_status: None,
         cached_check_status: None,
         cached_behind_count: None,

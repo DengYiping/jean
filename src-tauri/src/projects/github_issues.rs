@@ -2177,6 +2177,7 @@ pub struct SecurityAlertContext {
     pub ghsa_id: String,
     pub cve_id: Option<String>,
     pub manifest_path: String,
+    pub html_url: Option<String>,
 }
 
 /// Loaded security alert context info returned to frontend
@@ -2292,6 +2293,7 @@ pub struct AdvisoryContext {
     pub description: String,
     pub cve_id: Option<String>,
     pub vulnerabilities: Vec<AdvisoryVulnerability>,
+    pub html_url: Option<String>,
 }
 
 /// Loaded advisory context info returned from backend
@@ -2583,6 +2585,7 @@ pub async fn load_security_alert_context(
         ghsa_id: alert_raw.security_advisory.ghsa_id.clone(),
         cve_id: alert_raw.security_advisory.cve_id.clone(),
         manifest_path: alert_raw.dependency.manifest_path.clone(),
+        html_url: Some(alert_raw.html_url.clone()),
     };
 
     // Write to shared git-context directory
@@ -2901,6 +2904,7 @@ pub async fn load_advisory_context(
         description: advisory.description.clone(),
         cve_id: advisory.cve_id.clone(),
         vulnerabilities: advisory.vulnerabilities.clone(),
+        html_url: Some(advisory.html_url.clone()),
     };
 
     // Write to shared git-context directory

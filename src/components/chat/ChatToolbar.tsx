@@ -285,7 +285,7 @@ export const ChatToolbar = memo(function ChatToolbar({
 
   return (
     <div className="@container flex justify-center px-4 py-2 md:px-6">
-      <div className="inline-flex max-w-full flex-nowrap items-center overflow-hidden whitespace-nowrap rounded-lg bg-muted/50">
+      <div className="inline-flex max-w-full flex-nowrap items-center overflow-x-auto whitespace-nowrap rounded-lg bg-muted/50 scrollbar-hide">
         <MobileToolbarMenu
           isDisabled={isSending || hasPendingQuestions}
           hasOpenPr={hasOpenPr}

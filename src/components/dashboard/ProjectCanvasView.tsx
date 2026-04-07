@@ -14,12 +14,14 @@ import {
   Search,
   X,
   MoreHorizontal,
+  ArrowUpDown,
   Settings,
   Plus,
   FileJson,
   Clock3,
   GitBranch,
   GitPullRequestArrow,
+  ShieldAlert,
   Code,
   ExternalLink,
   Folder,
@@ -33,6 +35,9 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
@@ -143,6 +148,8 @@ interface FlatCard {
   isPending?: boolean
 }
 
+type WorktreeSortMode = 'created' | 'last_activity'
+
 type ActiveStatus =
   | 'waiting'
   | 'planning'
@@ -186,6 +193,32 @@ function formatRelativeTime(timestamp?: number): string | null {
   return `${days}d ago`
 }
 
+function getSessionActivityTimestamp(session: Session): number {
+  return session.last_message_at ?? session.updated_at ?? session.created_at
+}
+
+function getWorktreeLastActivity(
+  sessions: Session[],
+  fallbackTimestamp: number
+): number {
+  return sessions.reduce(
+    (latest, session) => Math.max(latest, getSessionActivityTimestamp(session)),
+    fallbackTimestamp
+  )
+}
+
+function getWorktreeSortValue(
+  worktree: Worktree,
+  latestActivityAt: number,
+  sortMode: WorktreeSortMode
+): number {
+  if (sortMode === 'created') {
+    return worktree.created_at
+  }
+
+  return Math.max(latestActivityAt, worktree.created_at)
+}
+
 function getSessionMetrics(cards: SessionCardData[]) {
   const waitingCount = cards.filter(
     c => c.status === 'waiting' || c.status === 'permission'
@@ -197,9 +230,9 @@ function getSessionMetrics(cards: SessionCardData[]) {
     c =>
       c.status === 'planning' || c.status === 'vibing' || c.status === 'yoloing'
   ).length
-  const latestUpdatedAt = cards.reduce(
+  const latestActivityAt = cards.reduce(
     (latest, card) =>
-      Math.max(latest, card.session.updated_at ?? card.session.created_at),
+      Math.max(latest, getSessionActivityTimestamp(card.session)),
     0
   )
 
@@ -208,7 +241,7 @@ function getSessionMetrics(cards: SessionCardData[]) {
     waitingCount,
     reviewCount,
     activeCount,
-    latestUpdatedAt,
+    latestActivityAt,
   }
 }
 
@@ -339,7 +372,7 @@ function WorktreeSectionHeader({
     return result
   }, [cards])
 
-  const lastActivity = formatRelativeTime(sessionMetrics?.latestUpdatedAt)
+  const lastActivity = formatRelativeTime(sessionMetrics?.latestActivityAt)
   const displayBranch = gitStatus?.current_branch ?? worktree.branch
 
   return (
@@ -409,6 +442,22 @@ function WorktreeSectionHeader({
                         {worktree.pr_number}
                       </>
                     )}
+                    {worktree.security_alert_number && (
+                      <>
+                        <span className="text-border">·</span>
+                        <ShieldAlert className="h-2.5 w-2.5 text-orange-500" />#
+                        {worktree.security_alert_number}
+                      </>
+                    )}
+                    {worktree.advisory_ghsa_id && (
+                      <>
+                        <span className="text-border">·</span>
+                        <ShieldAlert className="h-2.5 w-2.5 text-orange-500" />
+                        <span className="max-w-20 truncate">
+                          {worktree.advisory_ghsa_id}
+                        </span>
+                      </>
+                    )}
                   </span>
                 )}
                 <span
@@ -435,6 +484,22 @@ function WorktreeSectionHeader({
                       <span className="text-border">·</span>
                       <GitPullRequestArrow className="h-2.5 w-2.5 shrink-0" />#
                       {worktree.pr_number}
+                    </>
+                  )}
+                  {worktree.security_alert_number && (
+                    <>
+                      <span className="text-border">·</span>
+                      <ShieldAlert className="h-2.5 w-2.5 shrink-0 text-orange-500" />
+                      #{worktree.security_alert_number}
+                    </>
+                  )}
+                  {worktree.advisory_ghsa_id && (
+                    <>
+                      <span className="text-border">·</span>
+                      <ShieldAlert className="h-2.5 w-2.5 shrink-0 text-orange-500" />
+                      <span className="max-w-20 truncate">
+                        {worktree.advisory_ghsa_id}
+                      </span>
                     </>
                   )}
                 </span>
@@ -502,6 +567,10 @@ function WorktreeSectionHeader({
 
 export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
   const { data: preferences } = usePreferences()
+  const worktreeSortMode = useProjectsStore(
+    state =>
+      state.projectCanvasSettings[projectId]?.worktreeSortMode ?? 'created'
+  )
 
   // Project action mutations
   const createBaseSession = useCreateBaseSession()
@@ -592,30 +661,88 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
 
   // Use shared store state hook
   const storeState = useCanvasStoreState()
+  const queryClient = useQueryClient()
+
+  const markWorktreeLastUsed = useCallback(
+    (worktreeId: string, reason: string) => {
+      if (!isTauri()) return
+
+      const now = Math.floor(Date.now() / 1000)
+      console.debug('[ProjectCanvasView] markWorktreeLastUsed:start', {
+        projectId,
+        worktreeId,
+        reason,
+        now,
+      })
+
+      queryClient.setQueryData<Worktree[]>(
+        projectsQueryKeys.worktrees(projectId),
+        current =>
+          current?.map(worktree =>
+            worktree.id === worktreeId
+              ? { ...worktree, last_opened_at: now }
+              : worktree
+          )
+      )
+
+      void invoke('set_worktree_last_opened', { worktreeId })
+        .then(() => {
+          console.debug('[ProjectCanvasView] markWorktreeLastUsed:success', {
+            projectId,
+            worktreeId,
+            reason,
+            now,
+          })
+          queryClient.invalidateQueries({
+            queryKey: projectsQueryKeys.worktrees(projectId),
+          })
+        })
+        .catch(error => {
+          console.debug('[ProjectCanvasView] markWorktreeLastUsed:error', {
+            projectId,
+            worktreeId,
+            reason,
+            error,
+          })
+          queryClient.invalidateQueries({
+            queryKey: projectsQueryKeys.worktrees(projectId),
+          })
+        })
+    },
+    [projectId, queryClient]
+  )
+
+  const openWorktreeModal = useCallback(
+    (worktreeId: string, worktreePath: string, reason: string) => {
+      console.debug('[ProjectCanvasView] openWorktreeModal', {
+        projectId,
+        worktreeId,
+        worktreePath,
+        reason,
+      })
+      markWorktreeLastUsed(worktreeId, reason)
+      setSelectedWorktreeModal({ worktreeId, worktreePath })
+    },
+    [markWorktreeLastUsed, projectId]
+  )
 
   // Build worktree sections with computed card data
   const worktreeSections: WorktreeSection[] = useMemo(() => {
     const result: WorktreeSection[] = []
+    const latestActivityByWorktreeId = new Map<string, number>()
 
-    // Add pending worktrees first (newest first by created_at)
+    // Add pending worktrees first
     const sortedPending = [...pendingWorktrees].sort(
       (a, b) => b.created_at - a.created_at
     )
     for (const worktree of sortedPending) {
+      latestActivityByWorktreeId.set(worktree.id, worktree.created_at)
       // Include pending worktrees even without sessions - show setup card
       result.push({ worktree, cards: [], isPending: true })
     }
 
-    // Sort ready worktrees: base sessions first, then by created_at (newest first)
-    const sortedWorktrees = [...readyWorktrees].sort((a, b) => {
-      const aIsBase = isBaseSession(a)
-      const bIsBase = isBaseSession(b)
-      if (aIsBase && !bIsBase) return -1
-      if (!aIsBase && bIsBase) return 1
-      return b.created_at - a.created_at
-    })
-
-    for (const worktree of sortedWorktrees) {
+    const readySections: WorktreeSection[] = []
+    for (const worktree of readyWorktrees) {
       const sessionData = sessionsByWorktreeId.get(worktree.id)
       const sessions = sessionData?.sessions ?? []
 
@@ -652,12 +779,44 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
 
       // Re-order by status group so flat array matches visual group order
       const grouped = flattenGroups(groupCardsByStatus(cards))
+      const latestActivityAt = getWorktreeLastActivity(
+        filteredSessions,
+        worktree.created_at
+      )
+
+      latestActivityByWorktreeId.set(worktree.id, latestActivityAt)
 
       // Only include worktrees that have sessions (after filtering)
       if (grouped.length > 0) {
-        result.push({ worktree, cards: grouped })
+        readySections.push({ worktree, cards: grouped })
       }
     }
+
+    // Sort ready worktrees: base sessions first, then selected sort mode
+    readySections.sort((a, b) => {
+      const aIsBase = isBaseSession(a.worktree)
+      const bIsBase = isBaseSession(b.worktree)
+      if (aIsBase && !bIsBase) return -1
+      if (!aIsBase && bIsBase) return 1
+
+      const sortDiff =
+        getWorktreeSortValue(
+          b.worktree,
+          latestActivityByWorktreeId.get(b.worktree.id) ??
+            b.worktree.created_at,
+          worktreeSortMode
+        ) -
+        getWorktreeSortValue(
+          a.worktree,
+          latestActivityByWorktreeId.get(a.worktree.id) ??
+            a.worktree.created_at,
+          worktreeSortMode
+        )
+      if (sortDiff !== 0) return sortDiff
+      return b.worktree.created_at - a.worktree.created_at
+    })
+
+    result.push(...readySections)
 
     return result
   }, [
@@ -666,7 +825,52 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
     sessionsByWorktreeId,
     storeState,
     searchQuery,
+    worktreeSortMode,
   ])
+
+  useEffect(() => {
+    if (worktreeSortMode !== 'last_activity') return
+
+    console.debug(
+      '[ProjectCanvasView] last-activity sort snapshot',
+      worktreeSections
+        .map(section => ({
+          id: section.worktree.id,
+          name: section.worktree.name,
+          created_at: section.worktree.created_at,
+          latest_activity_at: section.isPending
+            ? section.worktree.created_at
+            : getSessionMetrics(section.cards).latestActivityAt,
+          latest_activity_label: formatRelativeTime(
+            section.isPending
+              ? section.worktree.created_at
+              : getSessionMetrics(section.cards).latestActivityAt
+          ),
+          session_activity_sources: section.isPending
+            ? []
+            : section.cards.map(card => ({
+                session_id: card.session.id,
+                last_message_at: card.session.last_message_at ?? null,
+                updated_at: card.session.updated_at,
+                created_at: card.session.created_at,
+                effective_activity_at: getSessionActivityTimestamp(
+                  card.session
+                ),
+              })),
+          is_base: isBaseSession(section.worktree),
+          is_pending: section.isPending ?? false,
+        }))
+        .sort((a, b) => {
+          if (a.is_base && !b.is_base) return -1
+          if (!a.is_base && b.is_base) return 1
+          const aLastActivity = a.latest_activity_at ?? 0
+          const bLastActivity = b.latest_activity_at ?? 0
+          if (bLastActivity !== aLastActivity)
+            return bLastActivity - aLastActivity
+          return b.created_at - a.created_at
+        })
+    )
+  }, [worktreeSortMode, worktreeSections])
 
   const projectSummary = useMemo(() => {
     let reviewCount = 0
@@ -857,10 +1061,11 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
     const handleOpenModal = (
       e: CustomEvent<{ worktreeId: string; worktreePath: string }>
     ) => {
-      setSelectedWorktreeModal({
-        worktreeId: e.detail.worktreeId,
-        worktreePath: e.detail.worktreePath,
-      })
+      openWorktreeModal(
+        e.detail.worktreeId,
+        e.detail.worktreePath,
+        'open-worktree-modal-event'
+      )
     }
     window.addEventListener(
       'open-worktree-modal',
@@ -990,16 +1195,13 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
 
         // Set active session so the modal opens on the right tab
         useChatStore.getState().setActiveSession(worktreeId, targetSession.id)
-        setSelectedWorktreeModal({
-          worktreeId,
-          worktreePath: worktree.path,
-        })
+        openWorktreeModal(worktreeId, worktree.path, 'auto-open-session')
         break // Only one per render cycle
       }
     }
     // sessionsFingerprint tracks when session data changes (stable string, not Map reference)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionsFingerprint, readyWorktrees, flatCards])
+  }, [sessionsFingerprint, readyWorktrees, flatCards, openWorktreeModal])
 
   // Auto-select session when dashboard opens (visual selection only, no modal unless restore_last_session is on)
   // Prefers last opened per project, then persisted active session per worktree, falls back to first card
@@ -1116,10 +1318,11 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
         useChatStore
           .getState()
           .setActiveSession(targetCard.worktreeId, sessionIdToOpen)
-        setSelectedWorktreeModal({
-          worktreeId: targetCard.worktreeId,
-          worktreePath: targetCard.worktreePath,
-        })
+        openWorktreeModal(
+          targetCard.worktreeId,
+          targetCard.worktreePath,
+          'restore-last-session'
+        )
       }
     }
   }, [
@@ -1128,6 +1331,7 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
     selectedWorktreeModal,
     projectId,
     preferences?.restore_last_session,
+    openWorktreeModal,
   ])
 
   // Mutations
@@ -1136,7 +1340,7 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
   // Handle clicking on a worktree row - open modal
   const handleWorktreeClick = useCallback(
     (worktreeId: string, worktreePath: string) => {
-      setSelectedWorktreeModal({ worktreeId, worktreePath })
+      openWorktreeModal(worktreeId, worktreePath, 'canvas-row-click')
 
       // Persist last-opened project context immediately on open so project switch
       // restore does not depend on a subsequent tab change event.
@@ -1154,7 +1358,7 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
         setLastOpenedForProject(projectId, worktreeId, targetSessionId)
       }
     },
-    [projectId]
+    [openWorktreeModal, projectId]
   )
 
   // Handle selection from keyboard nav
@@ -1285,7 +1489,6 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
   })
 
   // Worktree label modal state
-  const queryClient = useQueryClient()
   const [worktreeLabelModalOpen, setWorktreeLabelModalOpen] = useState(false)
   const [worktreeLabelTarget, setWorktreeLabelTarget] = useState<{
     worktreeId: string
@@ -1581,10 +1784,11 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
             useChatStore
               .getState()
               .setActiveSession(item.worktreeId, session.id)
-            setSelectedWorktreeModal({
-              worktreeId: item.worktreeId,
-              worktreePath: item.worktreePath,
-            })
+            openWorktreeModal(
+              item.worktreeId,
+              item.worktreePath,
+              'create-new-session'
+            )
           },
         }
       )
@@ -1597,7 +1801,13 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
       window.removeEventListener('create-new-session', handleCreateNewSession, {
         capture: true,
       })
-  }, [selectedWorktreeModal, selectedIndex, flatCards, createSession])
+  }, [
+    selectedWorktreeModal,
+    selectedIndex,
+    flatCards,
+    createSession,
+    openWorktreeModal,
+  ])
 
   // Listen for open-session-modal event (fired by ChatWindow when creating new session inside modal,
   // or by UnreadBell/UnreadSessionsModal to open a session on the project canvas)
@@ -1617,7 +1827,7 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
         if (sessionId) {
           useChatStore.getState().setActiveSession(worktreeId, sessionId)
         }
-        setSelectedWorktreeModal({ worktreeId, worktreePath })
+        openWorktreeModal(worktreeId, worktreePath, 'open-session-modal-event')
         return
       }
 
@@ -1641,7 +1851,7 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
         'open-session-modal',
         handleOpenSessionModal as EventListener
       )
-  }, [selectedWorktreeModal])
+  }, [selectedWorktreeModal, openWorktreeModal])
 
   // Periodically refresh git status for all worktrees while on the dashboard
   useEffect(() => {
@@ -1819,6 +2029,40 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
                       </span>
                     )}
                   </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-muted-foreground"
+                    aria-label="Sort worktrees"
+                  >
+                    <ArrowUpDown className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-48">
+                  <DropdownMenuLabel>Sort worktrees</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuRadioGroup
+                    value={worktreeSortMode}
+                    onValueChange={value =>
+                      useProjectsStore
+                        .getState()
+                        .setProjectCanvasWorktreeSortMode(
+                          projectId,
+                          value as WorktreeSortMode
+                        )
+                    }
+                  >
+                    <DropdownMenuRadioItem value="created">
+                      Creation date
+                    </DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="last_activity">
+                      Last activity
+                    </DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
                 </DropdownMenuContent>
               </DropdownMenu>
               {/* Mobile: magnifier icon inline with badges */}

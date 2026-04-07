@@ -17,6 +17,9 @@ import {
   Terminal,
   Sparkles,
   FileText,
+  Github,
+  GitPullRequest,
+  ShieldAlert,
 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -41,13 +44,15 @@ import {
   PopoverContent,
 } from '@/components/ui/popover'
 import { useIsMobile } from '@/hooks/use-mobile'
-import { useWsConnectionStatus } from '@/lib/transport'
+import { invoke, useWsConnectionStatus } from '@/lib/transport'
 import { isNativeApp } from '@/lib/environment'
+import { openExternal, preOpenWindow } from '@/lib/platform'
 import { useUIStore } from '@/store/ui-store'
 import { useChatStore } from '@/store/chat-store'
 import { useProjectsStore } from '@/store/projects-store'
 import { chatQueryKeys, useSession } from '@/services/chat'
 import { usePreferences } from '@/services/preferences'
+import { useWorktree, type GitHubRemote } from '@/services/projects'
 import type { ThreadTokenUsage, WorktreeSessions } from '@/types/chat'
 import { DEFAULT_KEYBINDINGS, formatShortcutDisplay } from '@/types/keybindings'
 import type { KeybindingHint } from '@/components/ui/keybinding-hints'
@@ -178,6 +183,7 @@ export function FloatingDock() {
   const { data: preferences } = usePreferences()
   const queryClient = useQueryClient()
 
+  const selectedProjectId = useProjectsStore(state => state.selectedProjectId)
   const selectedWorktreeId = useProjectsStore(state => state.selectedWorktreeId)
   const activeWorktreeId = useChatStore(state => state.activeWorktreeId)
   const sessionChatModalOpen = useUIStore(state => state.sessionChatModalOpen)
@@ -218,6 +224,7 @@ export function FloatingDock() {
     currentWorktreeId ?? null,
     currentWorktreePath
   )
+  const { data: worktree } = useWorktree(currentWorktreeId ?? null)
 
   const activeUsageEntry = useMemo(() => {
     const usageTotals = getFloatingDockUsageTotals(
@@ -325,6 +332,60 @@ export function FloatingDock() {
       .catch(() => toast.error('Failed to copy resume command'))
   }, [getActiveResumeCommand, resumeCommand])
 
+  const handleOpenGitHub = useCallback(() => {
+    const branch = worktree?.branch
+    if (!branch) {
+      if (isNativeApp()) {
+        if (selectedProjectId) {
+          invoke('open_project_on_github', { projectId: selectedProjectId })
+        }
+      } else {
+        // Web access: get URL and open client-side (open_project_on_github opens on the server)
+        const targetPath = worktree?.path
+        if (targetPath) {
+          const win = preOpenWindow()
+          invoke<string>('get_github_repo_url', { repoPath: targetPath })
+            .then(url => openExternal(url, win))
+            .catch(() => {
+              win?.close()
+              toast.error('Failed to open GitHub')
+            })
+        }
+      }
+      return
+    }
+    const targetPath = worktree?.path
+    if (!targetPath) return
+    // Pre-open window to avoid mobile popup blockers
+    const win = preOpenWindow()
+    invoke<GitHubRemote[]>('get_github_remotes', { repoPath: targetPath })
+      .then(remotes => {
+        if (!remotes || remotes.length <= 1) {
+          const url = remotes?.[0]?.url
+          if (url) openExternal(`${url}/tree/${branch}`, win)
+          else win?.close()
+        } else {
+          win?.close()
+          useUIStore.getState().openRemotePicker(targetPath, remoteName => {
+            const remote = remotes.find(r => r.name === remoteName)
+            if (remote) openExternal(`${remote.url}/tree/${branch}`)
+          })
+        }
+      })
+      .catch(() => {
+        win?.close()
+        toast.error('Failed to fetch remotes')
+      })
+  }, [worktree?.branch, worktree?.path, selectedProjectId])
+
+  const handleOpenPR = useCallback(() => {
+    if (worktree?.pr_url) openExternal(worktree.pr_url)
+  }, [worktree?.pr_url])
+
+  const handleOpenSecurityAlert = useCallback(() => {
+    const url = worktree?.security_alert_url ?? worktree?.advisory_url
+    if (url) openExternal(url)
+  }, [worktree?.security_alert_url, worktree?.advisory_url])
   // Listen for keyboard shortcut event
   useEffect(() => {
     const handler = () => toggleMenu()
@@ -444,6 +505,29 @@ export function FloatingDock() {
             <FileText className="mr-2 h-4 w-4" />
             View Plan
           </DropdownMenuItem>
+          {isMobile && currentWorktreeId && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleOpenGitHub}>
+                <Github className="mr-2 h-4 w-4" />
+                GitHub
+              </DropdownMenuItem>
+              {worktree?.pr_url && (
+                <DropdownMenuItem onClick={handleOpenPR}>
+                  <GitPullRequest className="mr-2 h-4 w-4" />
+                  PR #{worktree.pr_number}
+                </DropdownMenuItem>
+              )}
+              {(worktree?.security_alert_url || worktree?.advisory_url) && (
+                <DropdownMenuItem onClick={handleOpenSecurityAlert}>
+                  <ShieldAlert className="mr-2 h-4 w-4" />
+                  {worktree?.security_alert_number
+                    ? `Alert #${worktree.security_alert_number}`
+                    : worktree?.advisory_ghsa_id}
+                </DropdownMenuItem>
+              )}
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
 

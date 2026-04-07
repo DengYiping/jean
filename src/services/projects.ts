@@ -502,6 +502,7 @@ export function useCreateWorktree() {
         ghsaId: string
         cveId?: string
         manifestPath: string
+        htmlUrl?: string
       }
       /** Advisory context to pass when creating a worktree from a repository advisory */
       advisoryContext?: AdvisoryContext
@@ -683,6 +684,7 @@ export function useCreateWorktreeFromExistingBranch() {
         ghsaId: string
         cveId?: string
         manifestPath: string
+        htmlUrl?: string
       }
       /** Advisory context to pass when creating a worktree from a repository advisory */
       advisoryContext?: AdvisoryContext
@@ -914,8 +916,17 @@ export function useWorktreeEvents() {
     // Listen for creation starting - add pending worktree immediately
     unlistenPromises.push(
       listen<WorktreeCreatingEvent>('worktree:creating', event => {
-        const { id, project_id, name, path, branch, pr_number, issue_number } =
-          event.payload
+        const {
+          id,
+          project_id,
+          name,
+          path,
+          branch,
+          pr_number,
+          issue_number,
+          security_alert_number,
+          advisory_ghsa_id,
+        } = event.payload
         logger.info('Worktree creating (background started)', { id, name })
 
         // Add pending worktree to cache so it appears instantly on all clients
@@ -932,6 +943,8 @@ export function useWorktreeEvents() {
               branch,
               pr_number,
               issue_number,
+              security_alert_number,
+              advisory_ghsa_id,
               created_at: Math.floor(Date.now() / 1000),
               status: 'pending' as const,
               session_type: 'worktree' as Worktree['session_type'],
@@ -959,6 +972,10 @@ export function useWorktreeEvents() {
           name: worktree.name,
         })
 
+        // Update cache FIRST, then clear timeout — ensures the safety timeout
+        // survives if the cache update is a no-op (e.g. cache was invalidated
+        // between worktree:creating and worktree:created events).
+        handleWorktreeReady(worktree, queryClient)
         clearPendingTimeout(worktree.id)
 
         const openWorktreeAction = {
@@ -990,12 +1007,11 @@ export function useWorktreeEvents() {
           },
         }
 
-        toast.success('Worktree ready', {
+        toast.success(`Worktree ready: ${worktree.name}`, {
           id: `worktree-creating-${worktree.id}`,
+          duration: 5000,
           action: openWorktreeAction,
         })
-
-        handleWorktreeReady(worktree, queryClient)
       })
     )
 
@@ -1009,12 +1025,16 @@ export function useWorktreeEvents() {
           success: setup_success,
         })
 
-        // Update worktree in query cache with setup results
+        // Update worktree in query cache with setup results.
+        // Also ensure status is 'ready' as a safety net — if the earlier
+        // worktree:created handler failed to transition from 'pending', this
+        // guarantees the loading indicator is cleared.
         const updateWorktree = (worktree: Worktree): Worktree => ({
           ...worktree,
           setup_output,
           setup_script,
           setup_success,
+          status: 'ready' as const,
         })
         queryClient.setQueryData<Worktree[]>(
           projectsQueryKeys.worktrees(project_id),

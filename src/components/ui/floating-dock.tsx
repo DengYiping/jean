@@ -44,13 +44,15 @@ import {
   PopoverContent,
 } from '@/components/ui/popover'
 import { useIsMobile } from '@/hooks/use-mobile'
-import { useWsConnectionStatus } from '@/lib/transport'
+import { invoke, useWsConnectionStatus } from '@/lib/transport'
 import { isNativeApp } from '@/lib/environment'
+import { openExternal, preOpenWindow } from '@/lib/platform'
 import { useUIStore } from '@/store/ui-store'
 import { useChatStore } from '@/store/chat-store'
 import { useProjectsStore } from '@/store/projects-store'
 import { chatQueryKeys, useSession } from '@/services/chat'
 import { usePreferences } from '@/services/preferences'
+import { useWorktree, type GitHubRemote } from '@/services/projects'
 import type { ThreadTokenUsage, WorktreeSessions } from '@/types/chat'
 import { DEFAULT_KEYBINDINGS, formatShortcutDisplay } from '@/types/keybindings'
 import type { KeybindingHint } from '@/components/ui/keybinding-hints'
@@ -181,6 +183,7 @@ export function FloatingDock() {
   const { data: preferences } = usePreferences()
   const queryClient = useQueryClient()
 
+  const selectedProjectId = useProjectsStore(state => state.selectedProjectId)
   const selectedWorktreeId = useProjectsStore(state => state.selectedWorktreeId)
   const activeWorktreeId = useChatStore(state => state.activeWorktreeId)
   const sessionChatModalOpen = useUIStore(state => state.sessionChatModalOpen)
@@ -221,6 +224,7 @@ export function FloatingDock() {
     currentWorktreeId ?? null,
     currentWorktreePath
   )
+  const { data: worktree } = useWorktree(currentWorktreeId ?? null)
 
   const activeUsageEntry = useMemo(() => {
     const usageTotals = getFloatingDockUsageTotals(

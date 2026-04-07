@@ -17,7 +17,11 @@ import {
   projectsQueryKeys,
 } from '@/services/projects'
 import { useChatStore } from '@/store/chat-store'
-import type { DetectPrResponse, GitPushResponse, Worktree } from '@/types/projects'
+import type {
+  DetectPrResponse,
+  GitPushResponse,
+  Worktree,
+} from '@/types/projects'
 import type { GitDiff, CommitHistoryResult } from '@/types/git-diff'
 
 // ============================================================================

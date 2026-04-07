@@ -453,7 +453,9 @@ function WorktreeSectionHeader({
                       <>
                         <span className="text-border">·</span>
                         <ShieldAlert className="h-2.5 w-2.5 text-orange-500" />
-                        <span className="max-w-20 truncate">{worktree.advisory_ghsa_id}</span>
+                        <span className="max-w-20 truncate">
+                          {worktree.advisory_ghsa_id}
+                        </span>
                       </>
                     )}
                   </span>
@@ -487,15 +489,17 @@ function WorktreeSectionHeader({
                   {worktree.security_alert_number && (
                     <>
                       <span className="text-border">·</span>
-                      <ShieldAlert className="h-2.5 w-2.5 shrink-0 text-orange-500" />#
-                      {worktree.security_alert_number}
+                      <ShieldAlert className="h-2.5 w-2.5 shrink-0 text-orange-500" />
+                      #{worktree.security_alert_number}
                     </>
                   )}
                   {worktree.advisory_ghsa_id && (
                     <>
                       <span className="text-border">·</span>
                       <ShieldAlert className="h-2.5 w-2.5 shrink-0 text-orange-500" />
-                      <span className="max-w-20 truncate">{worktree.advisory_ghsa_id}</span>
+                      <span className="max-w-20 truncate">
+                        {worktree.advisory_ghsa_id}
+                      </span>
                     </>
                   )}
                 </span>
@@ -798,12 +802,14 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
       const sortDiff =
         getWorktreeSortValue(
           b.worktree,
-          latestActivityByWorktreeId.get(b.worktree.id) ?? b.worktree.created_at,
+          latestActivityByWorktreeId.get(b.worktree.id) ??
+            b.worktree.created_at,
           worktreeSortMode
         ) -
         getWorktreeSortValue(
           a.worktree,
-          latestActivityByWorktreeId.get(a.worktree.id) ?? a.worktree.created_at,
+          latestActivityByWorktreeId.get(a.worktree.id) ??
+            a.worktree.created_at,
           worktreeSortMode
         )
       if (sortDiff !== 0) return sortDiff
@@ -2039,17 +2045,17 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
                 <DropdownMenuContent align="start" className="w-48">
                   <DropdownMenuLabel>Sort worktrees</DropdownMenuLabel>
                   <DropdownMenuSeparator />
-                    <DropdownMenuRadioGroup
-                      value={worktreeSortMode}
-                      onValueChange={value =>
-                        useProjectsStore
-                          .getState()
-                          .setProjectCanvasWorktreeSortMode(
-                            projectId,
-                            value as WorktreeSortMode
-                          )
-                      }
-                    >
+                  <DropdownMenuRadioGroup
+                    value={worktreeSortMode}
+                    onValueChange={value =>
+                      useProjectsStore
+                        .getState()
+                        .setProjectCanvasWorktreeSortMode(
+                          projectId,
+                          value as WorktreeSortMode
+                        )
+                    }
+                  >
                     <DropdownMenuRadioItem value="created">
                       Creation date
                     </DropdownMenuRadioItem>

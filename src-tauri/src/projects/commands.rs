@@ -733,9 +733,13 @@ pub async fn create_worktree(
         issue_number: issue_context.as_ref().map(|ctx| ctx.number),
         linear_issue_identifier: linear_context.as_ref().map(|ctx| ctx.identifier.clone()),
         security_alert_number: security_context.as_ref().map(|ctx| ctx.number),
-        security_alert_url: security_context.as_ref().and_then(|ctx| ctx.html_url.clone()),
+        security_alert_url: security_context
+            .as_ref()
+            .and_then(|ctx| ctx.html_url.clone()),
         advisory_ghsa_id: advisory_context.as_ref().map(|ctx| ctx.ghsa_id.clone()),
-        advisory_url: advisory_context.as_ref().and_then(|ctx| ctx.html_url.clone()),
+        advisory_url: advisory_context
+            .as_ref()
+            .and_then(|ctx| ctx.html_url.clone()),
         cached_pr_status: None,
         cached_check_status: None,
         cached_behind_count: None,
@@ -1271,9 +1275,15 @@ pub async fn create_worktree(
                         .as_ref()
                         .map(|ctx| ctx.identifier.clone()),
                     security_alert_number: security_context_clone.as_ref().map(|ctx| ctx.number),
-                    security_alert_url: security_context_clone.as_ref().and_then(|ctx| ctx.html_url.clone()),
-                    advisory_ghsa_id: advisory_context_clone.as_ref().map(|ctx| ctx.ghsa_id.clone()),
-                    advisory_url: advisory_context_clone.as_ref().and_then(|ctx| ctx.html_url.clone()),
+                    security_alert_url: security_context_clone
+                        .as_ref()
+                        .and_then(|ctx| ctx.html_url.clone()),
+                    advisory_ghsa_id: advisory_context_clone
+                        .as_ref()
+                        .map(|ctx| ctx.ghsa_id.clone()),
+                    advisory_url: advisory_context_clone
+                        .as_ref()
+                        .and_then(|ctx| ctx.html_url.clone()),
                     cached_pr_status: None,
                     cached_check_status: None,
                     cached_behind_count: None,
@@ -1466,9 +1476,13 @@ pub async fn create_worktree_from_existing_branch(
         issue_number: issue_context.as_ref().map(|ctx| ctx.number),
         linear_issue_identifier: linear_context.as_ref().map(|ctx| ctx.identifier.clone()),
         security_alert_number: security_context.as_ref().map(|ctx| ctx.number),
-        security_alert_url: security_context.as_ref().and_then(|ctx| ctx.html_url.clone()),
+        security_alert_url: security_context
+            .as_ref()
+            .and_then(|ctx| ctx.html_url.clone()),
         advisory_ghsa_id: advisory_context.as_ref().map(|ctx| ctx.ghsa_id.clone()),
-        advisory_url: advisory_context.as_ref().and_then(|ctx| ctx.html_url.clone()),
+        advisory_url: advisory_context
+            .as_ref()
+            .and_then(|ctx| ctx.html_url.clone()),
         cached_pr_status: None,
         cached_check_status: None,
         cached_behind_count: None,
@@ -1843,9 +1857,15 @@ pub async fn create_worktree_from_existing_branch(
                         .as_ref()
                         .map(|ctx| ctx.identifier.clone()),
                     security_alert_number: security_context_clone.as_ref().map(|ctx| ctx.number),
-                    security_alert_url: security_context_clone.as_ref().and_then(|ctx| ctx.html_url.clone()),
-                    advisory_ghsa_id: advisory_context_clone.as_ref().map(|ctx| ctx.ghsa_id.clone()),
-                    advisory_url: advisory_context_clone.as_ref().and_then(|ctx| ctx.html_url.clone()),
+                    security_alert_url: security_context_clone
+                        .as_ref()
+                        .and_then(|ctx| ctx.html_url.clone()),
+                    advisory_ghsa_id: advisory_context_clone
+                        .as_ref()
+                        .map(|ctx| ctx.ghsa_id.clone()),
+                    advisory_url: advisory_context_clone
+                        .as_ref()
+                        .and_then(|ctx| ctx.html_url.clone()),
                     cached_pr_status: None,
                     cached_check_status: None,
                     cached_behind_count: None,
@@ -2141,7 +2161,9 @@ pub async fn checkout_pr(
             // Fetch latest base branch so the worktree starts from up-to-date code
             let effective_base = match git::git_fetch(&project_path, &base_branch_clone, None) {
                 Ok(_) => {
-                    log::trace!("Successfully fetched base branch, using origin/{base_branch_clone}");
+                    log::trace!(
+                        "Successfully fetched base branch, using origin/{base_branch_clone}"
+                    );
                     format!("origin/{base_branch_clone}")
                 }
                 Err(e) => {

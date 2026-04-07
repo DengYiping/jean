@@ -2820,6 +2820,28 @@ pub async fn set_session_thinking_level(
     })
 }
 
+/// Set the selected effort level for a session
+#[tauri::command]
+pub async fn set_session_effort_level(
+    app: AppHandle,
+    worktree_id: String,
+    worktree_path: String,
+    session_id: String,
+    effort_level: EffortLevel,
+) -> Result<(), String> {
+    log::trace!("Setting effort level for session {session_id}: {effort_level:?}");
+
+    with_sessions_mut(&app, &worktree_path, &worktree_id, |sessions| {
+        if let Some(session) = sessions.find_session_mut(&session_id) {
+            session.selected_effort_level = Some(effort_level);
+            log::trace!("Effort level selection saved");
+            Ok(())
+        } else {
+            Err(format!("Session not found: {session_id}"))
+        }
+    })
+}
+
 /// Set the selected provider (custom CLI profile) for a session
 #[tauri::command]
 pub async fn set_session_provider(

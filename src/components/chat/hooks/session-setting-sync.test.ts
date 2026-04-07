@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { Session } from '@/types/chat'
+import type { EffortLevel, Session } from '@/types/chat'
 import { applySessionSettingToSession } from './session-setting-sync'
 
 const baseSession: Session = {
@@ -12,6 +12,7 @@ const baseSession: Session = {
   backend: 'claude',
   selected_model: 'opus',
   selected_thinking_level: 'off',
+  selected_effort_level: 'high',
   selected_execution_mode: 'plan',
 }
 
@@ -49,6 +50,19 @@ describe('applySessionSettingToSession', () => {
     ).toMatchObject({
       selected_execution_mode: 'yolo',
       selected_thinking_level: 'off',
+    })
+  })
+
+  it('updates effort level', () => {
+    expect(
+      applySessionSettingToSession(
+        baseSession,
+        'effortLevel',
+        'medium' satisfies EffortLevel
+      )
+    ).toMatchObject({
+      selected_effort_level: 'medium',
+      selected_execution_mode: 'plan',
     })
   })
 })

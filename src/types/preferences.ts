@@ -748,6 +748,15 @@ export const OPENCODE_DEFAULT_MAGIC_PROMPT_EFFORTS: MagicPromptReasoningEfforts 
     ...CODEX_DEFAULT_MAGIC_PROMPT_EFFORTS,
   }
 
+export const magicPromptReasoningOptions: {
+  value: Exclude<MagicPromptReasoningEffort, null>
+  label: string
+}[] = [
+  { value: 'low', label: 'Low' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'high', label: 'High' },
+]
+
 /**
  * Per-prompt provider overrides. null = use global default_provider.
  * Field names use snake_case to match Rust struct exactly.

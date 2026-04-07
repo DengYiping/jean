@@ -31,6 +31,7 @@ import {
   useSendMessage,
   useSetSessionModel,
   useSetSessionThinkingLevel,
+  useSetSessionEffortLevel,
   useSetSessionBackend,
   useSetSessionProvider,
   useCreateSession,
@@ -429,6 +430,7 @@ export function ChatWindow({
   const updateSessionState = useUpdateSessionState()
   const setSessionModel = useSetSessionModel()
   const setSessionThinkingLevel = useSetSessionThinkingLevel()
+  const setSessionEffortLevel = useSetSessionEffortLevel()
   const setSessionBackend = useSetSessionBackend()
   const setSessionProvider = useSetSessionProvider()
 
@@ -577,7 +579,9 @@ export function ChatWindow({
     deferredSessionId ? state.effortLevels[deferredSessionId] : undefined
   )
   const selectedEffortLevel: EffortLevel =
-    sessionEffortLevel ?? defaultEffortLevel
+    (session?.selected_effort_level as EffortLevel) ??
+    sessionEffortLevel ??
+    defaultEffortLevel
 
   // MCP servers: resolve enabled servers cascade (session → project → global)
   // Fetches from ALL installed backends so toolbar shows grouped sections
@@ -2324,6 +2328,7 @@ export function ChatWindow({
     setSessionBackend,
     setSessionProvider,
     setSessionThinkingLevel,
+    setSessionEffortLevel,
     setExecutionMode,
     setLoadContextModalOpen,
   })
@@ -2341,7 +2346,6 @@ export function ChatWindow({
     preferences,
     selectedModelRef,
     selectedThinkingLevelRef,
-    selectedEffortLevelRef,
     executionModeRef,
     mcpServersDataRef,
     enabledMcpServersRef,
@@ -2351,6 +2355,7 @@ export function ChatWindow({
     setSessionProvider,
     setSessionBackend,
     setSessionModel,
+    setSessionEffortLevel,
     createSession,
     resolveCustomProfile,
     cliVersion: cliStatus?.version ?? null,

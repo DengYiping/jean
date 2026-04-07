@@ -26,7 +26,6 @@ import {
 import type { Project, Worktree } from '@/types/projects'
 import type {
   ThinkingLevel,
-  EffortLevel,
   ExecutionMode,
   Session,
   McpServerInfo,
@@ -52,7 +51,6 @@ interface UseInvestigateHandlersParams {
   preferences: AppPreferences | undefined
   selectedModelRef: RefObject<string>
   selectedThinkingLevelRef: RefObject<ThinkingLevel>
-  selectedEffortLevelRef: RefObject<EffortLevel>
   executionModeRef: RefObject<ExecutionMode>
   mcpServersDataRef: RefObject<McpServerInfo[] | undefined>
   enabledMcpServersRef: RefObject<string[]>
@@ -66,6 +64,8 @@ interface UseInvestigateHandlersParams {
   setSessionBackend: { mutate: (args: any) => void }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   setSessionModel: { mutate: (args: any) => void }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  setSessionEffortLevel: { mutate: (args: any) => void }
   createSession: {
     mutate: (
       args: { worktreeId: string; worktreePath: string },
@@ -96,7 +96,6 @@ export function useInvestigateHandlers({
   preferences,
   selectedModelRef,
   selectedThinkingLevelRef,
-  selectedEffortLevelRef,
   executionModeRef,
   mcpServersDataRef,
   enabledMcpServersRef,
@@ -106,6 +105,7 @@ export function useInvestigateHandlers({
   setSessionProvider,
   setSessionBackend,
   setSessionModel,
+  setSessionEffortLevel,
   createSession,
   resolveCustomProfile,
   cliVersion,
@@ -139,6 +139,16 @@ export function useInvestigateHandlers({
               : type === 'linear-issue'
                 ? 'investigate_linear_issue_provider'
                 : ('investigate_advisory_provider' as const)
+      const effortKey =
+        type === 'issue'
+          ? 'investigate_issue_effort'
+          : type === 'pr'
+            ? 'investigate_pr_effort'
+            : type === 'security-alert'
+              ? 'investigate_security_alert_effort'
+              : type === 'linear-issue'
+                ? 'investigate_linear_issue_effort'
+                : ('investigate_advisory_effort' as const)
       const investigateModel =
         preferences?.magic_prompt_models?.[modelKey] ?? selectedModelRef.current
       const investigateProvider = resolveMagicPromptProvider(
@@ -146,6 +156,14 @@ export function useInvestigateHandlers({
         providerKey,
         preferences?.default_provider
       )
+      const investigateEffort =
+        preferences?.magic_prompt_efforts?.[effortKey] ?? null
+      const investigateEffortLevel =
+        investigateEffort === 'low' ||
+        investigateEffort === 'medium' ||
+        investigateEffort === 'high'
+          ? investigateEffort
+          : undefined
       const { customProfileName: resolvedInvestigateProfile } =
         resolveCustomProfile(investigateModel, investigateProvider)
 
@@ -293,6 +311,7 @@ export function useInvestigateHandlers({
         setLastSentMessage,
         setError,
         setSelectedModel,
+        setEffortLevel,
         setSelectedProvider,
         setExecutingMode,
       } = useChatStore.getState()
@@ -301,6 +320,9 @@ export function useInvestigateHandlers({
       setError(activeSessionId, null)
       addSendingSession(activeSessionId)
       setSelectedModel(activeSessionId, investigateModel)
+      if (investigateEffortLevel) {
+        setEffortLevel(activeSessionId, investigateEffortLevel)
+      }
       setSelectedProvider(activeSessionId, investigateProvider)
       setExecutingMode(activeSessionId, executionModeRef.current)
 
@@ -332,6 +354,14 @@ export function useInvestigateHandlers({
         worktreePath: activeWorktreePath,
         model: investigateModel,
       })
+      if (investigateEffortLevel) {
+        setSessionEffortLevel.mutate({
+          sessionId: activeSessionId,
+          worktreeId: activeWorktreeId,
+          worktreePath: activeWorktreePath,
+          effortLevel: investigateEffortLevel,
+        })
+      }
 
       {
         const {
@@ -363,7 +393,7 @@ export function useInvestigateHandlers({
           executionMode: executionModeRef.current,
           thinkingLevel: selectedThinkingLevelRef.current,
           effortLevel: investigateUseAdaptive
-            ? selectedEffortLevelRef.current
+            ? (investigateEffort ?? undefined)
             : undefined,
           mcpConfig: buildMcpConfigJson(
             mcpServersDataRef.current ?? [],
@@ -398,17 +428,18 @@ export function useInvestigateHandlers({
       preferences?.magic_prompts?.parallel_execution,
       preferences?.magic_prompt_models,
       preferences?.magic_prompt_providers,
+      preferences?.magic_prompt_efforts,
       preferences?.chrome_enabled,
       preferences?.ai_language,
       setSessionProvider,
       setSessionBackend,
       setSessionModel,
+      setSessionEffortLevel,
       resolveCustomProfile,
       cliVersion,
       inputRef,
       selectedModelRef,
       selectedThinkingLevelRef,
-      selectedEffortLevelRef,
       executionModeRef,
       mcpServersDataRef,
       enabledMcpServersRef,
@@ -439,6 +470,15 @@ export function useInvestigateHandlers({
         'investigate_workflow_run_provider',
         preferences?.default_provider
       )
+      const investigateEffort =
+        preferences?.magic_prompt_efforts?.investigate_workflow_run_effort ??
+        null
+      const investigateEffortLevel =
+        investigateEffort === 'low' ||
+        investigateEffort === 'medium' ||
+        investigateEffort === 'high'
+          ? investigateEffort
+          : undefined
       const { customProfileName: resolvedInvestigateProfile } =
         resolveCustomProfile(investigateModel, investigateProvider)
 
@@ -540,6 +580,7 @@ export function useInvestigateHandlers({
           setLastSentMessage,
           setError,
           setSelectedModel,
+          setEffortLevel,
           setSelectedProvider,
           setExecutingMode,
         } = useChatStore.getState()
@@ -548,6 +589,9 @@ export function useInvestigateHandlers({
         setError(targetSessionId, null)
         addSendingSession(targetSessionId)
         setSelectedModel(targetSessionId, investigateModel)
+        if (investigateEffortLevel) {
+          setEffortLevel(targetSessionId, investigateEffortLevel)
+        }
         setSelectedProvider(targetSessionId, investigateProvider)
         setExecutingMode(targetSessionId, 'yolo')
 
@@ -569,6 +613,14 @@ export function useInvestigateHandlers({
           worktreePath,
           provider: investigateProvider,
         })
+        if (investigateEffortLevel) {
+          setSessionEffortLevel.mutate({
+            sessionId: targetSessionId,
+            worktreeId,
+            worktreePath,
+            effortLevel: investigateEffortLevel,
+          })
+        }
         {
           const {
             setSelectedBackend: setZustandBackend,
@@ -599,7 +651,7 @@ export function useInvestigateHandlers({
             executionMode: 'yolo',
             thinkingLevel: selectedThinkingLevelRef.current,
             effortLevel: investigateUseAdaptive
-              ? selectedEffortLevelRef.current
+              ? (investigateEffort ?? undefined)
               : undefined,
             mcpConfig: buildMcpConfigJson(
               mcpServersDataRef.current ?? [],
@@ -655,11 +707,13 @@ export function useInvestigateHandlers({
       preferences?.parallel_execution_prompt_enabled,
       preferences?.magic_prompts?.parallel_execution,
       preferences?.magic_prompt_providers,
+      preferences?.magic_prompt_efforts?.investigate_workflow_run_effort,
       preferences?.chrome_enabled,
       preferences?.ai_language,
       setSessionProvider,
       setSessionBackend,
       setSessionModel,
+      setSessionEffortLevel,
       resolveCustomProfile,
       cliVersion,
       inputRef,
@@ -667,7 +721,6 @@ export function useInvestigateHandlers({
       activeWorktreePathRef,
       selectedModelRef,
       selectedThinkingLevelRef,
-      selectedEffortLevelRef,
       executionModeRef,
       mcpServersDataRef,
       enabledMcpServersRef,
@@ -710,6 +763,14 @@ export function useInvestigateHandlers({
         reviewCommentsModel,
         reviewCommentsProvider
       )
+      const reviewCommentsEffort =
+        preferences?.magic_prompt_efforts?.review_comments_effort ?? null
+      const reviewCommentsEffortLevel =
+        reviewCommentsEffort === 'low' ||
+        reviewCommentsEffort === 'medium' ||
+        reviewCommentsEffort === 'high'
+          ? reviewCommentsEffort
+          : undefined
 
       const isCustom = Boolean(
         reviewCommentsProvider && reviewCommentsProvider !== '__anthropic__'
@@ -724,6 +785,7 @@ export function useInvestigateHandlers({
           setLastSentMessage,
           setError,
           setSelectedModel,
+          setEffortLevel,
           setSelectedProvider,
           setExecutingMode,
           setSelectedBackend: setZustandBackend,
@@ -733,6 +795,9 @@ export function useInvestigateHandlers({
         setError(sessionId, null)
         addSendingSession(sessionId)
         setSelectedModel(sessionId, reviewCommentsModel)
+        if (reviewCommentsEffortLevel) {
+          setEffortLevel(sessionId, reviewCommentsEffortLevel)
+        }
         setSelectedProvider(sessionId, reviewCommentsProvider)
         setExecutingMode(sessionId, executionModeRef.current)
         setZustandBackend(sessionId, reviewCommentsBackend)
@@ -757,6 +822,14 @@ export function useInvestigateHandlers({
           worktreePath,
           model: reviewCommentsModel,
         })
+        if (reviewCommentsEffortLevel) {
+          setSessionEffortLevel.mutate({
+            sessionId,
+            worktreeId,
+            worktreePath,
+            effortLevel: reviewCommentsEffortLevel,
+          })
+        }
 
         queryClient.setQueryData(
           chatQueryKeys.session(sessionId),
@@ -780,7 +853,7 @@ export function useInvestigateHandlers({
             executionMode: executionModeRef.current,
             thinkingLevel: selectedThinkingLevelRef.current,
             effortLevel: useAdaptive
-              ? selectedEffortLevelRef.current
+              ? (reviewCommentsEffort ?? undefined)
               : undefined,
             mcpConfig: buildMcpConfigJson(
               mcpServersDataRef.current ?? [],
@@ -828,15 +901,19 @@ export function useInvestigateHandlers({
       createSession,
       queryClient,
       preferences?.default_provider,
+      preferences?.default_backend,
       preferences?.parallel_execution_prompt_enabled,
       preferences?.magic_prompts?.parallel_execution,
       preferences?.magic_prompt_models?.review_comments_model,
       preferences?.magic_prompt_providers,
+      preferences?.magic_prompt_backends,
+      preferences?.magic_prompt_efforts?.review_comments_effort,
       preferences?.chrome_enabled,
       preferences?.ai_language,
       setSessionProvider,
       setSessionBackend,
       setSessionModel,
+      setSessionEffortLevel,
       resolveCustomProfile,
       cliVersion,
       inputRef,
@@ -844,7 +921,6 @@ export function useInvestigateHandlers({
       activeWorktreePathRef,
       selectedModelRef,
       selectedThinkingLevelRef,
-      selectedEffortLevelRef,
       executionModeRef,
       mcpServersDataRef,
       enabledMcpServersRef,

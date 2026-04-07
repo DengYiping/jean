@@ -18,6 +18,7 @@ import type {
   Question,
   QuestionAnswer,
   ThinkingLevel,
+  EffortLevel,
   ExecutionMode,
   LabelData,
   QueuedMessage,
@@ -1790,6 +1791,62 @@ export function useSetSessionThinkingLevel() {
             : 'Unknown error occurred'
       logger.error('Failed to save thinking level selection', { error })
       toast.error('Failed to save thinking level', { description: message })
+    },
+  })
+}
+
+/**
+ * Hook to set the selected effort level for a session
+ */
+export function useSetSessionEffortLevel() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({
+      worktreeId,
+      worktreePath,
+      sessionId,
+      effortLevel,
+    }: {
+      worktreeId: string
+      worktreePath: string
+      sessionId: string
+      effortLevel: EffortLevel
+    }): Promise<void> => {
+      if (!isTauri()) {
+        throw new Error('Not in Tauri context')
+      }
+
+      logger.debug('Setting session effort level', {
+        sessionId,
+        effortLevel,
+      })
+      await invoke('set_session_effort_level', {
+        worktreeId,
+        worktreePath,
+        sessionId,
+        effortLevel,
+      })
+      logger.info('Session effort level saved')
+    },
+    onSuccess: (_, { sessionId, worktreeId }) => {
+      queryClient.invalidateQueries({
+        queryKey: chatQueryKeys.session(sessionId),
+      })
+      queryClient.invalidateQueries({
+        queryKey: chatQueryKeys.sessions(worktreeId),
+      })
+    },
+    onError: error => {
+      if (isWsDisconnectError(error)) return
+      const message =
+        error instanceof Error
+          ? error.message
+          : typeof error === 'string'
+            ? error
+            : 'Unknown error occurred'
+      logger.error('Failed to save effort level selection', { error })
+      toast.error('Failed to save effort level', { description: message })
     },
   })
 }

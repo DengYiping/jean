@@ -940,6 +940,8 @@ pub struct MagicPromptModels {
     pub investigate_advisory_model: String,
     #[serde(default = "default_model")]
     pub investigate_linear_issue_model: String,
+    #[serde(default = "default_model")]
+    pub review_comments_model: String,
 }
 
 fn default_haiku_model() -> String {
@@ -963,6 +965,7 @@ impl Default for MagicPromptModels {
             investigate_security_alert_model: default_model(),
             investigate_advisory_model: default_model(),
             investigate_linear_issue_model: default_model(),
+            review_comments_model: default_model(),
         }
     }
 }
@@ -1010,6 +1013,8 @@ pub struct MagicPromptProviders {
     pub investigate_advisory_provider: Option<String>,
     #[serde(default)]
     pub investigate_linear_issue_provider: Option<String>,
+    #[serde(default)]
+    pub review_comments_provider: Option<String>,
 }
 
 /// Per-prompt backend overrides for magic prompts (None = use project/global default_backend)
@@ -1043,6 +1048,8 @@ pub struct MagicPromptBackends {
     pub investigate_advisory_backend: Option<String>,
     #[serde(default)]
     pub investigate_linear_issue_backend: Option<String>,
+    #[serde(default)]
+    pub review_comments_backend: Option<String>,
 }
 
 /// Per-prompt reasoning effort overrides for magic prompts (None = use model default)
@@ -1076,6 +1083,8 @@ pub struct MagicPromptReasoningEfforts {
     pub investigate_advisory_effort: Option<String>,
     #[serde(default)]
     pub investigate_linear_issue_effort: Option<String>,
+    #[serde(default)]
+    pub review_comments_effort: Option<String>,
 }
 
 impl MagicPrompts {
@@ -2917,6 +2926,7 @@ pub fn run() {
             chat::set_session_model,
             chat::set_session_backend,
             chat::set_session_thinking_level,
+            chat::set_session_effort_level,
             chat::set_session_provider,
             chat::cancel_chat_message,
             chat::has_running_sessions,

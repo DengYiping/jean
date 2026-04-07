@@ -49,12 +49,16 @@ import {
   DEFAULT_MAGIC_PROMPT_MODELS,
   DEFAULT_MAGIC_PROMPT_PROVIDERS,
   DEFAULT_MAGIC_PROMPT_BACKENDS,
+  DEFAULT_MAGIC_PROMPT_EFFORTS,
   CLAUDE_DEFAULT_MAGIC_PROMPT_BACKENDS,
   CODEX_DEFAULT_MAGIC_PROMPT_BACKENDS,
   OPENCODE_DEFAULT_MAGIC_PROMPT_BACKENDS,
   CODEX_DEFAULT_MAGIC_PROMPT_MODELS,
   OPENCODE_DEFAULT_MAGIC_PROMPT_MODELS,
+  CODEX_DEFAULT_MAGIC_PROMPT_EFFORTS,
+  OPENCODE_DEFAULT_MAGIC_PROMPT_EFFORTS,
   codexModelOptions,
+  magicPromptReasoningOptions,
   isMagicPromptModelCompatibleWithBackend,
   resolveMagicPromptBackend,
   type MagicPrompts,
@@ -62,6 +66,7 @@ import {
   type MagicPromptProviders,
   type MagicPromptBackends,
   type MagicPromptModel,
+  type MagicPromptReasoningEfforts,
   type CliBackend,
 } from '@/types/preferences'
 import { cn } from '@/lib/utils'
@@ -76,6 +81,7 @@ interface PromptConfig {
   modelKey?: keyof MagicPromptModels
   providerKey?: keyof MagicPromptProviders
   backendKey?: keyof MagicPromptBackends
+  effortKey?: keyof MagicPromptReasoningEfforts
   label: string
   description: string
   variables: VariableInfo[]
@@ -97,6 +103,7 @@ const PROMPT_SECTIONS: PromptSection[] = [
         modelKey: 'investigate_issue_model',
         providerKey: 'investigate_issue_provider',
         backendKey: 'investigate_issue_backend',
+        effortKey: 'investigate_issue_effort',
         label: 'Investigate Issue',
         description:
           'Prompt for analyzing GitHub issues loaded into the context.',
@@ -118,6 +125,7 @@ const PROMPT_SECTIONS: PromptSection[] = [
         modelKey: 'investigate_pr_model',
         providerKey: 'investigate_pr_provider',
         backendKey: 'investigate_pr_backend',
+        effortKey: 'investigate_pr_effort',
         label: 'Investigate PR',
         description:
           'Prompt for analyzing GitHub pull requests loaded into the context.',
@@ -139,6 +147,7 @@ const PROMPT_SECTIONS: PromptSection[] = [
         modelKey: 'investigate_workflow_run_model',
         providerKey: 'investigate_workflow_run_provider',
         backendKey: 'investigate_workflow_run_backend',
+        effortKey: 'investigate_workflow_run_effort',
         label: 'Investigate Workflow Run',
         description:
           'Prompt for investigating failed GitHub Actions workflow runs.',
@@ -166,6 +175,7 @@ const PROMPT_SECTIONS: PromptSection[] = [
         modelKey: 'investigate_security_alert_model',
         providerKey: 'investigate_security_alert_provider',
         backendKey: 'investigate_security_alert_backend',
+        effortKey: 'investigate_security_alert_effort',
         label: 'Investigate Dependabot Alert',
         description:
           'Prompt for investigating Dependabot vulnerability alerts in dependencies.',
@@ -188,6 +198,7 @@ const PROMPT_SECTIONS: PromptSection[] = [
         modelKey: 'investigate_advisory_model',
         providerKey: 'investigate_advisory_provider',
         backendKey: 'investigate_advisory_backend',
+        effortKey: 'investigate_advisory_effort',
         label: 'Investigate Security Advisory',
         description: 'Prompt for investigating repository security advisories.',
         variables: [
@@ -208,6 +219,7 @@ const PROMPT_SECTIONS: PromptSection[] = [
         modelKey: 'investigate_linear_issue_model',
         providerKey: 'investigate_linear_issue_provider',
         backendKey: 'investigate_linear_issue_backend',
+        effortKey: 'investigate_linear_issue_effort',
         label: 'Investigate Linear Issue',
         description:
           'Prompt for analyzing Linear issues. Issue content is embedded directly since Claude CLI cannot access the Linear API.',
@@ -238,6 +250,7 @@ const PROMPT_SECTIONS: PromptSection[] = [
         modelKey: 'code_review_model',
         providerKey: 'code_review_provider',
         backendKey: 'code_review_backend',
+        effortKey: 'code_review_effort',
         label: 'Code Review',
         description: 'Prompt for AI-powered code review of your changes.',
         variables: [
@@ -260,6 +273,7 @@ const PROMPT_SECTIONS: PromptSection[] = [
         modelKey: 'review_comments_model',
         providerKey: 'review_comments_provider',
         backendKey: 'review_comments_backend',
+        effortKey: 'review_comments_effort',
         label: 'Review Comments',
         description:
           'Prompt for addressing inline PR review comments selected from the Review Comments dialog.',
@@ -282,6 +296,7 @@ const PROMPT_SECTIONS: PromptSection[] = [
         modelKey: 'commit_message_model',
         providerKey: 'commit_message_provider',
         backendKey: 'commit_message_backend',
+        effortKey: 'commit_message_effort',
         label: 'Commit Message',
         description:
           'Prompt for generating commit messages from staged changes.',
@@ -305,6 +320,7 @@ const PROMPT_SECTIONS: PromptSection[] = [
         modelKey: 'pr_content_model',
         providerKey: 'pr_content_provider',
         backendKey: 'pr_content_backend',
+        effortKey: 'pr_content_effort',
         label: 'PR Description',
         description:
           'Prompt for generating pull request titles and descriptions.',
@@ -332,6 +348,7 @@ const PROMPT_SECTIONS: PromptSection[] = [
         modelKey: 'resolve_conflicts_model',
         providerKey: 'resolve_conflicts_provider',
         backendKey: 'resolve_conflicts_backend',
+        effortKey: 'resolve_conflicts_effort',
         label: 'Resolve Conflicts',
         description: 'Instructions appended to conflict resolution prompts.',
         variables: [],
@@ -343,6 +360,7 @@ const PROMPT_SECTIONS: PromptSection[] = [
         modelKey: 'release_notes_model',
         providerKey: 'release_notes_provider',
         backendKey: 'release_notes_backend',
+        effortKey: 'release_notes_effort',
         label: 'Release Notes',
         description:
           'Prompt for generating release notes from changes since a prior release.',
@@ -373,6 +391,7 @@ const PROMPT_SECTIONS: PromptSection[] = [
         modelKey: 'context_summary_model',
         providerKey: 'context_summary_provider',
         backendKey: 'context_summary_backend',
+        effortKey: 'context_summary_effort',
         label: 'Context Summary',
         description:
           'Prompt for summarizing conversations when saving context.',
@@ -395,6 +414,7 @@ const PROMPT_SECTIONS: PromptSection[] = [
         modelKey: 'session_naming_model',
         providerKey: 'session_naming_provider',
         backendKey: 'session_naming_backend',
+        effortKey: 'session_naming_effort',
         label: 'Session Naming',
         description:
           'Prompt for generating session titles from the first message. Used for both auto-naming and manual regeneration.',
@@ -412,6 +432,7 @@ const PROMPT_SECTIONS: PromptSection[] = [
         modelKey: 'session_recap_model',
         providerKey: 'session_recap_provider',
         backendKey: 'session_recap_backend',
+        effortKey: 'session_recap_effort',
         label: 'Session Recap',
         description:
           'Prompt for generating session recaps (digests) when returning to unfocused sessions.',
@@ -479,6 +500,20 @@ function getDefaultModelForBackend(
   )
 }
 
+function getDefaultEffortForBackend(
+  backend: CliBackend,
+  config: PromptConfig
+): MagicPromptReasoningEfforts[keyof MagicPromptReasoningEfforts] | undefined {
+  if (!config.effortKey) return undefined
+  if (backend === 'claude') {
+    return DEFAULT_MAGIC_PROMPT_EFFORTS[config.effortKey]
+  }
+  if (backend === 'codex') {
+    return CODEX_DEFAULT_MAGIC_PROMPT_EFFORTS[config.effortKey]
+  }
+  return OPENCODE_DEFAULT_MAGIC_PROMPT_EFFORTS[config.effortKey]
+}
+
 export const MagicPromptsPane: React.FC = () => {
   const { data: preferences } = usePreferences()
   const patchPreferences = usePatchPreferences()
@@ -515,6 +550,8 @@ export const MagicPromptsPane: React.FC = () => {
     preferences?.magic_prompt_providers ?? DEFAULT_MAGIC_PROMPT_PROVIDERS
   const currentBackends =
     preferences?.magic_prompt_backends ?? DEFAULT_MAGIC_PROMPT_BACKENDS
+  const currentEfforts =
+    preferences?.magic_prompt_efforts ?? DEFAULT_MAGIC_PROMPT_EFFORTS
   const profiles = useMemo(
     () => preferences?.custom_cli_profiles ?? [],
     [preferences?.custom_cli_profiles]
@@ -531,6 +568,9 @@ export const MagicPromptsPane: React.FC = () => {
     : undefined
   const currentBackend = selectedConfig.backendKey
     ? (currentBackends[selectedConfig.backendKey] ?? null)
+    : undefined
+  const currentEffort = selectedConfig.effortKey
+    ? (currentEfforts[selectedConfig.effortKey] ?? null)
     : undefined
   const effectiveBackend = selectedConfig.backendKey
     ? resolveMagicPromptBackend(
@@ -704,6 +744,10 @@ export const MagicPromptsPane: React.FC = () => {
         selectedConfig,
         opencodeModelOptions
       )
+      const defaultEffort = getDefaultEffortForBackend(
+        nextBackend,
+        selectedConfig
+      )
       patchPreferences.mutate({
         magic_prompt_backends: {
           ...currentBackends,
@@ -717,6 +761,14 @@ export const MagicPromptsPane: React.FC = () => {
               },
             }
           : {}),
+        ...(selectedConfig.effortKey
+          ? {
+              magic_prompt_efforts: {
+                ...currentEfforts,
+                [selectedConfig.effortKey]: defaultEffort ?? null,
+              },
+            }
+          : {}),
       })
     },
     [
@@ -724,11 +776,25 @@ export const MagicPromptsPane: React.FC = () => {
       patchPreferences,
       currentBackends,
       currentModels,
+      currentEfforts,
       selectedConfig.backendKey,
+      selectedConfig.effortKey,
       selectedConfig.modelKey,
-      selectedConfig.defaultModel,
       opencodeModelOptions,
     ]
+  )
+
+  const handleEffortChange = useCallback(
+    (effort: string) => {
+      if (!preferences || !selectedConfig.effortKey) return
+      patchPreferences.mutate({
+        magic_prompt_efforts: {
+          ...currentEfforts,
+          [selectedConfig.effortKey]: effort === 'default' ? null : effort,
+        },
+      })
+    },
+    [preferences, patchPreferences, currentEfforts, selectedConfig.effortKey]
   )
 
   const handleApplyClaudeDefaults = useCallback(() => {
@@ -737,6 +803,7 @@ export const MagicPromptsPane: React.FC = () => {
       magic_prompt_models: DEFAULT_MAGIC_PROMPT_MODELS,
       magic_prompt_providers: DEFAULT_MAGIC_PROMPT_PROVIDERS,
       magic_prompt_backends: CLAUDE_DEFAULT_MAGIC_PROMPT_BACKENDS,
+      magic_prompt_efforts: DEFAULT_MAGIC_PROMPT_EFFORTS,
     })
   }, [preferences, patchPreferences])
 
@@ -745,6 +812,7 @@ export const MagicPromptsPane: React.FC = () => {
     patchPreferences.mutate({
       magic_prompt_models: CODEX_DEFAULT_MAGIC_PROMPT_MODELS,
       magic_prompt_backends: CODEX_DEFAULT_MAGIC_PROMPT_BACKENDS,
+      magic_prompt_efforts: CODEX_DEFAULT_MAGIC_PROMPT_EFFORTS,
     })
   }, [preferences, patchPreferences])
 
@@ -753,6 +821,7 @@ export const MagicPromptsPane: React.FC = () => {
     patchPreferences.mutate({
       magic_prompt_models: OPENCODE_DEFAULT_MAGIC_PROMPT_MODELS,
       magic_prompt_backends: OPENCODE_DEFAULT_MAGIC_PROMPT_BACKENDS,
+      magic_prompt_efforts: OPENCODE_DEFAULT_MAGIC_PROMPT_EFFORTS,
     })
   }, [preferences, patchPreferences])
 
@@ -1032,6 +1101,27 @@ export const MagicPromptsPane: React.FC = () => {
                     </Command>
                   </PopoverContent>
                 </Popover>
+              </>
+            )}
+            {currentEffort !== undefined && (
+              <>
+                <span className="text-xs text-muted-foreground">Effort</span>
+                <Select
+                  value={currentEffort ?? 'default'}
+                  onValueChange={handleEffortChange}
+                >
+                  <SelectTrigger size="sm" className="w-[120px] text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="default">Default</SelectItem>
+                    {magicPromptReasoningOptions.map(option => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </>
             )}
             <Button

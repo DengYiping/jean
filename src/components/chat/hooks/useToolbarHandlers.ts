@@ -43,6 +43,8 @@ interface UseToolbarHandlersParams {
   setSessionProvider: { mutate: (args: any) => void }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   setSessionThinkingLevel: { mutate: (args: any) => void }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  setSessionEffortLevel: { mutate: (args: any) => void }
   setExecutionMode: (sessionId: string, mode: ExecutionMode) => void
   setLoadContextModalOpen: (open: boolean) => void
 }
@@ -70,6 +72,7 @@ export function useToolbarHandlers({
   setSessionBackend,
   setSessionProvider,
   setSessionThinkingLevel,
+  setSessionEffortLevel,
   setExecutionMode,
   setLoadContextModalOpen,
 }: UseToolbarHandlersParams) {
@@ -236,8 +239,26 @@ export function useToolbarHandlers({
 
   const handleToolbarEffortLevelChange = useCallback((level: EffortLevel) => {
     const sessionId = activeSessionIdRef.current
-    if (!sessionId) return
+    const worktreeId = activeWorktreeIdRef.current
+    const worktreePath = activeWorktreePathRef.current
+    if (!sessionId || !worktreeId || !worktreePath) return
     useChatStore.getState().setEffortLevel(sessionId, level)
+    queryClient.setQueryData(
+      chatQueryKeys.session(sessionId),
+      (old: Session | null | undefined) =>
+        old ? applySessionSettingToSession(old, 'effortLevel', level) : old
+    )
+    setSessionEffortLevel.mutate({
+      sessionId,
+      worktreeId,
+      worktreePath,
+      effortLevel: level,
+    })
+    invoke('broadcast_session_setting', {
+      sessionId,
+      key: 'effortLevel',
+      value: level,
+    }).catch(() => undefined)
     window.dispatchEvent(new CustomEvent('focus-chat-input'))
   }, [])
 

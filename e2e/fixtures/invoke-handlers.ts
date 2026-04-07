@@ -138,6 +138,7 @@ export const defaultResponses: Record<string, unknown> = {
   // Session settings
   set_active_session: null,
   set_session_model: null,
+  set_session_effort_level: null,
   set_session_provider: null,
   update_session_state: null,
   broadcast_session_setting: null,

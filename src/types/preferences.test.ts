@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  CODEX_DEFAULT_MAGIC_PROMPT_EFFORTS,
+  DEFAULT_MAGIC_PROMPT_EFFORTS,
+  DEFAULT_MAGIC_PROMPT_MODELS,
+  DEFAULT_MAGIC_PROMPT_PROVIDERS,
   isMagicPromptModelCompatibleWithBackend,
+  OPENCODE_DEFAULT_MAGIC_PROMPT_EFFORTS,
   resolveMagicPromptBackend,
   type MagicPromptBackends,
 } from './preferences'
@@ -64,5 +69,22 @@ describe('magic prompt model compatibility', () => {
         'claude'
       )
     ).toBe(false)
+  })
+})
+
+describe('magic prompt review comments defaults', () => {
+  it('includes review comments overrides in the shared defaults', () => {
+    expect(DEFAULT_MAGIC_PROMPT_MODELS.review_comments_model).toBe('opus')
+    expect(DEFAULT_MAGIC_PROMPT_PROVIDERS.review_comments_provider).toBeNull()
+    expect(DEFAULT_MAGIC_PROMPT_EFFORTS.review_comments_effort).toBeNull()
+  })
+
+  it('includes review comments effort in Codex and OpenCode presets', () => {
+    expect(CODEX_DEFAULT_MAGIC_PROMPT_EFFORTS.review_comments_effort).toBe(
+      'medium'
+    )
+    expect(OPENCODE_DEFAULT_MAGIC_PROMPT_EFFORTS.review_comments_effort).toBe(
+      'medium'
+    )
   })
 })

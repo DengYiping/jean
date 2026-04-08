@@ -196,6 +196,7 @@ pub fn linear_issue_to_issue_context(detail: &LinearIssueDetail) -> IssueContext
                     .as_ref()
                     .map(|u| u.display_name.clone())
                     .unwrap_or_else(|| "Unknown".to_string()),
+                avatar_url: None,
             },
             created_at: c.created_at.clone(),
         })

@@ -9,6 +9,7 @@ import {
   GitPullRequest,
   Hammer,
   Loader2,
+  MessageSquare,
   Plug,
   Sparkles,
   Wand2,
@@ -122,6 +123,7 @@ interface DesktopToolbarControlsProps {
   onOpenProjectSettings?: () => void
   onResolvePrConflicts: () => void
   onLoadContext: () => void
+  onOpenPullRequestReview: () => void
   installedBackends: ('claude' | 'codex' | 'opencode')[]
   onBackendChange: (backend: 'claude' | 'codex' | 'opencode') => void
   onSetExecutionMode: (mode: ExecutionMode) => void
@@ -182,6 +184,7 @@ export function DesktopToolbarControls({
   onOpenProjectSettings,
   onResolvePrConflicts,
   onLoadContext,
+  onOpenPullRequestReview,
   installedBackends,
   onBackendChange,
   onSetExecutionMode,
@@ -501,6 +504,18 @@ export function DesktopToolbarControls({
       {prUrl && prNumber && (
         <>
           <div className="hidden @xl:block h-4 w-px bg-border/50" />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="hidden @xl:flex h-8 items-center justify-center px-2 text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground"
+                onClick={onOpenPullRequestReview}
+              >
+                <MessageSquare className="h-3.5 w-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Review PR diff and comments</TooltipContent>
+          </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
               <a

@@ -90,6 +90,11 @@ const ReviewCommentsDialog = lazy(() =>
     default: mod.ReviewCommentsDialog,
   }))
 )
+const PullRequestReviewDialog = lazy(() =>
+  import('@/components/github-review/PullRequestReviewDialog').then(mod => ({
+    default: mod.PullRequestReviewDialog,
+  }))
+)
 const NewWorktreeModal = lazy(() =>
   import('@/components/worktree/NewWorktreeModal').then(mod => ({
     default: mod.NewWorktreeModal,
@@ -201,6 +206,9 @@ export function MainWindow() {
   const updatePrModalOpen = useUIStore(state => state.updatePrModalOpen)
   const reviewCommentsModalOpen = useUIStore(
     state => state.reviewCommentsModalOpen
+  )
+  const pullRequestReviewDialog = useUIStore(
+    state => state.pullRequestReviewDialog
   )
   const workflowRunsModalOpen = useUIStore(state => state.workflowRunsModalOpen)
   const cliUpdateModalOpen = useUIStore(state => state.cliUpdateModalOpen)
@@ -390,6 +398,9 @@ export function MainWindow() {
   const shouldRenderReviewCommentsDialog = useRetainedMount(
     reviewCommentsModalOpen
   )
+  const shouldRenderPullRequestReviewDialog = useRetainedMount(
+    pullRequestReviewDialog !== null
+  )
   const shouldRenderWorkflowRunsModal = useRetainedMount(workflowRunsModalOpen)
   const shouldRenderMagicModal = useRetainedMount(magicModalOpen)
   const shouldRenderReleaseNotesDialog = useRetainedMount(releaseNotesModalOpen)
@@ -553,6 +564,11 @@ export function MainWindow() {
       {shouldRenderReviewCommentsDialog && (
         <Suspense fallback={null}>
           <ReviewCommentsDialog />
+        </Suspense>
+      )}
+      {shouldRenderPullRequestReviewDialog && (
+        <Suspense fallback={null}>
+          <PullRequestReviewDialog />
         </Suspense>
       )}
       {shouldRenderNewWorktreeModal && (

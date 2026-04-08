@@ -8,7 +8,6 @@ import {
 import { useQueries } from '@tanstack/react-query'
 import {
   CircleDot,
-  ExternalLink,
   GitPullRequest,
   Shield,
   ShieldAlert,
@@ -19,7 +18,7 @@ import {
   Eye,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { getModifierSymbol, openExternal } from '@/lib/platform'
+import { getModifierSymbol } from '@/lib/platform'
 import {
   Dialog,
   DialogContent,
@@ -51,6 +50,11 @@ import {
   parseLabelQuery,
 } from '@/services/github'
 import { GhAuthError } from '@/components/shared/GhAuthError'
+import {
+  OpenPullRequestReviewButton,
+  OpenPullRequestButton,
+  PullRequestMeta,
+} from '@/components/shared/GitHubPullRequestRowParts'
 import { IssuePreviewModal } from '@/components/worktree/IssuePreviewModal'
 import { useGhLogin } from '@/hooks/useGhLogin'
 import { invoke } from '@/lib/transport'
@@ -162,34 +166,6 @@ function InvestigateButton({
   )
 }
 
-function OpenPRButton({
-  isCreating,
-  url,
-}: {
-  isCreating: boolean
-  url: string
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          aria-label="Open PR on GitHub"
-          onClick={e => {
-            e.stopPropagation()
-            void openExternal(url)
-          }}
-          disabled={isCreating}
-          className="inline-flex h-6 w-6 items-center justify-center rounded px-1 text-foreground/80 transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed"
-        >
-          <ExternalLink className="h-3.5 w-3.5" />
-        </button>
-      </TooltipTrigger>
-      <TooltipContent>Open PR on GitHub</TooltipContent>
-    </Tooltip>
-  )
-}
-
 // =============================================================================
 // Item renderers
 // =============================================================================
@@ -290,6 +266,7 @@ export function PRRow({
   onClick,
   onPreview,
   onInvestigate,
+  onOpenReview,
   onLabelClick,
 }: {
   pr: GitHubPullRequest
@@ -297,6 +274,7 @@ export function PRRow({
   onClick: (background: boolean) => void
   onPreview: () => void
   onInvestigate: (background: boolean) => void
+  onOpenReview: () => void
   onLabelClick?: (label: string) => void
 }) {
   const reviewBadge =
@@ -377,6 +355,7 @@ export function PRRow({
         <span className="text-xs text-muted-foreground">
           {pr.headRefName} → {pr.baseRefName}
         </span>
+        <PullRequestMeta pr={pr} />
         {(reviewBadge || checkBadge) && (
           <div className="flex flex-wrap gap-1 mt-1">
             {reviewBadge && (
@@ -432,7 +411,11 @@ export function PRRow({
         )}
       </button>
       <div className="shrink-0 flex items-center gap-1 self-center">
-        <OpenPRButton isCreating={isCreating} url={pr.url} />
+        <OpenPullRequestReviewButton
+          disabled={isCreating}
+          onClick={() => onOpenReview()}
+        />
+        <OpenPullRequestButton isCreating={isCreating} url={pr.url} />
         <Tooltip>
           <TooltipTrigger asChild>
             <button
@@ -1312,6 +1295,12 @@ export function GitHubDashboardModal() {
                               projectPath: project.path,
                               type: 'pr',
                               number: pr.number,
+                            })
+                          }
+                          onOpenReview={() =>
+                            useUIStore.getState().openPullRequestReviewDialog({
+                              projectPath: project.path,
+                              prNumber: pr.number,
                             })
                           }
                           onInvestigate={bg =>

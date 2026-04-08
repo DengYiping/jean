@@ -2258,6 +2258,14 @@ export function ChatWindow({
     [pickRemoteOrRun, handlePull]
   )
 
+  const handleOpenPullRequestReview = useCallback(() => {
+    if (!activeWorktreePath || !worktree?.pr_number) return
+    useUIStore.getState().openPullRequestReviewDialog({
+      projectPath: activeWorktreePath,
+      prNumber: worktree.pr_number,
+    })
+  }, [activeWorktreePath, worktree?.pr_number])
+
   // Global cancel keyboard shortcut (Cmd+Option+Backspace / Ctrl+Alt+Backspace)
   // ChatInput handles this when focused, but we need a global handler for when
   // focus is elsewhere (e.g., ReviewResultsPanel after clicking Fix)
@@ -3153,6 +3161,9 @@ export function ChatWindow({
                             onCommit={handleCommit}
                             onCommitAndPush={handleCommitAndPushWithPicker}
                             onOpenPr={handleOpenPr}
+                            onOpenPullRequestReview={
+                              handleOpenPullRequestReview
+                            }
                             onReview={() => handleReview()}
                             onMerge={handleMerge}
                             onResolvePrConflicts={handleResolvePrConflicts}

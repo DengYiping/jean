@@ -465,6 +465,50 @@ pub async fn dispatch_command(
                     .await?;
             to_value(result)
         }
+        "get_pull_request_review_data" => {
+            let project_path: String = field(&args, "projectPath", "project_path")?;
+            let pr_number: u32 = field(&args, "prNumber", "pr_number")?;
+            let result =
+                crate::projects::get_pull_request_review_data(app.clone(), project_path, pr_number)
+                    .await?;
+            to_value(result)
+        }
+        "create_pull_request_inline_comment" => {
+            let request: crate::projects::CreatePullRequestInlineCommentRequest =
+                field(&args, "request", "request")?;
+            crate::projects::create_pull_request_inline_comment(app.clone(), request).await?;
+            Ok(Value::Null)
+        }
+        "reply_to_pull_request_review_comment" => {
+            let project_path: String = field(&args, "projectPath", "project_path")?;
+            let pr_number: u32 = field(&args, "prNumber", "pr_number")?;
+            let comment_id: u64 = field(&args, "commentId", "comment_id")?;
+            let body: String = field(&args, "body", "body")?;
+            crate::projects::reply_to_pull_request_review_comment(
+                app.clone(),
+                project_path,
+                pr_number,
+                comment_id,
+                body,
+            )
+            .await?;
+            Ok(Value::Null)
+        }
+        "submit_pull_request_review" => {
+            let project_path: String = field(&args, "projectPath", "project_path")?;
+            let pr_number: u32 = field(&args, "prNumber", "pr_number")?;
+            let body: Option<String> = from_field_opt(&args, "body")?;
+            let event: String = field(&args, "event", "event")?;
+            crate::projects::submit_pull_request_review(
+                app.clone(),
+                project_path,
+                pr_number,
+                body,
+                event,
+            )
+            .await?;
+            Ok(Value::Null)
+        }
         "load_issue_context" => {
             let session_id: String = field(&args, "sessionId", "session_id")?;
             let issue_number: u32 = field(&args, "issueNumber", "issue_number")?;

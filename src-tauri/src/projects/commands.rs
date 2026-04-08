@@ -2337,6 +2337,7 @@ pub async fn checkout_pr(
                                     body: c.body,
                                     author: super::github_issues::GitHubAuthor {
                                         login: c.author.login,
+                                        avatar_url: None,
                                     },
                                     created_at: c.created_at,
                                 })
@@ -2348,6 +2349,7 @@ pub async fn checkout_pr(
                                     state: r.state,
                                     author: super::github_issues::GitHubAuthor {
                                         login: r.author.login,
+                                        avatar_url: None,
                                     },
                                     submitted_at: r.submitted_at,
                                 })

@@ -29,6 +29,7 @@ export interface GitHubPRsTabProps {
   onSelectPR: (pr: GitHubPullRequest, background?: boolean) => void
   onInvestigatePR: (pr: GitHubPullRequest, background?: boolean) => void
   onPreviewPR: (pr: GitHubPullRequest) => void
+  onOpenReviewPR: (pr: GitHubPullRequest) => void
   creatingFromNumber: number | null
   searchInputRef: React.RefObject<HTMLInputElement | null>
   onGhLogin: () => void
@@ -51,6 +52,7 @@ export function GitHubPRsTab({
   onSelectPR,
   onInvestigatePR,
   onPreviewPR,
+  onOpenReviewPR,
   creatingFromNumber,
   searchInputRef,
   onGhLogin,
@@ -172,6 +174,7 @@ export function GitHubPRsTab({
                 onClick={bg => onSelectPR(pr, bg)}
                 onInvestigate={bg => onInvestigatePR(pr, bg)}
                 onPreview={() => onPreviewPR(pr)}
+                onOpenReview={() => onOpenReviewPR(pr)}
                 onLabelClick={handleLabelClick}
               />
             ))}

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@/test/test-utils'
-import { PRRow } from './GitHubDashboardModal'
+import { PRItem } from './NewWorktreeItems'
 import type { GitHubPullRequest } from '@/types/github'
 
 const { openExternalMock } = vi.hoisted(() => ({
@@ -15,7 +15,7 @@ vi.mock('@/lib/platform', async () => {
   }
 })
 
-describe('PRRow', () => {
+describe('PRItem', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-03-25T12:00:00Z'))
@@ -26,85 +26,78 @@ describe('PRRow', () => {
   })
 
   const pr: GitHubPullRequest = {
-    number: 42,
-    title: 'Tighten dashboard action row',
-    body: 'Adds a direct PR link button',
-    url: 'https://github.com/acme/jean/pull/42',
+    number: 99,
+    title: 'Keep project PR rows aligned with dashboard behavior',
+    body: 'Adds metadata and direct GitHub link',
+    url: 'https://github.com/acme/jean/pull/99',
     state: 'OPEN',
-    headRefName: 'feature/pr-link',
+    headRefName: 'feature/project-pr-row',
     baseRefName: 'main',
     isDraft: false,
     created_at: '2026-03-24T12:00:00Z',
     author: {
-      login: 'ydeng',
-      avatarUrl: 'https://avatars.example.com/u/42',
+      login: 'octocat',
+      avatarUrl: 'https://avatars.example.com/u/99',
     },
     labels: [],
-    additions: 120,
-    deletions: 18,
+    additions: 7,
+    deletions: 3,
     reviewDecision: null,
-    checkStatus: 'success',
+    checkStatus: 'pending',
   }
 
-  it('renders author, open age, and churn metadata', () => {
-    render(
-      <PRRow
-        pr={pr}
-        isCreating={false}
-        onClick={vi.fn()}
-        onPreview={vi.fn()}
-        onOpenReview={vi.fn()}
-        onInvestigate={vi.fn()}
-      />
-    )
-
-    expect(screen.getByAltText('ydeng avatar')).toBeInTheDocument()
-    expect(screen.getByText('ydeng')).toBeInTheDocument()
-    expect(screen.getByText('opened 1d ago')).toBeInTheDocument()
-    expect(screen.getByText('+120')).toBeInTheDocument()
-    expect(screen.getByText('-18')).toBeInTheDocument()
-  })
-
-  it('opens the PR URL without triggering row actions', () => {
+  it('renders metadata and opens GitHub without triggering row actions', () => {
     const onClick = vi.fn()
-    const onPreview = vi.fn()
     const onInvestigate = vi.fn()
+    const onPreview = vi.fn()
     const onOpenReview = vi.fn()
 
     render(
-      <PRRow
+      <PRItem
         pr={pr}
+        index={0}
+        isSelected={false}
         isCreating={false}
+        onMouseEnter={vi.fn()}
         onClick={onClick}
+        onInvestigate={onInvestigate}
         onPreview={onPreview}
         onOpenReview={onOpenReview}
-        onInvestigate={onInvestigate}
       />
     )
+
+    expect(screen.getByAltText('octocat avatar')).toBeInTheDocument()
+    expect(screen.getByText('octocat')).toBeInTheDocument()
+    expect(screen.getByText('opened 1d ago')).toBeInTheDocument()
+    expect(screen.getByText('+7')).toBeInTheDocument()
+    expect(screen.getByText('-3')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Open PR on GitHub' }))
 
     expect(openExternalMock).toHaveBeenCalledWith(pr.url)
     expect(onClick).not.toHaveBeenCalled()
+    expect(onInvestigate).not.toHaveBeenCalled()
     expect(onPreview).not.toHaveBeenCalled()
     expect(onOpenReview).not.toHaveBeenCalled()
-    expect(onInvestigate).not.toHaveBeenCalled()
   })
 
   it('opens the review surface without triggering row actions', () => {
     const onClick = vi.fn()
-    const onPreview = vi.fn()
     const onInvestigate = vi.fn()
+    const onPreview = vi.fn()
     const onOpenReview = vi.fn()
 
     render(
-      <PRRow
+      <PRItem
         pr={pr}
+        index={0}
+        isSelected={false}
         isCreating={false}
+        onMouseEnter={vi.fn()}
         onClick={onClick}
+        onInvestigate={onInvestigate}
         onPreview={onPreview}
         onOpenReview={onOpenReview}
-        onInvestigate={onInvestigate}
       />
     )
 
@@ -114,7 +107,7 @@ describe('PRRow', () => {
 
     expect(onOpenReview).toHaveBeenCalledTimes(1)
     expect(onClick).not.toHaveBeenCalled()
-    expect(onPreview).not.toHaveBeenCalled()
     expect(onInvestigate).not.toHaveBeenCalled()
+    expect(onPreview).not.toHaveBeenCalled()
   })
 })

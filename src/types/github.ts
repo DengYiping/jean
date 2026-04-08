@@ -107,6 +107,69 @@ export interface GitHubReviewComment {
   line?: number
 }
 
+export interface GitHubReviewThreadComment {
+  id: number
+  author: GitHubAuthor
+  body: string
+  createdAt: string
+  updatedAt?: string | null
+  inReplyToId?: number | null
+  htmlUrl?: string | null
+}
+
+export interface GitHubReviewThread {
+  id: number
+  path: string
+  diffHunk: string
+  isResolved?: boolean
+  isOutdated?: boolean
+  line?: number | null
+  originalLine?: number | null
+  startLine?: number | null
+  originalStartLine?: number | null
+  side?: 'LEFT' | 'RIGHT' | null
+  startSide?: 'LEFT' | 'RIGHT' | null
+  comments: GitHubReviewThreadComment[]
+}
+
+export interface GitHubPullRequestReviewData {
+  pullRequest: GitHubPullRequest
+  headCommitSha: string
+  diff: string
+  threads: GitHubReviewThread[]
+}
+
+export interface CreatePullRequestInlineCommentInput {
+  projectPath: string
+  prNumber: number
+  body: string
+  path: string
+  line: number
+  side: 'LEFT' | 'RIGHT'
+  headCommitSha: string
+  startLine?: number
+  startSide?: 'LEFT' | 'RIGHT'
+}
+
+export interface ReplyToPullRequestReviewCommentInput {
+  projectPath: string
+  prNumber: number
+  commentId: number
+  body: string
+}
+
+export interface SubmitPullRequestReviewInput {
+  projectPath: string
+  prNumber: number
+  body?: string
+  event: 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES'
+}
+
+export interface PullRequestReviewDialogRequest {
+  projectPath: string
+  prNumber: number
+}
+
 export interface GitHubPullRequestDetail extends GitHubPullRequest {
   url: string
   comments: GitHubComment[]

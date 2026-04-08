@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ExternalLink } from 'lucide-react'
+import { ExternalLink, MessageSquare } from 'lucide-react'
 import { openExternal } from '@/lib/platform'
 import {
   Tooltip,
@@ -106,6 +106,34 @@ export function OpenPullRequestButton({
         </button>
       </TooltipTrigger>
       <TooltipContent>Open PR on GitHub</TooltipContent>
+    </Tooltip>
+  )
+}
+
+export function OpenPullRequestReviewButton({
+  onClick,
+  disabled = false,
+}: {
+  onClick: (event: React.MouseEvent<HTMLButtonElement>) => void
+  disabled?: boolean
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label="Review PR diff and comments"
+          onClick={event => {
+            event.stopPropagation()
+            onClick(event)
+          }}
+          disabled={disabled}
+          className="inline-flex h-6 w-6 items-center justify-center rounded px-1 text-foreground/80 transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
+        >
+          <MessageSquare className="h-3.5 w-3.5" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>Review PR diff and comments</TooltipContent>
     </Tooltip>
   )
 }

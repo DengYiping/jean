@@ -89,6 +89,7 @@ export const ChatToolbar = memo(function ChatToolbar({
   onCommit,
   onCommitAndPush,
   onOpenPr,
+  onOpenPullRequestReview,
   onReview,
   onMerge,
   onResolvePrConflicts,
@@ -316,6 +317,7 @@ export const ChatToolbar = memo(function ChatToolbar({
           onCommit={onCommit}
           onCommitAndPush={onCommitAndPush}
           onOpenPr={onOpenPr}
+          onOpenPullRequestReview={onOpenPullRequestReview}
           onReview={onReview}
           onMerge={onMerge}
           onResolveConflicts={onResolveConflicts}
@@ -393,6 +395,7 @@ export const ChatToolbar = memo(function ChatToolbar({
           onOpenProjectSettings={onOpenProjectSettings}
           onResolvePrConflicts={onResolvePrConflicts}
           onLoadContext={onLoadContext}
+          onOpenPullRequestReview={onOpenPullRequestReview}
           installedBackends={installedBackends}
           onBackendChange={onBackendChange}
           onSetExecutionMode={onSetExecutionMode}

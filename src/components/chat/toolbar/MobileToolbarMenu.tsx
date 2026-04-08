@@ -15,6 +15,7 @@ import {
   GitMerge,
   GitPullRequest,
   Hammer,
+  MessageSquare,
   MoreHorizontal,
   Pencil,
   Sparkles,
@@ -111,6 +112,7 @@ interface MobileToolbarMenuProps {
   onCommit: () => void
   onCommitAndPush: () => void
   onOpenPr: () => void
+  onOpenPullRequestReview: () => void
   onReview: () => void
   onMerge: () => void
   onResolveConflicts: () => void
@@ -158,6 +160,7 @@ export function MobileToolbarMenu({
   onCommit,
   onCommitAndPush,
   onOpenPr,
+  onOpenPullRequestReview,
   onReview,
   onMerge,
   onResolveConflicts,
@@ -292,6 +295,12 @@ export function MobileToolbarMenu({
               R
             </span>
           </DropdownMenuItem>
+          {hasOpenPr && (
+            <DropdownMenuItem onClick={onOpenPullRequestReview}>
+              <MessageSquare className="h-4 w-4" />
+              Review comments
+            </DropdownMenuItem>
+          )}
           <DropdownMenuSeparator />
 
           <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">

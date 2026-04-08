@@ -72,6 +72,7 @@ export interface ChatToolbarProps {
   onCommit: () => void
   onCommitAndPush: () => void
   onOpenPr: () => void
+  onOpenPullRequestReview: () => void
   onReview: () => void
   onMerge: () => void
   onResolvePrConflicts: () => void

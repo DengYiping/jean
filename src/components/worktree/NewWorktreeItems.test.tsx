@@ -50,6 +50,7 @@ describe('PRItem', () => {
     const onClick = vi.fn()
     const onInvestigate = vi.fn()
     const onPreview = vi.fn()
+    const onOpenReview = vi.fn()
 
     render(
       <PRItem
@@ -61,6 +62,7 @@ describe('PRItem', () => {
         onClick={onClick}
         onInvestigate={onInvestigate}
         onPreview={onPreview}
+        onOpenReview={onOpenReview}
       />
     )
 
@@ -73,6 +75,37 @@ describe('PRItem', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open PR on GitHub' }))
 
     expect(openExternalMock).toHaveBeenCalledWith(pr.url)
+    expect(onClick).not.toHaveBeenCalled()
+    expect(onInvestigate).not.toHaveBeenCalled()
+    expect(onPreview).not.toHaveBeenCalled()
+    expect(onOpenReview).not.toHaveBeenCalled()
+  })
+
+  it('opens the review surface without triggering row actions', () => {
+    const onClick = vi.fn()
+    const onInvestigate = vi.fn()
+    const onPreview = vi.fn()
+    const onOpenReview = vi.fn()
+
+    render(
+      <PRItem
+        pr={pr}
+        index={0}
+        isSelected={false}
+        isCreating={false}
+        onMouseEnter={vi.fn()}
+        onClick={onClick}
+        onInvestigate={onInvestigate}
+        onPreview={onPreview}
+        onOpenReview={onOpenReview}
+      />
+    )
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Review PR diff and comments' })
+    )
+
+    expect(onOpenReview).toHaveBeenCalledTimes(1)
     expect(onClick).not.toHaveBeenCalled()
     expect(onInvestigate).not.toHaveBeenCalled()
     expect(onPreview).not.toHaveBeenCalled()

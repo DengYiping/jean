@@ -53,6 +53,7 @@ describe('PRRow', () => {
         isCreating={false}
         onClick={vi.fn()}
         onPreview={vi.fn()}
+        onOpenReview={vi.fn()}
         onInvestigate={vi.fn()}
       />
     )
@@ -68,6 +69,7 @@ describe('PRRow', () => {
     const onClick = vi.fn()
     const onPreview = vi.fn()
     const onInvestigate = vi.fn()
+    const onOpenReview = vi.fn()
 
     render(
       <PRRow
@@ -75,6 +77,7 @@ describe('PRRow', () => {
         isCreating={false}
         onClick={onClick}
         onPreview={onPreview}
+        onOpenReview={onOpenReview}
         onInvestigate={onInvestigate}
       />
     )
@@ -82,6 +85,34 @@ describe('PRRow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open PR on GitHub' }))
 
     expect(openExternalMock).toHaveBeenCalledWith(pr.url)
+    expect(onClick).not.toHaveBeenCalled()
+    expect(onPreview).not.toHaveBeenCalled()
+    expect(onOpenReview).not.toHaveBeenCalled()
+    expect(onInvestigate).not.toHaveBeenCalled()
+  })
+
+  it('opens the review surface without triggering row actions', () => {
+    const onClick = vi.fn()
+    const onPreview = vi.fn()
+    const onInvestigate = vi.fn()
+    const onOpenReview = vi.fn()
+
+    render(
+      <PRRow
+        pr={pr}
+        isCreating={false}
+        onClick={onClick}
+        onPreview={onPreview}
+        onOpenReview={onOpenReview}
+        onInvestigate={onInvestigate}
+      />
+    )
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Review PR diff and comments' })
+    )
+
+    expect(onOpenReview).toHaveBeenCalledTimes(1)
     expect(onClick).not.toHaveBeenCalled()
     expect(onPreview).not.toHaveBeenCalled()
     expect(onInvestigate).not.toHaveBeenCalled()

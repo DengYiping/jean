@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
+import type { PullRequestReviewDialogRequest } from '@/types/github'
 
 export type PreferencePane =
   | 'general'
@@ -41,6 +42,7 @@ interface UIState {
   releaseNotesModalOpen: boolean
   updatePrModalOpen: boolean
   reviewCommentsModalOpen: boolean
+  pullRequestReviewDialog: PullRequestReviewDialogRequest | null
   workflowRunsModalOpen: boolean
   workflowRunsModalProjectPath: string | null
   workflowRunsModalBranch: string | null
@@ -115,6 +117,8 @@ interface UIState {
   setReleaseNotesModalOpen: (open: boolean) => void
   setUpdatePrModalOpen: (open: boolean) => void
   setReviewCommentsModalOpen: (open: boolean) => void
+  openPullRequestReviewDialog: (request: PullRequestReviewDialogRequest) => void
+  closePullRequestReviewDialog: () => void
   setWorkflowRunsModalOpen: (
     open: boolean,
     projectPath?: string | null,
@@ -195,6 +199,7 @@ export const useUIStore = create<UIState>()(
       releaseNotesModalOpen: false,
       updatePrModalOpen: false,
       reviewCommentsModalOpen: false,
+      pullRequestReviewDialog: null,
       workflowRunsModalOpen: false,
       workflowRunsModalProjectPath: null,
       workflowRunsModalBranch: null,
@@ -375,6 +380,18 @@ export const useUIStore = create<UIState>()(
           { reviewCommentsModalOpen: open },
           undefined,
           'setReviewCommentsModalOpen'
+        ),
+      openPullRequestReviewDialog: request =>
+        set(
+          { pullRequestReviewDialog: request },
+          undefined,
+          'openPullRequestReviewDialog'
+        ),
+      closePullRequestReviewDialog: () =>
+        set(
+          { pullRequestReviewDialog: null },
+          undefined,
+          'closePullRequestReviewDialog'
         ),
 
       setWorkflowRunsModalOpen: (open, projectPath, branch) =>

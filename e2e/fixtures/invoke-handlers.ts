@@ -121,6 +121,15 @@ export const defaultResponses: Record<string, unknown> = {
   list_github_prs: [],
   search_github_prs: [],
   get_github_pr_by_number: null,
+  get_pull_request_review_data: {
+    pullRequest: null,
+    headCommitSha: '',
+    diff: '',
+    threads: [],
+  },
+  create_pull_request_inline_comment: null,
+  reply_to_pull_request_review_comment: null,
+  submit_pull_request_review: null,
 
   // Recovery
   cleanup_old_recovery_files: 0,

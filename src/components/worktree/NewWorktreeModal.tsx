@@ -129,6 +129,14 @@ export function NewWorktreeModal() {
     setPreviewItem({ type: 'pr', number: pr.number })
   }
 
+  const handleOpenReviewPR = (pr: { number: number }) => {
+    if (!data.selectedProject?.path) return
+    useUIStore.getState().openPullRequestReviewDialog({
+      projectPath: data.selectedProject.path,
+      prNumber: pr.number,
+    })
+  }
+
   const handlePreviewSecurityAlert = (alert: { number: number }) => {
     previewOpenRef.current = true
     setPreviewItem({ type: 'security', number: alert.number })
@@ -324,6 +332,7 @@ export function NewWorktreeModal() {
                 onSelectPR={handlers.handleSelectPR}
                 onInvestigatePR={handlers.handleSelectPRAndInvestigate}
                 onPreviewPR={handlePreviewPR}
+                onOpenReviewPR={handleOpenReviewPR}
                 creatingFromNumber={handlers.creatingFromNumber}
                 searchInputRef={searchInputRef}
                 onGhLogin={triggerGhLogin}

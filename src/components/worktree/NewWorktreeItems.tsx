@@ -15,6 +15,7 @@ import {
   TooltipContent,
 } from '@/components/ui/tooltip'
 import {
+  OpenPullRequestReviewButton,
   OpenPullRequestButton,
   PullRequestMeta,
 } from '@/components/shared/GitHubPullRequestRowParts'
@@ -211,6 +212,7 @@ export interface PRItemProps {
   onClick: (background: boolean) => void
   onInvestigate: (background: boolean) => void
   onPreview: () => void
+  onOpenReview: () => void
   onLabelClick?: (label: string) => void
 }
 
@@ -223,6 +225,7 @@ export function PRItem({
   onClick,
   onInvestigate,
   onPreview,
+  onOpenReview,
   onLabelClick,
 }: PRItemProps) {
   const reviewBadge =
@@ -370,6 +373,10 @@ export function PRItem({
         )}
       </button>
       <div className="shrink-0 flex items-center gap-1 self-center">
+        <OpenPullRequestReviewButton
+          disabled={isCreating}
+          onClick={() => onOpenReview()}
+        />
         <OpenPullRequestButton isCreating={isCreating} url={pr.url} />
         {/* Preview button */}
         <Tooltip>

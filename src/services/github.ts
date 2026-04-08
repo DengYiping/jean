@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { invoke } from '@/lib/transport'
 import { logger } from '@/lib/logger'
 import type {
@@ -7,6 +7,7 @@ import type {
   GitHubIssueListResult,
   GitHubPullRequest,
   GitHubPullRequestDetail,
+  GitHubPullRequestReviewData,
   LoadedIssueContext,
   LoadedPullRequestContext,
   DependabotAlert,
@@ -15,6 +16,9 @@ import type {
   LoadedAdvisoryContext,
   AttachedSavedContext,
   WorkflowRunsResult,
+  CreatePullRequestInlineCommentInput,
+  ReplyToPullRequestReviewCommentInput,
+  SubmitPullRequestReviewInput,
 } from '@/types/github'
 import { isTauri } from './projects'
 
@@ -60,6 +64,8 @@ export const githubQueryKeys = {
     [...githubQueryKeys.all, 'prs', projectPath, state] as const,
   pr: (projectPath: string, prNumber: number) =>
     [...githubQueryKeys.all, 'pr', projectPath, prNumber] as const,
+  prReviewData: (projectPath: string, prNumber: number) =>
+    [...githubQueryKeys.all, 'pr-review-data', projectPath, prNumber] as const,
   loadedPrContexts: (sessionId: string, worktreeId?: string | null) =>
     worktreeId
       ? ([
@@ -501,6 +507,114 @@ export function useGitHubPR(
     enabled: !!projectPath && !!prNumber,
     staleTime: 1000 * 60 * 5, // 5 minutes
     gcTime: 1000 * 60 * 15, // 15 minutes
+  })
+}
+
+export function usePullRequestReviewData(
+  projectPath: string | null,
+  prNumber: number | null
+) {
+  return useQuery({
+    queryKey: githubQueryKeys.prReviewData(projectPath ?? '', prNumber ?? 0),
+    queryFn: async (): Promise<GitHubPullRequestReviewData> => {
+      if (!isTauri() || !projectPath || !prNumber) {
+        throw new Error('Missing required parameters')
+      }
+
+      try {
+        logger.debug('Fetching PR review data', { projectPath, prNumber })
+        const result = await invoke<GitHubPullRequestReviewData>(
+          'get_pull_request_review_data',
+          {
+            projectPath,
+            prNumber,
+          }
+        )
+        logger.info('PR review data loaded', {
+          projectPath,
+          prNumber,
+          threadCount: result.threads.length,
+        })
+        return result
+      } catch (error) {
+        logger.error('Failed to load PR review data', {
+          error,
+          projectPath,
+          prNumber,
+        })
+        throw error
+      }
+    },
+    enabled: !!projectPath && !!prNumber,
+    staleTime: 1000 * 30,
+    gcTime: 1000 * 60 * 10,
+    retry: 1,
+  })
+}
+
+export function useCreatePullRequestInlineComment() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (input: CreatePullRequestInlineCommentInput) =>
+      invoke('create_pull_request_inline_comment', { request: { ...input } }),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: githubQueryKeys.prReviewData(
+          variables.projectPath,
+          variables.prNumber
+        ),
+      })
+    },
+  })
+}
+
+export function useReplyToPullRequestReviewComment() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (input: ReplyToPullRequestReviewCommentInput) =>
+      invoke('reply_to_pull_request_review_comment', { ...input }),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: githubQueryKeys.prReviewData(
+          variables.projectPath,
+          variables.prNumber
+        ),
+      })
+    },
+  })
+}
+
+export function useSubmitPullRequestReview() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (input: SubmitPullRequestReviewInput) =>
+      invoke('submit_pull_request_review', { ...input }),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: githubQueryKeys.prReviewData(
+          variables.projectPath,
+          variables.prNumber
+        ),
+      })
+      queryClient.invalidateQueries({
+        queryKey: githubQueryKeys.pr(variables.projectPath, variables.prNumber),
+      })
+      queryClient.invalidateQueries({
+        queryKey: githubQueryKeys.prByNumber(
+          variables.projectPath,
+          variables.prNumber
+        ),
+      })
+      queryClient.invalidateQueries({
+        queryKey: githubQueryKeys.prs(variables.projectPath, 'open'),
+      })
+      queryClient.invalidateQueries({
+        queryKey: githubQueryKeys.prs(variables.projectPath, 'all'),
+      })
+    },
   })
 }
 

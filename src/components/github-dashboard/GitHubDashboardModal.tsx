@@ -51,6 +51,7 @@ import {
 } from '@/services/github'
 import { GhAuthError } from '@/components/shared/GhAuthError'
 import {
+  OpenPullRequestReviewButton,
   OpenPullRequestButton,
   PullRequestMeta,
 } from '@/components/shared/GitHubPullRequestRowParts'
@@ -265,6 +266,7 @@ export function PRRow({
   onClick,
   onPreview,
   onInvestigate,
+  onOpenReview,
   onLabelClick,
 }: {
   pr: GitHubPullRequest
@@ -272,6 +274,7 @@ export function PRRow({
   onClick: (background: boolean) => void
   onPreview: () => void
   onInvestigate: (background: boolean) => void
+  onOpenReview: () => void
   onLabelClick?: (label: string) => void
 }) {
   const reviewBadge =
@@ -408,6 +411,10 @@ export function PRRow({
         )}
       </button>
       <div className="shrink-0 flex items-center gap-1 self-center">
+        <OpenPullRequestReviewButton
+          disabled={isCreating}
+          onClick={() => onOpenReview()}
+        />
         <OpenPullRequestButton isCreating={isCreating} url={pr.url} />
         <Tooltip>
           <TooltipTrigger asChild>
@@ -1288,6 +1295,12 @@ export function GitHubDashboardModal() {
                               projectPath: project.path,
                               type: 'pr',
                               number: pr.number,
+                            })
+                          }
+                          onOpenReview={() =>
+                            useUIStore.getState().openPullRequestReviewDialog({
+                              projectPath: project.path,
+                              prNumber: pr.number,
                             })
                           }
                           onInvestigate={bg =>

@@ -1442,7 +1442,16 @@ pub async fn dispatch_command(
         }
         "list_codex_skills" => {
             let worktree_path: Option<String> = field_opt(&args, "worktreePath", "worktree_path")?;
-            let result = crate::projects::list_codex_skills(worktree_path).await?;
+            let result = crate::projects::list_codex_skills(app.clone(), worktree_path).await?;
+            to_value(result)
+        }
+        "set_codex_skill_enabled" => {
+            let path: Option<String> = field_opt(&args, "path", "path")?;
+            let name: Option<String> = field_opt(&args, "name", "name")?;
+            let enabled: bool = from_field(&args, "enabled")?;
+            let result =
+                crate::projects::set_codex_skill_enabled(app.clone(), path, name, enabled).await?;
+            emit_cache_invalidation(app, &["claude-cli"]);
             to_value(result)
         }
         "list_claude_commands" => {

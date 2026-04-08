@@ -1,36 +1,71 @@
-//! Configuration and path management for the system Codex CLI.
+//! Configuration and path management for the Codex CLI.
 
+use crate::platform::silent_command;
 use std::path::PathBuf;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
+
+/// Directory name for storing the Codex CLI binary
+pub const CODEX_CLI_DIR_NAME: &str = "codex-cli";
 
 /// Name of the Codex CLI binary
 #[cfg(windows)]
+#[allow(dead_code)]
 pub const CLI_BINARY_NAME: &str = "codex.exe";
 #[cfg(not(windows))]
+#[allow(dead_code)]
 pub const CLI_BINARY_NAME: &str = "codex";
 
-/// Get the full path to the Codex CLI binary from the host system.
-pub fn get_cli_binary_path(_app: &AppHandle) -> Result<PathBuf, String> {
-    which::which(CLI_BINARY_NAME)
-        .or_else(|_| which::which("codex"))
-        .map_err(|e| format!("Failed to resolve Codex CLI from PATH: {e}"))
+/// Get the directory where the Jean-managed Codex CLI is installed.
+pub fn get_cli_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data directory: {e}"))?;
+    Ok(app_data_dir.join(CODEX_CLI_DIR_NAME))
 }
 
-/// Legacy managed CLI directory. Bundled installs are no longer used.
-#[allow(dead_code)] // Older code paths still reference this legacy helper symbol.
-pub fn get_cli_dir(_app: &AppHandle) -> Result<PathBuf, String> {
-    Err("Bundled Codex CLI installs are no longer supported".to_string())
+/// Ensure the Codex CLI directory exists.
+pub fn ensure_cli_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let cli_dir = get_cli_dir(app)?;
+    std::fs::create_dir_all(&cli_dir)
+        .map_err(|e| format!("Failed to create Codex CLI directory: {e}"))?;
+    Ok(cli_dir)
 }
 
-/// Legacy helper kept only to satisfy older code paths that no longer execute.
-#[allow(dead_code)] // Older code paths still reference this legacy helper symbol.
-pub fn ensure_cli_dir(_app: &AppHandle) -> Result<PathBuf, String> {
-    Err("Bundled Codex CLI installs are no longer supported".to_string())
+/// Get the full path to the Jean-managed Codex CLI binary.
+#[allow(dead_code)]
+pub fn get_cli_binary_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(get_cli_dir(app)?.join(CLI_BINARY_NAME))
 }
 
-/// Resolve the Codex CLI binary from PATH, falling back to the bare command name.
+/// Resolve the Codex CLI binary from PATH, falling back to the bare command
+/// name.
 pub fn resolve_cli_binary(app: &AppHandle) -> PathBuf {
-    get_cli_binary_path(app).unwrap_or_else(|_| PathBuf::from("codex"))
+    let _ = app;
+    let which_cmd = if cfg!(target_os = "windows") {
+        "where"
+    } else {
+        "which"
+    };
+
+    if let Ok(output) = silent_command(which_cmd).arg("codex").output() {
+        if output.status.success() {
+            let path_str = String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            if !path_str.is_empty() {
+                let path = PathBuf::from(&path_str);
+                if path.exists() {
+                    return path;
+                }
+            }
+        }
+    }
+
+    PathBuf::from("codex")
 }
 
 #[cfg(test)]

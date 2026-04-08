@@ -773,6 +773,8 @@ export interface PendingFile {
  * A Claude CLI skill from ~/.claude/skills/
  * Skills can be attached anywhere in a prompt as context
  */
+export type SkillScope = 'user' | 'repo' | 'system' | 'admin'
+
 export interface ClaudeSkill {
   /** Skill name (filename without .md extension) */
   name: string
@@ -780,6 +782,10 @@ export interface ClaudeSkill {
   path: string
   /** Optional description from file header */
   description?: string
+  /** Whether the skill is currently enabled in the backend source of truth */
+  enabled?: boolean
+  /** Skill scope reported by the backend source of truth */
+  scope?: SkillScope
 }
 
 /**

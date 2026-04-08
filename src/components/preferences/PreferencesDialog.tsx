@@ -47,6 +47,7 @@ import { GeneralPane } from './panes/GeneralPane'
 import { AppearancePane } from './panes/AppearancePane'
 import { KeybindingsPane } from './panes/KeybindingsPane'
 import { MagicPromptsPane } from './panes/MagicPromptsPane'
+import { CodexSkillsPane } from './panes/CodexSkillsPane'
 import { McpServersPane } from './panes/McpServersPane'
 import { ProvidersPane } from './panes/ProvidersPane'
 import { IntegrationsPane } from './panes/IntegrationsPane'
@@ -81,6 +82,11 @@ const navigationItems = [
     icon: Wand2,
   },
   {
+    id: 'skills' as const,
+    name: 'Skills',
+    icon: Puzzle,
+  },
+  {
     id: 'mcp-servers' as const,
     name: 'MCP Servers',
     icon: Plug,
@@ -113,6 +119,8 @@ const getPaneTitle = (pane: PreferencePane): string => {
       return 'Keybindings'
     case 'magic-prompts':
       return 'Magic Prompts'
+    case 'skills':
+      return 'Skills'
     case 'mcp-servers':
       return 'MCP Servers'
     case 'providers':
@@ -243,6 +251,7 @@ export function PreferencesDialog() {
               {activePane === 'appearance' && <AppearancePane />}
               {activePane === 'keybindings' && <KeybindingsPane />}
               {activePane === 'magic-prompts' && <MagicPromptsPane />}
+              {activePane === 'skills' && <CodexSkillsPane />}
               {activePane === 'mcp-servers' && <McpServersPane />}
               {activePane === 'providers' && <ProvidersPane />}
               {activePane === 'integrations' && <IntegrationsPane />}

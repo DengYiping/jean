@@ -2826,6 +2826,7 @@ pub fn run() {
             // Claude CLI skills & commands
             projects::list_claude_skills,
             projects::list_codex_skills,
+            projects::set_codex_skill_enabled,
             projects::list_claude_commands,
             projects::resolve_claude_command,
             // GitHub issues commands

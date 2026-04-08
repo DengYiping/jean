@@ -2,7 +2,7 @@ use ignore::WalkBuilder;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::io::Write;
 use std::path::Path;
 use std::process::Stdio;
@@ -8716,6 +8716,16 @@ pub struct ClaudeSkill {
     pub path: String,
     /// Optional description (first line of SKILL.md, if it starts with #)
     pub description: Option<String>,
+    /// Whether the skill is enabled in the backend source of truth
+    #[serde(default = "default_skill_enabled")]
+    pub enabled: bool,
+    /// Skill scope when reported by the Codex app-server
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
+}
+
+fn default_skill_enabled() -> bool {
+    true
 }
 
 /// A Claude CLI custom command from ~/.claude/commands/
@@ -8894,174 +8904,133 @@ fn get_home_dir() -> Option<std::path::PathBuf> {
     })
 }
 
-/// List Codex CLI skills from global skill directories plus the active repo.
-#[tauri::command]
-pub async fn list_codex_skills(worktree_path: Option<String>) -> Result<Vec<ClaudeSkill>, String> {
-    log::trace!("Listing Codex CLI skills");
-
-    let home = dirs::home_dir();
-    let worktree_path = worktree_path.as_deref().map(Path::new);
-    list_codex_skills_from_sources(home.as_deref(), worktree_path)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CodexSkillsListResponse {
+    data: Vec<CodexSkillsListEntry>,
 }
 
-#[allow(dead_code)]
-fn list_skills_in_directory(skills_dir: std::path::PathBuf) -> Result<Vec<ClaudeSkill>, String> {
-    if !skills_dir.exists() {
-        log::trace!("Skills directory does not exist: {:?}", skills_dir);
-        return Ok(Vec::new());
-    }
-
-    let mut skills = Vec::new();
-    let mut seen_paths = HashSet::new();
-    collect_skills_in_directory(&skills_dir, &mut skills, &mut seen_paths)?;
-
-    sort_skills(&mut skills);
-    log::trace!("Found {} skills", skills.len());
-    Ok(skills)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CodexSkillsListEntry {
+    skills: Vec<CodexSkillMetadata>,
 }
 
-fn list_codex_skills_from_sources(
-    home_dir: Option<&Path>,
-    worktree_path: Option<&Path>,
-) -> Result<Vec<ClaudeSkill>, String> {
-    let mut skills = Vec::new();
-    let mut seen_paths = HashSet::new();
-
-    if let Some(home_dir) = home_dir {
-        for skills_dir in [
-            home_dir.join(".codex").join("skills"),
-            home_dir.join(".agents").join("skills"),
-        ] {
-            collect_skills_in_directory(&skills_dir, &mut skills, &mut seen_paths)?;
-        }
-    }
-
-    if let Some(worktree_path) = worktree_path {
-        collect_skills_in_worktree(worktree_path, &mut skills, &mut seen_paths)?;
-    }
-
-    sort_skills(&mut skills);
-    log::trace!("Found {} Codex skills across all sources", skills.len());
-    Ok(skills)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CodexSkillMetadata {
+    name: String,
+    description: String,
+    #[serde(default)]
+    short_description: Option<String>,
+    path: String,
+    enabled: bool,
+    scope: String,
 }
 
-fn collect_skills_in_directory(
-    dir: &std::path::Path,
-    skills: &mut Vec<ClaudeSkill>,
-    seen_paths: &mut HashSet<String>,
-) -> Result<(), String> {
-    if !dir.exists() {
-        return Ok(());
-    }
-
-    let entries =
-        std::fs::read_dir(dir).map_err(|e| format!("Failed to read skills directory: {e}"))?;
-
-    for entry in entries {
-        let entry = match entry {
-            Ok(e) => e,
-            Err(e) => {
-                log::warn!("Failed to read directory entry: {e}");
-                continue;
-            }
-        };
-
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-
-        let skill_file = path.join("SKILL.md");
-        if skill_file.exists() {
-            collect_skill_file(&skill_file, skills, seen_paths);
-        }
-
-        collect_skills_in_directory(&path, skills, seen_paths)?;
-    }
-
-    Ok(())
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CodexSkillConfigWriteResponse {
+    effective_enabled: bool,
 }
 
-fn collect_skills_in_worktree(
-    worktree_path: &Path,
-    skills: &mut Vec<ClaudeSkill>,
-    seen_paths: &mut HashSet<String>,
-) -> Result<(), String> {
-    if !worktree_path.exists() {
-        return Ok(());
+fn codex_skills_list_cwd(worktree_path: Option<String>) -> Result<String, String> {
+    if let Some(path) = worktree_path {
+        return Ok(path);
     }
 
-    let walker = WalkBuilder::new(worktree_path)
-        .hidden(false)
-        .git_ignore(true)
-        .git_global(true)
-        .git_exclude(true)
-        .require_git(false)
-        .build();
-
-    for entry in walker {
-        let entry = match entry {
-            Ok(entry) => entry,
-            Err(e) => {
-                log::warn!("Failed to read worktree skill entry: {e}");
-                continue;
-            }
-        };
-
-        let path = entry.path();
-        let is_skill_file = entry.file_type().map(|t| t.is_file()).unwrap_or(false)
-            && path.file_name().and_then(|name| name.to_str()) == Some("SKILL.md");
-
-        if is_skill_file {
-            collect_skill_file(path, skills, seen_paths);
-        }
-    }
-
-    Ok(())
-}
-
-fn collect_skill_file(
-    skill_file: &Path,
-    skills: &mut Vec<ClaudeSkill>,
-    seen_paths: &mut HashSet<String>,
-) {
-    let Some(skill_dir) = skill_file.parent() else {
-        return;
-    };
-
-    let name = skill_dir
-        .file_name()
-        .and_then(|s| s.to_str())
-        .map(|s| s.to_string())
-        .unwrap_or_default();
-
-    if name.is_empty() {
-        return;
-    }
-
-    let skill_path = skill_file.to_string_lossy().to_string();
-    if !seen_paths.insert(skill_path.clone()) {
-        return;
-    }
-
-    let description = std::fs::read_to_string(skill_file)
-        .ok()
-        .and_then(|content| {
-            content
-                .lines()
-                .next()
-                .and_then(|line| line.strip_prefix("# ").map(|s| s.to_string()))
-        });
-
-    skills.push(ClaudeSkill {
-        name,
-        path: skill_path,
-        description,
-    });
+    dirs::home_dir()
+        .map(|path| path.to_string_lossy().to_string())
+        .ok_or_else(|| "Could not resolve home directory for Codex skills".to_string())
 }
 
 fn sort_skills(skills: &mut [ClaudeSkill]) {
     skills.sort_by(|a, b| a.name.cmp(&b.name).then(a.path.cmp(&b.path)));
+}
+
+fn send_codex_request_with_timeout(
+    method: &'static str,
+    params: serde_json::Value,
+    timeout: Duration,
+) -> Result<serde_json::Value, String> {
+    let (tx, rx) = mpsc::channel();
+
+    std::thread::spawn(move || {
+        let result = crate::chat::codex_server::send_request(method, params);
+        let _ = tx.send(result);
+    });
+
+    rx.recv_timeout(timeout)
+        .map_err(|_| format!("Timed out waiting for Codex app-server response: {method}"))?
+}
+
+/// List Codex skills from the Codex app-server source of truth.
+#[tauri::command]
+pub async fn list_codex_skills(
+    app: AppHandle,
+    worktree_path: Option<String>,
+) -> Result<Vec<ClaudeSkill>, String> {
+    log::trace!("Listing Codex skills via app-server");
+
+    crate::chat::codex_server::ensure_running(&app)?;
+
+    let cwd = codex_skills_list_cwd(worktree_path)?;
+    let result = send_codex_request_with_timeout(
+        "skills/list",
+        serde_json::json!({
+            "cwds": [cwd],
+            "forceReload": true,
+        }),
+        Duration::from_secs(10),
+    )?;
+
+    let response: CodexSkillsListResponse =
+        serde_json::from_value(result).map_err(|e| format!("Failed to parse Codex skills: {e}"))?;
+
+    let mut skills = response
+        .data
+        .into_iter()
+        .flat_map(|entry| entry.skills.into_iter())
+        .map(|skill| ClaudeSkill {
+            name: skill.name,
+            path: skill.path,
+            description: skill.short_description.or_else(|| {
+                let trimmed = skill.description.trim();
+                (!trimmed.is_empty()).then(|| trimmed.to_string())
+            }),
+            enabled: skill.enabled,
+            scope: Some(skill.scope),
+        })
+        .collect::<Vec<_>>();
+
+    sort_skills(&mut skills);
+    Ok(skills)
+}
+
+/// Persist a global enabled/disabled state for a Codex skill via the app-server.
+#[tauri::command]
+pub async fn set_codex_skill_enabled(
+    app: AppHandle,
+    path: Option<String>,
+    name: Option<String>,
+    enabled: bool,
+) -> Result<bool, String> {
+    crate::chat::codex_server::ensure_running(&app)?;
+
+    let result = send_codex_request_with_timeout(
+        "skills/config/write",
+        serde_json::json!({
+            "path": path,
+            "name": name,
+            "enabled": enabled,
+        }),
+        Duration::from_secs(10),
+    )?;
+
+    let response: CodexSkillConfigWriteResponse = serde_json::from_value(result)
+        .map_err(|e| format!("Failed to parse Codex skill config response: {e}"))?;
+
+    Ok(response.effective_enabled)
 }
 
 /// Collect skills from a directory into a map (later inserts override earlier ones)
@@ -9125,6 +9094,8 @@ fn collect_skills_from_dir(
                 name,
                 path: skill_file.to_string_lossy().to_string(),
                 description,
+                enabled: true,
+                scope: None,
             },
         );
     }
@@ -9463,7 +9434,6 @@ pub async fn revert_last_local_commit(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::tempdir;
 
     #[test]
     fn test_parse_command_content_with_allowed_tools_list() {
@@ -9590,101 +9560,5 @@ Body
 
         let result = extract_structured_output(output);
         assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_list_skills_in_directory_finds_nested_system_skills() {
-        let temp_dir = tempdir().unwrap();
-        let skills_dir = temp_dir.path().join("skills");
-
-        let direct_skill_dir = skills_dir.join("frontend-design");
-        std::fs::create_dir_all(&direct_skill_dir).unwrap();
-        std::fs::write(
-            direct_skill_dir.join("SKILL.md"),
-            "# Frontend Design\n\nA direct skill",
-        )
-        .unwrap();
-
-        let nested_skill_dir = skills_dir.join(".system").join("skill-creator");
-        std::fs::create_dir_all(&nested_skill_dir).unwrap();
-        std::fs::write(
-            nested_skill_dir.join("SKILL.md"),
-            "# Skill Creator\n\nA nested system skill",
-        )
-        .unwrap();
-
-        let skills = list_skills_in_directory(skills_dir).unwrap();
-
-        assert_eq!(skills.len(), 2);
-        assert_eq!(
-            skills
-                .iter()
-                .map(|skill| skill.name.as_str())
-                .collect::<Vec<_>>(),
-            vec!["frontend-design", "skill-creator"]
-        );
-        assert_eq!(
-            skills
-                .iter()
-                .map(|skill| skill.description.as_deref())
-                .collect::<Vec<_>>(),
-            vec![Some("Frontend Design"), Some("Skill Creator")]
-        );
-    }
-
-    #[test]
-    fn test_list_codex_skills_from_sources_includes_agents_and_repo_skills() {
-        let home_dir = tempdir().unwrap();
-        let worktree_dir = tempdir().unwrap();
-
-        let codex_skill_dir = home_dir.path().join(".codex/skills/.system/skill-creator");
-        std::fs::create_dir_all(&codex_skill_dir).unwrap();
-        std::fs::write(
-            codex_skill_dir.join("SKILL.md"),
-            "# Skill Creator\n\nA codex system skill",
-        )
-        .unwrap();
-
-        let agents_skill_dir = home_dir.path().join(".agents/skills/frontend-design");
-        std::fs::create_dir_all(&agents_skill_dir).unwrap();
-        std::fs::write(
-            agents_skill_dir.join("SKILL.md"),
-            "# Frontend Design\n\nA global agents skill",
-        )
-        .unwrap();
-
-        let repo_agents_skill_dir = worktree_dir.path().join(".agents/skills/repo-agent");
-        std::fs::create_dir_all(&repo_agents_skill_dir).unwrap();
-        std::fs::write(
-            repo_agents_skill_dir.join("SKILL.md"),
-            "# Repo Agent\n\nA repo hidden skill",
-        )
-        .unwrap();
-
-        let repo_skill_dir = worktree_dir.path().join("tools/repo-skill");
-        std::fs::create_dir_all(&repo_skill_dir).unwrap();
-        std::fs::write(
-            repo_skill_dir.join("SKILL.md"),
-            "# Repo Skill\n\nA repo skill",
-        )
-        .unwrap();
-
-        let skills =
-            list_codex_skills_from_sources(Some(home_dir.path()), Some(worktree_dir.path()))
-                .unwrap();
-
-        assert_eq!(skills.len(), 4);
-        assert_eq!(
-            skills
-                .iter()
-                .map(|skill| skill.name.as_str())
-                .collect::<Vec<_>>(),
-            vec![
-                "frontend-design",
-                "repo-agent",
-                "repo-skill",
-                "skill-creator"
-            ]
-        );
     }
 }

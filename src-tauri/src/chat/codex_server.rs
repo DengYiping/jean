@@ -15,6 +15,7 @@ use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tauri::{AppHandle, Manager};
 
 use crate::codex_cli::resolve_cli_binary;
@@ -290,6 +291,7 @@ fn do_initialize(
     guard: &std::sync::MutexGuard<'_, Option<CodexAppServerInner>>,
 ) -> Result<(), String> {
     let server = guard.as_ref().ok_or("Server not running")?;
+    const INITIALIZE_TIMEOUT: Duration = Duration::from_secs(10);
 
     let init_params = serde_json::json!({
         "clientInfo": {
@@ -320,9 +322,13 @@ fn do_initialize(
     // Drop the mutex guard temporarily is not possible here since we hold it,
     // so we rely on the reader thread running concurrently.
     // Use a blocking recv with timeout.
-    let response = rx
-        .blocking_recv()
-        .map_err(|_| "Initialize response channel dropped")?;
+    let response = match wait_for_response_with_timeout(rx, INITIALIZE_TIMEOUT) {
+        Ok(response) => response,
+        Err(e) => {
+            server.pending_requests.lock().unwrap().remove(&id);
+            return Err(format!("Initialize request timed out: {e}"));
+        }
+    };
 
     match response {
         Ok(result) => {
@@ -391,6 +397,30 @@ pub fn send_request(method: &str, params: Value) -> Result<Value, String> {
 
     rx.blocking_recv()
         .map_err(|_| format!("Response channel dropped for {method}"))?
+}
+
+fn wait_for_response_with_timeout<T>(
+    rx: tokio::sync::oneshot::Receiver<T>,
+    timeout: Duration,
+) -> Result<T, String>
+where
+    T: Send + 'static,
+{
+    let (tx, std_rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(rx.blocking_recv());
+    });
+
+    match std_rx.recv_timeout(timeout) {
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(_)) => Err("response channel dropped".to_string()),
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+            Err(format!("no response after {}s", timeout.as_secs()))
+        }
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+            Err("response waiter disconnected".to_string())
+        }
+    }
 }
 
 /// Send a JSON-RPC response (for server requests like approvals).

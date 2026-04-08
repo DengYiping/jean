@@ -14,6 +14,10 @@ import {
   TooltipTrigger,
   TooltipContent,
 } from '@/components/ui/tooltip'
+import {
+  OpenPullRequestButton,
+  PullRequestMeta,
+} from '@/components/shared/GitHubPullRequestRowParts'
 import { cn } from '@/lib/utils'
 import { isNewIssue } from '@/services/github'
 import type {
@@ -305,6 +309,7 @@ export function PRItem({
             {pr.headRefName} → {pr.baseRefName}
           </span>
         </div>
+        <PullRequestMeta pr={pr} />
         {(reviewBadge || checkBadge) && (
           <div className="flex flex-wrap gap-1 mt-1">
             {reviewBadge && (
@@ -365,6 +370,7 @@ export function PRItem({
         )}
       </button>
       <div className="shrink-0 flex items-center gap-1 self-center">
+        <OpenPullRequestButton isCreating={isCreating} url={pr.url} />
         {/* Preview button */}
         <Tooltip>
           <TooltipTrigger asChild>

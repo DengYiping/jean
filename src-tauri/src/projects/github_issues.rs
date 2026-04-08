@@ -21,8 +21,11 @@ pub struct GitHubLabel {
 
 /// GitHub user/author
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GitHubAuthor {
     pub login: String,
+    #[serde(default)]
+    pub avatar_url: Option<String>,
 }
 
 /// GitHub issue from list response
@@ -1277,6 +1280,8 @@ pub struct GitHubPullRequest {
     pub author: GitHubAuthor,
     #[serde(default)]
     pub labels: Vec<GitHubLabel>,
+    pub additions: u32,
+    pub deletions: u32,
     #[serde(default)]
     pub review_decision: Option<String>,
     #[serde(default)]
@@ -1285,7 +1290,7 @@ pub struct GitHubPullRequest {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct RawGitHubPullRequest {
+struct GraphqlPullRequest {
     number: u32,
     title: String,
     body: Option<String>,
@@ -1295,19 +1300,66 @@ struct RawGitHubPullRequest {
     base_ref_name: String,
     is_draft: bool,
     created_at: String,
-    author: GitHubAuthor,
-    #[serde(default)]
-    labels: Vec<GitHubLabel>,
+    additions: u32,
+    deletions: u32,
+    author: Option<GitHubAuthor>,
+    labels: GraphqlLabelConnection,
     #[serde(default)]
     review_decision: Option<String>,
     #[serde(default)]
-    status_check_rollup: Option<Vec<RawStatusCheck>>,
+    status_check_rollup: Option<GraphqlStatusCheckRollup>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-struct RawStatusCheck {
-    conclusion: Option<String>,
-    status: Option<String>,
+#[serde(rename_all = "camelCase")]
+struct GraphqlStatusCheckRollup {
+    state: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+struct GraphqlLabelConnection {
+    #[serde(default)]
+    nodes: Vec<GitHubLabel>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GraphqlResponse<T> {
+    data: T,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RepositoryPullRequestsResponse {
+    repository: Option<RepositoryPullRequests>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RepositoryPullRequests {
+    pull_requests: GraphqlPullRequestConnection,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct GraphqlPullRequestConnection {
+    #[serde(default)]
+    nodes: Vec<GraphqlPullRequest>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PullRequestSearchResponse {
+    search: GraphqlPullRequestConnection,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RepositoryPullRequestResponse {
+    repository: Option<RepositoryPullRequestNode>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RepositoryPullRequestNode {
+    pull_request: Option<GraphqlPullRequest>,
 }
 
 /// GitHub review
@@ -1362,6 +1414,7 @@ impl From<RawReviewComment> for GitHubReviewComment {
                     .user
                     .and_then(|u| u.login)
                     .unwrap_or_else(|| "unknown".to_string()),
+                avatar_url: None,
             },
             body: raw.body.unwrap_or_default(),
             created_at: raw.created_at.unwrap_or_default(),
@@ -1405,41 +1458,17 @@ fn normalize_review_decision(review_decision: &Option<String>) -> Option<String>
     }
 }
 
-fn compute_check_status(checks: &Option<Vec<RawStatusCheck>>) -> Option<String> {
-    let checks = checks.as_ref()?;
-    if checks.is_empty() {
-        return None;
-    }
-
-    let mut has_pending = false;
-    for check in checks {
-        match check.conclusion.as_deref().map(|s| s.to_ascii_uppercase()) {
-            Some(s) if s == "FAILURE" => return Some("failure".to_string()),
-            Some(s) if s == "ERROR" => return Some("error".to_string()),
-            _ => {}
-        }
-        match check.status.as_deref().map(|s| s.to_ascii_uppercase()) {
-            Some(s) if s == "IN_PROGRESS" || s == "QUEUED" || s == "PENDING" => has_pending = true,
-            _ => {}
-        }
-        if check.conclusion.is_none() {
-            if let Some(status) = &check.status {
-                let status = status.to_ascii_uppercase();
-                if status != "COMPLETED" {
-                    has_pending = true;
-                }
-            }
-        }
-    }
-
-    if has_pending {
-        Some("pending".to_string())
-    } else {
-        Some("success".to_string())
+fn normalize_check_status(state: &Option<String>) -> Option<String> {
+    match state.as_deref().map(|s| s.to_ascii_uppercase()) {
+        Some(s) if s == "SUCCESS" => Some("success".to_string()),
+        Some(s) if s == "FAILURE" => Some("failure".to_string()),
+        Some(s) if s == "ERROR" => Some("error".to_string()),
+        Some(s) if s == "PENDING" || s == "EXPECTED" => Some("pending".to_string()),
+        _ => None,
     }
 }
 
-fn map_raw_pr(pr: RawGitHubPullRequest) -> GitHubPullRequest {
+fn map_graphql_pr(pr: GraphqlPullRequest) -> GitHubPullRequest {
     GitHubPullRequest {
         number: pr.number,
         title: pr.title,
@@ -1450,10 +1479,17 @@ fn map_raw_pr(pr: RawGitHubPullRequest) -> GitHubPullRequest {
         base_ref_name: pr.base_ref_name,
         is_draft: pr.is_draft,
         created_at: pr.created_at,
-        author: pr.author,
-        labels: pr.labels,
+        author: pr.author.unwrap_or(GitHubAuthor {
+            login: "unknown".to_string(),
+            avatar_url: None,
+        }),
+        labels: pr.labels.nodes,
+        additions: pr.additions,
+        deletions: pr.deletions,
         review_decision: normalize_review_decision(&pr.review_decision),
-        check_status: compute_check_status(&pr.status_check_rollup),
+        check_status: normalize_check_status(
+            &pr.status_check_rollup.and_then(|rollup| rollup.state),
+        ),
     }
 }
 
@@ -1483,9 +1519,131 @@ pub struct LoadedPullRequestContext {
     pub repo_name: String,
 }
 
+const PULL_REQUEST_FIELDS_FRAGMENT: &str = r#"
+fragment PullRequestFields on PullRequest {
+  number
+  title
+  body
+  url
+  state
+  headRefName
+  baseRefName
+  isDraft
+  createdAt
+  additions
+  deletions
+  author {
+    login
+    avatarUrl
+  }
+  labels(first: 20) {
+    nodes {
+      name
+      color
+    }
+  }
+  reviewDecision
+  statusCheckRollup {
+    state
+  }
+}
+"#;
+
+fn build_list_pull_requests_query(state_filter: &str) -> String {
+    format!(
+        r#"
+query($owner:String!, $repo:String!, $count:Int!) {{
+  repository(owner:$owner, name:$repo) {{
+    pullRequests(
+      first:$count
+      states:{state_filter}
+      orderBy:{{field:CREATED_AT, direction:DESC}}
+    ) {{
+      nodes {{
+        ...PullRequestFields
+      }}
+    }}
+  }}
+}}
+{PULL_REQUEST_FIELDS_FRAGMENT}
+"#
+    )
+}
+
+const SEARCH_PULL_REQUESTS_QUERY: &str = r#"
+query($searchQuery:String!, $count:Int!) {
+  search(query:$searchQuery, type:ISSUE, first:$count) {
+    nodes {
+      ...PullRequestFields
+    }
+  }
+}
+"#;
+
+const GET_PULL_REQUEST_BY_NUMBER_QUERY: &str = r#"
+query($owner:String!, $repo:String!, $prNumber:Int!) {
+  repository(owner:$owner, name:$repo) {
+    pullRequest(number:$prNumber) {
+      ...PullRequestFields
+    }
+  }
+}
+"#;
+
+fn run_github_graphql(
+    app: &AppHandle,
+    project_path: &str,
+    query: &str,
+    variables: &[(&str, String)],
+    context: &str,
+) -> Result<String, String> {
+    let mut command = build_gh_command(app, Some(project_path));
+    command.arg("api").arg("graphql");
+    command.arg("-f").arg(format!("query={query}"));
+    for (key, value) in variables {
+        command.arg("-F").arg(format!("{key}={value}"));
+    }
+
+    let output = command
+        .current_dir(project_path)
+        .output()
+        .map_err(|e| format!("Failed to run {context}: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("gh auth login") || stderr.contains("authentication") {
+            return Err("GitHub CLI not authenticated. Run 'gh auth login' first.".to_string());
+        }
+        if stderr.contains("not a git repository") {
+            return Err("Not a git repository".to_string());
+        }
+        if stderr.contains("Could not resolve") {
+            return Err("Could not resolve repository. Is this a GitHub repository?".to_string());
+        }
+        return Err(format!("{context} failed: {stderr}"));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+fn parse_graphql_response<T: for<'de> Deserialize<'de>>(response: &str) -> Result<T, String> {
+    let parsed: GraphqlResponse<T> =
+        serde_json::from_str(response).map_err(|e| format!("Failed to parse gh response: {e}"))?;
+    Ok(parsed.data)
+}
+
+fn pr_state_filter(state: &str) -> &'static str {
+    match state {
+        "closed" => "[CLOSED]",
+        "merged" => "[MERGED]",
+        "all" => "[OPEN, CLOSED, MERGED]",
+        _ => "[OPEN]",
+    }
+}
+
 /// List GitHub pull requests for a repository
 ///
-/// Uses `gh pr list` to fetch PRs from the repository.
+/// Uses `gh api graphql` to fetch PRs from the repository.
 /// - state: "open", "closed", "merged", or "all" (default: "open")
 /// - Returns up to 100 PRs sorted by creation date (newest first)
 #[tauri::command]
@@ -1497,41 +1655,28 @@ pub async fn list_github_prs(
     log::trace!("Listing GitHub PRs for {project_path} with state: {state:?}");
 
     let state_arg = state.unwrap_or_else(|| "open".to_string());
+    let repo_id = get_repo_identifier(&project_path)?;
+    let query = build_list_pull_requests_query(pr_state_filter(&state_arg));
+    let response = run_github_graphql(
+        &app,
+        &project_path,
+        &query,
+        &[
+            ("owner", repo_id.owner),
+            ("repo", repo_id.repo),
+            ("count", "100".to_string()),
+        ],
+        "gh api graphql",
+    )?;
 
-    // Run gh pr list
-    let output = build_gh_command(&app, Some(&project_path))
-        .args([
-            "pr",
-            "list",
-            "--json",
-            "number,title,body,url,state,headRefName,baseRefName,isDraft,createdAt,author,labels,reviewDecision,statusCheckRollup",
-            "-L",
-            "100",
-            "--state",
-            &state_arg,
-        ])
-        .current_dir(&project_path)
-        .output()
-        .map_err(|e| format!("Failed to run gh pr list: {e}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        if stderr.contains("gh auth login") || stderr.contains("authentication") {
-            return Err("GitHub CLI not authenticated. Run 'gh auth login' first.".to_string());
-        }
-        if stderr.contains("not a git repository") {
-            return Err("Not a git repository".to_string());
-        }
-        if stderr.contains("Could not resolve") {
-            return Err("Could not resolve repository. Is this a GitHub repository?".to_string());
-        }
-        return Err(format!("gh pr list failed: {stderr}"));
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let prs: Vec<RawGitHubPullRequest> =
-        serde_json::from_str(&stdout).map_err(|e| format!("Failed to parse gh response: {e}"))?;
-    let prs: Vec<GitHubPullRequest> = prs.into_iter().map(map_raw_pr).collect();
+    let data: RepositoryPullRequestsResponse = parse_graphql_response(&response)?;
+    let prs = data
+        .repository
+        .map(|repo| repo.pull_requests.nodes)
+        .unwrap_or_default()
+        .into_iter()
+        .map(map_graphql_pr)
+        .collect::<Vec<_>>();
 
     log::trace!("Found {} PRs", prs.len());
     Ok(prs)
@@ -1539,7 +1684,7 @@ pub async fn list_github_prs(
 
 /// Search GitHub pull requests using GitHub's search syntax
 ///
-/// Uses `gh pr list --search` to query GitHub's search API.
+/// Uses `gh api graphql` to query GitHub's search API.
 /// This finds PRs beyond the default -L 100 limit.
 #[tauri::command]
 pub async fn search_github_prs(
@@ -1548,42 +1693,33 @@ pub async fn search_github_prs(
     query: String,
 ) -> Result<Vec<GitHubPullRequest>, String> {
     log::trace!("Searching GitHub PRs for {project_path} with query: {query}");
+    let repo_id = get_repo_identifier(&project_path)?;
+    let response = run_github_graphql(
+        &app,
+        &project_path,
+        &(SEARCH_PULL_REQUESTS_QUERY.to_string() + PULL_REQUEST_FIELDS_FRAGMENT),
+        &[
+            (
+                "searchQuery",
+                format!(
+                    "repo:{}/{} is:pr {}",
+                    repo_id.owner,
+                    repo_id.repo,
+                    query.trim()
+                ),
+            ),
+            ("count", "30".to_string()),
+        ],
+        "gh api graphql",
+    )?;
 
-    let output = build_gh_command(&app, Some(&project_path))
-        .args([
-            "pr",
-            "list",
-            "--search",
-            &query,
-            "--json",
-            "number,title,body,url,state,headRefName,baseRefName,isDraft,createdAt,author,labels,reviewDecision,statusCheckRollup",
-            "-L",
-            "30",
-            "--state",
-            "all",
-        ])
-        .current_dir(&project_path)
-        .output()
-        .map_err(|e| format!("Failed to run gh pr list --search: {e}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        if stderr.contains("gh auth login") || stderr.contains("authentication") {
-            return Err("GitHub CLI not authenticated. Run 'gh auth login' first.".to_string());
-        }
-        if stderr.contains("not a git repository") {
-            return Err("Not a git repository".to_string());
-        }
-        if stderr.contains("Could not resolve") {
-            return Err("Could not resolve repository. Is this a GitHub repository?".to_string());
-        }
-        return Err(format!("gh pr list --search failed: {stderr}"));
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let prs: Vec<RawGitHubPullRequest> =
-        serde_json::from_str(&stdout).map_err(|e| format!("Failed to parse gh response: {e}"))?;
-    let prs: Vec<GitHubPullRequest> = prs.into_iter().map(map_raw_pr).collect();
+    let data: PullRequestSearchResponse = parse_graphql_response(&response)?;
+    let prs = data
+        .search
+        .nodes
+        .into_iter()
+        .map(map_graphql_pr)
+        .collect::<Vec<_>>();
 
     log::trace!("Search found {} PRs", prs.len());
     Ok(prs)
@@ -1591,7 +1727,7 @@ pub async fn search_github_prs(
 
 /// Get a GitHub PR by number, returning the same type as list_github_prs.
 ///
-/// Uses `gh pr view` to fetch a single PR by exact number.
+/// Uses `gh api graphql` to fetch a single PR by exact number.
 /// This finds any PR regardless of age or state.
 #[tauri::command]
 pub async fn get_github_pr_by_number(
@@ -1600,34 +1736,25 @@ pub async fn get_github_pr_by_number(
     pr_number: u32,
 ) -> Result<GitHubPullRequest, String> {
     log::trace!("Getting GitHub PR #{pr_number} by number for {project_path}");
+    let repo_id = get_repo_identifier(&project_path)?;
+    let response = run_github_graphql(
+        &app,
+        &project_path,
+        &(GET_PULL_REQUEST_BY_NUMBER_QUERY.to_string() + PULL_REQUEST_FIELDS_FRAGMENT),
+        &[
+            ("owner", repo_id.owner),
+            ("repo", repo_id.repo),
+            ("prNumber", pr_number.to_string()),
+        ],
+        "gh api graphql",
+    )?;
 
-    let output = build_gh_command(&app, Some(&project_path))
-        .args([
-            "pr",
-            "view",
-            &pr_number.to_string(),
-            "--json",
-            "number,title,body,url,state,headRefName,baseRefName,isDraft,createdAt,author,labels,reviewDecision,statusCheckRollup",
-        ])
-        .current_dir(&project_path)
-        .output()
-        .map_err(|e| format!("Failed to run gh pr view: {e}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        if stderr.contains("gh auth login") || stderr.contains("authentication") {
-            return Err("GitHub CLI not authenticated. Run 'gh auth login' first.".to_string());
-        }
-        if stderr.contains("Could not resolve") || stderr.contains("not found") {
-            return Err(format!("PR #{pr_number} not found"));
-        }
-        return Err(format!("gh pr view failed: {stderr}"));
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let pr: RawGitHubPullRequest =
-        serde_json::from_str(&stdout).map_err(|e| format!("Failed to parse gh response: {e}"))?;
-    let pr = map_raw_pr(pr);
+    let data: RepositoryPullRequestResponse = parse_graphql_response(&response)?;
+    let pr = data
+        .repository
+        .and_then(|repo| repo.pull_request)
+        .map(map_graphql_pr)
+        .ok_or_else(|| format!("PR #{pr_number} not found"))?;
 
     log::trace!("Got PR #{}: {}", pr.number, pr.title);
     Ok(pr)

@@ -9,6 +9,7 @@ export interface GitHubLabel {
 
 export interface GitHubAuthor {
   login: string
+  avatarUrl?: string | null
 }
 
 export interface GitHubIssue {
@@ -82,6 +83,8 @@ export interface GitHubPullRequest {
   created_at: string // From GitHub API (snake_case)
   author: GitHubAuthor
   labels: GitHubLabel[]
+  additions: number
+  deletions: number
   reviewDecision?: 'approved' | 'changes_requested' | 'review_required' | null
   checkStatus?: 'success' | 'failure' | 'pending' | 'error' | null
 }

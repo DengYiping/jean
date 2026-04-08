@@ -119,6 +119,8 @@ export const defaultResponses: Record<string, unknown> = {
   // GitHub
   list_github_issues: { issues: [], has_next_page: false },
   list_github_prs: [],
+  search_github_prs: [],
+  get_github_pr_by_number: null,
 
   // Recovery
   cleanup_old_recovery_files: 0,

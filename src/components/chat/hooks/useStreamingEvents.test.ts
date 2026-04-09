@@ -199,6 +199,27 @@ function seedSessionCaches(queryClient: QueryClient) {
     updated_at: 1,
     messages: [],
   })
+  queryClient.setQueryData(['all-sessions'], {
+    entries: [
+      {
+        project_id: 'project-1',
+        project_name: 'Project Alpha',
+        worktree_id: 'worktree-1',
+        worktree_name: 'Feature Branch',
+        worktree_path: '/tmp/worktree-1',
+        sessions: [
+          {
+            id: 'session-1',
+            name: 'Codex Session',
+            order: 0,
+            created_at: 1,
+            updated_at: 1,
+            messages: [],
+          },
+        ],
+      },
+    ],
+  })
 }
 
 async function setupHook() {
@@ -408,6 +429,132 @@ describe('useStreamingEvents question notifications', () => {
       'Project Alpha / Feature Branch / Codex Session is waiting for your permission.'
     )
     expect(options?.description).toContain('Open unread sessions with')
+    unmount()
+  })
+
+  it('writes permission waits into session, worktree, and unread caches immediately', async () => {
+    useChatStore.setState({
+      worktreePaths: { 'worktree-1': '/tmp/worktree-1' },
+      lastSentMessages: { 'session-1': 'run the command' },
+      selectedModels: { 'session-1': 'gpt-5.4' },
+      executionModes: { 'session-1': 'build' },
+      thinkingLevels: { 'session-1': 'think' },
+    })
+
+    const { handlers, queryClient, unmount } = await setupHook()
+
+    await act(async () => {
+      handlers.get('chat:permission_denied')?.({
+        payload: {
+          session_id: 'session-1',
+          worktree_id: 'worktree-1',
+          denials: [createDenial('tool-1')],
+        },
+      })
+    })
+
+    expect(
+      queryClient.getQueryData(chatQueryKeys.session('session-1'))
+    ).toMatchObject({
+      waiting_for_input: true,
+      waiting_for_input_type: null,
+      is_reviewing: false,
+      pending_permission_denials: [createDenial('tool-1')],
+    })
+    expect(
+      queryClient.getQueryData(chatQueryKeys.sessions('worktree-1'))
+    ).toMatchObject({
+      sessions: [
+        expect.objectContaining({
+          id: 'session-1',
+          waiting_for_input: true,
+          waiting_for_input_type: null,
+          pending_permission_denials: [createDenial('tool-1')],
+        }),
+      ],
+    })
+    expect(queryClient.getQueryData(['all-sessions'])).toMatchObject({
+      entries: [
+        expect.objectContaining({
+          sessions: [
+            expect.objectContaining({
+              id: 'session-1',
+              waiting_for_input: true,
+              waiting_for_input_type: null,
+              pending_permission_denials: [createDenial('tool-1')],
+            }),
+          ],
+        }),
+      ],
+    })
+    expect(mockInvoke).toHaveBeenCalledWith('update_session_state', {
+      worktreeId: 'worktree-1',
+      worktreePath: '/tmp/worktree-1',
+      sessionId: 'session-1',
+      pendingPermissionDenials: [createDenial('tool-1')],
+      deniedMessageContext: {
+        message: 'run the command',
+        model: 'gpt-5.4',
+        thinking_level: 'think',
+      },
+      waitingForInput: true,
+      waitingForInputType: null,
+      isReviewing: false,
+    })
+    unmount()
+  })
+
+  it('keeps permission waits in the unread path when chat:done arrives after denial', async () => {
+    useChatStore.setState({
+      worktreePaths: { 'worktree-1': '/tmp/worktree-1' },
+      lastSentMessages: { 'session-1': 'run the command' },
+      selectedModels: { 'session-1': 'gpt-5.4' },
+      executionModes: { 'session-1': 'build' },
+      thinkingLevels: { 'session-1': 'think' },
+    })
+
+    const { handlers, queryClient, unmount } = await setupHook()
+
+    await act(async () => {
+      handlers.get('chat:permission_denied')?.({
+        payload: {
+          session_id: 'session-1',
+          worktree_id: 'worktree-1',
+          denials: [createDenial('tool-1')],
+        },
+      })
+      handlers.get('chat:done')?.({
+        payload: {
+          session_id: 'session-1',
+          worktree_id: 'worktree-1',
+        },
+      })
+    })
+
+    expect(
+      queryClient.getQueryData(chatQueryKeys.session('session-1'))
+    ).toMatchObject({
+      waiting_for_input: true,
+      waiting_for_input_type: null,
+      last_run_status: 'resumable',
+      is_reviewing: false,
+      pending_permission_denials: [createDenial('tool-1')],
+    })
+    expect(queryClient.getQueryData(['all-sessions'])).toMatchObject({
+      entries: [
+        expect.objectContaining({
+          sessions: [
+            expect.objectContaining({
+              id: 'session-1',
+              waiting_for_input: true,
+              waiting_for_input_type: null,
+              last_run_status: 'resumable',
+              pending_permission_denials: [createDenial('tool-1')],
+            }),
+          ],
+        }),
+      ],
+    })
     unmount()
   })
 })

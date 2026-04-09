@@ -179,6 +179,7 @@ export async function prefetchSessions(
         !session.last_run_status ||
         session.last_run_status === 'running' ||
         session.last_run_status === 'resumable' ||
+        (session.pending_permission_denials?.length ?? 0) > 0 ||
         (session.last_run_status === 'completed' &&
           session.waiting_for_input_type === 'plan')
       if (session.waiting_for_input && canBeWaiting) {

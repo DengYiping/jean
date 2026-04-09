@@ -1,13 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
-import {
-  BellDot,
-  Loader2,
-  CheckCircle2,
-  AlertTriangle,
-  CirclePause,
-  HelpCircle,
-  FileText,
-} from 'lucide-react'
+import { BellDot, Loader2, CheckCircle2 } from 'lucide-react'
 import {
   Popover,
   PopoverTrigger,
@@ -25,19 +17,7 @@ import { useUnreadCount } from './useUnreadCount'
 import { formatShortcutDisplay } from '@/types/keybindings'
 import type { Session } from '@/types/chat'
 import { useIsMobile } from '@/hooks/use-mobile'
-
-function isUnread(session: Session): boolean {
-  if (session.archived_at) return false
-  const actionableStatuses = ['completed', 'cancelled', 'crashed']
-  const hasFinishedRun =
-    session.last_run_status &&
-    actionableStatuses.includes(session.last_run_status)
-  const isWaiting = session.waiting_for_input
-  const isReviewing = session.is_reviewing
-  if (!hasFinishedRun && !isWaiting && !isReviewing) return false
-  if (!session.last_opened_at) return true
-  return session.last_opened_at < session.updated_at
-}
+import { getUnreadSessionStatus, isUnreadSession } from './unread-session-utils'
 
 function formatRelativeTime(timestamp: number): string {
   const ms = timestamp < 1_000_000_000_000 ? timestamp * 1000 : timestamp
@@ -59,41 +39,6 @@ interface UnreadItem {
   worktreeId: string
   worktreeName: string
   worktreePath: string
-}
-
-function getSessionStatus(session: Session) {
-  if (session.waiting_for_input) {
-    const isplan = session.waiting_for_input_type === 'plan'
-    return {
-      icon: isplan ? FileText : HelpCircle,
-      label: isplan ? 'Needs approval' : 'Needs input',
-      className: 'text-yellow-500',
-    }
-  }
-  const config: Record<
-    string,
-    { icon: typeof CheckCircle2; label: string; className: string }
-  > = {
-    completed: {
-      icon: CheckCircle2,
-      label: 'Completed',
-      className: 'text-green-500',
-    },
-    cancelled: {
-      icon: CirclePause,
-      label: 'Cancelled',
-      className: 'text-muted-foreground',
-    },
-    crashed: {
-      icon: AlertTriangle,
-      label: 'Crashed',
-      className: 'text-destructive',
-    },
-  }
-  if (session.last_run_status && config[session.last_run_status]) {
-    return config[session.last_run_status]
-  }
-  return null
 }
 
 interface UnreadBellProps {
@@ -145,7 +90,7 @@ export function UnreadBell({ title, hideTitle }: UnreadBellProps) {
     const results: UnreadItem[] = []
     for (const entry of allSessions.entries) {
       for (const session of entry.sessions) {
-        if (isUnread(session)) {
+        if (isUnreadSession(session)) {
           results.push({
             session,
             projectId: entry.project_id,
@@ -354,7 +299,7 @@ export function UnreadBell({ title, hideTitle }: UnreadBellProps) {
         ) : (
           <div className="max-h-[min(400px,60vh)] overflow-y-auto p-1">
             {unreadItems.map((item, idx) => {
-              const status = getSessionStatus(item.session)
+              const status = getUnreadSessionStatus(item.session)
               const StatusIcon = status?.icon ?? CheckCircle2
 
               return (

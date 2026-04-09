@@ -263,7 +263,7 @@ bun run check:all
 Guidance:
 
 - Run targeted tests while iterating
-- Run `bun run check:all` after code changes
+- Run `bun run check:all` after all implementation changes, not just significant ones
 - E2E runs in browser mode with mocked Tauri transport, not in native Tauri
 - Adding a new backend command without an E2E mock will break tests
 
@@ -276,7 +276,7 @@ Keep these repo-specific expectations in mind:
 3. Prefer small, focused hooks/utilities over making central components larger
 4. Match the current code style and naming in the touched area
 5. Update docs in `docs/developer/` when you add a new pattern or workflow
-6. Run the relevant tests/checks for the code you changed
+6. Run the relevant tests/checks for the code you changed, and run `bun run check:all` for all implementation changes
 7. Do not create commits unless explicitly asked
 8. Use `rm -f` when removing files
 

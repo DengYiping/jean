@@ -64,6 +64,12 @@ export interface MagicPrompts {
   investigate_linear_issue: string | null
   /** Prompt for addressing inline PR review comments */
   review_comments: string | null
+  /** Prompt sent when approving a plan in build mode */
+  plan_approval_build: string | null
+  /** Prompt sent when approving a plan in yolo mode */
+  plan_approval_yolo: string | null
+  /** Prompt sent when resuming an approved Codex plan */
+  plan_approval_codex: string | null
 }
 
 /** Default prompt for investigating GitHub issues */
@@ -583,6 +589,12 @@ Address the following review comments from PR #{prNumber}
 
 </guidelines>`
 
+export const DEFAULT_PLAN_APPROVAL_BUILD_PROMPT = `Plan approved. Begin implementing the changes now. Do not re-explain the plan — start writing code.`
+
+export const DEFAULT_PLAN_APPROVAL_YOLO_PROMPT = `Plan approved (yolo mode). Begin implementing all changes immediately without asking for confirmation. Do not re-explain the plan — start writing code.`
+
+export const DEFAULT_PLAN_APPROVAL_CODEX_PROMPT = `Execute the plan you created. Implement all changes described.`
+
 /** Default values for all magic prompts (null = use current app default) */
 export const DEFAULT_MAGIC_PROMPTS: MagicPrompts = {
   investigate_issue: null,
@@ -602,6 +614,9 @@ export const DEFAULT_MAGIC_PROMPTS: MagicPrompts = {
   investigate_advisory: null,
   investigate_linear_issue: null,
   review_comments: null,
+  plan_approval_build: null,
+  plan_approval_yolo: null,
+  plan_approval_codex: null,
 }
 
 /**

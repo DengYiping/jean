@@ -196,6 +196,20 @@ function getDefaultModelForBackend(
   return preferences?.selected_model ?? 'opus'
 }
 
+function getPlanApprovalPromptOptions(
+  preferences: AppPreferences | undefined
+): {
+  configuredBuildPrompt?: string | null
+  configuredYoloPrompt?: string | null
+  configuredCodexPrompt?: string | null
+} {
+  return {
+    configuredBuildPrompt: preferences?.magic_prompts?.plan_approval_build,
+    configuredYoloPrompt: preferences?.magic_prompts?.plan_approval_yolo,
+    configuredCodexPrompt: preferences?.magic_prompts?.plan_approval_codex,
+  }
+}
+
 /**
  * Hook that extracts message-related handlers from ChatWindow.
  *
@@ -588,10 +602,14 @@ export function useMessageHandlers({
 
       // Format approval message - include updated plan if provided
       // For Codex: use explicit execution instruction since it resumes a thread
+      const preferences = queryClient.getQueryData<AppPreferences>(
+        preferencesQueryKeys.preferences()
+      )
       const message = buildPlanApprovalMessage({
         mode: 'build',
         backend: useChatStore.getState().selectedBackends[sessionId],
         updatedPlan,
+        ...getPlanApprovalPromptOptions(preferences),
       })
       // Send approval message so the backend continues with execution
       // NOTE: setLastSentMessage is critical for permission denial flow - without it,
@@ -719,10 +737,14 @@ export function useMessageHandlers({
       markAtBottom()
 
       // Format approval message - include updated plan if provided
+      const preferences = queryClient.getQueryData<AppPreferences>(
+        preferencesQueryKeys.preferences()
+      )
       const message = buildPlanApprovalMessage({
         mode: 'yolo',
         backend: useChatStore.getState().selectedBackends[sessionId],
         updatedPlan,
+        ...getPlanApprovalPromptOptions(preferences),
       })
       // Send approval message so the backend continues with execution
       setLastSentMessage(sessionId, message)
@@ -850,8 +872,14 @@ export function useMessageHandlers({
     // Send approval message to Claude so it continues with execution
     // NOTE: setLastSentMessage is critical for permission denial flow - without it,
     // the denied message context won't be set and approval UI won't work
-    const buildApprovalMsg =
-      'Plan approved. Begin implementing the changes now. Do not re-explain the plan — start writing code.'
+    const preferences = queryClient.getQueryData<AppPreferences>(
+      preferencesQueryKeys.preferences()
+    )
+    const buildApprovalMsg = buildPlanApprovalMessage({
+      mode: 'build',
+      backend: useChatStore.getState().selectedBackends[sessionId],
+      ...getPlanApprovalPromptOptions(preferences),
+    })
     setLastSentMessage(sessionId, buildApprovalMsg)
     setError(sessionId, null)
     addSendingSession(sessionId)
@@ -933,8 +961,14 @@ export function useMessageHandlers({
     setSelectedModel(sessionId, selectedModelRef.current)
 
     // Send approval message to Claude so it continues with execution
-    const yoloApprovalMsg =
-      'Plan approved (yolo mode). Begin implementing all changes immediately without asking for confirmation. Do not re-explain the plan — start writing code.'
+    const preferences = queryClient.getQueryData<AppPreferences>(
+      preferencesQueryKeys.preferences()
+    )
+    const yoloApprovalMsg = buildPlanApprovalMessage({
+      mode: 'yolo',
+      backend: useChatStore.getState().selectedBackends[sessionId],
+      ...getPlanApprovalPromptOptions(preferences),
+    })
     setLastSentMessage(sessionId, yoloApprovalMsg)
     setError(sessionId, null)
     addSendingSession(sessionId)

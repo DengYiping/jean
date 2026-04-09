@@ -552,6 +552,12 @@ pub struct MagicPrompts {
     pub investigate_linear_issue: Option<String>,
     #[serde(default)]
     pub review_comments: Option<String>,
+    #[serde(default)]
+    pub plan_approval_build: Option<String>,
+    #[serde(default)]
+    pub plan_approval_yolo: Option<String>,
+    #[serde(default)]
+    pub plan_approval_codex: Option<String>,
 }
 
 fn default_investigate_issue_prompt() -> String {
@@ -909,6 +915,20 @@ When specifying subagent_type for Task tool calls, always use the fully qualifie
         .to_string()
 }
 
+fn default_plan_approval_build_prompt() -> String {
+    "Plan approved. Begin implementing the changes now. Do not re-explain the plan — start writing code."
+        .to_string()
+}
+
+fn default_plan_approval_yolo_prompt() -> String {
+    "Plan approved (yolo mode). Begin implementing all changes immediately without asking for confirmation. Do not re-explain the plan — start writing code."
+        .to_string()
+}
+
+fn default_plan_approval_codex_prompt() -> String {
+    "Execute the plan you created. Implement all changes described.".to_string()
+}
+
 /// Per-prompt model overrides for magic prompts
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MagicPromptModels {
@@ -1092,7 +1112,7 @@ impl MagicPrompts {
     /// This ensures users who never customized a prompt get auto-updated defaults.
     fn migrate_defaults(&mut self) {
         type DefaultEntry<'a> = (fn() -> String, &'a mut Option<String>);
-        let defaults: [DefaultEntry; 12] = [
+        let defaults: [DefaultEntry; 15] = [
             (
                 default_investigate_issue_prompt,
                 &mut self.investigate_issue,
@@ -1125,6 +1145,18 @@ impl MagicPrompts {
             (
                 default_investigate_linear_issue_prompt,
                 &mut self.investigate_linear_issue,
+            ),
+            (
+                default_plan_approval_build_prompt,
+                &mut self.plan_approval_build,
+            ),
+            (
+                default_plan_approval_yolo_prompt,
+                &mut self.plan_approval_yolo,
+            ),
+            (
+                default_plan_approval_codex_prompt,
+                &mut self.plan_approval_codex,
             ),
         ];
 

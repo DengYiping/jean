@@ -1,4 +1,9 @@
 import type { Session } from '@/types/chat'
+import {
+  DEFAULT_PLAN_APPROVAL_BUILD_PROMPT,
+  DEFAULT_PLAN_APPROVAL_CODEX_PROMPT,
+  DEFAULT_PLAN_APPROVAL_YOLO_PROMPT,
+} from '@/types/preferences'
 
 interface PlanApprovalMessageOptions {
   mode: 'build' | 'yolo'
@@ -7,6 +12,9 @@ interface PlanApprovalMessageOptions {
   originalPlan?: string | null
   customPrompt?: string | null
   approvedPlanContent?: string | null
+  configuredBuildPrompt?: string | null
+  configuredYoloPrompt?: string | null
+  configuredCodexPrompt?: string | null
 }
 
 function formatUpdatedPlanMessage(updatedPlan: string): string {
@@ -24,9 +32,15 @@ export function buildPlanApprovalMessage({
   originalPlan,
   customPrompt,
   approvedPlanContent,
+  configuredBuildPrompt,
+  configuredYoloPrompt,
+  configuredCodexPrompt,
 }: PlanApprovalMessageOptions): string {
   const trimmedCustomPrompt = customPrompt?.trim()
   const trimmedUpdatedPlan = updatedPlan?.trim()
+  const trimmedBuildPrompt = configuredBuildPrompt?.trim()
+  const trimmedYoloPrompt = configuredYoloPrompt?.trim()
+  const trimmedCodexPrompt = configuredCodexPrompt?.trim()
 
   if (trimmedCustomPrompt) {
     const planContent =
@@ -57,12 +71,12 @@ ${planContent}
   }
 
   if (backend === 'codex') {
-    return 'Execute the plan you created. Implement all changes described.'
+    return trimmedCodexPrompt || DEFAULT_PLAN_APPROVAL_CODEX_PROMPT
   }
 
   if (mode === 'yolo') {
-    return 'Plan approved (yolo mode). Begin implementing all changes immediately without asking for confirmation. Do not re-explain the plan — start writing code.'
+    return trimmedYoloPrompt || DEFAULT_PLAN_APPROVAL_YOLO_PROMPT
   }
 
-  return 'Plan approved. Begin implementing the changes now. Do not re-explain the plan — start writing code.'
+  return trimmedBuildPrompt || DEFAULT_PLAN_APPROVAL_BUILD_PROMPT
 }

@@ -93,6 +93,9 @@ export function usePlanApproval({
         originalPlan,
         customPrompt,
         approvedPlanContent: updatedPlan ?? originalPlan,
+        configuredBuildPrompt: preferences?.magic_prompts?.plan_approval_build,
+        configuredYoloPrompt: preferences?.magic_prompts?.plan_approval_yolo,
+        configuredCodexPrompt: preferences?.magic_prompts?.plan_approval_codex,
       })
       const buildInfo = [sessionBackend, model].filter(Boolean).join(' / ')
       const message = buildInfo
@@ -247,6 +250,9 @@ export function usePlanApproval({
         updatedPlan,
         originalPlan,
         approvedPlanContent: updatedPlan ?? originalPlan,
+        configuredBuildPrompt: preferences?.magic_prompts?.plan_approval_build,
+        configuredYoloPrompt: preferences?.magic_prompts?.plan_approval_yolo,
+        configuredCodexPrompt: preferences?.magic_prompts?.plan_approval_codex,
       })
       const yoloInfo = [sessionBackend, model].filter(Boolean).join(' / ')
       const message = yoloInfo

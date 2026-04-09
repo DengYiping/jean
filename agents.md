@@ -19,7 +19,6 @@ When evaluating fork-specific behavior, use:
 - `coollabsio/jean:main` as the upstream baseline
 - `ydeng-main` as the fork baseline
 
-
 ## Current Focus Areas
 
 The implementation in this fork is currently centered on:

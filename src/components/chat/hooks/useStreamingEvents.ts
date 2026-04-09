@@ -7,7 +7,6 @@ import { useChatStore } from '@/store/chat-store'
 import { useUIStore } from '@/store/ui-store'
 import { chatQueryKeys } from '@/services/chat'
 import { isTauri, saveWorktreePr, projectsQueryKeys } from '@/services/projects'
-import type { Project, Worktree } from '@/types/projects'
 import { preferencesQueryKeys } from '@/services/preferences'
 import type { AppPreferences, NotificationSound } from '@/types/preferences'
 import { triggerImmediateGitPoll } from '@/services/git-status'
@@ -15,6 +14,11 @@ import { isAskUserQuestion, isExitPlanMode } from '@/types/chat'
 import { playNotificationSound } from '@/lib/sounds'
 import { findPlanFilePath } from '@/components/chat/tool-call-utils'
 import { generateId } from '@/lib/uuid'
+import {
+  lookupSessionLabel,
+  showSessionPermissionRequestAlert,
+  showSessionQuestionWaitingAlert,
+} from '@/components/chat/hooks/session-input-alert'
 import type {
   ChunkEvent,
   ToolUseEvent,
@@ -69,50 +73,37 @@ export function shouldPlayPermissionApprovalSound(
   return newDenials.length > 0 && (currentDenials?.length ?? 0) === 0
 }
 
-/**
- * Look up project/worktree/session names from query cache for display in toasts.
- * Returns a formatted label like "project / worktree / session" with graceful fallback.
- */
-function lookupSessionLabel(
-  queryClient: QueryClient,
+function isSessionCurrentlyViewing(
   sessionId: string,
   worktreeId: string
-): string {
-  let projectName: string | undefined
-  let worktreeName: string | undefined
-  let sessionName: string | undefined
+): boolean {
+  const { activeWorktreeId, activeSessionIds } = useChatStore.getState()
+  const isActiveWorktree = worktreeId === activeWorktreeId
+  const isActiveSession = activeSessionIds[worktreeId] === sessionId
+  const isViewingInFullView = isActiveWorktree && isActiveSession
 
-  // Look up session name from sessions cache
-  const sessionsData = queryClient.getQueriesData<WorktreeSessions>({
-    queryKey: ['chat', 'sessions'],
-  })
-  for (const [, data] of sessionsData) {
-    const match = data?.sessions?.find(s => s.id === sessionId)
-    if (match) {
-      sessionName = match.name
-      break
-    }
-  }
+  const { sessionChatModalOpen, sessionChatModalWorktreeId } =
+    useUIStore.getState()
+  const isViewingInModal =
+    sessionChatModalOpen &&
+    sessionChatModalWorktreeId === worktreeId &&
+    isActiveSession
 
-  // Look up worktree name and project name from worktrees cache
-  const worktreesData = queryClient.getQueriesData<Worktree[]>({
-    queryKey: [...projectsQueryKeys.all, 'worktrees'],
-  })
-  for (const [, worktrees] of worktreesData) {
-    const match = worktrees?.find(w => w.id === worktreeId)
-    if (match) {
-      worktreeName = match.name
-      // Look up project name
-      const projects = queryClient.getQueryData<Project[]>(
-        projectsQueryKeys.list()
-      )
-      projectName = projects?.find(p => p.id === match.project_id)?.name
-      break
-    }
-  }
+  return isViewingInFullView || isViewingInModal
+}
 
-  const parts = [projectName, worktreeName, sessionName].filter(Boolean)
-  return parts.length > 0 ? parts.join(' / ') : ''
+function getWaitingSoundPreference(
+  queryClient: QueryClient
+): NotificationSound {
+  return (queryClient.getQueryData<AppPreferences>(
+    preferencesQueryKeys.preferences()
+  )?.waiting_sound ?? 'none') as NotificationSound
+}
+
+function getReviewSoundPreference(queryClient: QueryClient): NotificationSound {
+  return (queryClient.getQueryData<AppPreferences>(
+    preferencesQueryKeys.preferences()
+  )?.review_sound ?? 'none') as NotificationSound
 }
 
 /**
@@ -280,7 +271,7 @@ export default function useStreamingEvents({
     const unlistenPermissionDenied = listen<PermissionDeniedEvent>(
       'chat:permission_denied',
       event => {
-        const { session_id, denials } = event.payload
+        const { session_id, worktree_id, denials } = event.payload
         const {
           pendingPermissionDenials,
           setPendingDenials,
@@ -298,12 +289,14 @@ export default function useStreamingEvents({
         setPendingDenials(session_id, denials)
 
         if (shouldPlayPermissionApprovalSound(currentDenials, denials)) {
-          const preferences = queryClient.getQueryData<AppPreferences>(
-            preferencesQueryKeys.preferences()
-          )
-          const waitingSound = (preferences?.waiting_sound ??
-            'none') as NotificationSound
-          playNotificationSound(waitingSound)
+          playNotificationSound(getWaitingSoundPreference(queryClient))
+          if (!isSessionCurrentlyViewing(session_id, worktree_id)) {
+            showSessionPermissionRequestAlert(
+              queryClient,
+              session_id,
+              worktree_id
+            )
+          }
         }
 
         // Codex keeps the turn open while waiting for approval, so surface the
@@ -345,26 +338,15 @@ export default function useStreamingEvents({
         isQuestionAnswered,
         completeSession,
         pauseSession,
-        activeWorktreeId,
-        activeSessionIds,
         markSessionNeedsDigest,
       } = useChatStore.getState()
 
       // Check if this session is currently being viewed
       // Only skip digest if BOTH the worktree AND session are active (user is looking at it)
-      const isActiveWorktree = worktreeId === activeWorktreeId
-      const isActiveSession = activeSessionIds[worktreeId] === sessionId
-      const isViewingInFullView = isActiveWorktree && isActiveSession
-
-      // Also check if viewing in modal (modal doesn't change activeWorktreeId)
-      const { sessionChatModalOpen, sessionChatModalWorktreeId } =
-        useUIStore.getState()
-      const isViewingInModal =
-        sessionChatModalOpen &&
-        sessionChatModalWorktreeId === worktreeId &&
-        isActiveSession
-
-      const isCurrentlyViewing = isViewingInFullView || isViewingInModal
+      const isCurrentlyViewing = isSessionCurrentlyViewing(
+        sessionId,
+        worktreeId
+      )
 
       // If user is currently viewing this session, bump last_opened_at so it
       // doesn't appear as "unread" (updated_at will be newer after the run ends).
@@ -598,9 +580,14 @@ export default function useStreamingEvents({
 
           // Play waiting sound if not currently viewing this session
           if (!isCurrentlyViewing) {
-            const waitingSound = (preferences?.waiting_sound ??
-              'none') as NotificationSound
-            playNotificationSound(waitingSound)
+            playNotificationSound(getWaitingSoundPreference(queryClient))
+            if (waitingType === 'question') {
+              showSessionQuestionWaitingAlert(
+                queryClient,
+                sessionId,
+                worktreeId
+              )
+            }
           }
         }
       } else if (event.payload.waiting_for_plan && !isCurrentlyViewing) {
@@ -708,9 +695,7 @@ export default function useStreamingEvents({
 
         // Play waiting sound if not currently viewing this session
         if (!isCurrentlyViewing) {
-          const waitingSound = (preferences?.waiting_sound ??
-            'none') as NotificationSound
-          playNotificationSound(waitingSound)
+          playNotificationSound(getWaitingSoundPreference(queryClient))
         }
       } else {
         // No blocking tools — add optimistic message FIRST, then batch-clear state.
@@ -819,9 +804,7 @@ export default function useStreamingEvents({
 
         // Play review sound if not currently viewing this session
         if (!isCurrentlyViewing) {
-          const reviewSound = (preferences?.review_sound ??
-            'none') as NotificationSound
-          playNotificationSound(reviewSound)
+          playNotificationSound(getReviewSoundPreference(queryClient))
         }
       }
 

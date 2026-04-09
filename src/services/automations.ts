@@ -26,6 +26,8 @@ function toAutomationCommandPayload(input: AutomationUpsertInput) {
     thinkingLevel: input.thinking_level,
     effortLevel: input.effort_level,
     scheduleRrule: input.schedule_rrule,
+    runWindowStartHour: input.run_window_start_hour,
+    runWindowEndHour: input.run_window_end_hour,
     status: input.status,
   }
 }

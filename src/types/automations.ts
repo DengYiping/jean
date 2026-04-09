@@ -26,6 +26,8 @@ export interface Automation {
   thinking_level?: ThinkingLevel | null
   effort_level?: EffortLevel | null
   schedule_rrule: string
+  run_window_start_hour?: number | null
+  run_window_end_hour?: number | null
   status: AutomationStatus
   last_run_at?: number | null
   next_run_at?: number | null
@@ -47,5 +49,7 @@ export interface AutomationUpsertInput {
   thinking_level?: ThinkingLevel | null
   effort_level?: EffortLevel | null
   schedule_rrule: string
+  run_window_start_hour?: number | null
+  run_window_end_hour?: number | null
   status?: AutomationStatus
 }

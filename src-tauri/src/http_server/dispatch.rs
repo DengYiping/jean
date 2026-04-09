@@ -2439,6 +2439,9 @@ pub async fn dispatch_command(
             let thinking_level = field_opt(&args, "thinkingLevel", "thinking_level")?;
             let effort_level = field_opt(&args, "effortLevel", "effort_level")?;
             let schedule_rrule = field(&args, "scheduleRrule", "schedule_rrule")?;
+            let run_window_start_hour =
+                field_opt(&args, "runWindowStartHour", "run_window_start_hour")?;
+            let run_window_end_hour = field_opt(&args, "runWindowEndHour", "run_window_end_hour")?;
             let state = app.state::<crate::automations::AutomationManager>();
             let result = crate::automations::commands::create_automation(
                 app.clone(),
@@ -2454,6 +2457,8 @@ pub async fn dispatch_command(
                 thinking_level,
                 effort_level,
                 schedule_rrule,
+                run_window_start_hour,
+                run_window_end_hour,
             )
             .await?;
             to_value(result)
@@ -2470,6 +2475,9 @@ pub async fn dispatch_command(
             let thinking_level = field_opt(&args, "thinkingLevel", "thinking_level")?;
             let effort_level = field_opt(&args, "effortLevel", "effort_level")?;
             let schedule_rrule = field(&args, "scheduleRrule", "schedule_rrule")?;
+            let run_window_start_hour =
+                field_opt(&args, "runWindowStartHour", "run_window_start_hour")?;
+            let run_window_end_hour = field_opt(&args, "runWindowEndHour", "run_window_end_hour")?;
             let status = field_opt(&args, "status", "status")?;
             let state = app.state::<crate::automations::AutomationManager>();
             let result = crate::automations::commands::update_automation(
@@ -2486,6 +2494,8 @@ pub async fn dispatch_command(
                 thinking_level,
                 effort_level,
                 schedule_rrule,
+                run_window_start_hour,
+                run_window_end_hour,
                 status,
             )
             .await?;

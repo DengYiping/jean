@@ -40,6 +40,10 @@ pub struct Automation {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effort_level: Option<String>,
     pub schedule_rrule: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_window_start_hour: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_window_end_hour: Option<u32>,
     #[serde(default)]
     pub status: AutomationStatus,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -78,6 +82,8 @@ impl Automation {
             thinking_level: None,
             effort_level: None,
             schedule_rrule,
+            run_window_start_hour: None,
+            run_window_end_hour: None,
             status: AutomationStatus::Enabled,
             last_run_at: None,
             next_run_at: None,

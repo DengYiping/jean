@@ -42,9 +42,16 @@ import type {
   ThinkingLevel,
 } from '@/types/chat'
 import type { Worktree } from '@/types/projects'
-
-type Frequency = 'hourly' | 'daily' | 'weekly'
-type WeekdayCode = 'MO' | 'TU' | 'WE' | 'TH' | 'FR' | 'SA' | 'SU'
+import {
+  buildScheduleRRule,
+  defaultScheduleFields,
+  formatHourLabel,
+  getRunWindowPayload,
+  parseSchedule,
+  WEEKDAYS,
+  type Frequency,
+  type WeekdayCode,
+} from './automation-schedule'
 
 interface AutomationFormState {
   name: string
@@ -60,18 +67,11 @@ interface AutomationFormState {
   interval: number
   time: string
   weekdays: WeekdayCode[]
+  runWindowEnabled: boolean
+  runWindowStartHour: number
+  runWindowEndHour: number
   status: AutomationStatus
 }
-
-const WEEKDAYS: { code: WeekdayCode; label: string }[] = [
-  { code: 'MO', label: 'Mon' },
-  { code: 'TU', label: 'Tue' },
-  { code: 'WE', label: 'Wed' },
-  { code: 'TH', label: 'Thu' },
-  { code: 'FR', label: 'Fri' },
-  { code: 'SA', label: 'Sat' },
-  { code: 'SU', label: 'Sun' },
-]
 
 function defaultTargetIds(worktrees: Worktree[]): string[] {
   const ready = worktrees.filter(worktree => !worktree.archived_at)
@@ -80,6 +80,8 @@ function defaultTargetIds(worktrees: Worktree[]): string[] {
 }
 
 function emptyForm(worktrees: Worktree[]): AutomationFormState {
+  const schedule = defaultScheduleFields()
+
   return {
     name: '',
     prompt: '',
@@ -90,78 +92,26 @@ function emptyForm(worktrees: Worktree[]): AutomationFormState {
     executionMode: 'plan',
     thinkingLevel: '',
     effortLevel: '',
-    frequency: 'daily',
-    interval: 1,
-    time: '09:00',
-    weekdays: ['MO'],
+    frequency: schedule.frequency,
+    interval: schedule.interval,
+    time: schedule.time,
+    weekdays: schedule.weekdays,
+    runWindowEnabled: schedule.runWindowEnabled,
+    runWindowStartHour: schedule.runWindowStartHour,
+    runWindowEndHour: schedule.runWindowEndHour,
     status: 'enabled',
   }
-}
-
-function parseSchedule(
-  rrule: string
-): Pick<AutomationFormState, 'frequency' | 'interval' | 'time' | 'weekdays'> {
-  const defaults = {
-    frequency: 'daily' as Frequency,
-    interval: 1,
-    time: '09:00',
-    weekdays: ['MO'] as WeekdayCode[],
-  }
-
-  if (!rrule) return defaults
-
-  const parts = new Map(
-    rrule.split(';').map(part => {
-      const [key, value] = part.split('=', 2)
-      return [key?.toUpperCase() ?? '', value ?? '']
-    })
-  )
-
-  const rawFrequency = parts.get('FREQ')?.toLowerCase()
-  const frequency: Frequency =
-    rawFrequency === 'hourly' ||
-    rawFrequency === 'daily' ||
-    rawFrequency === 'weekly'
-      ? rawFrequency
-      : defaults.frequency
-  const interval = Math.max(1, Number(parts.get('INTERVAL') ?? '1') || 1)
-  const hour = Number(
-    parts.get('BYHOUR') ?? (frequency === 'hourly' ? '0' : '9')
-  )
-  const minute = Number(parts.get('BYMINUTE') ?? '0')
-  const weekdays = (parts.get('BYDAY') ?? 'MO')
-    .split(',')
-    .map(day => day.trim().toUpperCase())
-    .filter((day): day is WeekdayCode =>
-      WEEKDAYS.some(option => option.code === day)
-    )
-
-  return {
-    frequency,
-    interval,
-    time: `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`,
-    weekdays: weekdays.length > 0 ? weekdays : defaults.weekdays,
-  }
-}
-
-function buildScheduleRRule(form: AutomationFormState): string {
-  const [hour, minute] = form.time.split(':').map(Number)
-
-  if (form.frequency === 'hourly') {
-    return `FREQ=HOURLY;INTERVAL=${form.interval};BYMINUTE=${minute || 0}`
-  }
-  if (form.frequency === 'daily') {
-    return `FREQ=DAILY;INTERVAL=${form.interval};BYHOUR=${hour || 0};BYMINUTE=${minute || 0}`
-  }
-  const weekdays = form.weekdays.length > 0 ? form.weekdays.join(',') : 'MO'
-  return `FREQ=WEEKLY;INTERVAL=${form.interval};BYDAY=${weekdays};BYHOUR=${hour || 0};BYMINUTE=${minute || 0}`
 }
 
 function fromAutomation(
   automation: Automation,
   worktrees: Worktree[]
 ): AutomationFormState {
-  const schedule = parseSchedule(automation.schedule_rrule)
+  const schedule = parseSchedule(
+    automation.schedule_rrule,
+    automation.run_window_start_hour,
+    automation.run_window_end_hour
+  )
 
   return {
     name: automation.name,
@@ -180,13 +130,41 @@ function fromAutomation(
     interval: schedule.interval,
     time: schedule.time,
     weekdays: schedule.weekdays,
+    runWindowEnabled: schedule.runWindowEnabled,
+    runWindowStartHour: schedule.runWindowStartHour,
+    runWindowEndHour: schedule.runWindowEndHour,
     status: automation.status,
+  }
+}
+
+function buildAutomationInput(form: AutomationFormState) {
+  return {
+    name: form.name.trim(),
+    prompt: form.prompt.trim(),
+    target_worktree_ids: form.targetWorktreeIds,
+    backend: form.backend,
+    model: form.model.trim() || null,
+    provider: form.provider.trim() || null,
+    execution_mode: form.executionMode,
+    thinking_level: form.thinkingLevel || null,
+    effort_level: form.effortLevel || null,
+    schedule_rrule: buildScheduleRRule(form),
+    ...getRunWindowPayload(form),
+    status: form.status,
   }
 }
 
 function formatTimestamp(timestamp?: number | null): string {
   if (!timestamp) return 'Never'
   return new Date(timestamp * 1000).toLocaleString()
+}
+
+function formatRunWindowSummary(form: AutomationFormState): string | null {
+  if (form.frequency !== 'hourly' || !form.runWindowEnabled) {
+    return null
+  }
+
+  return `${formatHourLabel(form.runWindowStartHour)}-${formatHourLabel(form.runWindowEndHour)}`
 }
 
 function statusTone(status?: string | null): string {
@@ -252,6 +230,9 @@ export function AutomationsPane({
           automation => automation.id === selectedAutomationId
         ) ?? null)
 
+  const scheduleRRule = useMemo(() => buildScheduleRRule(form), [form])
+  const runWindowSummary = useMemo(() => formatRunWindowSummary(form), [form])
+
   const isDirty = useMemo(() => {
     if (!selectedAutomation) {
       return (
@@ -263,14 +244,12 @@ export function AutomationsPane({
     }
 
     return (
-      JSON.stringify({
-        ...form,
-        scheduleRRule: buildScheduleRRule(form),
-      }) !==
-      JSON.stringify({
-        ...fromAutomation(selectedAutomation, activeWorktrees),
-        scheduleRRule: selectedAutomation.schedule_rrule,
-      })
+      JSON.stringify(buildAutomationInput(form)) !==
+      JSON.stringify(
+        buildAutomationInput(
+          fromAutomation(selectedAutomation, activeWorktrees)
+        )
+      )
     )
   }, [activeWorktrees, form, selectedAutomation])
 
@@ -288,19 +267,7 @@ export function AutomationsPane({
   }
 
   const handleSave = async () => {
-    const input = {
-      name: form.name.trim(),
-      prompt: form.prompt.trim(),
-      target_worktree_ids: form.targetWorktreeIds,
-      backend: form.backend,
-      model: form.model.trim() || null,
-      provider: form.provider.trim() || null,
-      execution_mode: form.executionMode,
-      thinking_level: form.thinkingLevel || null,
-      effort_level: form.effortLevel || null,
-      schedule_rrule: buildScheduleRRule(form),
-      status: form.status,
-    }
+    const input = buildAutomationInput(form)
 
     if (selectedAutomation) {
       const updated = await updateAutomation.mutateAsync({
@@ -692,6 +659,8 @@ export function AutomationsPane({
                       setForm(current => ({
                         ...current,
                         frequency: value as Frequency,
+                        runWindowEnabled:
+                          value === 'hourly' ? current.runWindowEnabled : false,
                       }))
                     }
                   >
@@ -739,6 +708,83 @@ export function AutomationsPane({
                 </div>
               </div>
 
+              {form.frequency === 'hourly' && (
+                <div className="space-y-3 rounded-md border p-3">
+                  <label className="flex items-center gap-3 text-sm">
+                    <Checkbox
+                      checked={form.runWindowEnabled}
+                      onCheckedChange={checked =>
+                        setForm(current => ({
+                          ...current,
+                          runWindowEnabled: checked === true,
+                        }))
+                      }
+                    />
+                    <span>Restrict runs to specific hours</span>
+                  </label>
+
+                  {form.runWindowEnabled && (
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label>Start Hour</Label>
+                        <Select
+                          value={String(form.runWindowStartHour)}
+                          onValueChange={value =>
+                            setForm(current => {
+                              const startHour = Number(value)
+                              return {
+                                ...current,
+                                runWindowStartHour: startHour,
+                                runWindowEndHour:
+                                  current.runWindowEndHour <= startHour
+                                    ? Math.min(23, startHour + 1)
+                                    : current.runWindowEndHour,
+                              }
+                            })
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {Array.from({ length: 23 }, (_, hour) => (
+                              <SelectItem key={hour} value={String(hour)}>
+                                {formatHourLabel(hour)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>End Hour</Label>
+                        <Select
+                          value={String(form.runWindowEndHour)}
+                          onValueChange={value =>
+                            setForm(current => ({
+                              ...current,
+                              runWindowEndHour: Number(value),
+                            }))
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {Array.from({ length: 23 }, (_, index) => index + 1)
+                              .filter(hour => hour > form.runWindowStartHour)
+                              .map(hour => (
+                                <SelectItem key={hour} value={String(hour)}>
+                                  {formatHourLabel(hour)}
+                                </SelectItem>
+                              ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {form.frequency === 'weekly' && (
                 <div className="space-y-2">
                   <Label>Weekdays</Label>
@@ -781,8 +827,11 @@ export function AutomationsPane({
               <div className="rounded-md border bg-muted/20 p-3 text-xs text-muted-foreground">
                 <div>RRULE</div>
                 <code className="mt-1 block break-all text-foreground/80">
-                  {buildScheduleRRule(form)}
+                  {scheduleRRule}
                 </code>
+                {runWindowSummary && (
+                  <div className="mt-2">Allowed hours {runWindowSummary}</div>
+                )}
                 <div className="mt-2">
                   Next run{' '}
                   {selectedAutomation

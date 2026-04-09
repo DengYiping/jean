@@ -20,8 +20,13 @@ pub fn now_secs() -> u64 {
         .as_secs()
 }
 
-pub fn compute_next_run_at(rrule: &str, now: u64) -> Result<Option<u64>, String> {
-    let schedule = ParsedSchedule::parse(rrule)?;
+pub fn compute_next_run_at(
+    rrule: &str,
+    run_window_start_hour: Option<u32>,
+    run_window_end_hour: Option<u32>,
+    now: u64,
+) -> Result<Option<u64>, String> {
+    let schedule = ParsedSchedule::parse(rrule, run_window_start_hour, run_window_end_hour)?;
     schedule.next_after(now).map(Some)
 }
 
@@ -78,7 +83,12 @@ async fn run_automation_inner(
         automation.last_error = None;
         automation.last_run_status = Some(AutomationLastRunStatus::Running);
         if advance_schedule {
-            automation.next_run_at = compute_next_run_at(&automation.schedule_rrule, now)?;
+            automation.next_run_at = compute_next_run_at(
+                &automation.schedule_rrule,
+                automation.run_window_start_hour,
+                automation.run_window_end_hour,
+                now,
+            )?;
         }
 
         Ok(automation.clone())
@@ -296,6 +306,13 @@ struct ParsedSchedule {
     byhour: Option<u32>,
     byminute: Option<u32>,
     byday: Vec<Weekday>,
+    run_window: Option<RunWindow>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct RunWindow {
+    start_hour: u32,
+    end_hour: u32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -306,7 +323,11 @@ enum Frequency {
 }
 
 impl ParsedSchedule {
-    fn parse(rrule: &str) -> Result<Self, String> {
+    fn parse(
+        rrule: &str,
+        run_window_start_hour: Option<u32>,
+        run_window_end_hour: Option<u32>,
+    ) -> Result<Self, String> {
         let mut frequency = None;
         let mut interval = 1u32;
         let mut byhour = None;
@@ -353,6 +374,7 @@ impl ParsedSchedule {
         }
 
         let frequency = frequency.ok_or_else(|| "RRULE is missing FREQ.".to_string())?;
+        let run_window = parse_run_window(frequency, run_window_start_hour, run_window_end_hour)?;
         if matches!(frequency, Frequency::Daily | Frequency::Weekly) && byhour.is_none() {
             return Err("Daily and weekly schedules require BYHOUR.".to_string());
         }
@@ -366,6 +388,7 @@ impl ParsedSchedule {
             byhour,
             byminute,
             byday,
+            run_window,
         })
     }
 
@@ -383,6 +406,10 @@ impl ParsedSchedule {
     }
 
     fn next_hourly(&self, current: chrono::DateTime<Local>) -> Result<u64, String> {
+        if let Some(run_window) = self.run_window {
+            return self.next_hourly_in_window(current, run_window);
+        }
+
         let target_minute = self.byminute.unwrap_or(0);
         let current_block = current
             .with_second(0)
@@ -400,6 +427,33 @@ impl ParsedSchedule {
                 }
             }
         }
+        Err("Could not compute next hourly schedule.".to_string())
+    }
+
+    fn next_hourly_in_window(
+        &self,
+        current: chrono::DateTime<Local>,
+        run_window: RunWindow,
+    ) -> Result<u64, String> {
+        let target_minute = self.byminute.unwrap_or(0);
+        let base = current.date_naive();
+
+        for day_offset in 0..=(366 * 5) {
+            let candidate_date = base + Duration::days(day_offset.into());
+            let mut hour = run_window.start_hour;
+
+            while hour < run_window.end_hour {
+                let candidate = candidate_date
+                    .and_hms_opt(hour, target_minute, 0)
+                    .and_then(localize_naive)
+                    .ok_or_else(|| "Failed to build hourly schedule.".to_string())?;
+                if candidate.timestamp() > current.timestamp() {
+                    return Ok(candidate.timestamp() as u64);
+                }
+                hour = hour.saturating_add(self.interval);
+            }
+        }
+
         Err("Could not compute next hourly schedule.".to_string())
     }
 
@@ -444,6 +498,35 @@ impl ParsedSchedule {
             }
         }
         Err("Could not compute next weekly schedule.".to_string())
+    }
+}
+
+fn parse_run_window(
+    frequency: Frequency,
+    run_window_start_hour: Option<u32>,
+    run_window_end_hour: Option<u32>,
+) -> Result<Option<RunWindow>, String> {
+    match (run_window_start_hour, run_window_end_hour) {
+        (None, None) => Ok(None),
+        (Some(_), None) | (None, Some(_)) => {
+            Err("Run window requires both start and end hours.".to_string())
+        }
+        (Some(start_hour), Some(end_hour)) => {
+            if start_hour > 23 || end_hour > 23 {
+                return Err("Run window hours must be between 0 and 23.".to_string());
+            }
+            if !matches!(frequency, Frequency::Hourly) {
+                return Err("Run window is only supported for hourly schedules.".to_string());
+            }
+            if start_hour >= end_hour {
+                return Err("Run window start hour must be earlier than the end hour.".to_string());
+            }
+
+            Ok(Some(RunWindow {
+                start_hour,
+                end_hour,
+            }))
+        }
     }
 }
 
@@ -494,9 +577,14 @@ mod tests {
 
     #[test]
     fn computes_next_daily_run() {
-        let next = compute_next_run_at("FREQ=DAILY;INTERVAL=1;BYHOUR=9;BYMINUTE=30", 1_710_000_000)
-            .expect("schedule")
-            .expect("next");
+        let next = compute_next_run_at(
+            "FREQ=DAILY;INTERVAL=1;BYHOUR=9;BYMINUTE=30",
+            None,
+            None,
+            1_710_000_000,
+        )
+        .expect("schedule")
+        .expect("next");
         assert!(next > 1_710_000_000);
     }
 
@@ -504,10 +592,104 @@ mod tests {
     fn computes_next_weekly_run() {
         let next = compute_next_run_at(
             "FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,WE;BYHOUR=10;BYMINUTE=0",
+            None,
+            None,
             1_710_000_000,
         )
         .expect("schedule")
         .expect("next");
         assert!(next > 1_710_000_000);
+    }
+
+    #[test]
+    fn computes_next_hourly_run_in_window() {
+        let current = Local
+            .with_ymd_and_hms(2026, 4, 9, 8, 15, 0)
+            .single()
+            .expect("current");
+        let next = compute_next_run_at(
+            "FREQ=HOURLY;INTERVAL=1;BYMINUTE=0",
+            Some(9),
+            Some(17),
+            current.timestamp() as u64,
+        )
+        .expect("schedule")
+        .expect("next");
+        let next = Local
+            .timestamp_opt(next as i64, 0)
+            .single()
+            .expect("next ts");
+        assert_eq!(next.hour(), 9);
+        assert_eq!(next.minute(), 0);
+    }
+
+    #[test]
+    fn anchors_hourly_window_interval_to_start_hour() {
+        let current = Local
+            .with_ymd_and_hms(2026, 4, 9, 9, 5, 0)
+            .single()
+            .expect("current");
+        let next = compute_next_run_at(
+            "FREQ=HOURLY;INTERVAL=2;BYMINUTE=0",
+            Some(9),
+            Some(17),
+            current.timestamp() as u64,
+        )
+        .expect("schedule")
+        .expect("next");
+        let next = Local
+            .timestamp_opt(next as i64, 0)
+            .single()
+            .expect("next ts");
+        assert_eq!(next.hour(), 11);
+    }
+
+    #[test]
+    fn rolls_hourly_window_to_next_day_after_end() {
+        let current = Local
+            .with_ymd_and_hms(2026, 4, 9, 16, 30, 0)
+            .single()
+            .expect("current");
+        let next = compute_next_run_at(
+            "FREQ=HOURLY;INTERVAL=2;BYMINUTE=0",
+            Some(9),
+            Some(17),
+            current.timestamp() as u64,
+        )
+        .expect("schedule")
+        .expect("next");
+        let next = Local
+            .timestamp_opt(next as i64, 0)
+            .single()
+            .expect("next ts");
+        assert_eq!(
+            next.date_naive(),
+            (current + Duration::days(1)).date_naive()
+        );
+        assert_eq!(next.hour(), 9);
+    }
+
+    #[test]
+    fn rejects_partial_run_window() {
+        let error = compute_next_run_at(
+            "FREQ=HOURLY;INTERVAL=1;BYMINUTE=0",
+            Some(9),
+            None,
+            1_710_000_000,
+        )
+        .expect_err("partial window should fail");
+        assert!(error.contains("both start and end"));
+    }
+
+    #[test]
+    fn rejects_run_window_for_daily_schedule() {
+        let error = compute_next_run_at(
+            "FREQ=DAILY;INTERVAL=1;BYHOUR=9;BYMINUTE=0",
+            Some(9),
+            Some(17),
+            1_710_000_000,
+        )
+        .expect_err("daily window should fail");
+        assert!(error.contains("only supported for hourly"));
     }
 }

@@ -206,6 +206,14 @@ export const test = base.extend<TauriMockFixtures>({
                 (args?.schedule_rrule as string) ??
                 (args?.scheduleRrule as string) ??
                 'FREQ=DAILY;INTERVAL=1;BYHOUR=9;BYMINUTE=0',
+              run_window_start_hour:
+                (args?.run_window_start_hour as number) ??
+                (args?.runWindowStartHour as number) ??
+                null,
+              run_window_end_hour:
+                (args?.run_window_end_hour as number) ??
+                (args?.runWindowEndHour as number) ??
+                null,
               status: (args?.status as string) ?? 'enabled',
               last_run_at: null,
               next_run_at: Math.floor(Date.now() / 1000) + 3600,
@@ -250,6 +258,14 @@ export const test = base.extend<TauriMockFixtures>({
                 args?.schedule_rrule ??
                 args?.scheduleRrule ??
                 automation.schedule_rrule,
+              run_window_start_hour:
+                args?.run_window_start_hour ??
+                args?.runWindowStartHour ??
+                automation.run_window_start_hour,
+              run_window_end_hour:
+                args?.run_window_end_hour ??
+                args?.runWindowEndHour ??
+                automation.run_window_end_hour,
               status: args?.status ?? automation.status,
               updated_at: Math.floor(Date.now() / 1000),
             })

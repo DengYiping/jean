@@ -34,8 +34,17 @@ pub async fn create_automation(
     thinking_level: Option<String>,
     effort_level: Option<String>,
     schedule_rrule: String,
+    run_window_start_hour: Option<u32>,
+    run_window_end_hour: Option<u32>,
 ) -> Result<Automation, String> {
-    validate_automation_inputs(&name, &prompt, &target_worktree_ids, &schedule_rrule)?;
+    validate_automation_inputs(
+        &name,
+        &prompt,
+        &target_worktree_ids,
+        &schedule_rrule,
+        run_window_start_hour,
+        run_window_end_hour,
+    )?;
 
     let now = now_secs();
     let mut automation = Automation::new(
@@ -51,7 +60,14 @@ pub async fn create_automation(
     automation.execution_mode = normalize_opt(execution_mode);
     automation.thinking_level = normalize_opt(thinking_level);
     automation.effort_level = normalize_opt(effort_level);
-    automation.next_run_at = compute_next_run_at(&automation.schedule_rrule, now)?;
+    automation.run_window_start_hour = run_window_start_hour;
+    automation.run_window_end_hour = run_window_end_hour;
+    automation.next_run_at = compute_next_run_at(
+        &automation.schedule_rrule,
+        automation.run_window_start_hour,
+        automation.run_window_end_hour,
+        now,
+    )?;
 
     let created = with_automations_mut(&app, |automations| {
         automations.push(automation.clone());
@@ -78,9 +94,18 @@ pub async fn update_automation(
     thinking_level: Option<String>,
     effort_level: Option<String>,
     schedule_rrule: String,
+    run_window_start_hour: Option<u32>,
+    run_window_end_hour: Option<u32>,
     status: Option<AutomationStatus>,
 ) -> Result<Automation, String> {
-    validate_automation_inputs(&name, &prompt, &target_worktree_ids, &schedule_rrule)?;
+    validate_automation_inputs(
+        &name,
+        &prompt,
+        &target_worktree_ids,
+        &schedule_rrule,
+        run_window_start_hour,
+        run_window_end_hour,
+    )?;
     let now = now_secs();
 
     let updated = with_automations_mut(&app, |automations| {
@@ -98,9 +123,16 @@ pub async fn update_automation(
         automation.thinking_level = normalize_opt(thinking_level.clone());
         automation.effort_level = normalize_opt(effort_level.clone());
         automation.schedule_rrule = schedule_rrule.clone();
+        automation.run_window_start_hour = run_window_start_hour;
+        automation.run_window_end_hour = run_window_end_hour;
         automation.status = status.clone().unwrap_or_else(|| automation.status.clone());
         automation.updated_at = now;
-        automation.next_run_at = compute_next_run_at(&automation.schedule_rrule, now)?;
+        automation.next_run_at = compute_next_run_at(
+            &automation.schedule_rrule,
+            automation.run_window_start_hour,
+            automation.run_window_end_hour,
+            now,
+        )?;
         Ok(automation.clone())
     })?;
 
@@ -167,7 +199,12 @@ pub async fn resume_automation(
             .ok_or_else(|| "Automation not found.".to_string())?;
         automation.status = AutomationStatus::Enabled;
         automation.updated_at = now_secs();
-        automation.next_run_at = compute_next_run_at(&automation.schedule_rrule, now_secs())?;
+        automation.next_run_at = compute_next_run_at(
+            &automation.schedule_rrule,
+            automation.run_window_start_hour,
+            automation.run_window_end_hour,
+            now_secs(),
+        )?;
         Ok(automation.clone())
     })?;
     state.emit_updated(&updated.id);
@@ -179,6 +216,8 @@ fn validate_automation_inputs(
     prompt: &str,
     target_worktree_ids: &[String],
     schedule_rrule: &str,
+    run_window_start_hour: Option<u32>,
+    run_window_end_hour: Option<u32>,
 ) -> Result<(), String> {
     if name.trim().is_empty() {
         return Err("Automation name cannot be empty.".to_string());
@@ -189,7 +228,12 @@ fn validate_automation_inputs(
     if target_worktree_ids.is_empty() {
         return Err("Select at least one target worktree.".to_string());
     }
-    let _ = compute_next_run_at(schedule_rrule, now_secs())?;
+    let _ = compute_next_run_at(
+        schedule_rrule,
+        run_window_start_hour,
+        run_window_end_hour,
+        now_secs(),
+    )?;
     Ok(())
 }
 

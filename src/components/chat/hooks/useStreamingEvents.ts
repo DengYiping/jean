@@ -28,12 +28,14 @@ import type {
   ErrorEvent,
   CancelledEvent,
   ThinkingEvent,
+  PermissionDenial,
   PermissionDeniedEvent,
   CompactingEvent,
   CompactedEvent,
   ThreadTokenUsageEvent,
   Session,
   SessionDigest,
+  AllSessionsResponse,
   WorktreeSessions,
 } from '@/types/chat'
 import {
@@ -104,6 +106,41 @@ function getReviewSoundPreference(queryClient: QueryClient): NotificationSound {
   return (queryClient.getQueryData<AppPreferences>(
     preferencesQueryKeys.preferences()
   )?.review_sound ?? 'none') as NotificationSound
+}
+
+function updateAllSessionsCache(
+  queryClient: QueryClient,
+  worktreeId: string,
+  updater: (session: Session) => Session
+): void {
+  queryClient.setQueryData<AllSessionsResponse>(['all-sessions'], old => {
+    if (!old) return old
+
+    return {
+      ...old,
+      entries: old.entries.map(entry =>
+        entry.worktree_id === worktreeId
+          ? {
+              ...entry,
+              sessions: entry.sessions.map(updater),
+            }
+          : entry
+      ),
+    }
+  })
+}
+
+function applyPermissionWaitingState(
+  session: Session,
+  denials: PermissionDenial[]
+): Session {
+  return {
+    ...session,
+    waiting_for_input: true,
+    waiting_for_input_type: null,
+    pending_permission_denials: denials,
+    is_reviewing: false,
+  }
 }
 
 /**
@@ -308,12 +345,63 @@ export default function useStreamingEvents({
 
         // Store the message context for re-send
         const originalMessage = lastSentMessages[session_id]
+        const persistedDeniedMessageContext = originalMessage
+          ? {
+              message: originalMessage,
+              model: selectedModels[session_id],
+              thinking_level: thinkingLevels[session_id] ?? 'off',
+            }
+          : null
         if (originalMessage) {
           setDeniedMessageContext(session_id, {
             message: originalMessage,
             model: selectedModels[session_id],
             executionMode: executionModes[session_id] ?? 'plan',
             thinkingLevel: thinkingLevels[session_id] ?? 'off',
+          })
+        }
+
+        queryClient.setQueryData<Session>(
+          chatQueryKeys.session(session_id),
+          old => (old ? applyPermissionWaitingState(old, denials) : old)
+        )
+        queryClient.setQueryData<WorktreeSessions>(
+          chatQueryKeys.sessions(worktree_id),
+          old => {
+            if (!old) return old
+            return {
+              ...old,
+              sessions: old.sessions.map(session =>
+                session.id === session_id
+                  ? applyPermissionWaitingState(session, denials)
+                  : session
+              ),
+            }
+          }
+        )
+        updateAllSessionsCache(queryClient, worktree_id, session =>
+          session.id === session_id
+            ? applyPermissionWaitingState(session, denials)
+            : session
+        )
+
+        const { worktreePaths } = useChatStore.getState()
+        const worktreePath = worktreePaths[worktree_id]
+        if (worktreePath) {
+          invoke('update_session_state', {
+            worktreeId: worktree_id,
+            worktreePath,
+            sessionId: session_id,
+            pendingPermissionDenials: denials,
+            deniedMessageContext: persistedDeniedMessageContext,
+            waitingForInput: true,
+            waitingForInputType: null,
+            isReviewing: false,
+          }).catch(err => {
+            logger.error(
+              '[useStreamingEvents] Failed to persist permission state:',
+              err
+            )
           })
         }
       }
@@ -333,6 +421,7 @@ export default function useStreamingEvents({
         streamingContents,
         activeToolCalls,
         streamingContentBlocks,
+        pendingPermissionDenials,
         setError,
         clearLastSentMessage,
         isQuestionAnswered,
@@ -425,6 +514,9 @@ export default function useStreamingEvents({
           (isAskUserQuestion(tc) || isExitPlanMode(tc)) &&
           !isQuestionAnswered(sessionId, tc.id)
       )
+      const persistedPermissionDenials =
+        pendingPermissionDenials[sessionId] ?? []
+      const hasPendingPermissionDenials = persistedPermissionDenials.length > 0
 
       // Clear compacting state (safety net in case chat:compacted was missed)
       useChatStore.getState().setCompacting(sessionId, false)
@@ -516,6 +608,7 @@ export default function useStreamingEvents({
             : hasUnansweredPlan
               ? 'plan'
               : null
+          let pendingBlockingPlanMessageId: string | null = null
 
           // Persist plan file path and pending message ID for ExitPlanMode
           if (effectiveToolCalls) {
@@ -534,6 +627,7 @@ export default function useStreamingEvents({
               const pendingMessageId =
                 (window as unknown as Record<string, string>)[pendingIdKey] ??
                 generateId()
+              pendingBlockingPlanMessageId = pendingMessageId
               useChatStore
                 .getState()
                 .setPendingPlanMessageId(sessionId, pendingMessageId)
@@ -578,6 +672,63 @@ export default function useStreamingEvents({
             }
           }
 
+          queryClient.setQueryData<Session>(
+            chatQueryKeys.session(sessionId),
+            old =>
+              old
+                ? {
+                    ...old,
+                    last_run_status: 'resumable',
+                    waiting_for_input: true,
+                    waiting_for_input_type: waitingType,
+                    is_reviewing: false,
+                    pending_plan_message_id:
+                      waitingType === 'plan'
+                        ? (pendingBlockingPlanMessageId ?? undefined)
+                        : undefined,
+                  }
+                : old
+          )
+          queryClient.setQueryData<WorktreeSessions>(
+            chatQueryKeys.sessions(worktreeId),
+            old => {
+              if (!old) return old
+              return {
+                ...old,
+                sessions: old.sessions.map(session =>
+                  session.id === sessionId
+                    ? {
+                        ...session,
+                        last_run_status: 'resumable' as const,
+                        waiting_for_input: true,
+                        waiting_for_input_type: waitingType,
+                        is_reviewing: false,
+                        pending_plan_message_id:
+                          waitingType === 'plan'
+                            ? (pendingBlockingPlanMessageId ?? undefined)
+                            : undefined,
+                      }
+                    : session
+                ),
+              }
+            }
+          )
+          updateAllSessionsCache(queryClient, worktreeId, session =>
+            session.id === sessionId
+              ? {
+                  ...session,
+                  last_run_status: 'resumable' as const,
+                  waiting_for_input: true,
+                  waiting_for_input_type: waitingType,
+                  is_reviewing: false,
+                  pending_plan_message_id:
+                    waitingType === 'plan'
+                      ? (pendingBlockingPlanMessageId ?? undefined)
+                      : undefined,
+                }
+              : session
+          )
+
           // Play waiting sound if not currently viewing this session
           if (!isCurrentlyViewing) {
             playNotificationSound(getWaitingSoundPreference(queryClient))
@@ -589,6 +740,72 @@ export default function useStreamingEvents({
               )
             }
           }
+        }
+      } else if (hasPendingPermissionDenials) {
+        pauseSession(sessionId)
+
+        queryClient.setQueryData<Session>(
+          chatQueryKeys.session(sessionId),
+          old =>
+            old
+              ? {
+                  ...applyPermissionWaitingState(
+                    old,
+                    persistedPermissionDenials
+                  ),
+                  last_run_status: 'resumable',
+                }
+              : old
+        )
+        queryClient.setQueryData<WorktreeSessions>(
+          chatQueryKeys.sessions(worktreeId),
+          old => {
+            if (!old) return old
+            return {
+              ...old,
+              sessions: old.sessions.map(session =>
+                session.id === sessionId
+                  ? {
+                      ...applyPermissionWaitingState(
+                        session,
+                        persistedPermissionDenials
+                      ),
+                      last_run_status: 'resumable' as const,
+                    }
+                  : session
+              ),
+            }
+          }
+        )
+        updateAllSessionsCache(queryClient, worktreeId, session =>
+          session.id === sessionId
+            ? {
+                ...applyPermissionWaitingState(
+                  session,
+                  persistedPermissionDenials
+                ),
+                last_run_status: 'resumable' as const,
+              }
+            : session
+        )
+
+        const { worktreePaths } = useChatStore.getState()
+        const wtPath = worktreePaths[worktreeId]
+        if (wtPath) {
+          persistencePromise = invoke('update_session_state', {
+            worktreeId,
+            worktreePath: wtPath,
+            sessionId,
+            pendingPermissionDenials: persistedPermissionDenials,
+            waitingForInput: true,
+            waitingForInputType: null,
+            isReviewing: false,
+          }).catch(err =>
+            logger.error(
+              '[useStreamingEvents] Failed to persist permission waiting state:',
+              err
+            )
+          )
         }
       } else if (event.payload.waiting_for_plan && !isCurrentlyViewing) {
         // Codex/Opencode plan-mode run completed with content — enter plan-waiting state.
@@ -663,6 +880,18 @@ export default function useStreamingEvents({
               ),
             }
           }
+        )
+        updateAllSessionsCache(queryClient, worktreeId, session =>
+          session.id === sessionId
+            ? {
+                ...session,
+                last_run_status: 'completed' as const,
+                waiting_for_input: true,
+                waiting_for_input_type: 'plan' as const,
+                is_reviewing: false,
+                pending_plan_message_id: planMessageId,
+              }
+            : session
         )
 
         // 3. Transition to waiting state in Zustand
@@ -778,6 +1007,18 @@ export default function useStreamingEvents({
             }
           }
         )
+        updateAllSessionsCache(queryClient, worktreeId, session =>
+          session.id === sessionId
+            ? {
+                ...session,
+                last_run_status: 'completed' as const,
+                waiting_for_input: false,
+                waiting_for_input_type: null,
+                is_reviewing: true,
+                pending_plan_message_id: undefined,
+              }
+            : session
+        )
 
         // 3. Batch-clear all streaming state in a single Zustand set() — one notification to subscribers
         completeSession(sessionId)
@@ -840,6 +1081,15 @@ export default function useStreamingEvents({
               ),
             }
           }
+        )
+        updateAllSessionsCache(queryClient, worktreeId, session =>
+          session.id === sessionId
+            ? {
+                ...session,
+                last_run_status: 'resumable' as const,
+                waiting_for_input: true,
+              }
+            : session
         )
       }
 

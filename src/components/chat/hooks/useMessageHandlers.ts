@@ -12,6 +12,7 @@ import {
 import { useChatStore } from '@/store/chat-store'
 import type {
   AskUserQuestionInput,
+  AllSessionsResponse,
   ChatMessage,
   EffortLevel,
   ExecutionMode,
@@ -300,6 +301,41 @@ export function useMessageHandlers({
           }
         }
       )
+      queryClient.setQueryData<AllSessionsResponse>(['all-sessions'], old => {
+        if (!old) return old
+
+        return {
+          ...old,
+          entries: old.entries.map(entry =>
+            entry.worktree_id === worktreeId
+              ? {
+                  ...entry,
+                  sessions: entry.sessions.map(session =>
+                    session.id === sessionId
+                      ? {
+                          ...session,
+                          waiting_for_input: false,
+                          waiting_for_input_type: null,
+                          pending_plan_message_id: undefined,
+                          ...(clearPermissionState
+                            ? {
+                                pending_permission_denials: [],
+                                denied_message_context: undefined,
+                              }
+                            : {}),
+                          ...(selectedExecutionMode
+                            ? {
+                                selected_execution_mode: selectedExecutionMode,
+                              }
+                            : {}),
+                        }
+                      : session
+                  ),
+                }
+              : entry
+          ),
+        }
+      })
 
       invoke('update_session_state', {
         worktreeId,

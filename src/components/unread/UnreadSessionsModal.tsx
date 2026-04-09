@@ -1,14 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
-import {
-  BellDot,
-  Loader2,
-  CheckCircle2,
-  AlertTriangle,
-  CirclePause,
-  HelpCircle,
-  FileText,
-  X,
-} from 'lucide-react'
+import { BellDot, Loader2, CheckCircle2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { invoke } from '@/lib/transport'
 import { useQueryClient } from '@tanstack/react-query'
@@ -17,36 +8,11 @@ import { useProjectsStore } from '@/store/projects-store'
 import { useChatStore } from '@/store/chat-store'
 import { useUIStore } from '@/store/ui-store'
 import type { Session } from '@/types/chat'
+import { getUnreadSessionStatus, isUnreadSession } from './unread-session-utils'
 
 interface UnreadSessionsDrawerProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-}
-
-/**
- * A session is "unread" if it has activity the user hasn't seen:
- * - Not archived
- * - Has a meaningful status (finished, waiting for input, or reviewing)
- * - Never opened, or opened before last update
- */
-function isUnread(session: Session): boolean {
-  if (session.archived_at) return false
-
-  const actionableStatuses = ['completed', 'cancelled', 'crashed']
-  const hasFinishedRun =
-    session.last_run_status &&
-    actionableStatuses.includes(session.last_run_status)
-  const isWaiting = session.waiting_for_input
-  const isReviewing = session.is_reviewing
-
-  // Must have some actionable state
-  if (!hasFinishedRun && !isWaiting && !isReviewing) return false
-
-  // Never opened → definitely unread
-  if (!session.last_opened_at) return true
-
-  // Opened before last update → unread
-  return session.last_opened_at < session.updated_at
 }
 
 /** Format a unix timestamp (seconds) to relative time like "2h ago" */
@@ -78,45 +44,6 @@ interface UnreadItem {
   worktreePath: string
 }
 
-/** Get display info for a session's current state */
-function getSessionStatus(session: Session) {
-  if (session.waiting_for_input) {
-    const isplan = session.waiting_for_input_type === 'plan'
-    return {
-      icon: isplan ? FileText : HelpCircle,
-      label: isplan ? 'Needs approval' : 'Needs input',
-      className: 'text-yellow-500',
-    }
-  }
-
-  const config: Record<
-    string,
-    { icon: typeof CheckCircle2; label: string; className: string }
-  > = {
-    completed: {
-      icon: CheckCircle2,
-      label: 'Completed',
-      className: 'text-green-500',
-    },
-    cancelled: {
-      icon: CirclePause,
-      label: 'Cancelled',
-      className: 'text-muted-foreground',
-    },
-    crashed: {
-      icon: AlertTriangle,
-      label: 'Crashed',
-      className: 'text-destructive',
-    },
-  }
-
-  if (session.last_run_status && config[session.last_run_status]) {
-    return config[session.last_run_status]
-  }
-
-  return null
-}
-
 export function UnreadSessionsDrawer({
   open,
   onOpenChange,
@@ -142,7 +69,7 @@ export function UnreadSessionsDrawer({
 
     for (const entry of allSessions.entries) {
       for (const session of entry.sessions) {
-        if (isUnread(session)) {
+        if (isUnreadSession(session)) {
           results.push({
             session,
             projectId: entry.project_id,
@@ -343,7 +270,7 @@ export function UnreadSessionsDrawer({
         ) : (
           <div className="max-h-[min(400px,60vh)] overflow-y-auto p-1">
             {unreadItems.map((item, idx) => {
-              const status = getSessionStatus(item.session)
+              const status = getUnreadSessionStatus(item.session)
               const StatusIcon = status?.icon ?? CheckCircle2
 
               return (

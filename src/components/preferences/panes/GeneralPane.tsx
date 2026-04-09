@@ -31,6 +31,7 @@ import {
   useClaudeCliStatus,
   useClaudeCliAuth,
   claudeCliQueryKeys,
+  resolveClaudeUpdateCommand,
 } from '@/services/claude-cli'
 import { useGhCliStatus, useGhCliAuth, ghCliQueryKeys } from '@/services/gh-cli'
 import {
@@ -618,6 +619,39 @@ export const GeneralPane: React.FC = () => {
     queryClient.invalidateQueries({ queryKey: claudeCliQueryKeys.auth() })
   }, [queryClient])
 
+  const handleClaudeInstallOrUpdate = useCallback(async () => {
+    try {
+      const resolved = await resolveClaudeUpdateCommand()
+      if (resolved) {
+        openCliLoginModal(
+          'claude',
+          resolved.command,
+          resolved.commandArgs,
+          'update'
+        )
+        return
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      toast.error('Failed to resolve Claude update command', {
+        description: message,
+      })
+      return
+    }
+
+    if (cliStatus?.installed && cliStatus.path) {
+      openCliLoginModal('claude', cliStatus.path, ['update'], 'update')
+      return
+    }
+
+    handleRefreshClaudeStatus()
+  }, [
+    cliStatus?.installed,
+    cliStatus?.path,
+    handleRefreshClaudeStatus,
+    openCliLoginModal,
+  ])
+
   const handleRefreshCodexStatus = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: codexCliQueryKeys.status() })
     queryClient.invalidateQueries({ queryKey: codexCliQueryKeys.auth() })
@@ -664,6 +698,11 @@ export const GeneralPane: React.FC = () => {
           }
         >
           <div className="space-y-4">
+            <ClaudeUpdateCommandField
+              preferences={preferences}
+              patchPreferences={patchPreferences}
+              queryClient={queryClient}
+            />
             <InlineField
               label={cliStatus?.installed ? 'Version' : 'Status'}
               description={
@@ -697,19 +736,35 @@ export const GeneralPane: React.FC = () => {
                   <Button
                     variant="outline"
                     size="sm"
+                    onClick={handleClaudeInstallOrUpdate}
+                  >
+                    Update
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
                     onClick={handleRefreshClaudeStatus}
                   >
                     Refresh
                   </Button>
                 </div>
               ) : (
-                <Button
-                  variant="outline"
-                  className="w-40"
-                  onClick={handleRefreshClaudeStatus}
-                >
-                  Refresh
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    className="w-40"
+                    onClick={handleClaudeInstallOrUpdate}
+                  >
+                    {preferences?.claude_update_command ? 'Install' : 'Refresh'}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRefreshClaudeStatus}
+                  >
+                    Refresh
+                  </Button>
+                </div>
               )}
             </InlineField>
           </div>
@@ -2158,6 +2213,73 @@ const OpenCodeLauncherCommandField: FC<{
         <Input
           className="w-80"
           placeholder="System default (opencode)"
+          value={localValue}
+          onChange={e => setLocalValue(e.target.value)}
+        />
+        <Button
+          size="sm"
+          onClick={handleSave}
+          disabled={!hasChanges || patchPreferences.isPending}
+        >
+          {patchPreferences.isPending && (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          )}
+          Save
+        </Button>
+      </div>
+    </InlineField>
+  )
+}
+
+const ClaudeUpdateCommandField: FC<{
+  preferences: AppPreferences | undefined
+  patchPreferences: ReturnType<typeof usePatchPreferences>
+  queryClient: ReturnType<typeof useQueryClient>
+}> = ({ preferences, patchPreferences, queryClient }) => {
+  const [localValue, setLocalValue] = useState(
+    preferences?.claude_update_command ?? ''
+  )
+
+  useEffect(() => {
+    setLocalValue(preferences?.claude_update_command ?? '')
+  }, [preferences?.claude_update_command])
+
+  const hasChanges = localValue !== (preferences?.claude_update_command ?? '')
+
+  const handleSave = useCallback(() => {
+    const trimmed = localValue.trim()
+    patchPreferences.mutate(
+      {
+        claude_update_command: trimmed.length > 0 ? trimmed : null,
+      },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({
+            queryKey: claudeCliQueryKeys.status(),
+          })
+          queryClient.invalidateQueries({
+            queryKey: claudeCliQueryKeys.auth(),
+          })
+        },
+      }
+    )
+  }, [localValue, patchPreferences, queryClient])
+
+  return (
+    <InlineField
+      label="Update command"
+      description={
+        <>
+          Optional command Jean should run to install or update Claude on your
+          host system. Leave blank to manage <code>claude</code> manually.
+          Example: <code>pnpm install -g @anthropic-ai/claude-code</code>.
+        </>
+      }
+    >
+      <div className="flex items-center gap-2">
+        <Input
+          className="w-80"
+          placeholder="Manual host install (claude)"
           value={localValue}
           onChange={e => setLocalValue(e.target.value)}
         />

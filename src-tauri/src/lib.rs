@@ -202,6 +202,8 @@ pub struct AppPreferences {
     #[serde(default = "default_opencode_model")]
     pub selected_opencode_model: String, // Default OpenCode model (provider/model)
     #[serde(default)]
+    pub claude_update_command: Option<String>, // Optional Claude install/update command, e.g. "pnpm install -g @anthropic-ai/claude-code"
+    #[serde(default)]
     pub opencode_launch_command: Option<String>, // Optional OpenCode launcher command, e.g. "dvx opencode"
     #[serde(default = "default_codex_reasoning_effort")]
     pub default_codex_reasoning_effort: String, // Codex reasoning effort: low, medium, high, xhigh
@@ -1236,6 +1238,7 @@ impl Default for AppPreferences {
             default_backend: default_backend(),
             selected_codex_model: default_codex_model(),
             selected_opencode_model: default_opencode_model(),
+            claude_update_command: None,
             opencode_launch_command: None,
             default_codex_reasoning_effort: default_codex_reasoning_effort(),
             codex_multi_agent_enabled: false,
@@ -1270,6 +1273,7 @@ fn normalize_optional_path(path: &mut Option<String>) {
 
 fn normalize_preferences(preferences: &mut AppPreferences) {
     normalize_optional_path(&mut preferences.git_cli_path);
+    normalize_optional_path(&mut preferences.claude_update_command);
     normalize_optional_path(&mut preferences.opencode_launch_command);
 }
 
@@ -3015,6 +3019,7 @@ pub fn run() {
             claude_cli::check_claude_cli_installed,
             claude_cli::check_claude_cli_auth,
             claude_cli::detect_claude_in_path,
+            claude_cli::resolve_claude_update_command,
             claude_cli::get_claude_usage,
             claude_cli::get_available_cli_versions,
             claude_cli::install_claude_cli,

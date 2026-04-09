@@ -12,7 +12,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
 use tokio::sync::Mutex as AsyncMutex;
 
-use super::config::resolve_cli_binary;
+use super::config::{resolve_cli_binary, resolve_update_command, ResolvedClaudeCommand};
 use crate::http_server::EmitExt;
 use crate::platform::silent_command;
 
@@ -154,6 +154,13 @@ pub async fn check_claude_cli_installed(app: AppHandle) -> Result<ClaudeCliStatu
         path: Some(binary_path.to_string_lossy().to_string()),
         supports_auth_command,
     })
+}
+
+#[tauri::command]
+pub async fn resolve_claude_update_command(
+    app: AppHandle,
+) -> Result<Option<ResolvedClaudeCommand>, String> {
+    resolve_update_command(&app)
 }
 
 /// npm package metadata for version listing

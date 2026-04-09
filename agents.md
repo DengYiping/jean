@@ -16,14 +16,9 @@ This fork also supports browser/headless access through the embedded HTTP/WebSoc
 
 When evaluating fork-specific behavior, use:
 
-- `origin/main` as the upstream baseline
-- `origin/ydeng-main` or the current branch as the fork baseline
+- `coollabsio/jean:main` as the upstream baseline
+- `ydeng-main` as the fork baseline
 
-Useful comparison command:
-
-```bash
-git log --oneline origin/main..origin/ydeng-main
-```
 
 ## Current Focus Areas
 
@@ -269,7 +264,7 @@ bun run check:all
 Guidance:
 
 - Run targeted tests while iterating
-- Run `bun run check:all` after significant changes
+- Run `bun run check:all` after code changes
 - E2E runs in browser mode with mocked Tauri transport, not in native Tauri
 - Adding a new backend command without an E2E mock will break tests
 

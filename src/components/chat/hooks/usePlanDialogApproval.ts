@@ -9,6 +9,7 @@ import {
 } from '@/services/chat'
 import { invoke } from '@/lib/transport'
 import { buildMcpConfigJson } from '@/services/mcp'
+import { usePreferences } from '@/services/preferences'
 import { generateId } from '@/lib/uuid'
 import type {
   ChatMessage,
@@ -67,6 +68,7 @@ export function usePlanDialogApproval({
   markAtBottom,
 }: UsePlanDialogApprovalParams) {
   const queryClient = useQueryClient()
+  const { data: preferences } = usePreferences()
 
   const approve = useCallback(
     (
@@ -185,6 +187,9 @@ export function usePlanDialogApproval({
         originalPlan: null,
         customPrompt,
         approvedPlanContent: updatedPlan,
+        configuredBuildPrompt: preferences?.magic_prompts?.plan_approval_build,
+        configuredYoloPrompt: preferences?.magic_prompts?.plan_approval_yolo,
+        configuredCodexPrompt: preferences?.magic_prompts?.plan_approval_codex,
       })
 
       setExecutionMode(activeSessionId, mode)
@@ -270,6 +275,7 @@ export function usePlanDialogApproval({
       mcpServersDataRef,
       enabledMcpServersRef,
       markAtBottom,
+      preferences,
     ]
   )
 

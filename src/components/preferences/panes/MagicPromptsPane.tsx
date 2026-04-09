@@ -45,6 +45,9 @@ import {
   DEFAULT_SESSION_RECAP_PROMPT,
   DEFAULT_PARALLEL_EXECUTION_PROMPT,
   DEFAULT_GLOBAL_SYSTEM_PROMPT,
+  DEFAULT_PLAN_APPROVAL_BUILD_PROMPT,
+  DEFAULT_PLAN_APPROVAL_YOLO_PROMPT,
+  DEFAULT_PLAN_APPROVAL_CODEX_PROMPT,
   DEFAULT_MAGIC_PROMPTS,
   DEFAULT_MAGIC_PROMPT_MODELS,
   DEFAULT_MAGIC_PROMPT_PROVIDERS,
@@ -465,6 +468,30 @@ const PROMPT_SECTIONS: PromptSection[] = [
           'System prompt appended to every chat session when enabled in Experimental settings. Encourages sub-agent parallelization.',
         variables: [],
         defaultValue: DEFAULT_PARALLEL_EXECUTION_PROMPT,
+      },
+      {
+        key: 'plan_approval_build',
+        label: 'Plan Approval (Build)',
+        description:
+          'Prompt sent when approving a plan in build mode for Claude and OpenCode sessions.',
+        variables: [],
+        defaultValue: DEFAULT_PLAN_APPROVAL_BUILD_PROMPT,
+      },
+      {
+        key: 'plan_approval_yolo',
+        label: 'Plan Approval (Yolo)',
+        description:
+          'Prompt sent when approving a plan in yolo mode for Claude and OpenCode sessions.',
+        variables: [],
+        defaultValue: DEFAULT_PLAN_APPROVAL_YOLO_PROMPT,
+      },
+      {
+        key: 'plan_approval_codex',
+        label: 'Plan Approval (Codex)',
+        description:
+          'Prompt sent when resuming execution after plan approval in Codex sessions.',
+        variables: [],
+        defaultValue: DEFAULT_PLAN_APPROVAL_CODEX_PROMPT,
       },
     ],
   },

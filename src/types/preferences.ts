@@ -755,6 +755,7 @@ export const magicPromptReasoningOptions: {
   { value: 'low', label: 'Low' },
   { value: 'medium', label: 'Medium' },
   { value: 'high', label: 'High' },
+  { value: 'max', label: 'Max' },
 ]
 
 /**
@@ -1149,7 +1150,12 @@ export function normalizeCodexModel(model: string): CodexModel {
 
 export type CodexReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh'
 
-export type MagicPromptReasoningEffort = 'low' | 'medium' | 'high' | null
+export type MagicPromptReasoningEffort =
+  | 'low'
+  | 'medium'
+  | 'high'
+  | 'max'
+  | null
 
 // =============================================================================
 // Magic Prompt Model (unified type for both Claude and Codex)

@@ -4,6 +4,7 @@ import {
   DEFAULT_MAGIC_PROMPT_EFFORTS,
   DEFAULT_MAGIC_PROMPT_MODELS,
   DEFAULT_MAGIC_PROMPT_PROVIDERS,
+  magicPromptReasoningOptions,
   isMagicPromptModelCompatibleWithBackend,
   OPENCODE_DEFAULT_MAGIC_PROMPT_EFFORTS,
   resolveMagicPromptBackend,
@@ -86,5 +87,14 @@ describe('magic prompt review comments defaults', () => {
     expect(OPENCODE_DEFAULT_MAGIC_PROMPT_EFFORTS.review_comments_effort).toBe(
       'medium'
     )
+  })
+})
+
+describe('magic prompt reasoning options', () => {
+  it('includes the max Claude effort level', () => {
+    expect(magicPromptReasoningOptions).toContainEqual({
+      value: 'max',
+      label: 'Max',
+    })
   })
 })

@@ -5,7 +5,7 @@
  * and the individual CLI reinstall modal.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { Download, Loader2, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -22,12 +22,18 @@ import { disposeTerminal, setOnStopped } from '@/lib/terminal-instances'
 export interface HostInstallStateProps {
   cliName: string
   binaryName: string
+  expectedCommand?: string
+  description?: ReactNode
+  buttonLabel?: string
   onRefresh: () => void
 }
 
 export function HostInstallState({
   cliName,
   binaryName,
+  expectedCommand,
+  description,
+  buttonLabel,
   onRefresh,
 }: HostInstallStateProps) {
   return (
@@ -35,8 +41,12 @@ export function HostInstallState({
       <div className="space-y-2">
         <p className="font-medium">Install {cliName} on your host system</p>
         <p className="text-sm text-muted-foreground">
-          Jean now uses the system <code>{binaryName}</code> binary directly and
-          does not install a separate bundled copy.
+          {description ?? (
+            <>
+              Jean now uses the system <code>{binaryName}</code> binary directly
+              and does not install a separate bundled copy.
+            </>
+          )}
         </p>
       </div>
 
@@ -45,12 +55,12 @@ export function HostInstallState({
           Expected command
         </p>
         <pre className="mt-2 overflow-x-auto rounded bg-background px-3 py-2 text-sm">
-          <code>{binaryName}</code>
+          <code>{expectedCommand ?? binaryName}</code>
         </pre>
       </div>
 
       <Button onClick={onRefresh} className="w-full" size="lg">
-        I installed it
+        {buttonLabel ?? 'I installed it'}
       </Button>
     </div>
   )
@@ -273,6 +283,11 @@ export interface AuthLoginStateProps {
   onComplete: () => void
   onRetry?: () => void
   onSkip?: () => void
+  title?: string
+  description?: string
+  failureTitle?: string
+  completeLabel?: string
+  retryLabel?: string
 }
 
 export function AuthLoginState({
@@ -283,6 +298,11 @@ export function AuthLoginState({
   onComplete,
   onRetry,
   onSkip,
+  title,
+  description,
+  failureTitle,
+  completeLabel,
+  retryLabel,
 }: AuthLoginStateProps) {
   const observerRef = useRef<ResizeObserver | null>(null)
   const initialized = useRef(false)
@@ -361,9 +381,9 @@ export function AuthLoginState({
   return (
     <div className="space-y-4">
       <div className="text-center">
-        <p className="font-medium">{cliName} Login Required</p>
+        <p className="font-medium">{title ?? `${cliName} Login Required`}</p>
         <p className="text-sm text-muted-foreground mt-1">
-          Complete the authentication process below.
+          {description ?? 'Complete the authentication process below.'}
         </p>
       </div>
 
@@ -374,7 +394,7 @@ export function AuthLoginState({
       {exitStatus && (
         <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3">
           <p className="text-sm font-medium text-destructive">
-            Login process exited unexpectedly
+            {failureTitle ?? 'Login process exited unexpectedly'}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
             {exitStatus.signal
@@ -388,7 +408,7 @@ export function AuthLoginState({
         {exitStatus ? (
           <>
             <Button onClick={onComplete} className="flex-1" size="lg">
-              Check Login Status
+              {completeLabel ?? 'Check Login Status'}
             </Button>
             {onRetry && (
               <Button
@@ -397,13 +417,13 @@ export function AuthLoginState({
                 className="flex-1"
                 size="lg"
               >
-                Retry Login
+                {retryLabel ?? 'Retry Login'}
               </Button>
             )}
           </>
         ) : (
           <Button onClick={onComplete} className="flex-1" size="lg">
-            I&apos;ve Completed Login
+            {completeLabel ?? "I've Completed Login"}
           </Button>
         )}
         {onSkip && (

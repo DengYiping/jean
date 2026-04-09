@@ -17,6 +17,7 @@ import type {
   ReleaseInfo,
   InstallProgress,
   ClaudeUsageSnapshot,
+  ResolvedClaudeCommand,
 } from '@/types/claude-cli'
 
 import { hasBackend } from '@/lib/environment'
@@ -248,6 +249,24 @@ export function useInstallClaudeCli() {
       toast.error('Failed to install Claude CLI', { description: message })
     },
   })
+}
+
+export async function resolveClaudeUpdateCommand(): Promise<ResolvedClaudeCommand | null> {
+  if (!isTauri()) return null
+
+  const result = await invoke<{
+    command: string
+    commandArgs: string[]
+    display: string
+  } | null>('resolve_claude_update_command')
+
+  return result
+    ? {
+        command: result.command,
+        commandArgs: result.commandArgs,
+        display: result.display,
+      }
+    : null
 }
 
 /**

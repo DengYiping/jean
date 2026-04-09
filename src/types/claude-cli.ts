@@ -66,3 +66,9 @@ export interface ClaudeUsageSnapshot {
   extraUsageLimit: number | null
   fetchedAt: number
 }
+
+export interface ResolvedClaudeCommand {
+  command: string
+  commandArgs: string[]
+  display: string
+}

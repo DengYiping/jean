@@ -11,6 +11,7 @@ import {
   useClaudeCliStatus,
   useAvailableCliVersions,
   useClaudePathDetection,
+  resolveClaudeUpdateCommand,
 } from '@/services/claude-cli'
 import {
   useGhCliStatus,
@@ -321,7 +322,57 @@ function showUpdateToasts(updates: CliUpdateInfo[]) {
       action: {
         label: 'Update',
         onClick: () => {
-          if (isPathMode && isHomebrew) {
+          if (update.type === 'claude') {
+            void resolveClaudeUpdateCommand()
+              .then(resolved => {
+                if (resolved) {
+                  openCliLoginModal(
+                    'claude',
+                    resolved.command,
+                    resolved.commandArgs,
+                    'update'
+                  )
+                  return
+                }
+
+                if (isPathMode && isHomebrew) {
+                  const brewPkg = CLI_BINARY_NAMES[update.type]
+                  logger.debug(
+                    `[CliVersionCheck] Homebrew update: brew upgrade ${brewPkg}`
+                  )
+                  openCliLoginModal(
+                    update.type,
+                    'brew',
+                    ['upgrade', brewPkg],
+                    'update'
+                  )
+                } else if (isPathMode && update.cliPath) {
+                  const pathUpdateArgs = getPathModeUpdateArgs(update.type)
+                  if (pathUpdateArgs) {
+                    logger.debug(
+                      `[CliVersionCheck] PATH-mode update: type=${update.type} path=${update.cliPath} args=${pathUpdateArgs}`
+                    )
+                    openCliLoginModal(
+                      update.type,
+                      update.cliPath,
+                      pathUpdateArgs,
+                      'update'
+                    )
+                  } else {
+                    openCliUpdateModal(update.type)
+                  }
+                } else {
+                  openCliUpdateModal(update.type)
+                }
+              })
+              .catch(error => {
+                const message =
+                  error instanceof Error ? error.message : String(error)
+                toast.error('Failed to resolve Claude update command', {
+                  description: message,
+                })
+              })
+          } else if (isPathMode && isHomebrew) {
             const brewPkg = CLI_BINARY_NAMES[update.type]
             logger.debug(
               `[CliVersionCheck] Homebrew update: brew upgrade ${brewPkg}`

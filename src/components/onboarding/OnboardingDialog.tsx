@@ -16,7 +16,11 @@ import {
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { useUIStore } from '@/store/ui-store'
-import { useClaudeCliSetup, useClaudeCliAuth } from '@/services/claude-cli'
+import {
+  useClaudeCliSetup,
+  useClaudeCliAuth,
+  resolveClaudeUpdateCommand,
+} from '@/services/claude-cli'
 import { useCodexCliSetup, useCodexCliAuth } from '@/services/codex-cli'
 import {
   useOpenCodeCliSetup,
@@ -33,6 +37,7 @@ import {
 } from './CliSetupComponents'
 import { toast } from 'sonner'
 import { usePreferences, usePatchPreferences } from '@/services/preferences'
+import type { ResolvedClaudeCommand } from '@/types/claude-cli'
 
 type AIBackend = 'claude' | 'codex' | 'opencode'
 type CliType = AIBackend | 'gh'
@@ -150,6 +155,9 @@ function OnboardingDialogContent() {
   const [codexInstallFailed, setCodexInstallFailed] = useState(false)
   const [opencodeInstallFailed, setOpencodeInstallFailed] = useState(false)
   const [ghInstallFailed, setGhInstallFailed] = useState(false)
+  const [claudeInstallCommand, setClaudeInstallCommand] =
+    useState<ResolvedClaudeCommand | null>(null)
+  const [claudeInstallAttempt, setClaudeInstallAttempt] = useState(0)
   const [claudeLoginAttempt, setClaudeLoginAttempt] = useState(0)
   const [codexLoginAttempt, setCodexLoginAttempt] = useState(0)
   const [opencodeLoginAttempt, setOpencodeLoginAttempt] = useState(0)
@@ -163,6 +171,7 @@ function OnboardingDialogContent() {
     () => Date.now(),
     []
   )
+  const claudeInstallTerminalId = `onboarding-claude-install-${loginSessionSeed}-${claudeInstallAttempt}`
   const claudeLoginTerminalId = `onboarding-claude-login-${loginSessionSeed}-${claudeLoginAttempt}`
   const codexLoginTerminalId = `onboarding-codex-login-${loginSessionSeed}-${codexLoginAttempt}`
   const opencodeLoginTerminalId = `onboarding-opencode-login-${loginSessionSeed}-${opencodeLoginAttempt}`
@@ -311,6 +320,8 @@ function OnboardingDialogContent() {
       setCodexInstallFailed(false)
       setOpencodeInstallFailed(false)
       setGhInstallFailed(false)
+      setClaudeInstallCommand(null)
+      setClaudeInstallAttempt(0)
       setClaudeLoginAttempt(0)
       setCodexLoginAttempt(0)
       setOpencodeLoginAttempt(0)
@@ -479,18 +490,48 @@ function OnboardingDialogContent() {
     getNextStepAfterBackends,
   ])
 
-  const handleClaudeInstall = useCallback(() => {
-    claudeSetup.refetchStatus().then(result => {
-      if (result.data?.installed) {
-        setStep('claude-auth-checking')
-        claudeAuth.refetch()
+  const handleClaudeInstall = useCallback(async () => {
+    try {
+      const resolved = await resolveClaudeUpdateCommand()
+      if (resolved) {
+        setClaudeInstallCommand(resolved)
+        setStep('claude-installing')
         return
       }
-      toast.error(
-        'Claude CLI not found in PATH. Install `claude` on your system first.'
-      )
-    })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      toast.error('Failed to resolve Claude update command', {
+        description: message,
+      })
+      return
+    }
+
+    const result = await claudeSetup.refetchStatus()
+    if (result.data?.installed) {
+      setStep('claude-auth-checking')
+      claudeAuth.refetch()
+      return
+    }
+    toast.error(
+      'Claude CLI not found in PATH. Install `claude` on your system first.'
+    )
   }, [claudeSetup, claudeAuth])
+
+  const handleClaudeInstallComplete = useCallback(async () => {
+    const result = await claudeSetup.refetchStatus()
+    if (result.data?.installed) {
+      setStep('claude-auth-checking')
+      await claudeAuth.refetch()
+      return
+    }
+
+    toast.error('Claude CLI was not found after running the install command.')
+    setStep('claude-setup')
+  }, [claudeSetup, claudeAuth])
+
+  const handleClaudeInstallRetry = useCallback(() => {
+    setClaudeInstallAttempt(prev => prev + 1)
+  }, [])
 
   const handleCodexInstall = useCallback(() => {
     codexSetup.refetchStatus().then(result => {
@@ -755,7 +796,6 @@ function OnboardingDialogContent() {
 
     if (
       step === 'claude-setup' ||
-      step === 'claude-installing' ||
       step === 'codex-setup' ||
       step === 'codex-installing' ||
       step === 'opencode-setup' ||
@@ -768,6 +808,7 @@ function OnboardingDialogContent() {
     }
 
     if (
+      (step === 'claude-installing' && claudeInstallCommand) ||
       step === 'claude-auth-checking' ||
       step === 'claude-auth-login' ||
       step === 'codex-auth-checking' ||
@@ -776,8 +817,14 @@ function OnboardingDialogContent() {
       step === 'opencode-auth-login'
     ) {
       return {
-        title: `Authenticate ${backendName}`,
-        description: `${backendName} requires authentication to function.`,
+        title:
+          step === 'claude-installing' && claudeInstallCommand
+            ? 'Install Claude CLI'
+            : `Authenticate ${backendName}`,
+        description:
+          step === 'claude-installing' && claudeInstallCommand
+            ? 'Run the configured Claude install/update command below.'
+            : `${backendName} requires authentication to function.`,
       }
     }
 
@@ -883,6 +930,20 @@ function OnboardingDialogContent() {
                 ghVersion={ghSetup.status?.version}
                 onContinue={handleComplete}
               />
+            ) : step === 'claude-installing' && claudeInstallCommand ? (
+              <AuthLoginState
+                cliName="Claude CLI"
+                terminalId={claudeInstallTerminalId}
+                command={claudeInstallCommand.command}
+                commandArgs={claudeInstallCommand.commandArgs}
+                onComplete={handleClaudeInstallComplete}
+                onRetry={handleClaudeInstallRetry}
+                title="Claude install command"
+                description="Run the configured Claude install/update command below."
+                failureTitle="Install command exited unexpectedly"
+                completeLabel="Check Claude Status"
+                retryLabel="Retry Command"
+              />
             ) : step === 'claude-installing' && cliData ? (
               <InstallingState
                 cliName="Claude CLI"
@@ -951,6 +1012,23 @@ function OnboardingDialogContent() {
               <HostInstallState
                 cliName="Claude CLI"
                 binaryName="claude"
+                expectedCommand={
+                  preferences?.claude_update_command?.trim() || undefined
+                }
+                description={
+                  preferences?.claude_update_command ? (
+                    <>
+                      Jean can run your configured Claude install/update command
+                      for you, then verify that <code>claude</code> is available
+                      on your host system.
+                    </>
+                  ) : undefined
+                }
+                buttonLabel={
+                  preferences?.claude_update_command
+                    ? 'Run install command'
+                    : undefined
+                }
                 onRefresh={handleClaudeInstall}
               />
             ) : step === 'codex-setup' ? (

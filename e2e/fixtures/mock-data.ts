@@ -103,6 +103,7 @@ export const mockPreferences = {
   web_access_token: '',
   mcp_servers_enabled: false,
   experimental_features: {},
+  claude_update_command: null,
 }
 
 export const mockUIState = {

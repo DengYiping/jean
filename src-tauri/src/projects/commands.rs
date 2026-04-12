@@ -129,13 +129,7 @@ fn now() -> u64 {
 
 fn sanitize_folder_name(name: &str) -> String {
     name.chars()
-        .map(|c| {
-            if c.is_alphanumeric() || c == '-' {
-                c
-            } else {
-                '_'
-            }
-        })
+        .map(|c| if c.is_alphanumeric() || c == '-' { c } else { '_' })
         .collect()
 }
 
@@ -10607,7 +10601,7 @@ Body
     #[test]
     fn test_parse_command_content_with_allowed_tools_string_ignores_empty_entries() {
         let content = r#"---
-allowed-tools: Read, , Bash(git status:*),   
+allowed-tools: Read, , Bash(git status:*),
 ---
 
 Body

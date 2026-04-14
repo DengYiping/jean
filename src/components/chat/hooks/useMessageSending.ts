@@ -120,7 +120,8 @@ export function useMessageSending({
       clearToolCalls(activeSessionId)
       clearStreamingContentBlocks(activeSessionId)
 
-      setLastSentMessage(activeSessionId, queuedMsg.message)
+      const fullMessage = buildQueuedMessageWithRefs(queuedMsg)
+      setLastSentMessage(activeSessionId, fullMessage)
       setError(activeSessionId, null)
       // NOTE: addSendingSession is called in onMutate (chat.ts) so it batches
       // with the optimistic user message in a single React render pass.
@@ -141,7 +142,6 @@ export function useMessageSending({
           ? [...new Set(mergedAllowedTools)]
           : undefined
 
-      const fullMessage = buildQueuedMessageWithRefs(queuedMsg)
       const resolved = resolveCustomProfile(queuedMsg.model, queuedMsg.provider)
 
       sendMessage.mutate(

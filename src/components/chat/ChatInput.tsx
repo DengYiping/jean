@@ -25,7 +25,12 @@ import {
 import { queryClient } from '@/lib/query-client'
 import { fileQueryKeys } from '@/services/files'
 import type { WorktreeFile } from '@/types/chat'
-import { SlashPopover, type SlashPopoverHandle } from './SlashPopover'
+import {
+  SlashPopover,
+  type SlashPopoverHandle,
+  type SlashPopoverMode,
+} from './SlashPopover'
+import { stripLeadingInjectedSkillTokens } from '@/lib/skill-prompt'
 
 import { MAX_IMAGE_SIZE, ALLOWED_IMAGE_TYPES } from './image-constants'
 
@@ -90,8 +95,10 @@ export const ChatInput = memo(function ChatInput({
   } | null>(null)
   const [atTriggerIndex, setAtTriggerIndex] = useState<number | null>(null)
 
-  // Slash popover state (for / commands and skills)
+  // Trigger popover state (`/` commands, `$` skills)
   const [slashPopoverOpen, setSlashPopoverOpen] = useState(false)
+  const [slashPopoverMode, setSlashPopoverMode] =
+    useState<SlashPopoverMode | null>(null)
   const [slashQuery, setSlashQuery] = useState('')
   const [slashAnchor, setSlashAnchor] = useState<{
     top: number
@@ -308,16 +315,21 @@ export const ChatInput = memo(function ChatInput({
         }
       }
 
-      // Detect / trigger for slash commands and skills (only if @ popover not open)
+      // Detect `$` skill and `/` command triggers (only if @ popover not open)
       if (!fileMentionOpen) {
-        if (prevChar === '/') {
-          // Check that it's at start or preceded by whitespace
-          const charBeforeSlash = value[cursorPos - 2]
-          if (
+        if (prevChar === '$' || prevChar === '/') {
+          const charBeforeTrigger = value[cursorPos - 2]
+          const atBoundary =
             cursorPos === 1 ||
-            charBeforeSlash === ' ' ||
-            charBeforeSlash === '\n'
-          ) {
+            charBeforeTrigger === ' ' ||
+            charBeforeTrigger === '\n'
+          const isSlashCommandTrigger =
+            prevChar === '/' &&
+            backend === 'claude' &&
+            value.slice(0, cursorPos - 1).trim() === ''
+
+          if (atBoundary && (prevChar === '$' || isSlashCommandTrigger)) {
+            setSlashPopoverMode(prevChar === '$' ? 'skill' : 'command')
             setSlashTriggerIndex(cursorPos - 1)
             setSlashQuery('')
             setSlashPopoverOpen(true)
@@ -326,16 +338,20 @@ export const ChatInput = memo(function ChatInput({
             setSlashAnchor({ top: 0, left: 16 })
           }
         } else if (slashTriggerIndex !== null && slashPopoverOpen) {
-          // Continuing to type after /, update query
+          // Continuing to type after the active trigger, update query
+          const triggerChar = value[slashTriggerIndex]
           const query = value.slice(slashTriggerIndex + 1, cursorPos)
 
-          // Close if user typed space, newline, or backspaced past /
+          // Close if user typed space, newline, backspaced past the trigger,
+          // or edited away the trigger itself.
           if (
             query.includes(' ') ||
             query.includes('\n') ||
-            cursorPos <= slashTriggerIndex
+            cursorPos <= slashTriggerIndex ||
+            (triggerChar !== '$' && triggerChar !== '/')
           ) {
             setSlashPopoverOpen(false)
+            setSlashPopoverMode(null)
             setSlashTriggerIndex(null)
             setSlashQuery('')
           } else {
@@ -347,6 +363,7 @@ export const ChatInput = memo(function ChatInput({
     [
       activeSessionId,
       atTriggerIndex,
+      backend,
       fileMentionOpen,
       slashTriggerIndex,
       slashPopoverOpen,
@@ -380,7 +397,7 @@ export const ChatInput = memo(function ChatInput({
         }
       }
 
-      // When slash popover is open, handle navigation
+      // When the trigger popover is open, handle navigation
       if (slashPopoverOpen) {
         switch (e.key) {
           case 'ArrowDown':
@@ -399,6 +416,7 @@ export const ChatInput = memo(function ChatInput({
           case 'Escape':
             e.preventDefault()
             setSlashPopoverOpen(false)
+            setSlashPopoverMode(null)
             setSlashTriggerIndex(null)
             setSlashQuery('')
             return
@@ -493,15 +511,19 @@ export const ChatInput = memo(function ChatInput({
 
             // Insert the plain text into the textarea first
             if (text && inputRef.current) {
+              const restoredText = stripLeadingInjectedSkillTokens(
+                text,
+                metadata.skills ?? []
+              )
               const textarea = inputRef.current
               const start = textarea.selectionStart
               const end = textarea.selectionEnd
               const current = textarea.value
               textarea.value =
-                current.slice(0, start) + text + current.slice(end)
+                current.slice(0, start) + restoredText + current.slice(end)
               valueRef.current = textarea.value
               textarea.selectionStart = textarea.selectionEnd =
-                start + text.length
+                start + restoredText.length
               // Save draft
               useChatStore
                 .getState()
@@ -860,7 +882,7 @@ export const ChatInput = memo(function ChatInput({
     [activeSessionId, atTriggerIndex, inputRef]
   )
 
-  // Handle skill selection from / mention popover
+  // Handle skill selection from the `$` popover
   const handleSkillSelect = useCallback(
     (skill: PendingSkill) => {
       if (!activeSessionId) return
@@ -868,7 +890,7 @@ export const ChatInput = memo(function ChatInput({
       const { addPendingSkill } = useChatStore.getState()
       addPendingSkill(activeSessionId, skill)
 
-      // Remove the /query text from input (skill shows as badge only, like images)
+      // Remove the `$query` text from input (skill shows as a chip only)
       const triggerIndex = slashTriggerIndex
       if (triggerIndex !== null && inputRef.current) {
         const currentValue = valueRef.current
@@ -881,13 +903,13 @@ export const ChatInput = memo(function ChatInput({
         inputRef.current.value = newValue
         valueRef.current = newValue
 
-        // Cancel pending debounced save (it still has the old "/query" value)
+        // Cancel pending debounced save (it still has the old trigger query value)
         // and sync cleaned value to store immediately
         clearTimeout(debouncedSaveRef.current)
         useChatStore.getState().setInputDraft(activeSessionId, newValue)
         onHasValueChangeRef.current?.(Boolean(newValue.trim()))
 
-        // Set cursor position where the slash was
+        // Set cursor position where the trigger was
         requestAnimationFrame(() => {
           inputRef.current?.setSelectionRange(triggerIndex, triggerIndex)
         })
@@ -895,6 +917,7 @@ export const ChatInput = memo(function ChatInput({
 
       // Reset slash popover state
       setSlashPopoverOpen(false)
+      setSlashPopoverMode(null)
       setSlashTriggerIndex(null)
       setSlashQuery('')
 
@@ -904,7 +927,7 @@ export const ChatInput = memo(function ChatInput({
     [activeSessionId, slashTriggerIndex, inputRef]
   )
 
-  // Handle command selection from / mention popover (executes immediately)
+  // Handle command selection from the `/` popover (executes immediately)
   const handleCommandSelect = useCallback(
     (command: ClaudeCommand) => {
       // Cancel pending debounced save (it still has the old "/command" value)
@@ -921,6 +944,7 @@ export const ChatInput = memo(function ChatInput({
 
       // Reset slash popover state
       setSlashPopoverOpen(false)
+      setSlashPopoverMode(null)
       setSlashTriggerIndex(null)
       setSlashQuery('')
       setShowHint(true)
@@ -930,13 +954,6 @@ export const ChatInput = memo(function ChatInput({
     },
     [activeSessionId, inputRef, onCommandExecute]
   )
-
-  // Determine if slash is at prompt start (for enabling commands)
-  const isSlashAtPromptStart =
-    slashTriggerIndex !== null &&
-    (slashTriggerIndex === 0 ||
-      // eslint-disable-next-line react-hooks/refs
-      valueRef.current.slice(0, slashTriggerIndex).trim() === '')
 
   return (
     <div className="relative">
@@ -985,16 +1002,16 @@ export const ChatInput = memo(function ChatInput({
         handleRef={fileMentionHandleRef}
       />
 
-      {/* Slash popover (/ commands and skills) */}
+      {/* Trigger popover (`/` commands, `$` skills) */}
       <SlashPopover
         open={slashPopoverOpen}
+        mode={slashPopoverMode ?? 'skill'}
         onOpenChange={setSlashPopoverOpen}
         onSelectSkill={handleSkillSelect}
         onSelectCommand={handleCommandSelect}
         searchQuery={slashQuery}
         anchorPosition={slashAnchor}
         containerRef={formRef}
-        isAtPromptStart={isSlashAtPromptStart}
         backend={backend}
         worktreePath={activeWorktreePath ?? null}
         handleRef={slashPopoverHandleRef}

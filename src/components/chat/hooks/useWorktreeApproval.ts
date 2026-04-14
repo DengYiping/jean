@@ -13,6 +13,7 @@ import {
   chatQueryKeys,
 } from '@/services/chat'
 import { invoke, listen } from '@/lib/transport'
+import { appendSkillPromptContext } from '@/lib/skill-prompt'
 import type {
   EffortLevel,
   Session,
@@ -354,15 +355,10 @@ export function useWorktreeApproval({
         : ''
       let message = `${configPrefix}Execute this plan. Implement all changes described.${planFileLine}\n\n<plan>\n${planContent}\n</plan>`
 
-      if (skillPaths.length > 0) {
-        const skillRefs = skillPaths
-          .map(
-            p =>
-              `[Skill: ${p} - Read and use this skill to guide your response]`
-          )
-          .join('\n')
-        message = `${message}\n\n${skillRefs}`
-      }
+      message = appendSkillPromptContext(
+        message,
+        skillPaths.map(path => ({ path }))
+      )
       if (imagePaths.length > 0) {
         const imageRefs = imagePaths
           .map(

@@ -27,7 +27,7 @@ interface SkillBadgeProps {
 }
 
 /**
- * Displays a skill mention as a clickable badge that opens a preview dialog
+ * Displays a skill mention as a clickable badge that opens a preview dialog.
  * Used in chat input for pending skills and in messages for sent skills
  */
 export function SkillBadge({ skill, onRemove, compact }: SkillBadgeProps) {
@@ -88,7 +88,7 @@ export function SkillBadge({ skill, onRemove, compact }: SkillBadgeProps) {
                 compact ? 'text-[10px]' : 'text-xs'
               )}
             >
-              /{skill.name}
+              ${skill.name}
             </span>
             {onRemove && (
               <Tooltip>
@@ -121,7 +121,7 @@ export function SkillBadge({ skill, onRemove, compact }: SkillBadgeProps) {
             Skill: {skill.name}
           </DialogTitle>
           <DialogDescription className="sr-only">
-            Preview of the skill definition for slash command {skill.name}.
+            Preview of the skill definition for skill reference {skill.name}.
           </DialogDescription>
           <p className="text-xs text-muted-foreground truncate">{skill.path}</p>
           <ScrollArea className="h-[calc(85vh-6rem)] mt-2">

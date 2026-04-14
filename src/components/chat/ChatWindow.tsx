@@ -75,6 +75,10 @@ import type {
 } from '@/types/chat'
 import { isAskUserQuestion } from '@/types/chat'
 import { getSkillName } from '@/lib/path-utils'
+import {
+  appendSkillPromptContext,
+  stripLeadingInjectedSkillTokens,
+} from '@/lib/skill-prompt'
 import { resolveParallelExecutionPromptForSession } from '@/lib/parallel-execution-prompt'
 import { cn } from '@/lib/utils'
 import { PermissionApproval } from './PermissionApproval'
@@ -1773,7 +1777,7 @@ export function ChatWindow({
 
   const buildMessageWithPendingRefs = useCallback(
     (snapshot: PendingInputSnapshot): string => {
-      let message = snapshot.message
+      let message = appendSkillPromptContext(snapshot.message, snapshot.skills)
 
       if (snapshot.files.length > 0) {
         const fileRefs = snapshot.files
@@ -1784,16 +1788,6 @@ export function ChatWindow({
           )
           .join('\n')
         message = message ? `${message}\n\n${fileRefs}` : fileRefs
-      }
-
-      if (snapshot.skills.length > 0) {
-        const skillRefs = snapshot.skills
-          .map(
-            skill =>
-              `[Skill: ${skill.path} - Read and use this skill to guide your response]`
-          )
-          .join('\n')
-        message = message ? `${message}\n\n${skillRefs}` : skillRefs
       }
 
       if (snapshot.images.length > 0) {
@@ -2475,19 +2469,21 @@ export function ChatWindow({
   // Copy a sent user message to the clipboard with attachment metadata
   // When pasted back, ChatInput detects the custom format and restores attachments
   const handleCopyToInput = useCallback(async (message: ChatMessage) => {
-    // Extract clean text (without attachment markers)
-    const cleanText = stripAllMarkers(message.content)
-
-    // Extract attachment paths from the raw message content
-    const imagePaths = extractImagePaths(message.content)
-    const textFilePaths = extractTextFilePaths(message.content)
-    const fileMentionPaths = extractFileMentionPaths(message.content)
     const skillPaths = extractSkillPaths(message.content)
 
     // Build metadata for skill names
     const skills = skillPaths.map(path => {
       return { name: getSkillName(path), path }
     })
+    const cleanText = stripLeadingInjectedSkillTokens(
+      stripAllMarkers(message.content),
+      skills
+    )
+
+    // Extract attachment paths from the raw message content
+    const imagePaths = extractImagePaths(message.content)
+    const textFilePaths = extractTextFilePaths(message.content)
+    const fileMentionPaths = extractFileMentionPaths(message.content)
 
     // Build JSON metadata for attachments
     const metadata = JSON.stringify({

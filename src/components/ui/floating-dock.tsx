@@ -83,9 +83,7 @@ const CANVAS_HINTS: KeybindingHint[] = [
 
 interface UsageTotals {
   input: number
-  output: number
-  cacheRead: number
-  cacheCreation: number
+  cachedInput: number
   totalTokens: number
 }
 
@@ -259,7 +257,7 @@ export function FloatingDock() {
 
   const contextMeter = useMemo(() => {
     if (!threadTokenUsage?.modelContextWindow) return null
-    const usedTokens = activeUsageEntry.input + activeUsageEntry.output
+    const usedTokens = activeUsageEntry.totalTokens
     const pct = computeContextPercent(
       usedTokens,
       threadTokenUsage.modelContextWindow
@@ -269,7 +267,7 @@ export function FloatingDock() {
       used: usedTokens,
       window: threadTokenUsage.modelContextWindow,
     }
-  }, [activeUsageEntry.input, activeUsageEntry.output, threadTokenUsage])
+  }, [activeUsageEntry.totalTokens, threadTokenUsage])
 
   const usageBadge = useMemo(
     () => ({
@@ -632,12 +630,9 @@ export function FloatingDock() {
             <DropdownMenuItem disabled>
               <div className="flex min-w-0 flex-col text-[11px] text-muted-foreground">
                 <span>In: {formatTokens(activeUsageEntry.input)}</span>
-                <span>Out: {formatTokens(activeUsageEntry.output)}</span>
-                {(activeUsageEntry.cacheRead > 0 ||
-                  activeUsageEntry.cacheCreation > 0) && (
+                {activeUsageEntry.cachedInput > 0 && (
                   <span>
-                    Cache: {formatTokens(activeUsageEntry.cacheRead)} read /{' '}
-                    {formatTokens(activeUsageEntry.cacheCreation)} write
+                    Cached: {formatTokens(activeUsageEntry.cachedInput)}
                   </span>
                 )}
               </div>
@@ -674,15 +669,11 @@ export function getFloatingDockUsageTotals(
 ): UsageTotals {
   if (backend === 'codex' && threadTokenUsage) {
     const input = threadTokenUsage.last.inputTokens
-    const output = threadTokenUsage.last.outputTokens
-    const cacheRead = threadTokenUsage.last.cachedInputTokens
-    const cacheCreation = 0
+    const cachedInput = threadTokenUsage.last.cachedInputTokens
     return {
       input,
-      output,
-      cacheRead,
-      cacheCreation,
-      totalTokens: input + output + cacheRead + cacheCreation,
+      cachedInput,
+      totalTokens: input + cachedInput,
     }
   }
 
@@ -690,14 +681,11 @@ export function getFloatingDockUsageTotals(
     (totals, message) => {
       if (!message.usage) return totals
       totals.input += message.usage.input_tokens
-      totals.output += message.usage.output_tokens
-      totals.cacheRead += message.usage.cache_read_input_tokens ?? 0
-      totals.cacheCreation += message.usage.cache_creation_input_tokens ?? 0
-      totals.totalTokens =
-        totals.input + totals.output + totals.cacheRead + totals.cacheCreation
+      totals.cachedInput += message.usage.cache_read_input_tokens ?? 0
+      totals.totalTokens = totals.input + totals.cachedInput
       return totals
     },
-    { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, totalTokens: 0 }
+    { input: 0, cachedInput: 0, totalTokens: 0 }
   )
 
   return sessionTotals

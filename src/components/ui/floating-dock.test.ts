@@ -48,10 +48,8 @@ describe('getFloatingDockUsageTotals', () => {
 
     expect(totals).toEqual({
       input: 400,
-      output: 1_200,
-      cacheRead: 66_900,
-      cacheCreation: 0,
-      totalTokens: 68_500,
+      cachedInput: 66_900,
+      totalTokens: 67_300,
     })
   })
 
@@ -76,17 +74,15 @@ describe('getFloatingDockUsageTotals', () => {
 
     expect(totals).toEqual({
       input: 60_000,
-      output: 1_200,
-      cacheRead: 58_000,
-      cacheCreation: 200,
-      totalTokens: 119_400,
+      cachedInput: 58_000,
+      totalTokens: 118_000,
     })
   })
 })
 
 describe('computeContextPercent', () => {
-  it('uses only in plus out tokens against the context window', () => {
-    expect(computeContextPercent(1_600, 997_500)).toBe(100)
+  it('uses only input plus cached input against the context window', () => {
+    expect(computeContextPercent(67_300, 997_500)).toBe(93)
   })
 
   it('clamps at zero when usage exceeds the context window', () => {

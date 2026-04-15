@@ -750,4 +750,66 @@ describe('useStreamingEvents question notifications', () => {
     })
     unmount()
   })
+
+  it('keeps earlier codex approvals visible when a later denial resolves first', async () => {
+    useChatStore.setState({
+      worktreePaths: { 'worktree-1': '/tmp/worktree-1' },
+      lastSentMessages: { 'session-1': 'run the command' },
+      selectedModels: { 'session-1': 'gpt-5.4' },
+      executionModes: { 'session-1': 'build' },
+      thinkingLevels: { 'session-1': 'off' },
+      activeToolCalls: {
+        'session-1': [
+          { id: 'tool-1', name: 'Bash', input: { command: 'echo one' } },
+          { id: 'tool-2', name: 'Bash', input: { command: 'echo two' } },
+        ],
+      },
+    })
+
+    const { handlers, queryClient, unmount } = await setupHook()
+
+    await act(async () => {
+      handlers.get('chat:permission_denied')?.({
+        payload: {
+          session_id: 'session-1',
+          worktree_id: 'worktree-1',
+          denials: [createCodexDenial('tool-1', 36)],
+        },
+      })
+      handlers.get('chat:permission_denied')?.({
+        payload: {
+          session_id: 'session-1',
+          worktree_id: 'worktree-1',
+          denials: [createCodexDenial('tool-2', 37)],
+        },
+      })
+      handlers.get('chat:tool_result')?.({
+        payload: {
+          session_id: 'session-1',
+          worktree_id: 'worktree-1',
+          tool_use_id: 'tool-2',
+          output: 'done',
+        },
+      })
+      handlers.get('chat:done')?.({
+        payload: {
+          session_id: 'session-1',
+          worktree_id: 'worktree-1',
+        },
+      })
+      await Promise.resolve()
+    })
+
+    expect(
+      useChatStore.getState().pendingPermissionDenials['session-1']
+    ).toEqual([createCodexDenial('tool-1', 36)])
+    expect(
+      queryClient.getQueryData(chatQueryKeys.session('session-1'))
+    ).toMatchObject({
+      pending_permission_denials: [createCodexDenial('tool-1', 36)],
+      waiting_for_input: true,
+      waiting_for_input_type: null,
+    })
+    unmount()
+  })
 })

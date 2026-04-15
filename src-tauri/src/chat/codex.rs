@@ -8,7 +8,10 @@
 //! directly since they don't need streaming.
 
 use super::claude::CancelledEvent;
-use super::types::{ContentBlock, PermissionDenial, PermissionDeniedEvent, ToolCall, UsageData};
+use super::types::{
+    ContentBlock, DeniedMessageContext, PermissionDenial, PermissionDeniedEvent, SessionMetadata,
+    ThinkingLevel, ToolCall, UsageData,
+};
 use crate::http_server::EmitExt;
 
 use std::collections::{HashMap, HashSet};
@@ -1584,6 +1587,66 @@ fn history_plan_item_id(item_id: &str) -> String {
     }
 }
 
+fn thinking_level_to_string(level: &ThinkingLevel) -> String {
+    match level {
+        ThinkingLevel::Off => "off".to_string(),
+        ThinkingLevel::Think => "think".to_string(),
+        ThinkingLevel::Megathink => "megathink".to_string(),
+        ThinkingLevel::Ultrathink => "ultrathink".to_string(),
+    }
+}
+
+fn persist_pending_codex_command_approval(
+    metadata: &mut SessionMetadata,
+    denial: &PermissionDenial,
+    attention_updated_at: u64,
+) {
+    metadata
+        .pending_permission_denials
+        .retain(|existing| existing.tool_use_id != denial.tool_use_id);
+    metadata.pending_permission_denials.push(denial.clone());
+    metadata.waiting_for_input = true;
+    metadata.waiting_for_input_type = None;
+    metadata.is_reviewing = false;
+    metadata.attention_updated_at = Some(
+        metadata
+            .attention_updated_at
+            .map_or(attention_updated_at, |current| {
+                current.max(attention_updated_at)
+            }),
+    );
+
+    if metadata.denied_message_context.is_none() {
+        let active_run = metadata
+            .runs
+            .iter()
+            .rev()
+            .find(|run| run.ended_at.is_none())
+            .or_else(|| metadata.runs.last());
+
+        if let Some(run) = active_run {
+            metadata.denied_message_context = Some(DeniedMessageContext {
+                message: run.user_message.clone(),
+                model: run
+                    .model
+                    .clone()
+                    .or_else(|| metadata.selected_model.clone())
+                    .unwrap_or_default(),
+                thinking_level: run
+                    .thinking_level
+                    .clone()
+                    .or_else(|| {
+                        metadata
+                            .selected_thinking_level
+                            .as_ref()
+                            .map(thinking_level_to_string)
+                    })
+                    .unwrap_or_else(|| "off".to_string()),
+            });
+        }
+    }
+}
+
 /// Handle an approval request from the app-server.
 #[allow(clippy::too_many_arguments)]
 fn handle_approval_request(
@@ -1635,6 +1698,26 @@ fn handle_approval_request(
                 tool_input: serde_json::json!({ "command": command }),
                 rpc_id: Some(rpc_id),
             };
+            let attention_updated_at = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            if let Err(err) =
+                super::storage::with_existing_metadata_mut(app, session_id, |metadata| {
+                    persist_pending_codex_command_approval(metadata, &denial, attention_updated_at);
+                })
+            {
+                log::warn!(
+                    "Failed to persist pending Codex command approval for session {session_id}: {err}"
+                );
+            } else if let Err(err) = app.emit_all(
+                "cache:invalidate",
+                &serde_json::json!({ "keys": ["sessions"] }),
+            ) {
+                log::warn!(
+                    "Failed to emit cache invalidation for pending Codex approval in session {session_id}: {err}"
+                );
+            }
             let _ = app.emit_all(
                 "chat:permission_denied",
                 &PermissionDeniedEvent {
@@ -3746,6 +3829,129 @@ mod tests {
             .expect("bash tool should be restored");
 
         assert_eq!(bash_tool.input["command"], "git status --short");
+    }
+
+    #[test]
+    fn persist_pending_codex_command_approval_updates_waiting_state() {
+        let mut metadata = SessionMetadata::new(
+            "session-1".to_string(),
+            "worktree-1".to_string(),
+            "Session 1".to_string(),
+            0,
+        );
+        metadata.selected_model = Some("gpt-5.4".to_string());
+        metadata.selected_thinking_level = Some(ThinkingLevel::Think);
+        metadata.attention_updated_at = Some(10);
+        metadata.runs.push(RunEntry {
+            run_id: "run-1".to_string(),
+            user_message_id: "msg-1".to_string(),
+            user_message: "Continue".to_string(),
+            model: None,
+            execution_mode: Some("build".to_string()),
+            thinking_level: None,
+            effort_level: None,
+            started_at: 100,
+            ended_at: None,
+            status: RunStatus::Running,
+            assistant_message_id: None,
+            cancelled: false,
+            recovered: false,
+            claude_session_id: None,
+            pid: None,
+            usage: None,
+        });
+
+        persist_pending_codex_command_approval(
+            &mut metadata,
+            &PermissionDenial {
+                tool_name: "Bash".to_string(),
+                tool_use_id: "tool-1".to_string(),
+                tool_input: serde_json::json!({ "command": "echo test" }),
+                rpc_id: Some(42),
+            },
+            25,
+        );
+
+        assert!(metadata.waiting_for_input);
+        assert_eq!(metadata.waiting_for_input_type.as_deref(), None);
+        assert!(!metadata.is_reviewing);
+        assert_eq!(metadata.pending_permission_denials.len(), 1);
+        assert_eq!(metadata.pending_permission_denials[0].tool_use_id, "tool-1");
+        assert_eq!(metadata.attention_updated_at, Some(25));
+        assert_eq!(
+            metadata
+                .denied_message_context
+                .as_ref()
+                .map(|ctx| ctx.message.as_str()),
+            Some("Continue")
+        );
+        assert_eq!(
+            metadata
+                .denied_message_context
+                .as_ref()
+                .map(|ctx| ctx.model.as_str()),
+            Some("gpt-5.4")
+        );
+        assert_eq!(
+            metadata
+                .denied_message_context
+                .as_ref()
+                .map(|ctx| ctx.thinking_level.as_str()),
+            Some("think")
+        );
+    }
+
+    #[test]
+    fn persist_pending_codex_command_approval_replaces_duplicate_tool_entry() {
+        let mut metadata = SessionMetadata::new(
+            "session-1".to_string(),
+            "worktree-1".to_string(),
+            "Session 1".to_string(),
+            0,
+        );
+        metadata.pending_permission_denials = vec![
+            PermissionDenial {
+                tool_name: "Bash".to_string(),
+                tool_use_id: "tool-1".to_string(),
+                tool_input: serde_json::json!({ "command": "old" }),
+                rpc_id: Some(1),
+            },
+            PermissionDenial {
+                tool_name: "Bash".to_string(),
+                tool_use_id: "tool-2".to_string(),
+                tool_input: serde_json::json!({ "command": "keep" }),
+                rpc_id: Some(2),
+            },
+        ];
+
+        persist_pending_codex_command_approval(
+            &mut metadata,
+            &PermissionDenial {
+                tool_name: "Bash".to_string(),
+                tool_use_id: "tool-1".to_string(),
+                tool_input: serde_json::json!({ "command": "new" }),
+                rpc_id: Some(3),
+            },
+            30,
+        );
+
+        assert_eq!(metadata.pending_permission_denials.len(), 2);
+        assert_eq!(
+            metadata
+                .pending_permission_denials
+                .iter()
+                .find(|denial| denial.tool_use_id == "tool-1")
+                .and_then(|denial| denial.rpc_id),
+            Some(3)
+        );
+        assert_eq!(
+            metadata
+                .pending_permission_denials
+                .iter()
+                .find(|denial| denial.tool_use_id == "tool-2")
+                .and_then(|denial| denial.rpc_id),
+            Some(2)
+        );
     }
 }
 

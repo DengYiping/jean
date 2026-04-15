@@ -147,6 +147,27 @@ function applyPermissionWaitingState(
   }
 }
 
+function mergePermissionDenials(
+  currentDenials: PermissionDenial[] | undefined,
+  newDenials: PermissionDenial[]
+): PermissionDenial[] {
+  if ((currentDenials?.length ?? 0) === 0) return newDenials
+  if (newDenials.length === 0) return currentDenials ?? []
+
+  const merged = [...(currentDenials ?? [])]
+  for (const denial of newDenials) {
+    const existingIndex = merged.findIndex(
+      current => current.tool_use_id === denial.tool_use_id
+    )
+    if (existingIndex === -1) {
+      merged.push(denial)
+    } else {
+      merged[existingIndex] = denial
+    }
+  }
+  return merged
+}
+
 function getOptimisticAttentionTimestamp(previousUpdatedAt?: number): number {
   const now = Math.floor(Date.now() / 1000)
   return Math.max(now, (previousUpdatedAt ?? 0) + 1)
@@ -503,8 +524,10 @@ export default function useStreamingEvents({
           return
         }
 
+        const mergedDenials = mergePermissionDenials(currentDenials, denials)
+
         // Store the denials for the approval UI
-        setPendingDenials(session_id, denials)
+        setPendingDenials(session_id, mergedDenials)
 
         if (shouldPlayPermissionApprovalSound(currentDenials, denials)) {
           playNotificationSound(getWaitingSoundPreference(queryClient))
@@ -545,7 +568,7 @@ export default function useStreamingEvents({
             if (isCurrentlyViewing) {
               lastOpenedAt = attentionUpdatedAt
             }
-            return applyPermissionWaitingState(old, denials, {
+            return applyPermissionWaitingState(old, mergedDenials, {
               updatedAt: attentionUpdatedAt,
               lastOpenedAt,
             })
@@ -559,7 +582,7 @@ export default function useStreamingEvents({
               ...old,
               sessions: old.sessions.map(session =>
                 session.id === session_id
-                  ? applyPermissionWaitingState(session, denials, {
+                  ? applyPermissionWaitingState(session, mergedDenials, {
                       updatedAt:
                         attentionUpdatedAt ??
                         getOptimisticAttentionTimestamp(session.updated_at),
@@ -575,7 +598,7 @@ export default function useStreamingEvents({
         )
         updateAllSessionsCache(queryClient, worktree_id, session =>
           session.id === session_id
-            ? applyPermissionWaitingState(session, denials, {
+            ? applyPermissionWaitingState(session, mergedDenials, {
                 updatedAt:
                   attentionUpdatedAt ??
                   getOptimisticAttentionTimestamp(session.updated_at),
@@ -600,7 +623,7 @@ export default function useStreamingEvents({
               worktreeId: worktree_id,
               worktreePath,
               sessionId: session_id,
-              pendingPermissionDenials: denials,
+              pendingPermissionDenials: mergedDenials,
               deniedMessageContext: persistedDeniedMessageContext,
               waitingForInput: true,
               waitingForInputType: null,

@@ -350,10 +350,10 @@ export default function useStreamingEvents({
                         ? {
                             last_opened_at:
                               lastOpenedAt ??
-                              (attentionUpdatedAt ??
-                                getOptimisticAttentionTimestamp(
-                                  session.updated_at
-                                )),
+                              attentionUpdatedAt ??
+                              getOptimisticAttentionTimestamp(
+                                session.updated_at
+                              ),
                           }
                         : {}),
                       waiting_for_input: true,
@@ -376,8 +376,8 @@ export default function useStreamingEvents({
                   ? {
                       last_opened_at:
                         lastOpenedAt ??
-                        (attentionUpdatedAt ??
-                          getOptimisticAttentionTimestamp(session.updated_at)),
+                        attentionUpdatedAt ??
+                        getOptimisticAttentionTimestamp(session.updated_at),
                     }
                   : {}),
                 waiting_for_input: true,
@@ -479,6 +479,29 @@ export default function useStreamingEvents({
           setWaitingForInput,
         } = useChatStore.getState()
         const currentDenials = pendingPermissionDenials[session_id]
+        const isCodexApproval = denials.some(denial => denial.rpc_id != null)
+        const currentExecutionMode = executionModes[session_id] ?? 'plan'
+
+        // If the session is already in yolo, keep the current turn flowing by
+        // auto-accepting Codex approval callbacks instead of surfacing UI again.
+        if (isCodexApproval && currentExecutionMode === 'yolo') {
+          for (const denial of denials) {
+            if (denial.rpc_id != null) {
+              invoke('approve_codex_command', {
+                sessionId: session_id,
+                rpcId: denial.rpc_id,
+                decision: 'accept',
+              }).catch(err => {
+                logger.error(
+                  '[useStreamingEvents] Failed to auto-approve Codex command in yolo mode:',
+                  err
+                )
+              })
+            }
+          }
+          setPendingDenials(session_id, [])
+          return
+        }
 
         // Store the denials for the approval UI
         setPendingDenials(session_id, denials)
@@ -489,7 +512,7 @@ export default function useStreamingEvents({
 
         // Codex keeps the turn open while waiting for approval, so surface the
         // approval UI by pausing the local "sending" state until the user acts.
-        if (denials.some(denial => denial.rpc_id != null)) {
+        if (isCodexApproval) {
           removeSendingSession(session_id)
           setWaitingForInput(session_id, true)
         }

@@ -216,4 +216,36 @@ describe('ChatInput skill sync', () => {
       ).toHaveLength(0)
     })
   })
+
+  it('renders a highlighted overlay for recognized inline skill tokens', async () => {
+    const formRef = createRef<HTMLFormElement>()
+    const inputRef = createRef<HTMLTextAreaElement>()
+
+    render(
+      <form ref={formRef}>
+        <ChatInput
+          activeSessionId="session-1"
+          activeWorktreePath="/tmp/worktree"
+          isSending={false}
+          executionMode="build"
+          focusChatShortcut="Cmd+L"
+          onSubmit={vi.fn()}
+          onCancel={vi.fn()}
+          backend="codex"
+          formRef={formRef}
+          inputRef={inputRef}
+        />
+      </form>
+    )
+
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
+    setTextareaValue(textarea, '$skill-creator add tests')
+
+    await waitFor(() => {
+      const overlay = screen.getByTestId('chat-input-highlight-overlay')
+      expect(overlay.innerHTML).toContain(
+        '<span class="rounded-sm bg-purple-500/15 px-0.5 text-purple-700 dark:text-purple-300">$skill-creator</span>'
+      )
+    })
+  })
 })

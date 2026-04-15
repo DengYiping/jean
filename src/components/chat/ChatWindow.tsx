@@ -2647,6 +2647,7 @@ export function ChatWindow({
     mcpServersDataRef,
     enabledMcpServersRef,
     selectedBackendRef,
+    inputRef,
     setInputDraft,
     sendMessageNow,
   })

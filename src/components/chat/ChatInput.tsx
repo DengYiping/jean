@@ -41,6 +41,51 @@ const MAX_TEXT_SIZE = 10 * 1024 * 1024
 /** Threshold for saving pasted text as file (2000 chars) */
 const TEXT_PASTE_THRESHOLD = 2000
 
+const SKILL_TOKEN_HTML_REGEX = /(^|[\s\n])(\$[\w.-]+)/g
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+}
+
+function buildHighlightedInputHtml(
+  value: string,
+  availableSkillNames: Set<string>
+): string {
+  if (!value) return ''
+
+  let html = ''
+  let lastIndex = 0
+
+  for (const match of value.matchAll(SKILL_TOKEN_HTML_REGEX)) {
+    const fullMatch = match[0]
+    const boundary = match[1] ?? ''
+    const token = match[2] ?? ''
+    const matchIndex = match.index ?? -1
+    if (matchIndex < 0) continue
+
+    const tokenStart = matchIndex + boundary.length
+    const tokenEnd = tokenStart + token.length
+    const skillName = token.slice(1)
+    const shouldHighlight = availableSkillNames.has(skillName)
+
+    html += escapeHtml(value.slice(lastIndex, tokenStart))
+    html += shouldHighlight
+      ? `<span class="rounded-sm bg-purple-500/15 px-0.5 text-purple-700 dark:text-purple-300">${escapeHtml(token)}</span>`
+      : escapeHtml(token)
+    lastIndex = tokenEnd
+
+    if (fullMatch.endsWith(token) && boundary) {
+      // Boundary text has already been included in the prefix slice above.
+    }
+  }
+
+  html += escapeHtml(value.slice(lastIndex))
+  return html
+}
+
 interface ChatInputProps {
   activeSessionId: string | undefined
   activeWorktreePath: string | undefined
@@ -85,6 +130,8 @@ export const ChatInput = memo(function ChatInput({
   // PERFORMANCE: Use uncontrolled input pattern - track value in ref, not state
   // This avoids React re-renders on every keystroke
   const valueRef = useRef<string>('')
+  const highlightOverlayRef = useRef<HTMLDivElement | null>(null)
+  const availableSkillNamesRef = useRef<Set<string>>(new Set())
 
   const debouncedSaveRef = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined
@@ -123,6 +170,29 @@ export const ChatInput = memo(function ChatInput({
     onHasValueChangeRef.current = onHasValueChange
   }, [onHasValueChange])
 
+  const syncHighlightScroll = useCallback(() => {
+    if (!highlightOverlayRef.current || !inputRef.current) return
+    highlightOverlayRef.current.scrollTop = inputRef.current.scrollTop
+    highlightOverlayRef.current.scrollLeft = inputRef.current.scrollLeft
+  }, [inputRef])
+
+  const updateHighlightedInput = useCallback(
+    (value: string) => {
+      if (!highlightOverlayRef.current) return
+      highlightOverlayRef.current.innerHTML = buildHighlightedInputHtml(
+        value,
+        availableSkillNamesRef.current
+      )
+      syncHighlightScroll()
+    },
+    [syncHighlightScroll]
+  )
+
+  useEffect(() => {
+    availableSkillNamesRef.current = new Set(availableSkills.map(s => s.name))
+    updateHighlightedInput(valueRef.current)
+  }, [availableSkills, updateHighlightedInput])
+
   // Track empty state for showing keyboard hint (only re-renders at boundary)
   const [showHint, setShowHint] = useState(() => {
     // Lazy initializer - check draft on mount
@@ -152,7 +222,8 @@ export const ChatInput = memo(function ChatInput({
     if (inputRef.current) {
       inputRef.current.value = draft
     }
-  }, [activeSessionId, inputRef])
+    updateHighlightedInput(draft)
+  }, [activeSessionId, inputRef, updateHighlightedInput])
 
   // Listen for command:focus-chat-input event from command palette
   useEffect(() => {
@@ -180,6 +251,7 @@ export const ChatInput = memo(function ChatInput({
         clearTimeout(debouncedSaveRef.current)
         inputRef.current.value = ''
         valueRef.current = ''
+        updateHighlightedInput('')
         setShowHint(true)
         onHasValueChangeRef.current?.(false)
       }
@@ -189,11 +261,12 @@ export const ChatInput = memo(function ChatInput({
       if (!prevDraft && draft && inputRef.current && !inputRef.current.value) {
         inputRef.current.value = draft
         valueRef.current = draft
+        updateHighlightedInput(draft)
         setShowHint(false)
         onHasValueChangeRef.current?.(true)
       }
     })
-  }, [activeSessionId, inputRef])
+  }, [activeSessionId, inputRef, updateHighlightedInput])
 
   const clearInputState = useCallback(() => {
     clearTimeout(debouncedSaveRef.current)
@@ -201,9 +274,10 @@ export const ChatInput = memo(function ChatInput({
       inputRef.current.value = ''
     }
     valueRef.current = ''
+    updateHighlightedInput('')
     setShowHint(true)
     onHasValueChangeRef.current?.(false)
-  }, [inputRef])
+  }, [inputRef, updateHighlightedInput])
 
   useEffect(() => {
     onRegisterClearHandler?.(clearInputState)
@@ -218,6 +292,7 @@ export const ChatInput = memo(function ChatInput({
 
       // PERFORMANCE: Update ref only, no React render
       valueRef.current = value
+      updateHighlightedInput(value)
 
       // Debounced save to store for persistence (crash recovery, session switching)
       clearTimeout(debouncedSaveRef.current)
@@ -400,6 +475,7 @@ export const ChatInput = memo(function ChatInput({
       availableSkills,
       backend,
       fileMentionOpen,
+      updateHighlightedInput,
       slashTriggerIndex,
       slashPopoverOpen,
     ]
@@ -503,6 +579,7 @@ export const ChatInput = memo(function ChatInput({
         onSubmit(e)
         // Clear input immediately (don't wait for store subscription)
         valueRef.current = ''
+        updateHighlightedInput('')
         setShowHint(true)
         const textarea = e.target as HTMLTextAreaElement
         textarea.value = ''
@@ -519,6 +596,7 @@ export const ChatInput = memo(function ChatInput({
       canSwitchBackendWithTab,
       onSwitchBackendWithTab,
       isMobile,
+      updateHighlightedInput,
     ]
   )
 
@@ -554,6 +632,7 @@ export const ChatInput = memo(function ChatInput({
               textarea.value =
                 current.slice(0, start) + restoredText + current.slice(end)
               valueRef.current = textarea.value
+              updateHighlightedInput(textarea.value)
               textarea.selectionStart = textarea.selectionEnd =
                 start + restoredText.length
               // Save draft
@@ -870,7 +949,7 @@ export const ChatInput = memo(function ChatInput({
         }
       }
     },
-    [activeSessionId, activeWorktreePath, inputRef]
+    [activeSessionId, activeWorktreePath, inputRef, updateHighlightedInput]
   )
 
   // Handle file selection from @ mention popover
@@ -895,6 +974,7 @@ export const ChatInput = memo(function ChatInput({
         // PERFORMANCE: Update DOM directly, no React render
         inputRef.current.value = newValue
         valueRef.current = newValue
+        updateHighlightedInput(newValue)
 
         // Set cursor position after the inserted filename
         requestAnimationFrame(() => {
@@ -911,7 +991,7 @@ export const ChatInput = memo(function ChatInput({
       // Refocus input
       inputRef.current?.focus()
     },
-    [activeSessionId, atTriggerIndex, inputRef]
+    [activeSessionId, atTriggerIndex, inputRef, updateHighlightedInput]
   )
 
   // Handle skill selection from the `$` popover
@@ -940,6 +1020,7 @@ export const ChatInput = memo(function ChatInput({
         // PERFORMANCE: Update DOM directly, no React render
         inputRef.current.value = newValue
         valueRef.current = newValue
+        updateHighlightedInput(newValue)
 
         // Cancel pending debounced save (it still has the old trigger query value)
         // and sync cleaned value to store immediately
@@ -963,7 +1044,7 @@ export const ChatInput = memo(function ChatInput({
       // Refocus input
       inputRef.current?.focus()
     },
-    [activeSessionId, slashTriggerIndex, inputRef]
+    [activeSessionId, slashTriggerIndex, inputRef, updateHighlightedInput]
   )
 
   // Handle command selection from the `/` popover (executes immediately)
@@ -976,6 +1057,7 @@ export const ChatInput = memo(function ChatInput({
       if (inputRef.current) {
         inputRef.current.value = ''
         valueRef.current = ''
+        updateHighlightedInput('')
       }
       if (activeSessionId) {
         useChatStore.getState().setInputDraft(activeSessionId, '')
@@ -991,11 +1073,17 @@ export const ChatInput = memo(function ChatInput({
       // Notify parent to execute command
       onCommandExecute?.(command)
     },
-    [activeSessionId, inputRef, onCommandExecute]
+    [activeSessionId, inputRef, onCommandExecute, updateHighlightedInput]
   )
 
   return (
     <div className="relative">
+      <div
+        ref={highlightOverlayRef}
+        aria-hidden="true"
+        data-testid="chat-input-highlight-overlay"
+        className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words font-mono text-sm text-foreground"
+      />
       <Textarea
         ref={inputRef}
         placeholder={
@@ -1017,8 +1105,9 @@ export const ChatInput = memo(function ChatInput({
         onChange={handleChange}
         onKeyDown={handleKeyDown}
         onPaste={handlePaste}
+        onScroll={syncHighlightScroll}
         disabled={false}
-        className="custom-scrollbar min-h-[40px] max-h-[240px] w-full resize-none overflow-y-auto border-0 bg-transparent dark:bg-transparent p-0 font-mono text-sm shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+        className="custom-scrollbar relative z-10 min-h-[40px] max-h-[240px] w-full resize-none overflow-y-auto border-0 bg-transparent p-0 font-mono text-sm text-transparent caret-foreground shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 dark:bg-transparent"
         rows={1}
         autoFocus={!isMobile}
       />

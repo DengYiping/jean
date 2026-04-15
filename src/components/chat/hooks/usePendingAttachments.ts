@@ -30,8 +30,13 @@ interface UsePendingAttachmentsParams {
   mcpServersDataRef: RefObject<McpServerInfo[] | undefined>
   enabledMcpServersRef: RefObject<string[]>
   selectedBackendRef: RefObject<'claude' | 'codex' | 'opencode'>
+  inputRef: RefObject<HTMLTextAreaElement | null>
   setInputDraft: (sessionId: string, draft: string) => void
   sendMessageNow: (queuedMsg: QueuedMessage) => void
+}
+
+function normalizeAttachmentRemovalInput(input: string) {
+  return input.replace(/\s+/g, ' ').trim()
 }
 
 /**
@@ -51,6 +56,7 @@ export function usePendingAttachments({
   mcpServersDataRef,
   enabledMcpServersRef,
   selectedBackendRef,
+  inputRef,
   setInputDraft,
   sendMessageNow,
 }: UsePendingAttachmentsParams) {
@@ -73,9 +79,29 @@ export function usePendingAttachments({
   const handleRemovePendingSkill = useCallback(
     (skillId: string) => {
       if (!activeSessionId) return
-      useChatStore.getState().removePendingSkill(activeSessionId, skillId)
+      const { removePendingSkill, getPendingSkills, inputDrafts } =
+        useChatStore.getState()
+
+      const skills = getPendingSkills(activeSessionId)
+      const skill = skills.find(s => s.id === skillId)
+      if (skill) {
+        const currentInput = inputDrafts[activeSessionId] ?? ''
+        const pattern = new RegExp(
+          `\\$${skill.name.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}(?=\\s|$)`,
+          'g'
+        )
+        const newInput = normalizeAttachmentRemovalInput(
+          currentInput.replace(pattern, '')
+        )
+        setInputDraft(activeSessionId, newInput)
+        if (inputRef.current && newInput) {
+          inputRef.current.value = newInput
+        }
+      }
+
+      removePendingSkill(activeSessionId, skillId)
     },
-    [activeSessionId]
+    [activeSessionId, inputRef, setInputDraft]
   )
 
   const handleRemovePendingFile = useCallback(
@@ -93,16 +119,18 @@ export function usePendingAttachments({
           `@${filename.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=\\s|$)`,
           'g'
         )
-        const newInput = currentInput
-          .replace(pattern, '')
-          .replace(/\s+/g, ' ')
-          .trim()
+        const newInput = normalizeAttachmentRemovalInput(
+          currentInput.replace(pattern, '')
+        )
         setInputDraft(activeSessionId, newInput)
+        if (inputRef.current && newInput) {
+          inputRef.current.value = newInput
+        }
       }
 
       removePendingFile(activeSessionId, fileId)
     },
-    [activeSessionId, setInputDraft]
+    [activeSessionId, inputRef, setInputDraft]
   )
 
   const handleCommandExecute = useCallback(

@@ -29,8 +29,13 @@ import {
   usePorts,
 } from '@/services/projects'
 import { useLoadedIssueContexts, useLoadedPRContexts } from '@/services/github'
-import { usePreferences } from '@/services/preferences'
-import { getEditorLabel, getTerminalLabel } from '@/types/preferences'
+import { useAvailableEditors, usePreferences } from '@/services/preferences'
+import {
+  getDetectedEditorOptions,
+  getEditorLabel,
+  getTerminalLabel,
+  type EditorApp,
+} from '@/types/preferences'
 import { notify } from '@/lib/notifications'
 import { openExternal } from '@/lib/platform'
 import { cn } from '@/lib/utils'
@@ -72,6 +77,7 @@ export function OpenInModal() {
   const openInTerminal = useOpenWorktreeInTerminal()
   const openInEditor = useOpenWorktreeInEditor()
   const { data: preferences } = usePreferences()
+  const { data: availableEditors } = useAvailableEditors()
   const activeSessionId = useChatStore(state =>
     selectedWorktreeId
       ? (state.activeSessionIds[selectedWorktreeId] ?? null)
@@ -79,6 +85,11 @@ export function OpenInModal() {
   )
   const { data: loadedPRs } = useLoadedPRContexts(activeSessionId)
   const { data: loadedIssues } = useLoadedIssueContexts(activeSessionId)
+
+  const editorOptions = useMemo(
+    () => getDetectedEditorOptions(preferences?.editor, availableEditors),
+    [availableEditors, preferences?.editor]
+  )
 
   const isNative = isNativeApp()
 
@@ -106,6 +117,13 @@ export function OpenInModal() {
         icon: Code,
         key: 'E',
       },
+      ...editorOptions
+        .filter(option => !option.isDefault)
+        .map(option => ({
+          id: `editor:${option.value}`,
+          label: option.label,
+          icon: Code,
+        })),
       {
         id: 'terminal',
         label: getTerminalLabel(preferences?.terminal),
@@ -140,6 +158,7 @@ export function OpenInModal() {
       ? allOptions
       : allOptions.filter(opt => opt.id === 'github' || opt.id === 'open-pr')
   }, [
+    editorOptions,
     preferences?.editor,
     preferences?.terminal,
     isNative,
@@ -237,6 +256,16 @@ export function OpenInModal() {
 
       if (!targetPath) {
         notify('No project or worktree selected', undefined, { type: 'error' })
+        setOpenInModalOpen(false)
+        return
+      }
+
+      if (optionId.startsWith('editor:')) {
+        const editor = optionId.slice('editor:'.length) as EditorApp
+        openInEditor.mutate({
+          worktreePath: targetPath,
+          editor,
+        })
         setOpenInModalOpen(false)
         return
       }

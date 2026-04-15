@@ -1354,6 +1354,10 @@ pub async fn dispatch_command(
             // NATIVE ONLY: Cannot open native editor from browser
             Ok(Value::Null)
         }
+        "list_available_editors" => {
+            let result = crate::list_available_editors()?;
+            to_value(result)
+        }
         "open_pull_request" => {
             let worktree_id: String = field(&args, "worktreeId", "worktree_id")?;
             let title: Option<String> = from_field_opt(&args, "title")?;

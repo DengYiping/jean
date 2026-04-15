@@ -333,6 +333,11 @@ fn default_editor() -> String {
     "zed".to_string()
 }
 
+#[tauri::command]
+fn list_available_editors() -> Result<Vec<String>, String> {
+    Ok(platform::list_available_editors())
+}
+
 fn default_open_in() -> String {
     "editor".to_string()
 }
@@ -2812,6 +2817,7 @@ pub fn run() {
             projects::open_project_worktrees_folder,
             projects::open_worktree_in_terminal,
             projects::open_worktree_in_editor,
+            list_available_editors,
             projects::open_pull_request,
             projects::create_pr_with_ai_content,
             projects::merge_github_pr,

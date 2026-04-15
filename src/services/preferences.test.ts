@@ -6,6 +6,7 @@ import {
   usePreferences,
   useSavePreferences,
   preferencesQueryKeys,
+  useAvailableEditors,
 } from './preferences'
 import type { AppPreferences } from '@/types/preferences'
 import {
@@ -75,6 +76,13 @@ describe('preferences service', () => {
 
     it('returns correct preferences key', () => {
       expect(preferencesQueryKeys.preferences()).toEqual(['preferences'])
+    })
+
+    it('returns correct available editors key', () => {
+      expect(preferencesQueryKeys.availableEditors()).toEqual([
+        'preferences',
+        'available-editors',
+      ])
     })
   })
 
@@ -435,6 +443,47 @@ describe('preferences service', () => {
         expect(result.current.data?.selected_codex_model).toBe(model)
       }
     )
+  })
+
+  describe('useAvailableEditors', () => {
+    it('loads detected editors from backend', async () => {
+      const { invoke } = await import('@/lib/transport')
+      vi.mocked(invoke).mockResolvedValueOnce(['zed', 'cursor'])
+
+      const { result } = renderHook(() => useAvailableEditors(), {
+        wrapper: createWrapper(queryClient),
+      })
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+      expect(invoke).toHaveBeenCalledWith('list_available_editors')
+      expect(result.current.data).toEqual(['zed', 'cursor'])
+    })
+
+    it('returns an empty list when not in Tauri context', async () => {
+      delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__
+
+      const { result } = renderHook(() => useAvailableEditors(), {
+        wrapper: createWrapper(queryClient),
+      })
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+      expect(result.current.data).toEqual([])
+    })
+
+    it('returns an empty list on backend error', async () => {
+      const { invoke } = await import('@/lib/transport')
+      vi.mocked(invoke).mockRejectedValueOnce(new Error('boom'))
+
+      const { result } = renderHook(() => useAvailableEditors(), {
+        wrapper: createWrapper(queryClient),
+      })
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+      expect(result.current.data).toEqual([])
+    })
   })
 
   describe('useSavePreferences', () => {

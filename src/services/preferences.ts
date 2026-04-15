@@ -42,6 +42,8 @@ const isTauri = hasBackend
 export const preferencesQueryKeys = {
   all: ['preferences'] as const,
   preferences: () => [...preferencesQueryKeys.all] as const,
+  availableEditors: () =>
+    [...preferencesQueryKeys.all, 'available-editors'] as const,
 }
 
 // TanStack Query hooks following the architectural patterns
@@ -83,6 +85,28 @@ export function usePreferences() {
     },
     staleTime: 1000 * 60 * 5, // 5 minutes
     gcTime: 1000 * 60 * 10, // 10 minutes
+  })
+}
+
+export function useAvailableEditors() {
+  return useQuery({
+    queryKey: preferencesQueryKeys.availableEditors(),
+    queryFn: async (): Promise<string[]> => {
+      if (!isTauri()) {
+        logger.debug('Not in Tauri context, no detected editors available')
+        return []
+      }
+
+      try {
+        logger.debug('Loading detected editors from backend')
+        return await invoke<string[]>('list_available_editors')
+      } catch (error) {
+        logger.warn('Failed to load detected editors', { error })
+        return []
+      }
+    },
+    staleTime: 1000 * 60 * 5,
+    gcTime: 1000 * 60 * 10,
   })
 }
 

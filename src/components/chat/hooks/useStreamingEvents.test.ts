@@ -54,6 +54,13 @@ function createDenial(toolUseId: string): PermissionDenial {
   }
 }
 
+function createCodexDenial(toolUseId: string, rpcId = 42): PermissionDenial {
+  return {
+    ...createDenial(toolUseId),
+    rpc_id: rpcId,
+  }
+}
+
 function createAskUserQuestionToolCall() {
   return {
     id: 'tool-question',
@@ -536,6 +543,41 @@ describe('useStreamingEvents question notifications', () => {
 
     expect(mockPlayNotificationSound).toHaveBeenCalledWith('choochoo')
     expect(mockToastInfo).not.toHaveBeenCalled()
+    unmount()
+  })
+
+  it('auto-approves codex permission requests when the session is already in yolo', async () => {
+    useChatStore.setState({
+      executionModes: { 'session-1': 'yolo' },
+    })
+
+    const { handlers, queryClient, unmount } = await setupHook()
+
+    await act(async () => {
+      handlers.get('chat:permission_denied')?.({
+        payload: {
+          session_id: 'session-1',
+          worktree_id: 'worktree-1',
+          denials: [createCodexDenial('tool-1')],
+        },
+      })
+      await Promise.resolve()
+    })
+
+    expect(mockInvoke).toHaveBeenCalledWith('approve_codex_command', {
+      sessionId: 'session-1',
+      rpcId: 42,
+      decision: 'accept',
+    })
+    expect(
+      queryClient.getQueryData(chatQueryKeys.session('session-1'))
+    ).not.toHaveProperty('waiting_for_input')
+    expect(
+      queryClient.getQueryData(chatQueryKeys.session('session-1'))
+    ).not.toHaveProperty('pending_permission_denials')
+    expect(
+      useChatStore.getState().pendingPermissionDenials['session-1']
+    ).toBeUndefined()
     unmount()
   })
 

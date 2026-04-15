@@ -330,22 +330,36 @@ pub fn build_turn_start_params(
         params["serviceTier"] = serde_json::json!("fast");
     }
 
-    // Sandbox policy with writable roots (for build/yolo modes with add_dirs)
+    // Turn-level approval overrides are the source of truth for the active turn.
+    // Without these, a thread resumed from a non-yolo/default config can still
+    // surface command approvals even when the session is visually in yolo mode.
     let mode = execution_mode.unwrap_or("plan");
-    if mode == "build" && !add_dirs.is_empty() {
-        let mut writable_roots: Vec<serde_json::Value> =
-            vec![serde_json::json!(working_dir.to_string_lossy())];
-        for dir in add_dirs {
-            writable_roots.push(serde_json::json!(dir));
+    match mode {
+        "build" => {
+            params["approvalPolicy"] = serde_json::json!("untrusted");
+            if !add_dirs.is_empty() {
+                let mut writable_roots: Vec<serde_json::Value> =
+                    vec![serde_json::json!(working_dir.to_string_lossy())];
+                for dir in add_dirs {
+                    writable_roots.push(serde_json::json!(dir));
+                }
+                params["sandboxPolicy"] = serde_json::json!({
+                    "type": "workspaceWrite",
+                    "writableRoots": writable_roots,
+                    "readOnlyAccess": { "type": "fullAccess" },
+                    "networkAccess": false,
+                    "excludeTmpdirEnvVar": false,
+                    "excludeSlashTmp": false,
+                });
+            }
         }
-        params["sandboxPolicy"] = serde_json::json!({
-            "type": "workspaceWrite",
-            "writableRoots": writable_roots,
-            "readOnlyAccess": { "type": "fullAccess" },
-            "networkAccess": false,
-            "excludeTmpdirEnvVar": false,
-            "excludeSlashTmp": false,
-        });
+        "yolo" => {
+            params["approvalPolicy"] = serde_json::json!("never");
+            params["sandboxPolicy"] = serde_json::json!({
+                "type": "dangerFullAccess",
+            });
+        }
+        _ => {}
     }
 
     // Override cwd per turn
@@ -3241,6 +3255,37 @@ mod tests {
             params["collaborationMode"]["settings"]["reasoningEffort"],
             "medium"
         );
+    }
+
+    #[test]
+    fn build_turns_set_untrusted_approval_policy() {
+        let params = build_turn_start_params(
+            "thread-1",
+            "Build this",
+            std::path::Path::new("/tmp"),
+            Some("gpt-5.4"),
+            Some("build"),
+            Some("medium"),
+            &[],
+        );
+
+        assert_eq!(params["approvalPolicy"], "untrusted");
+    }
+
+    #[test]
+    fn yolo_turns_set_never_approval_policy_and_danger_full_access() {
+        let params = build_turn_start_params(
+            "thread-1",
+            "Ship it",
+            std::path::Path::new("/tmp"),
+            Some("gpt-5.4"),
+            Some("yolo"),
+            Some("medium"),
+            &[],
+        );
+
+        assert_eq!(params["approvalPolicy"], "never");
+        assert_eq!(params["sandboxPolicy"]["type"], "dangerFullAccess");
     }
 
     #[test]

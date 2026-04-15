@@ -398,7 +398,6 @@ export const MessageItem = memo(function MessageItem({
                             taskToolCall={item.taskTool}
                             subToolCalls={item.subTools}
                             allToolCalls={message.tool_calls ?? []}
-                            worktreePath={worktreePath}
                             onFileClick={onFileClick}
                             viewportRef={scrollViewportRef}
                             isStreaming={false}
@@ -408,7 +407,6 @@ export const MessageItem = memo(function MessageItem({
                         return (
                           <ToolCallInline
                             toolCall={item.tool}
-                            worktreePath={worktreePath}
                             onFileClick={onFileClick}
                             viewportRef={scrollViewportRef}
                             isStreaming={false}
@@ -418,7 +416,6 @@ export const MessageItem = memo(function MessageItem({
                         return (
                           <StackedGroup
                             items={item.items}
-                            worktreePath={worktreePath}
                             onFileClick={onFileClick}
                             viewportRef={scrollViewportRef}
                             isStreaming={false}
@@ -462,7 +459,6 @@ export const MessageItem = memo(function MessageItem({
                         return (
                           <ToolCallInline
                             toolCall={item.tool}
-                            worktreePath={worktreePath}
                             onFileClick={onFileClick}
                             viewportRef={scrollViewportRef}
                             isStreaming={false}
@@ -609,12 +605,7 @@ export const MessageItem = memo(function MessageItem({
 
       {message.role === 'assistant' &&
         (message.tool_calls?.length ?? 0) > 0 &&
-        !skipToolCalls && (
-          <FileChangeCard
-            toolCalls={message.tool_calls}
-            worktreePath={worktreePath}
-          />
-        )}
+        !skipToolCalls && <FileChangeCard toolCalls={message.tool_calls} />}
 
       {/* Show edited files at the bottom of assistant messages */}
       {message.role === 'assistant' &&

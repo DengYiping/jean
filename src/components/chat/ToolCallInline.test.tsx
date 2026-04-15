@@ -54,7 +54,6 @@ describe('ToolCallInline', () => {
   it('renders Codex file changes as parsed diffs with line counts', () => {
     render(
       <ToolCallInline
-        worktreePath="/tmp"
         toolCall={{
           id: 'tool-2',
           name: 'FileChange',
@@ -120,7 +119,6 @@ describe('ToolCallInline', () => {
       return (
         <div ref={viewportRef} data-testid="viewport">
           <ToolCallInline
-            worktreePath="/tmp"
             viewportRef={viewportRef}
             toolCall={{
               id: 'tool-viewport',

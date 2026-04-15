@@ -16,7 +16,6 @@ import { findPlanFilePath } from '@/components/chat/tool-call-utils'
 import { generateId } from '@/lib/uuid'
 import {
   lookupSessionLabel,
-  showSessionPermissionRequestAlert,
   showSessionQuestionWaitingAlert,
 } from '@/components/chat/hooks/session-input-alert'
 import type {
@@ -132,15 +131,28 @@ function updateAllSessionsCache(
 
 function applyPermissionWaitingState(
   session: Session,
-  denials: PermissionDenial[]
+  denials: PermissionDenial[],
+  options?: {
+    updatedAt?: number
+    lastOpenedAt?: number
+  }
 ): Session {
   return {
     ...session,
+    ...(options?.updatedAt ? { updated_at: options.updatedAt } : {}),
+    ...(options?.lastOpenedAt !== undefined
+      ? { last_opened_at: options.lastOpenedAt }
+      : {}),
     waiting_for_input: true,
     waiting_for_input_type: null,
     pending_permission_denials: denials,
     is_reviewing: false,
   }
+}
+
+function getOptimisticAttentionTimestamp(previousUpdatedAt?: number): number {
+  const now = Math.floor(Date.now() / 1000)
+  return Math.max(now, (previousUpdatedAt ?? 0) + 1)
 }
 
 /**
@@ -309,6 +321,10 @@ export default function useStreamingEvents({
       'chat:permission_denied',
       event => {
         const { session_id, worktree_id, denials } = event.payload
+        const isCurrentlyViewing = isSessionCurrentlyViewing(
+          session_id,
+          worktree_id
+        )
         const {
           pendingPermissionDenials,
           setPendingDenials,
@@ -327,13 +343,6 @@ export default function useStreamingEvents({
 
         if (shouldPlayPermissionApprovalSound(currentDenials, denials)) {
           playNotificationSound(getWaitingSoundPreference(queryClient))
-          if (!isSessionCurrentlyViewing(session_id, worktree_id)) {
-            showSessionPermissionRequestAlert(
-              queryClient,
-              session_id,
-              worktree_id
-            )
-          }
         }
 
         // Codex keeps the turn open while waiting for approval, so surface the
@@ -361,9 +370,21 @@ export default function useStreamingEvents({
           })
         }
 
+        let attentionUpdatedAt: number | undefined
+        let lastOpenedAt: number | undefined
         queryClient.setQueryData<Session>(
           chatQueryKeys.session(session_id),
-          old => (old ? applyPermissionWaitingState(old, denials) : old)
+          old => {
+            if (!old) return old
+            attentionUpdatedAt = getOptimisticAttentionTimestamp(old.updated_at)
+            if (isCurrentlyViewing) {
+              lastOpenedAt = attentionUpdatedAt
+            }
+            return applyPermissionWaitingState(old, denials, {
+              updatedAt: attentionUpdatedAt,
+              lastOpenedAt,
+            })
+          }
         )
         queryClient.setQueryData<WorktreeSessions>(
           chatQueryKeys.sessions(worktree_id),
@@ -373,7 +394,15 @@ export default function useStreamingEvents({
               ...old,
               sessions: old.sessions.map(session =>
                 session.id === session_id
-                  ? applyPermissionWaitingState(session, denials)
+                  ? applyPermissionWaitingState(session, denials, {
+                      updatedAt:
+                        attentionUpdatedAt ??
+                        getOptimisticAttentionTimestamp(session.updated_at),
+                      lastOpenedAt: isCurrentlyViewing
+                        ? (attentionUpdatedAt ??
+                          getOptimisticAttentionTimestamp(session.updated_at))
+                        : undefined,
+                    })
                   : session
               ),
             }
@@ -381,9 +410,23 @@ export default function useStreamingEvents({
         )
         updateAllSessionsCache(queryClient, worktree_id, session =>
           session.id === session_id
-            ? applyPermissionWaitingState(session, denials)
+            ? applyPermissionWaitingState(session, denials, {
+                updatedAt:
+                  attentionUpdatedAt ??
+                  getOptimisticAttentionTimestamp(session.updated_at),
+                lastOpenedAt: isCurrentlyViewing
+                  ? (attentionUpdatedAt ??
+                    getOptimisticAttentionTimestamp(session.updated_at))
+                  : undefined,
+              })
             : session
         )
+
+        if (isCurrentlyViewing) {
+          invoke('set_session_last_opened', { sessionId: session_id })
+            .then(() => window.dispatchEvent(new CustomEvent('session-opened')))
+            .catch(() => undefined)
+        }
 
         const { worktreePaths } = useChatStore.getState()
         const worktreePath = worktreePaths[worktree_id]

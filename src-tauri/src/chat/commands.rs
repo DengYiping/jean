@@ -511,6 +511,7 @@ pub async fn update_session_state(
     with_sessions_mut(&app, &worktree_path, &worktree_id, |sessions| {
         if let Some(session) = sessions.find_session_mut(&session_id) {
             let clear_waiting_metadata = matches!(waiting_for_input, Some(false));
+            let had_pending_permission_denials = !session.pending_permission_denials.is_empty();
             if let Some(v) = answered_questions {
                 session.answered_questions = v;
             }
@@ -561,6 +562,13 @@ pub async fn update_session_state(
             }
             if let Some(v) = parallel_execution_prompt_enabled {
                 session.parallel_execution_prompt_enabled = v;
+            }
+            let has_pending_permission_denials = !session.pending_permission_denials.is_empty();
+            if !had_pending_permission_denials && has_pending_permission_denials {
+                session.updated_at = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
             }
             if clear_waiting_metadata {
                 session.waiting_for_input_type = None;

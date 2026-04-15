@@ -10,6 +10,12 @@ import {
   showSessionQuestionWaitingAlert,
 } from './session-input-alert'
 
+vi.mock('@/lib/transport', () => ({
+  invoke: vi.fn(),
+  listen: vi.fn(),
+  useWsConnectionStatus: vi.fn(() => true),
+}))
+
 vi.mock('sonner', () => ({
   toast: {
     info: vi.fn(),

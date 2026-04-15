@@ -30,7 +30,8 @@ import {
   type SlashPopoverHandle,
   type SlashPopoverMode,
 } from './SlashPopover'
-import { stripLeadingInjectedSkillTokens } from '@/lib/skill-prompt'
+import { useSkills } from '@/services/skills'
+import { resolveMentionedSkills } from '@/lib/skill-prompt'
 
 import { MAX_IMAGE_SIZE, ALLOWED_IMAGE_TYPES } from './image-constants'
 
@@ -76,6 +77,10 @@ export const ChatInput = memo(function ChatInput({
   inputRef,
 }: ChatInputProps) {
   const isMobile = useIsMobile()
+  const { data: availableSkills = [] } = useSkills(
+    backend,
+    activeWorktreePath ?? null
+  )
 
   // PERFORMANCE: Use uncontrolled input pattern - track value in ref, not state
   // This avoids React re-renders on every keystroke
@@ -250,6 +255,35 @@ export const ChatInput = memo(function ChatInput({
         }
       }
 
+      // Sync pending skills with inline $skill tokens in the input
+      const { getPendingSkills, addPendingSkill, removePendingSkill } =
+        useChatStore.getState()
+      const pendingSkills = getPendingSkills(activeSessionId)
+      const mentionedSkills = resolveMentionedSkills(value, availableSkills)
+      const mentionedSkillPaths = new Set(
+        mentionedSkills.map(skill => skill.path)
+      )
+
+      if (pendingSkills.length > 0) {
+        for (const skill of pendingSkills) {
+          if (!mentionedSkillPaths.has(skill.path)) {
+            removePendingSkill(activeSessionId, skill.id)
+          }
+        }
+      }
+
+      const existingPendingSkillPaths = new Set(
+        pendingSkills.map(skill => skill.path)
+      )
+      for (const skill of mentionedSkills) {
+        if (existingPendingSkillPaths.has(skill.path)) continue
+        addPendingSkill(activeSessionId, {
+          id: generateId(),
+          name: skill.name,
+          path: skill.path,
+        })
+      }
+
       // Detect @ trigger for file mentions
       const cursorPos = e.target.selectionStart ?? 0
       const prevChar = value[cursorPos - 1]
@@ -363,6 +397,7 @@ export const ChatInput = memo(function ChatInput({
     [
       activeSessionId,
       atTriggerIndex,
+      availableSkills,
       backend,
       fileMentionOpen,
       slashTriggerIndex,
@@ -511,10 +546,7 @@ export const ChatInput = memo(function ChatInput({
 
             // Insert the plain text into the textarea first
             if (text && inputRef.current) {
-              const restoredText = stripLeadingInjectedSkillTokens(
-                text,
-                metadata.skills ?? []
-              )
+              const restoredText = text
               const textarea = inputRef.current
               const start = textarea.selectionStart
               const end = textarea.selectionEnd
@@ -890,14 +922,20 @@ export const ChatInput = memo(function ChatInput({
       const { addPendingSkill } = useChatStore.getState()
       addPendingSkill(activeSessionId, skill)
 
-      // Remove the `$query` text from input (skill shows as a chip only)
+      // Replace the `$query` text with the selected inline skill token.
       const triggerIndex = slashTriggerIndex
       if (triggerIndex !== null && inputRef.current) {
         const currentValue = valueRef.current
         const cursorPos = inputRef.current.selectionStart ?? currentValue.length
         const beforeSlash = currentValue.slice(0, triggerIndex)
         const afterQuery = currentValue.slice(cursorPos)
-        const newValue = beforeSlash + afterQuery
+        const token = `$${skill.name}`
+        const spacer =
+          afterQuery === '' ||
+          (!afterQuery.startsWith(' ') && !afterQuery.startsWith('\n'))
+            ? ' '
+            : ''
+        const newValue = `${beforeSlash}${token}${spacer}${afterQuery}`
 
         // PERFORMANCE: Update DOM directly, no React render
         inputRef.current.value = newValue
@@ -909,9 +947,10 @@ export const ChatInput = memo(function ChatInput({
         useChatStore.getState().setInputDraft(activeSessionId, newValue)
         onHasValueChangeRef.current?.(Boolean(newValue.trim()))
 
-        // Set cursor position where the trigger was
+        // Set cursor position after the inserted token
         requestAnimationFrame(() => {
-          inputRef.current?.setSelectionRange(triggerIndex, triggerIndex)
+          const newCursorPos = beforeSlash.length + token.length + spacer.length
+          inputRef.current?.setSelectionRange(newCursorPos, newCursorPos)
         })
       }
 

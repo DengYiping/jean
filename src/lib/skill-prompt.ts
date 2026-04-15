@@ -22,6 +22,38 @@ function normalizeSkills(skills: SkillPromptInput[]) {
     }))
 }
 
+const SKILL_TOKEN_REGEX = /(^|[\s\n])\$([\w.-]+)/g
+
+export function extractSkillTokenNames(message: string): string[] {
+  const names: string[] = []
+  const seen = new Set<string>()
+
+  for (const match of message.matchAll(SKILL_TOKEN_REGEX)) {
+    const name = match[2]?.trim()
+    if (!name || seen.has(name)) continue
+    seen.add(name)
+    names.push(name)
+  }
+
+  return names
+}
+
+export function resolveMentionedSkills(
+  message: string,
+  skills: SkillPromptInput[]
+) {
+  const normalizedSkills = normalizeSkills(skills)
+  const skillsByName = new Map(
+    normalizedSkills.map(skill => [skill.name, skill] as const)
+  )
+
+  return extractSkillTokenNames(message)
+    .map(name => skillsByName.get(name))
+    .filter((skill): skill is (typeof normalizedSkills)[number] =>
+      Boolean(skill)
+    )
+}
+
 export function injectSkillTokens(
   message: string,
   skills: SkillPromptInput[]

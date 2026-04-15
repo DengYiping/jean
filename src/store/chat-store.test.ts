@@ -5,6 +5,7 @@ import type {
   QueuedMessage,
   PermissionDenial,
   PendingImage,
+  PendingSkill,
   PendingTextFile,
   QuestionAnswer,
 } from '@/types/chat'
@@ -840,6 +841,31 @@ describe('ChatStore', () => {
       clearPendingImages('session-1')
 
       expect(getPendingImages('session-1')).toHaveLength(0)
+    })
+  })
+
+  describe('pending skills', () => {
+    const mockSkill: PendingSkill = {
+      id: 'skill-1',
+      name: 'skill-creator',
+      path: '/tmp/skill-creator/SKILL.md',
+    }
+
+    it('adds pending skill', () => {
+      const { addPendingSkill, getPendingSkills } = useChatStore.getState()
+
+      addPendingSkill('session-1', mockSkill)
+
+      expect(getPendingSkills('session-1')).toContainEqual(mockSkill)
+    })
+
+    it('deduplicates pending skills by path', () => {
+      const { addPendingSkill, getPendingSkills } = useChatStore.getState()
+
+      addPendingSkill('session-1', mockSkill)
+      addPendingSkill('session-1', { ...mockSkill, id: 'skill-2' })
+
+      expect(getPendingSkills('session-1')).toEqual([mockSkill])
     })
   })
 

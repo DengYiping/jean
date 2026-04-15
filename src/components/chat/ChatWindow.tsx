@@ -75,10 +75,7 @@ import type {
 } from '@/types/chat'
 import { isAskUserQuestion } from '@/types/chat'
 import { getSkillName } from '@/lib/path-utils'
-import {
-  appendSkillPromptContext,
-  stripLeadingInjectedSkillTokens,
-} from '@/lib/skill-prompt'
+import { appendSkillPromptContext } from '@/lib/skill-prompt'
 import { resolveParallelExecutionPromptForSession } from '@/lib/parallel-execution-prompt'
 import { cn } from '@/lib/utils'
 import { PermissionApproval } from './PermissionApproval'
@@ -2475,10 +2472,7 @@ export function ChatWindow({
     const skills = skillPaths.map(path => {
       return { name: getSkillName(path), path }
     })
-    const cleanText = stripLeadingInjectedSkillTokens(
-      stripAllMarkers(message.content),
-      skills
-    )
+    const cleanText = stripAllMarkers(message.content)
 
     // Extract attachment paths from the raw message content
     const imagePaths = extractImagePaths(message.content)

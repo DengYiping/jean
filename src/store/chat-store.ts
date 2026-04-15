@@ -1836,12 +1836,19 @@ export const useChatStore = create<ChatUIState>()(
       // Pending skills (session-based, for / mentions)
       addPendingSkill: (sessionId, skill) =>
         set(
-          state => ({
-            pendingSkills: {
-              ...state.pendingSkills,
-              [sessionId]: [...(state.pendingSkills[sessionId] ?? []), skill],
-            },
-          }),
+          state => {
+            const existing = state.pendingSkills[sessionId] ?? []
+            if (existing.some(s => s.path === skill.path)) {
+              return state
+            }
+
+            return {
+              pendingSkills: {
+                ...state.pendingSkills,
+                [sessionId]: [...existing, skill],
+              },
+            }
+          },
           undefined,
           'addPendingSkill'
         ),

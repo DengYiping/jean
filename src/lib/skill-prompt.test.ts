@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import {
   appendSkillPromptContext,
   buildSkillReferenceLines,
+  extractSkillTokenNames,
   injectSkillTokens,
+  resolveMentionedSkills,
   stripLeadingInjectedSkillTokens,
 } from './skill-prompt'
 
@@ -50,5 +52,20 @@ describe('skill-prompt', () => {
         { name: 'skill-creator', path: '/tmp/skill-creator/SKILL.md' },
       ])
     ).toBe('Add tests')
+  })
+
+  it('extracts unique inline skill tokens in order of appearance', () => {
+    expect(
+      extractSkillTokenNames('$skill-creator Add tests with $review-helper')
+    ).toEqual(['skill-creator', 'review-helper'])
+  })
+
+  it('resolves only exact inventory matches from inline skill tokens', () => {
+    expect(
+      resolveMentionedSkills('$skill-creator $unknown Add tests', [
+        { name: 'skill-creator', path: '/tmp/skill-creator/SKILL.md' },
+        { name: 'review-helper', path: '/tmp/review-helper/SKILL.md' },
+      ])
+    ).toEqual([{ name: 'skill-creator', path: '/tmp/skill-creator/SKILL.md' }])
   })
 })

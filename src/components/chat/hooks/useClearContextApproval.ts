@@ -12,6 +12,7 @@ import {
   chatQueryKeys,
 } from '@/services/chat'
 import { invoke } from '@/lib/transport'
+import { appendSkillPromptContext } from '@/lib/skill-prompt'
 import type {
   EffortLevel,
   Session,
@@ -263,15 +264,10 @@ export function useClearContextApproval({
       let message = `${configPrefix}Execute this plan. Implement all changes described.${planFileLine}\n\n<plan>\n${planContent}\n</plan>`
 
       // Re-attach references from the original session so Claude can read them
-      if (skillPaths.length > 0) {
-        const skillRefs = skillPaths
-          .map(
-            p =>
-              `[Skill: ${p} - Read and use this skill to guide your response]`
-          )
-          .join('\n')
-        message = `${message}\n\n${skillRefs}`
-      }
+      message = appendSkillPromptContext(
+        message,
+        skillPaths.map(path => ({ path }))
+      )
       if (imagePaths.length > 0) {
         const imageRefs = imagePaths
           .map(

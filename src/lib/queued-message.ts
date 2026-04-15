@@ -1,10 +1,14 @@
 import type { QueuedMessage } from '@/types/chat'
+import { appendSkillPromptContext } from '@/lib/skill-prompt'
 
 /**
  * Build the message text Jean sends for a queued item, including attachment refs.
  */
 export function buildQueuedMessageWithRefs(queuedMsg: QueuedMessage): string {
-  let message = queuedMsg.message
+  let message = appendSkillPromptContext(
+    queuedMsg.message,
+    queuedMsg.pendingSkills
+  )
 
   if (queuedMsg.pendingFiles.length > 0) {
     const fileRefs = queuedMsg.pendingFiles
@@ -15,16 +19,6 @@ export function buildQueuedMessageWithRefs(queuedMsg: QueuedMessage): string {
       )
       .join('\n')
     message = message ? `${message}\n\n${fileRefs}` : fileRefs
-  }
-
-  if (queuedMsg.pendingSkills.length > 0) {
-    const skillRefs = queuedMsg.pendingSkills
-      .map(
-        skill =>
-          `[Skill: ${skill.path} - Read and use this skill to guide your response]`
-      )
-      .join('\n')
-    message = message ? `${message}\n\n${skillRefs}` : skillRefs
   }
 
   if (queuedMsg.pendingImages.length > 0) {

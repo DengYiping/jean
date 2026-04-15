@@ -24,7 +24,7 @@ export function fuzzySearchFiles(
 }
 
 /**
- * Fuzzy search over slash commands and skills by name and description.
+ * Fuzzy search over command/skill items by name and description.
  */
 export function fuzzySearchItems<
   T extends { name: string; description?: string | null },

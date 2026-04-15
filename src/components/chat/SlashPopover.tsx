@@ -32,23 +32,25 @@ export interface SlashPopoverHandle {
   selectCurrent: () => void
 }
 
+export type SlashPopoverMode = 'command' | 'skill'
+
 interface SlashPopoverProps {
   /** Whether the popover is open */
   open: boolean
+  /** Which item set is currently active */
+  mode: SlashPopoverMode
   /** Callback when popover should close */
   onOpenChange: (open: boolean) => void
   /** Callback when a skill is selected (adds to pending, continues editing) */
   onSelectSkill: (skill: PendingSkill) => void
   /** Callback when a command is selected (executes immediately) */
   onSelectCommand: (command: ClaudeCommand) => void
-  /** Current search query (text after /) */
+  /** Current search query (text after the active trigger) */
   searchQuery: string
   /** Position for the anchor (relative to textarea container) */
   anchorPosition: { top: number; left: number } | null
   /** Reference to the form container for stable positioning */
   containerRef?: React.RefObject<HTMLElement | null>
-  /** Whether slash is at prompt start (enables commands) */
-  isAtPromptStart: boolean
   /** Active backend for this session */
   backend: Backend
   /** Active worktree path for repo-local Codex skills */
@@ -63,13 +65,13 @@ type ListItem =
 
 export function SlashPopover({
   open,
+  mode,
   onOpenChange,
   onSelectSkill,
   onSelectCommand,
   searchQuery,
   anchorPosition,
   containerRef,
-  isAtPromptStart,
   backend,
   worktreePath,
   handleRef,
@@ -83,20 +85,20 @@ export function SlashPopover({
   const filteredItems = useMemo(() => {
     const items: ListItem[] = []
 
-    // Add commands first (only if at prompt start)
-    if (isAtPromptStart && backend === 'claude') {
+    if (mode === 'command' && backend === 'claude') {
       fuzzySearchItems(commands, searchQuery, 10).forEach(cmd => {
         items.push({ type: 'command', data: cmd })
       })
     }
 
-    // Add skills
-    fuzzySearchItems(skills, searchQuery, 10).forEach(skill => {
-      items.push({ type: 'skill', data: skill })
-    })
+    if (mode === 'skill') {
+      fuzzySearchItems(skills, searchQuery, 10).forEach(skill => {
+        items.push({ type: 'skill', data: skill })
+      })
+    }
 
     return items.slice(0, 15) // Limit total to 15
-  }, [skills, commands, searchQuery, isAtPromptStart, backend])
+  }, [backend, commands, mode, searchQuery, skills])
 
   // Clamp selectedIndex to valid range (handles case when filter reduces results)
   const clampedSelectedIndex = Math.min(
@@ -221,7 +223,9 @@ export function SlashPopover({
         <Command shouldFilter={false}>
           <CommandList ref={listRef} className="max-h-[250px]">
             {filteredItems.length === 0 ? (
-              <CommandEmpty>No commands or skills found</CommandEmpty>
+              <CommandEmpty>
+                {mode === 'command' ? 'No commands found' : 'No skills found'}
+              </CommandEmpty>
             ) : (
               <>
                 {commandItems.length > 0 && (
@@ -281,7 +285,7 @@ export function SlashPopover({
                           <Wand2 className="h-4 w-4 shrink-0 text-purple-500" />
                           <div className="flex flex-col min-w-0">
                             <span className="truncate text-sm font-medium">
-                              /{item.data.name}
+                              ${item.data.name}
                             </span>
                             {item.data.description && (
                               <span className="truncate text-xs text-muted-foreground">

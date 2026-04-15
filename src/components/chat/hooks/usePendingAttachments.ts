@@ -35,7 +35,7 @@ interface UsePendingAttachmentsParams {
 }
 
 /**
- * Handlers for removing pending attachments and executing slash commands.
+ * Handlers for removing pending attachments and executing `/` commands.
  */
 export function usePendingAttachments({
   activeSessionId,

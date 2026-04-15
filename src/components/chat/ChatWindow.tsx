@@ -2862,6 +2862,7 @@ export function ChatWindow({
                           {isSending && activeSessionId && (
                             <StreamingMessage
                               sessionId={activeSessionId}
+                              worktreePath={activeWorktreePath ?? undefined}
                               contentBlocks={currentStreamingContentBlocks}
                               toolCalls={currentToolCalls}
                               streamingContent={streamingContent}

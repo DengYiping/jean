@@ -3061,6 +3061,7 @@ pub fn run() {
             projects::set_git_identity,
             projects::consume_pending_cli_import_requests,
             projects::import_project_from_cli_path,
+            projects::browse_directory,
             projects::list_projects,
             projects::add_project,
             projects::init_git_in_folder,

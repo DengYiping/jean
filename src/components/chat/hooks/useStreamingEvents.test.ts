@@ -405,7 +405,7 @@ describe('useStreamingEvents question notifications', () => {
     unmount()
   })
 
-  it('shows the unread shortcut toast for permission-denied flows when unfocused', async () => {
+  it('does not show a permission toast for permission-denied flows', async () => {
     const { handlers, unmount } = await setupHook()
 
     await act(async () => {
@@ -419,16 +419,7 @@ describe('useStreamingEvents question notifications', () => {
     })
 
     expect(mockPlayNotificationSound).toHaveBeenCalledWith('choochoo')
-    expect(mockToastInfo).toHaveBeenCalledTimes(1)
-    const title = mockToastInfo.mock.calls[0]?.[0]
-    const options = mockToastInfo.mock.calls[0]?.[1] as
-      | { description?: string }
-      | undefined
-    expect(title).toBe('Permission needed')
-    expect(options?.description).toContain(
-      'Project Alpha / Feature Branch / Codex Session is waiting for your permission.'
-    )
-    expect(options?.description).toContain('Open unread sessions with')
+    expect(mockToastInfo).not.toHaveBeenCalled()
     unmount()
   })
 
@@ -459,6 +450,7 @@ describe('useStreamingEvents question notifications', () => {
       waiting_for_input: true,
       waiting_for_input_type: null,
       is_reviewing: false,
+      updated_at: expect.any(Number),
       pending_permission_denials: [createDenial('tool-1')],
     })
     expect(
@@ -469,6 +461,7 @@ describe('useStreamingEvents question notifications', () => {
           id: 'session-1',
           waiting_for_input: true,
           waiting_for_input_type: null,
+          updated_at: expect.any(Number),
           pending_permission_denials: [createDenial('tool-1')],
         }),
       ],
@@ -481,12 +474,19 @@ describe('useStreamingEvents question notifications', () => {
               id: 'session-1',
               waiting_for_input: true,
               waiting_for_input_type: null,
+              updated_at: expect.any(Number),
               pending_permission_denials: [createDenial('tool-1')],
             }),
           ],
         }),
       ],
     })
+    const updatedSession = queryClient.getQueryData<{
+      updated_at: number
+      last_opened_at?: number
+    }>(chatQueryKeys.session('session-1'))
+    expect(updatedSession?.updated_at).toBeGreaterThan(1)
+    expect(updatedSession?.last_opened_at).toBeUndefined()
     expect(mockInvoke).toHaveBeenCalledWith('update_session_state', {
       worktreeId: 'worktree-1',
       worktreePath: '/tmp/worktree-1',
@@ -501,6 +501,41 @@ describe('useStreamingEvents question notifications', () => {
       waitingForInputType: null,
       isReviewing: false,
     })
+    unmount()
+  })
+
+  it('marks in-view permission requests as opened immediately', async () => {
+    useChatStore.setState({
+      activeWorktreeId: 'worktree-1',
+      activeSessionIds: { 'worktree-1': 'session-1' },
+      worktreePaths: { 'worktree-1': '/tmp/worktree-1' },
+      lastSentMessages: { 'session-1': 'run the command' },
+      selectedModels: { 'session-1': 'gpt-5.4' },
+      executionModes: { 'session-1': 'build' },
+      thinkingLevels: { 'session-1': 'think' },
+    })
+
+    const { handlers, queryClient, unmount } = await setupHook()
+
+    await act(async () => {
+      handlers.get('chat:permission_denied')?.({
+        payload: {
+          session_id: 'session-1',
+          worktree_id: 'worktree-1',
+          denials: [createDenial('tool-1')],
+        },
+      })
+    })
+
+    expect(mockToastInfo).not.toHaveBeenCalled()
+    expect(mockInvoke).toHaveBeenCalledWith('set_session_last_opened', {
+      sessionId: 'session-1',
+    })
+    expect(
+      queryClient.getQueryData<{ last_opened_at?: number }>(
+        chatQueryKeys.session('session-1')
+      )?.last_opened_at
+    ).toEqual(expect.any(Number))
     unmount()
   })
 

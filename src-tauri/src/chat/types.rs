@@ -726,6 +726,9 @@ impl SessionMetadata {
             .runs
             .last()
             .map(|r| r.ended_at.unwrap_or(r.started_at))
+            .into_iter()
+            .chain(self.attention_updated_at)
+            .max()
             .unwrap_or(self.created_at);
         let last_message_at = self.runs.last().map(|r| r.ended_at.unwrap_or(r.started_at));
         Session {
@@ -811,6 +814,13 @@ impl SessionMetadata {
         self.pending_plan_message_id = session.pending_plan_message_id.clone();
         self.enabled_mcp_servers = session.enabled_mcp_servers.clone();
         self.parallel_execution_prompt_enabled = session.parallel_execution_prompt_enabled;
+        let run_updated_at = self
+            .runs
+            .last()
+            .map(|r| r.ended_at.unwrap_or(r.started_at))
+            .unwrap_or(self.created_at);
+        self.attention_updated_at =
+            (session.updated_at > run_updated_at).then_some(session.updated_at);
         self.label = session.label.clone();
         // NOTE: Do NOT overwrite queued_messages here. Queue state is managed
         // exclusively by enqueue/dequeue/remove/clear operations which use
@@ -1128,6 +1138,9 @@ pub struct SessionMetadata {
     /// Persisted session digest (recap summary)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub digest: Option<SessionDigest>,
+    /// Unix timestamp of the latest non-run attention event (for unread/top-bar state)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attention_updated_at: Option<u64>,
     /// User-assigned label with color (e.g. "Needs testing")
     #[serde(
         default,
@@ -1250,6 +1263,7 @@ impl SessionMetadata {
             enabled_mcp_servers: None,
             parallel_execution_prompt_enabled: None,
             digest: None,
+            attention_updated_at: None,
             label: None,
             queued_messages: vec![],
             last_opened_at: None,
@@ -1679,5 +1693,55 @@ mod tests {
         });
 
         assert_eq!(metadata.latest_claude_session_id(), Some("claude-sess-abc"));
+    }
+
+    #[test]
+    fn test_session_metadata_to_session_prefers_attention_timestamp() {
+        let mut metadata = SessionMetadata::new(
+            "sess-123".to_string(),
+            "wt-456".to_string(),
+            "Test".to_string(),
+            0,
+        );
+        metadata.created_at = 100;
+        metadata.attention_updated_at = Some(250);
+        metadata.runs.push(RunEntry {
+            run_id: "run-1".to_string(),
+            user_message_id: "msg-1".to_string(),
+            user_message: "Hello".to_string(),
+            model: None,
+            execution_mode: None,
+            thinking_level: None,
+            effort_level: None,
+            started_at: 150,
+            ended_at: Some(200),
+            status: RunStatus::Completed,
+            assistant_message_id: None,
+            cancelled: false,
+            recovered: false,
+            claude_session_id: None,
+            pid: None,
+            usage: None,
+        });
+
+        let session = metadata.to_session();
+        assert_eq!(session.updated_at, 250);
+        assert_eq!(session.last_message_at, Some(200));
+    }
+
+    #[test]
+    fn test_session_metadata_deserializes_without_attention_timestamp() {
+        let metadata = SessionMetadata::new(
+            "sess-123".to_string(),
+            "wt-456".to_string(),
+            "Test".to_string(),
+            0,
+        );
+        let mut json = serde_json::to_value(metadata).unwrap();
+        let object = json.as_object_mut().unwrap();
+        object.remove("attention_updated_at");
+
+        let restored: SessionMetadata = serde_json::from_value(json).unwrap();
+        assert_eq!(restored.attention_updated_at, None);
     }
 }

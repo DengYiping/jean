@@ -152,6 +152,29 @@ function getOptimisticAttentionTimestamp(previousUpdatedAt?: number): number {
   return Math.max(now, (previousUpdatedAt ?? 0) + 1)
 }
 
+async function resolveWorktreePath(worktreeId: string): Promise<string | null> {
+  const store = useChatStore.getState()
+  const existingPath = store.worktreePaths[worktreeId]
+  if (existingPath) return existingPath
+
+  try {
+    const worktree = await invoke<{ path: string }>('get_worktree', {
+      worktreeId,
+    })
+    if (worktree.path) {
+      store.registerWorktreePath(worktreeId, worktree.path)
+      return worktree.path
+    }
+  } catch (error) {
+    logger.warn('[useStreamingEvents] Failed to resolve worktree path', {
+      worktreeId,
+      error,
+    })
+  }
+
+  return null
+}
+
 /**
  * Hook that sets up global Tauri event listeners for streaming events from Rust.
  * Events include session_id for routing to the correct session.
@@ -258,12 +281,134 @@ export default function useStreamingEvents({
     })
 
     const unlistenToolUse = listen<ToolUseEvent>('chat:tool_use', event => {
-      const { session_id, id, name, input, parent_tool_use_id } = event.payload
+      const { session_id, worktree_id, id, name, input, parent_tool_use_id } =
+        event.payload
       addToolCall(session_id, { id, name, input, parent_tool_use_id })
 
       // Auto-switch Jean's mode when Claude enters plan mode
       if (name === 'EnterPlanMode') {
         useChatStore.getState().setExecutionMode(session_id, 'plan')
+      }
+
+      // Codex/OpenCode request_user_input turns can pause mid-run without
+      // emitting chat:done. Surface unread/waiting state immediately when the
+      // app-server maps them into AskUserQuestion with an rpcId.
+      if (
+        name === 'AskUserQuestion' &&
+        typeof input === 'object' &&
+        input !== null &&
+        'rpcId' in input
+      ) {
+        const isCurrentlyViewing = isSessionCurrentlyViewing(
+          session_id,
+          worktree_id
+        )
+        const { removeSendingSession, setWaitingForInput } =
+          useChatStore.getState()
+        const wasAlreadyWaiting =
+          useChatStore.getState().waitingForInputSessionIds[session_id] ?? false
+
+        removeSendingSession(session_id)
+        setWaitingForInput(session_id, true)
+
+        let attentionUpdatedAt: number | undefined
+        let lastOpenedAt: number | undefined
+        queryClient.setQueryData<Session>(
+          chatQueryKeys.session(session_id),
+          old => {
+            if (!old) return old
+            attentionUpdatedAt = getOptimisticAttentionTimestamp(old.updated_at)
+            if (isCurrentlyViewing) {
+              lastOpenedAt = attentionUpdatedAt
+            }
+            return {
+              ...old,
+              updated_at: attentionUpdatedAt,
+              ...(lastOpenedAt !== undefined
+                ? { last_opened_at: lastOpenedAt }
+                : {}),
+              waiting_for_input: true,
+              waiting_for_input_type: 'question',
+              is_reviewing: false,
+            }
+          }
+        )
+        queryClient.setQueryData<WorktreeSessions>(
+          chatQueryKeys.sessions(worktree_id),
+          old => {
+            if (!old) return old
+            return {
+              ...old,
+              sessions: old.sessions.map(session =>
+                session.id === session_id
+                  ? {
+                      ...session,
+                      updated_at:
+                        attentionUpdatedAt ??
+                        getOptimisticAttentionTimestamp(session.updated_at),
+                      ...(isCurrentlyViewing
+                        ? {
+                            last_opened_at:
+                              lastOpenedAt ??
+                              (attentionUpdatedAt ??
+                                getOptimisticAttentionTimestamp(
+                                  session.updated_at
+                                )),
+                          }
+                        : {}),
+                      waiting_for_input: true,
+                      waiting_for_input_type: 'question',
+                      is_reviewing: false,
+                    }
+                  : session
+              ),
+            }
+          }
+        )
+        updateAllSessionsCache(queryClient, worktree_id, session =>
+          session.id === session_id
+            ? {
+                ...session,
+                updated_at:
+                  attentionUpdatedAt ??
+                  getOptimisticAttentionTimestamp(session.updated_at),
+                ...(isCurrentlyViewing
+                  ? {
+                      last_opened_at:
+                        lastOpenedAt ??
+                        (attentionUpdatedAt ??
+                          getOptimisticAttentionTimestamp(session.updated_at)),
+                    }
+                  : {}),
+                waiting_for_input: true,
+                waiting_for_input_type: 'question',
+                is_reviewing: false,
+              }
+            : session
+        )
+
+        resolveWorktreePath(worktree_id)
+          .then(worktreePath => {
+            if (!worktreePath) return
+            return invoke('update_session_state', {
+              worktreeId: worktree_id,
+              worktreePath,
+              sessionId: session_id,
+              waitingForInput: true,
+              waitingForInputType: 'question',
+              isReviewing: false,
+            })
+          })
+          .catch(err => {
+            logger.error(
+              '[useStreamingEvents] Failed to persist request_user_input state:',
+              err
+            )
+          })
+
+        if (!isCurrentlyViewing && !wasAlreadyWaiting) {
+          playNotificationSound(getWaitingSoundPreference(queryClient))
+        }
       }
     })
 
@@ -425,25 +570,26 @@ export default function useStreamingEvents({
             .catch(() => undefined)
         }
 
-        const { worktreePaths } = useChatStore.getState()
-        const worktreePath = worktreePaths[worktree_id]
-        if (worktreePath) {
-          invoke('update_session_state', {
-            worktreeId: worktree_id,
-            worktreePath,
-            sessionId: session_id,
-            pendingPermissionDenials: denials,
-            deniedMessageContext: persistedDeniedMessageContext,
-            waitingForInput: true,
-            waitingForInputType: null,
-            isReviewing: false,
-          }).catch(err => {
+        resolveWorktreePath(worktree_id)
+          .then(worktreePath => {
+            if (!worktreePath) return
+            return invoke('update_session_state', {
+              worktreeId: worktree_id,
+              worktreePath,
+              sessionId: session_id,
+              pendingPermissionDenials: denials,
+              deniedMessageContext: persistedDeniedMessageContext,
+              waitingForInput: true,
+              waitingForInputType: null,
+              isReviewing: false,
+            })
+          })
+          .catch(err => {
             logger.error(
               '[useStreamingEvents] Failed to persist permission state:',
               err
             )
           })
-        }
       }
     )
 

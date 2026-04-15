@@ -270,6 +270,77 @@ describe('useStreamingEvents question notifications', () => {
     resetStores()
   })
 
+  it('writes request_user_input waits into caches immediately on tool_use', async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === 'get_worktree') {
+        return Promise.resolve({ path: '/tmp/worktree-1' })
+      }
+      return Promise.resolve(undefined)
+    })
+
+    const { handlers, queryClient, unmount } = await setupHook()
+
+    await act(async () => {
+      handlers.get('chat:tool_use')?.({
+        payload: {
+          session_id: 'session-1',
+          worktree_id: 'worktree-1',
+          id: 'tool-question',
+          name: 'AskUserQuestion',
+          input: {
+            questions: [
+              {
+                question: 'Need approval?',
+                multiSelect: false,
+                options: [{ label: 'Yes' }, { label: 'No' }],
+              },
+            ],
+            rpcId: 123,
+          },
+        },
+      })
+      await Promise.resolve()
+    })
+
+    expect(mockPlayNotificationSound).toHaveBeenCalledWith('choochoo')
+    expect(
+      queryClient.getQueryData(chatQueryKeys.session('session-1'))
+    ).toMatchObject({
+      id: 'session-1',
+      waiting_for_input: true,
+      waiting_for_input_type: 'question',
+      is_reviewing: false,
+      updated_at: expect.any(Number),
+    })
+    expect(queryClient.getQueryData(['all-sessions'])).toMatchObject({
+      entries: [
+        expect.objectContaining({
+          sessions: [
+            expect.objectContaining({
+              id: 'session-1',
+              waiting_for_input: true,
+              waiting_for_input_type: 'question',
+              is_reviewing: false,
+              updated_at: expect.any(Number),
+            }),
+          ],
+        }),
+      ],
+    })
+    expect(mockInvoke).toHaveBeenCalledWith('get_worktree', {
+      worktreeId: 'worktree-1',
+    })
+    expect(mockInvoke).toHaveBeenCalledWith('update_session_state', {
+      worktreeId: 'worktree-1',
+      worktreePath: '/tmp/worktree-1',
+      sessionId: 'session-1',
+      waitingForInput: true,
+      waitingForInputType: 'question',
+      isReviewing: false,
+    })
+    unmount()
+  })
+
   it('writes question waits into session, worktree, and unread caches for unfocused sessions', async () => {
     useChatStore.setState({
       worktreePaths: { 'worktree-1': '/tmp/worktree-1' },

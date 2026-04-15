@@ -277,7 +277,11 @@ export const FileChangeCard = memo(function FileChangeCard({
   const [showAll, setShowAll] = useState(false)
 
   const displayNameMap = useMemo(
-    () => computeDisplayNames(changes.map(c => c.path), worktreePath),
+    () =>
+      computeDisplayNames(
+        changes.map(c => c.path),
+        worktreePath
+      ),
     [changes, worktreePath]
   )
 

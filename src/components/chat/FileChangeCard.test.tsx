@@ -186,9 +186,9 @@ describe('FileChangeCard', () => {
     )
 
     expect(screen.getByText('1 file changed')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /ChatInput\.tsx/i })).toHaveTextContent(
-      'ChatInput.tsx'
-    )
+    expect(
+      screen.getByRole('button', { name: /ChatInput\.tsx/i })
+    ).toHaveTextContent('ChatInput.tsx')
     expect(
       screen.queryByText('/repo/src/components/chat/ChatInput.tsx')
     ).not.toBeInTheDocument()

@@ -60,9 +60,9 @@ describe('file-change-utils', () => {
       '/repo'
     )
 
-    expect(
-      displayNames.get('/repo/src/components/chat/ChatInput.tsx')
-    ).toBe('…/chat/ChatInput.tsx')
+    expect(displayNames.get('/repo/src/components/chat/ChatInput.tsx')).toBe(
+      '…/chat/ChatInput.tsx'
+    )
     expect(displayNames.get('/repo/src/lib/ChatInput.tsx')).toBe(
       '…/lib/ChatInput.tsx'
     )

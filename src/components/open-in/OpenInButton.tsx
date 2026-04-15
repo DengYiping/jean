@@ -18,8 +18,12 @@ import {
   useOpenWorktreeInFinder,
   useOpenBranchOnGitHub,
 } from '@/services/projects'
-import { usePreferences } from '@/services/preferences'
-import { getOpenInDefaultLabel } from '@/types/preferences'
+import { useAvailableEditors, usePreferences } from '@/services/preferences'
+import {
+  getDetectedEditorOptions,
+  getOpenInDefaultLabel,
+  type EditorApp,
+} from '@/types/preferences'
 import { isNativeApp } from '@/lib/environment'
 
 interface OpenInButtonProps {
@@ -34,10 +38,21 @@ export function OpenInButton({
   className,
 }: OpenInButtonProps) {
   const { data: preferences } = usePreferences()
+  const { data: availableEditors } = useAvailableEditors()
   const openInEditor = useOpenWorktreeInEditor()
   const openInTerminal = useOpenWorktreeInTerminal()
   const openInFinder = useOpenWorktreeInFinder()
   const openOnGitHub = useOpenBranchOnGitHub()
+
+  const openEditor = useCallback(
+    (editor?: EditorApp) => {
+      openInEditor.mutate({
+        worktreePath,
+        editor: editor ?? preferences?.editor,
+      })
+    },
+    [openInEditor, preferences?.editor, worktreePath]
+  )
 
   const openAction = useCallback(
     (target: string) => {
@@ -53,23 +68,26 @@ export function OpenInButton({
           break
         case 'github':
           if (branch) openOnGitHub.mutate({ repoPath: worktreePath, branch })
-          else
-            openInEditor.mutate({ worktreePath, editor: preferences?.editor })
+          else openEditor()
           break
         default:
-          openInEditor.mutate({ worktreePath, editor: preferences?.editor })
+          openEditor()
       }
     },
     [
-      openInEditor,
       openInTerminal,
       openInFinder,
       openOnGitHub,
+      openEditor,
       worktreePath,
       branch,
-      preferences?.editor,
       preferences?.terminal,
     ]
+  )
+
+  const editorOptions = getDetectedEditorOptions(
+    preferences?.editor,
+    availableEditors
   )
 
   const defaultLabel = getOpenInDefaultLabel(
@@ -116,6 +134,17 @@ export function OpenInButton({
               preferences?.terminal
             )}
           </DropdownMenuItem>
+          {editorOptions
+            .filter(option => !option.isDefault)
+            .map(option => (
+              <DropdownMenuItem
+                key={option.value}
+                onSelect={() => openEditor(option.value)}
+              >
+                <Code className="h-4 w-4" />
+                {option.label}
+              </DropdownMenuItem>
+            ))}
           <DropdownMenuItem onSelect={() => openAction('terminal')}>
             <Terminal className="h-4 w-4" />
             {getOpenInDefaultLabel(

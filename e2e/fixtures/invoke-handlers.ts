@@ -68,6 +68,8 @@ export const defaultResponses: Record<string, unknown> = {
   // Preferences
   load_preferences: mockPreferences,
   save_preferences: null,
+  patch_preferences: null,
+  list_available_editors: [],
 
   // UI State
   load_ui_state: uiState,
@@ -169,6 +171,9 @@ export const defaultResponses: Record<string, unknown> = {
   // Misc
   save_emergency_data: null,
   load_emergency_data: null,
+  open_worktree_in_editor: null,
+  open_worktree_in_terminal: null,
+  open_worktree_in_finder: null,
 }
 
 export { project, worktree1, worktree2 }

@@ -350,10 +350,10 @@ export default function useStreamingEvents({
                         ? {
                             last_opened_at:
                               lastOpenedAt ??
-                              (attentionUpdatedAt ??
-                                getOptimisticAttentionTimestamp(
-                                  session.updated_at
-                                )),
+                              attentionUpdatedAt ??
+                              getOptimisticAttentionTimestamp(
+                                session.updated_at
+                              ),
                           }
                         : {}),
                       waiting_for_input: true,
@@ -376,8 +376,8 @@ export default function useStreamingEvents({
                   ? {
                       last_opened_at:
                         lastOpenedAt ??
-                        (attentionUpdatedAt ??
-                          getOptimisticAttentionTimestamp(session.updated_at)),
+                        attentionUpdatedAt ??
+                        getOptimisticAttentionTimestamp(session.updated_at),
                     }
                   : {}),
                 waiting_for_input: true,

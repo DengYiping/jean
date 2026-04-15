@@ -1311,6 +1311,51 @@ const allEditorOptions: {
 export const editorOptions: { value: EditorApp; label: string }[] =
   allEditorOptions.filter(opt => opt.platforms.includes(getCurrentPlatform()))
 
+const supportedEditorIds = new Set<EditorApp>(
+  allEditorOptions.map(option => option.value)
+)
+
+export interface DetectedEditorOption {
+  value: EditorApp
+  label: string
+  isDefault: boolean
+}
+
+export function isEditorApp(value: string): value is EditorApp {
+  return supportedEditorIds.has(value as EditorApp)
+}
+
+export function getDetectedEditorOptions(
+  preferredEditor: EditorApp | undefined,
+  detectedEditors: readonly string[] | undefined
+): DetectedEditorOption[] {
+  const orderedEditors = allEditorOptions.map(option => option.value)
+  const seen = new Set<EditorApp>()
+  const options: DetectedEditorOption[] = []
+
+  if (preferredEditor && isEditorApp(preferredEditor)) {
+    seen.add(preferredEditor)
+    options.push({
+      value: preferredEditor,
+      label: getEditorLabel(preferredEditor),
+      isDefault: true,
+    })
+  }
+
+  for (const editor of orderedEditors) {
+    if (seen.has(editor)) continue
+    if (!detectedEditors?.some(candidate => candidate === editor)) continue
+    seen.add(editor)
+    options.push({
+      value: editor,
+      label: getEditorLabel(editor),
+      isDefault: false,
+    })
+  }
+
+  return options
+}
+
 export type OpenInDefault = 'editor' | 'terminal' | 'finder' | 'github'
 
 export const openInDefaultOptions: { value: OpenInDefault; label: string }[] = [

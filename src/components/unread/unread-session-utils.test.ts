@@ -53,6 +53,20 @@ describe('unread-session-utils', () => {
     })
   })
 
+  it('treats question waits as unread and labels them as needing input', () => {
+    const session = createSession({
+      waiting_for_input: true,
+      waiting_for_input_type: 'question',
+      last_run_status: 'resumable',
+    })
+
+    expect(isUnreadSession(session)).toBe(true)
+    expect(getUnreadSessionStatus(session)).toMatchObject({
+      label: 'Needs input',
+      className: 'text-yellow-500',
+    })
+  })
+
   it('does not count already-opened idle sessions as unread', () => {
     const session = createSession({
       last_opened_at: 10,

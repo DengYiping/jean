@@ -270,7 +270,7 @@ describe('useStreamingEvents question notifications', () => {
     resetStores()
   })
 
-  it('shows a question toast with the unread shortcut and plays the waiting sound for unfocused sessions', async () => {
+  it('writes question waits into session, worktree, and unread caches for unfocused sessions', async () => {
     useChatStore.setState({
       worktreePaths: { 'worktree-1': '/tmp/worktree-1' },
       activeToolCalls: { 'session-1': [createAskUserQuestionToolCall()] },
@@ -279,9 +279,7 @@ describe('useStreamingEvents question notifications', () => {
       },
     })
 
-    const { handlers, unmount } = await setupHook()
-    const unreadSpy = vi.fn()
-    window.addEventListener('command:open-unread-sessions', unreadSpy)
+    const { handlers, queryClient, unmount } = await setupHook()
 
     await act(async () => {
       handlers.get('chat:done')?.({
@@ -293,32 +291,55 @@ describe('useStreamingEvents question notifications', () => {
     })
 
     expect(mockPlayNotificationSound).toHaveBeenCalledWith('choochoo')
-    expect(mockToastInfo).toHaveBeenCalledTimes(1)
-    const title = mockToastInfo.mock.calls[0]?.[0]
-    const options = mockToastInfo.mock.calls[0]?.[1] as
-      | {
-          description?: string
-          action?: { onClick: () => void }
-        }
-      | undefined
-    expect(options).toBeDefined()
-    expect(title).toBe('Question waiting for input')
-    expect(options?.description).toContain(
-      'Project Alpha / Feature Branch / Codex Session is waiting for your answer.'
-    )
-    expect(options?.description).toContain('Open unread sessions with')
-    expect(options?.action).toBeDefined()
-
-    act(() => {
-      options?.action?.onClick()
+    expect(mockToastInfo).not.toHaveBeenCalled()
+    expect(
+      queryClient.getQueryData(chatQueryKeys.session('session-1'))
+    ).toMatchObject({
+      id: 'session-1',
+      waiting_for_input: true,
+      waiting_for_input_type: 'question',
+      last_run_status: 'resumable',
+      is_reviewing: false,
     })
-    expect(unreadSpy).toHaveBeenCalledTimes(1)
-
-    window.removeEventListener('command:open-unread-sessions', unreadSpy)
+    expect(
+      queryClient.getQueryData(chatQueryKeys.sessions('worktree-1'))
+    ).toMatchObject({
+      sessions: [
+        expect.objectContaining({
+          id: 'session-1',
+          waiting_for_input: true,
+          waiting_for_input_type: 'question',
+          last_run_status: 'resumable',
+          is_reviewing: false,
+        }),
+      ],
+    })
+    expect(queryClient.getQueryData(['all-sessions'])).toMatchObject({
+      entries: [
+        expect.objectContaining({
+          sessions: [
+            expect.objectContaining({
+              id: 'session-1',
+              waiting_for_input: true,
+              waiting_for_input_type: 'question',
+              last_run_status: 'resumable',
+              is_reviewing: false,
+            }),
+          ],
+        }),
+      ],
+    })
+    expect(mockInvoke).toHaveBeenCalledWith('update_session_state', {
+      worktreeId: 'worktree-1',
+      worktreePath: '/tmp/worktree-1',
+      sessionId: 'session-1',
+      waitingForInput: true,
+      waitingForInputType: 'question',
+    })
     unmount()
   })
 
-  it('does not show the question toast when the session is open in full view', async () => {
+  it('marks in-view question waits as opened immediately in full view', async () => {
     useChatStore.setState({
       activeWorktreeId: 'worktree-1',
       activeSessionIds: { 'worktree-1': 'session-1' },
@@ -329,7 +350,7 @@ describe('useStreamingEvents question notifications', () => {
       },
     })
 
-    const { handlers, unmount } = await setupHook()
+    const { handlers, queryClient, unmount } = await setupHook()
 
     await act(async () => {
       handlers.get('chat:done')?.({
@@ -341,10 +362,22 @@ describe('useStreamingEvents question notifications', () => {
     })
 
     expect(mockToastInfo).not.toHaveBeenCalled()
+    expect(mockInvoke).toHaveBeenCalledWith('set_session_last_opened', {
+      sessionId: 'session-1',
+    })
+    expect(
+      queryClient.getQueryData(chatQueryKeys.session('session-1'))
+    ).toMatchObject({
+      id: 'session-1',
+      waiting_for_input: true,
+      waiting_for_input_type: 'question',
+      last_run_status: 'resumable',
+      is_reviewing: false,
+    })
     unmount()
   })
 
-  it('does not show the question toast when the session is open in a modal view', async () => {
+  it('marks in-view question waits as opened immediately in modal view', async () => {
     useChatStore.setState({
       activeSessionIds: { 'worktree-1': 'session-1' },
       worktreePaths: { 'worktree-1': '/tmp/worktree-1' },
@@ -358,7 +391,7 @@ describe('useStreamingEvents question notifications', () => {
       sessionChatModalWorktreeId: 'worktree-1',
     })
 
-    const { handlers, unmount } = await setupHook()
+    const { handlers, queryClient, unmount } = await setupHook()
 
     await act(async () => {
       handlers.get('chat:done')?.({
@@ -370,6 +403,18 @@ describe('useStreamingEvents question notifications', () => {
     })
 
     expect(mockToastInfo).not.toHaveBeenCalled()
+    expect(mockInvoke).toHaveBeenCalledWith('set_session_last_opened', {
+      sessionId: 'session-1',
+    })
+    expect(
+      queryClient.getQueryData(chatQueryKeys.session('session-1'))
+    ).toMatchObject({
+      id: 'session-1',
+      waiting_for_input: true,
+      waiting_for_input_type: 'question',
+      last_run_status: 'resumable',
+      is_reviewing: false,
+    })
     unmount()
   })
 

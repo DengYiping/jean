@@ -13,11 +13,8 @@ import { triggerImmediateGitPoll } from '@/services/git-status'
 import { isAskUserQuestion, isExitPlanMode } from '@/types/chat'
 import { playNotificationSound } from '@/lib/sounds'
 import { findPlanFilePath } from '@/components/chat/tool-call-utils'
+import { lookupSessionLabel } from '@/components/chat/hooks/session-label-utils'
 import { generateId } from '@/lib/uuid'
-import {
-  lookupSessionLabel,
-  showSessionQuestionWaitingAlert,
-} from '@/components/chat/hooks/session-input-alert'
 import type {
   ChunkEvent,
   ToolUseEvent,
@@ -775,13 +772,6 @@ export default function useStreamingEvents({
           // Play waiting sound if not currently viewing this session
           if (!isCurrentlyViewing) {
             playNotificationSound(getWaitingSoundPreference(queryClient))
-            if (waitingType === 'question') {
-              showSessionQuestionWaitingAlert(
-                queryClient,
-                sessionId,
-                worktreeId
-              )
-            }
           }
         }
       } else if (hasPendingPermissionDenials) {

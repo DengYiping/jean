@@ -24,6 +24,8 @@ import { logger } from '@/lib/logger'
 interface StreamingMessageProps {
   /** Session ID for the streaming message */
   sessionId: string
+  /** Active worktree path for relative file-change display */
+  worktreePath?: string
   /** Streaming content blocks (new format) */
   contentBlocks: ContentBlock[]
   /** Active tool calls during streaming */
@@ -91,6 +93,7 @@ interface StreamingMessageProps {
  */
 export const StreamingMessage = memo(function StreamingMessage({
   sessionId,
+  worktreePath,
   contentBlocks,
   toolCalls,
   streamingContent,
@@ -217,6 +220,7 @@ export const StreamingMessage = memo(function StreamingMessage({
                                 taskToolCall={item.taskTool}
                                 subToolCalls={item.subTools}
                                 allToolCalls={toolCalls}
+                                worktreePath={worktreePath}
                                 onFileClick={onFileClick}
                                 viewportRef={scrollViewportRef}
                                 isStreaming={true}
@@ -227,6 +231,7 @@ export const StreamingMessage = memo(function StreamingMessage({
                             return (
                               <ToolCallInline
                                 toolCall={item.tool}
+                                worktreePath={worktreePath}
                                 onFileClick={onFileClick}
                                 viewportRef={scrollViewportRef}
                                 isStreaming={true}
@@ -237,6 +242,7 @@ export const StreamingMessage = memo(function StreamingMessage({
                             return (
                               <StackedGroup
                                 items={item.items}
+                                worktreePath={worktreePath}
                                 onFileClick={onFileClick}
                                 viewportRef={scrollViewportRef}
                                 isStreaming={true}
@@ -280,6 +286,7 @@ export const StreamingMessage = memo(function StreamingMessage({
                             return (
                               <ToolCallInline
                                 toolCall={item.tool}
+                                worktreePath={worktreePath}
                                 onFileClick={onFileClick}
                                 viewportRef={scrollViewportRef}
                                 isStreaming={true}
@@ -396,7 +403,7 @@ export const StreamingMessage = memo(function StreamingMessage({
         </>
       )}
 
-      <FileChangeCard toolCalls={toolCalls} />
+      <FileChangeCard toolCalls={toolCalls} worktreePath={worktreePath} />
 
       {/* Show edited files during streaming */}
       <EditedFilesDisplay

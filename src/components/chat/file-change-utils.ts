@@ -28,6 +28,11 @@ export function isFileChangeTool(toolCall: ToolCall): boolean {
   return toolCall.name === 'FileChange'
 }
 
+function trimTrailingSlash(path: string): string {
+  if (path === '/') return path
+  return path.replace(/\/+$/, '')
+}
+
 function normalizeNewlines(text: string): string {
   return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
 }
@@ -226,9 +231,34 @@ export function collectFileChanges(
 ): ParsedFileChange[] {
   if (!toolCalls) return []
 
-  return toolCalls
-    .filter(isFileChangeTool)
-    .flatMap(toolCall => normalizeFileChanges(toolCall.input))
+  const aggregated = new Map<string, ParsedFileChange>()
+  const orderedKeys: string[] = []
+
+  for (const toolCall of toolCalls.filter(isFileChangeTool)) {
+    for (const change of normalizeFileChanges(toolCall.input)) {
+      const key = normalizePath(change.path)
+      const existing = aggregated.get(key)
+
+      if (!existing) {
+        aggregated.set(key, { ...change, path: key })
+        orderedKeys.push(key)
+        continue
+      }
+
+      aggregated.set(key, {
+        ...existing,
+        kind: mergeFileChangeKind(existing.kind, change.kind),
+        previousPath: change.previousPath ?? existing.previousPath,
+        lines: [...existing.lines, ...change.lines],
+        added: existing.added + change.added,
+        removed: existing.removed + change.removed,
+      })
+    }
+  }
+
+  return orderedKeys
+    .map(key => aggregated.get(key))
+    .filter((change): change is ParsedFileChange => Boolean(change))
 }
 
 export function getFileChangeTotals(changes: ParsedFileChange[]): {
@@ -241,15 +271,55 @@ export function getFileChangeTotals(changes: ParsedFileChange[]): {
   }
 }
 
-export function computeDisplayNames(paths: string[]): Map<string, string> {
+function getWorktreeRelativePath(
+  path: string,
+  worktreePath?: string
+): string | null {
+  if (!worktreePath) return null
+
+  const normalizedPath = normalizePath(path)
+  const normalizedWorktreePath = trimTrailingSlash(normalizePath(worktreePath))
+
+  if (normalizedPath === normalizedWorktreePath) return ''
+  if (normalizedPath.startsWith(`${normalizedWorktreePath}/`)) {
+    return normalizedPath.slice(normalizedWorktreePath.length + 1)
+  }
+
+  return null
+}
+
+function mergeFileChangeKind(existingKind: string, nextKind: string): string {
+  if (nextKind === 'delete') return nextKind
+  if (existingKind === 'delete') return existingKind
+
+  if (existingKind === 'add' || existingKind === 'create') {
+    return existingKind
+  }
+
+  if (nextKind === 'add' || nextKind === 'create') return nextKind
+  if (nextKind === 'move' || nextKind === 'rename') return nextKind
+  if (existingKind === 'move' || existingKind === 'rename') return existingKind
+
+  return nextKind
+}
+
+export function computeDisplayNames(
+  paths: string[],
+  worktreePath?: string
+): Map<string, string> {
   const result = new Map<string, string>()
   if (paths.length === 0) return result
 
-  const entries = paths.map(p => ({
-    original: p,
-    norm: normalizePath(p),
-    basename: getFilename(p),
-  }))
+  const entries = paths.map(p => {
+    const relativePath = getWorktreeRelativePath(p, worktreePath)
+
+    return {
+      original: p,
+      norm: relativePath ?? normalizePath(p),
+      isWorktreeRelative: relativePath !== null,
+      basename: getFilename(p),
+    }
+  })
 
   const groups = new Map<string, typeof entries>()
   for (const entry of entries) {
@@ -289,6 +359,9 @@ export function computeDisplayNames(paths: string[]): Map<string, string> {
       for (const [name, bucket] of seen) {
         const single = bucket.length === 1 ? bucket[0] : undefined
         if (single && !result.has(single.original)) {
+          if (!single.isWorktreeRelative && name !== single.norm) {
+            continue
+          }
           const isPartial = name !== single.norm
           result.set(single.original, isPartial ? `\u2026/${name}` : name)
         }

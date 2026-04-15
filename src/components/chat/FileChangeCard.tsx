@@ -19,6 +19,7 @@ import {
 
 interface FileChangeCardProps {
   toolCalls: ToolCall[] | undefined
+  worktreePath?: string
   className?: string
   viewportRef?: RefObject<HTMLDivElement | null>
 }
@@ -265,6 +266,7 @@ function FileChangeRow({
 
 export const FileChangeCard = memo(function FileChangeCard({
   toolCalls,
+  worktreePath,
   className,
   viewportRef,
 }: FileChangeCardProps) {
@@ -275,8 +277,8 @@ export const FileChangeCard = memo(function FileChangeCard({
   const [showAll, setShowAll] = useState(false)
 
   const displayNameMap = useMemo(
-    () => computeDisplayNames(changes.map(c => c.path)),
-    [changes]
+    () => computeDisplayNames(changes.map(c => c.path), worktreePath),
+    [changes, worktreePath]
   )
 
   if (changes.length === 0) return null

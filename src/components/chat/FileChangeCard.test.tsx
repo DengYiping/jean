@@ -24,19 +24,18 @@ describe('FileChangeCard', () => {
   it('renders a dedicated file-change summary card without undo actions', () => {
     render(
       <FileChangeCard
-        worktreePath="/repo"
         toolCalls={[
           {
             id: 'file-change-1',
             name: 'FileChange',
             input: [
               {
-                path: '/repo/src/components/chat/ToolCallInline.test.tsx',
+                path: 'src/components/chat/ToolCallInline.test.tsx',
                 kind: { type: 'update' },
                 diff: '@@ -1,2 +1,3 @@\n line 1\n-line 2\n+line 3\n+line 4\n',
               },
               {
-                path: '/repo/src/components/chat/ToolCallInline.tsx',
+                path: 'src/components/chat/ToolCallInline.tsx',
                 kind: { type: 'delete' },
                 diff: 'line a\nline b\n',
               },
@@ -86,14 +85,13 @@ describe('FileChangeCard', () => {
       return (
         <div ref={viewportRef} data-testid="viewport">
           <FileChangeCard
-            worktreePath="/repo"
             toolCalls={[
               {
                 id: 'file-change-2',
                 name: 'FileChange',
                 input: [
                   {
-                    path: '/repo/src/components/chat/FileChangeCard.tsx',
+                    path: 'src/components/chat/FileChangeCard.tsx',
                     kind: { type: 'update' },
                     diff: '@@ -1,2 +1,3 @@\n line 1\n-line 2\n+line 3\n+line 4\n',
                   },
@@ -130,7 +128,7 @@ describe('FileChangeCard', () => {
 
     let relativeOffset = 0
     const rowButton = screen.getByTitle(
-      '/repo/src/components/chat/FileChangeCard.tsx'
+      'src/components/chat/FileChangeCard.tsx'
     )
     rowButton.getBoundingClientRect = () => {
       const top = 20 + 160 + relativeOffset - (viewport.scrollTop - 200)
@@ -152,52 +150,5 @@ describe('FileChangeCard', () => {
     vi.runAllTimers()
 
     expect(viewport.scrollTop).toBe(150)
-  })
-
-  it('deduplicates repeated file rows and shows worktree-relative paths', () => {
-    render(
-      <FileChangeCard
-        worktreePath="/repo"
-        toolCalls={[
-          {
-            id: 'file-change-1',
-            name: 'FileChange',
-            input: [
-              {
-                path: '/repo/src/components/chat/ChatInput.tsx',
-                kind: { type: 'update' },
-                diff: '@@ -1,2 +1,2 @@\n line 1\n-line 2\n+line 3\n',
-              },
-            ],
-          },
-          {
-            id: 'file-change-2',
-            name: 'FileChange',
-            input: [
-              {
-                path: '/repo/src/components/chat/ChatInput.tsx',
-                kind: { type: 'update' },
-                diff: '@@ -10,2 +10,3 @@\n line 10\n-line 11\n+line 12\n+line 13\n',
-              },
-            ],
-          },
-        ]}
-      />
-    )
-
-    expect(screen.getByText('1 file changed')).toBeInTheDocument()
-    expect(
-      screen.getByRole('button', { name: /ChatInput\.tsx/i })
-    ).toHaveTextContent('ChatInput.tsx')
-    expect(
-      screen.queryByText('/repo/src/components/chat/ChatInput.tsx')
-    ).not.toBeInTheDocument()
-    expect(screen.getAllByText('+3')).toHaveLength(2)
-    expect(screen.getAllByText('-2')).toHaveLength(2)
-
-    fireEvent.click(screen.getByRole('button', { name: /ChatInput\.tsx/i }))
-
-    expect(screen.getByText('@@ -1,2 +1,2 @@')).toBeInTheDocument()
-    expect(screen.getByText('@@ -10,2 +10,3 @@')).toBeInTheDocument()
   })
 })

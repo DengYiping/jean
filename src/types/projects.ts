@@ -66,7 +66,6 @@ export interface Project {
   linked_project_ids?: string[]
 }
 
-<<<<<<< HEAD
 export interface DirEntry {
   name: string
   path: string

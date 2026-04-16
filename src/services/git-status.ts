@@ -162,6 +162,21 @@ export async function gitPull(
 }
 
 /**
+ * Pull changes from the current branch's upstream tracking branch.
+ *
+ * @param worktreePath - Path to the worktree/repository
+ * @returns Output from the upstream pull command
+ */
+export async function gitPullUpstream(worktreePath: string): Promise<string> {
+  if (!isTauri()) {
+    throw new Error('Git upstream pull only available in Tauri')
+  }
+  return invoke<string>('git_pull_upstream', {
+    worktreePath,
+  })
+}
+
+/**
  * Stash all local changes including untracked files.
  */
 export async function gitStash(worktreePath: string): Promise<string> {
@@ -195,6 +210,28 @@ export interface GitPullOptions {
   onMergeConflict?: () => void
 }
 
+export interface GitPullUpstreamOptions {
+  worktreeId: string
+  worktreePath: string
+  branchLabel?: string
+  projectId?: string
+  onMergeConflict?: () => void
+}
+
+interface GitSyncOptions {
+  worktreeId: string
+  worktreePath: string
+  label: string
+  projectId?: string
+  onMergeConflict?: () => void
+  loadingMessage: string
+  successMessage: string
+  autoStashSuccessMessage: string
+  mergeConflictMessage: string
+  failurePrefix: string
+  runSync: () => Promise<string>
+}
+
 /**
  * Consolidated git pull with auto-stash support.
  *
@@ -204,29 +241,32 @@ export interface GitPullOptions {
  *
  * All 9 pull locations in the app should use this function.
  */
-export async function performGitPull(opts: GitPullOptions): Promise<void> {
+async function performGitSync(opts: GitSyncOptions): Promise<void> {
   const {
     worktreeId,
     worktreePath,
-    baseBranch,
-    branchLabel,
     projectId,
-    remote,
+    label,
     onMergeConflict,
+    loadingMessage,
+    successMessage,
+    autoStashSuccessMessage,
+    mergeConflictMessage,
+    failurePrefix,
+    runSync,
   } = opts
   const { setWorktreeLoading, clearWorktreeLoading } = useChatStore.getState()
 
   if (worktreeId) {
     setWorktreeLoading(worktreeId, 'commit')
   }
-  const label = branchLabel || baseBranch
-  const toastId = toast.loading(`Pulling changes on ${label}...`)
+  const toastId = toast.loading(loadingMessage.replace('{label}', label))
 
   try {
-    await gitPull(worktreePath, baseBranch, remote)
+    await runSync()
     await triggerImmediateGitPoll()
     if (projectId) fetchWorktreesStatus(projectId)
-    toast.success('Changes pulled', { id: toastId })
+    toast.success(successMessage, { id: toastId })
   } catch (error) {
     const errorStr = String(error)
 
@@ -251,14 +291,12 @@ export async function performGitPull(opts: GitPullOptions): Promise<void> {
       toast.loading('Auto-stashing local changes...', { id: toastId })
       try {
         await gitStash(worktreePath)
-        await gitPull(worktreePath, baseBranch, remote)
+        await runSync()
         toast.loading('Restoring stashed changes...', { id: toastId })
         await gitStashPop(worktreePath)
         await triggerImmediateGitPoll()
         if (projectId) fetchWorktreesStatus(projectId)
-        toast.success('Pulled (auto-stashed and restored local changes)', {
-          id: toastId,
-        })
+        toast.success(autoStashSuccessMessage, { id: toastId })
       } catch (stashError) {
         const stashErrStr = String(stashError)
         if (
@@ -296,7 +334,7 @@ export async function performGitPull(opts: GitPullOptions): Promise<void> {
 
     // Merge conflict path
     if (errorStr.includes('Merge conflicts in:')) {
-      toast.warning('Pull resulted in merge conflicts', {
+      toast.warning(mergeConflictMessage, {
         id: toastId,
         duration: Infinity,
         action: {
@@ -314,12 +352,55 @@ export async function performGitPull(opts: GitPullOptions): Promise<void> {
       return
     }
 
-    toast.error(`Pull failed: ${errorStr}`, { id: toastId })
+    toast.error(`${failurePrefix}: ${errorStr}`, { id: toastId })
   } finally {
     if (worktreeId) {
       clearWorktreeLoading(worktreeId)
     }
   }
+}
+
+/**
+ * Consolidated git pull with auto-stash support.
+ *
+ * When pull fails because local changes would be overwritten:
+ * - If no build/yolo session is running on the worktree → auto-stash, pull, unstash
+ * - If a build/yolo session is running → show error, refuse to stash
+ *
+ * All base-branch pull locations in the app should use this function.
+ */
+export async function performGitPull(opts: GitPullOptions): Promise<void> {
+  const { baseBranch, branchLabel, remote, ...rest } = opts
+  await performGitSync({
+    ...rest,
+    label: branchLabel || baseBranch,
+    loadingMessage: 'Pulling changes on {label}...',
+    successMessage: 'Changes pulled',
+    autoStashSuccessMessage: 'Pulled (auto-stashed and restored local changes)',
+    mergeConflictMessage: 'Pull resulted in merge conflicts',
+    failurePrefix: 'Pull failed',
+    runSync: () => gitPull(rest.worktreePath, baseBranch, remote),
+  })
+}
+
+/**
+ * Consolidated upstream pull with auto-stash support.
+ */
+export async function performGitPullUpstream(
+  opts: GitPullUpstreamOptions
+): Promise<void> {
+  const { branchLabel, ...rest } = opts
+  await performGitSync({
+    ...rest,
+    label: branchLabel || 'upstream branch',
+    loadingMessage: 'Updating from upstream on {label}...',
+    successMessage: 'Branch updated from upstream',
+    autoStashSuccessMessage:
+      'Updated from upstream (auto-stashed and restored local changes)',
+    mergeConflictMessage: 'Update from upstream resulted in merge conflicts',
+    failurePrefix: 'Update from upstream failed',
+    runSync: () => gitPullUpstream(rest.worktreePath),
+  })
 }
 
 /**

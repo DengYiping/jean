@@ -2856,6 +2856,7 @@ pub fn run() {
             projects::get_repo_branches,
             projects::revert_file,
             projects::git_pull,
+            projects::git_pull_upstream,
             projects::git_stash,
             projects::git_stash_pop,
             projects::git_push,

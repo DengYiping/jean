@@ -7079,6 +7079,13 @@ pub async fn git_pull(
     git::git_pull(&worktree_path, &base_branch, remote.as_deref())
 }
 
+/// Pull changes from the current branch's upstream tracking branch
+#[tauri::command]
+pub async fn git_pull_upstream(worktree_path: String) -> Result<String, String> {
+    log::trace!("Pulling changes for worktree upstream: {worktree_path}");
+    git::git_pull_upstream(&worktree_path)
+}
+
 /// Stash all local changes including untracked files
 #[tauri::command]
 pub async fn git_stash(worktree_path: String) -> Result<String, String> {

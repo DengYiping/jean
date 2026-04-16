@@ -41,6 +41,7 @@ import {
   triggerImmediateGitPoll,
   fetchWorktreesStatus,
   performGitPull,
+  performGitPullUpstream,
 } from '@/services/git-status'
 import type {
   CreateCommitResponse,
@@ -69,6 +70,7 @@ type MagicOption =
   | 'commit'
   | 'commit-and-push'
   | 'pull'
+  | 'pull-upstream'
   | 'push'
   | 'open-pr'
   | 'update-pr'
@@ -89,6 +91,7 @@ const CANVAS_ALLOWED_OPTIONS = new Set<MagicOption>([
   'commit-and-push',
   'revert-last-commit',
   'pull',
+  'pull-upstream',
   'push',
   'open-pr',
   'update-pr',
@@ -175,6 +178,12 @@ function buildMagicColumns(hasOpenPr: boolean): MagicColumns {
       header: 'Sync',
       options: [
         { id: 'pull', label: 'Pull', icon: ArrowDownToLine, key: 'D' },
+        {
+          id: 'pull-upstream',
+          label: 'Upstream Pull',
+          icon: ArrowDownToLine,
+          key: 'H',
+        },
         { id: 'push', label: 'Push', icon: ArrowUpToLine, key: 'U' },
       ],
     },
@@ -255,6 +264,7 @@ const KEY_TO_OPTION: Record<string, MagicOption> = {
   c: 'commit',
   p: 'commit-and-push',
   d: 'pull',
+  h: 'pull-upstream',
   u: 'push',
   o: 'open-pr',
   e: 'update-pr',
@@ -459,6 +469,16 @@ export function MagicModal() {
               remote,
               onMergeConflict: () => executeGitDirectly('resolve-conflicts'),
             })
+          })
+          break
+        }
+        case 'pull-upstream': {
+          await performGitPullUpstream({
+            worktreeId: selectedWorktreeId,
+            worktreePath: worktree.path,
+            branchLabel: worktree.branch,
+            projectId: worktree.project_id ?? undefined,
+            onMergeConflict: () => executeGitDirectly('resolve-conflicts'),
           })
           break
         }

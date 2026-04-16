@@ -623,27 +623,20 @@ pub fn git_pull(
     // Use explicit fetch + merge instead of `git pull` to avoid
     // "Cannot rebase onto multiple branches" when pull.rebase=true
     // is set in git config (common in worktree contexts)
-    let fetch = silent_command("git")
-        .args(["fetch", remote, base_branch])
-        .current_dir(repo_path)
-        .output()
-        .map_err(|e| format!("Failed to run git fetch: {e}"))?;
+    git_fetch(repo_path, base_branch, Some(remote))?;
+    merge_fetched_ref(repo_path, &format!("{remote}/{base_branch}"))
+}
 
-    if !fetch.status.success() {
-        let stderr = String::from_utf8_lossy(&fetch.stderr).to_string();
-        log::error!("Failed to fetch {remote}/{base_branch}: {stderr}");
-        return Err(stderr);
-    }
-
+fn merge_fetched_ref(repo_path: &str, merge_ref: &str) -> Result<String, String> {
     let merge = silent_command("git")
-        .args(["merge", &format!("{remote}/{base_branch}")])
+        .args(["merge", merge_ref])
         .current_dir(repo_path)
         .output()
         .map_err(|e| format!("Failed to run git merge: {e}"))?;
 
     if merge.status.success() {
         let stdout = String::from_utf8_lossy(&merge.stdout).to_string();
-        log::trace!("Successfully merged origin/{base_branch}");
+        log::trace!("Successfully merged {merge_ref}");
         Ok(stdout)
     } else {
         let stdout_str = String::from_utf8_lossy(&merge.stdout);
@@ -671,9 +664,51 @@ pub fn git_pull(
         } else {
             stderr_str.trim().to_string()
         };
-        log::error!("Failed to merge origin/{base_branch}: {error}");
+        log::error!("Failed to merge {merge_ref}: {error}");
         Err(error)
     }
+}
+
+fn get_upstream_tracking_ref(repo_path: &str) -> Result<String, String> {
+    let current_branch = get_current_branch(repo_path)?;
+    if current_branch == "HEAD" {
+        return Err(
+            "Cannot update from upstream: HEAD is detached. Check out a branch first.".to_string(),
+        );
+    }
+
+    let output = silent_command("git")
+        .args(["rev-parse", "--abbrev-ref", "@{upstream}"])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| format!("Failed to read upstream tracking branch: {e}"))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "Branch `{current_branch}` has no upstream tracking branch"
+        ));
+    }
+
+    let upstream = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if upstream.is_empty() {
+        return Err(format!(
+            "Branch `{current_branch}` has no upstream tracking branch"
+        ));
+    }
+
+    Ok(upstream)
+}
+
+/// Pull changes from the current branch's upstream tracking branch.
+pub fn git_pull_upstream(repo_path: &str) -> Result<String, String> {
+    let upstream_ref = get_upstream_tracking_ref(repo_path)?;
+    let (remote, remote_branch) = upstream_ref
+        .split_once('/')
+        .ok_or_else(|| format!("Invalid upstream tracking ref: {upstream_ref}"))?;
+
+    log::trace!("Pulling from upstream {upstream_ref} in {repo_path}");
+    git_fetch(repo_path, remote_branch, Some(remote))?;
+    merge_fetched_ref(repo_path, &upstream_ref)
 }
 
 /// Stash all local changes including untracked files
@@ -2371,6 +2406,101 @@ fn handle_merge_failure(repo_path: &str, stdout: &[u8], stderr: &[u8]) -> MergeR
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
+    use std::process::Command;
+    use tempfile::TempDir;
+
+    fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .output()
+            .map_err(|e| format!("Failed to run git {args:?}: {e}"))?;
+
+        if output.status.success() {
+            Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+        } else {
+            Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+        }
+    }
+
+    fn init_repo(dir: &Path) {
+        git(dir, &["init", "-b", "main"]).unwrap();
+        git(dir, &["config", "user.name", "Jean Test"]).unwrap();
+        git(dir, &["config", "user.email", "jean-tests@example.com"]).unwrap();
+    }
+
+    fn commit_file(dir: &Path, name: &str, content: &str, message: &str) {
+        std::fs::write(dir.join(name), content).unwrap();
+        git(dir, &["add", name]).unwrap();
+        git(dir, &["commit", "-m", message]).unwrap();
+    }
+
+    fn clone_repo(remote_path: &Path, clone_path: &Path) {
+        let parent = clone_path.parent().unwrap();
+        let clone_name = clone_path
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        git(
+            parent,
+            &["clone", &remote_path.display().to_string(), &clone_name],
+        )
+        .unwrap();
+        git(clone_path, &["config", "user.name", "Jean Test"]).unwrap();
+        git(
+            clone_path,
+            &["config", "user.email", "jean-tests@example.com"],
+        )
+        .unwrap();
+    }
+
+    fn setup_remote_with_feature_branch() -> (
+        TempDir,
+        std::path::PathBuf,
+        std::path::PathBuf,
+        std::path::PathBuf,
+    ) {
+        let temp = TempDir::new().unwrap();
+        let remote = temp.path().join("remote.git");
+        let seed = temp.path().join("seed");
+        let local = temp.path().join("local");
+        let collaborator = temp.path().join("collaborator");
+
+        std::fs::create_dir_all(&seed).unwrap();
+        std::fs::create_dir_all(&remote).unwrap();
+
+        git(
+            temp.path(),
+            &["init", "--bare", &remote.display().to_string()],
+        )
+        .unwrap();
+
+        init_repo(&seed);
+        commit_file(&seed, "README.md", "base\n", "initial commit");
+        git(
+            &seed,
+            &["remote", "add", "origin", &remote.display().to_string()],
+        )
+        .unwrap();
+        git(&seed, &["push", "-u", "origin", "main"]).unwrap();
+        git(&seed, &["checkout", "-b", "feature/test-upstream"]).unwrap();
+        commit_file(
+            &seed,
+            "feature.txt",
+            "seed change\n",
+            "create feature branch",
+        );
+        git(&seed, &["push", "-u", "origin", "feature/test-upstream"]).unwrap();
+
+        clone_repo(&remote, &local);
+        clone_repo(&remote, &collaborator);
+        git(&local, &["checkout", "feature/test-upstream"]).unwrap();
+        git(&collaborator, &["checkout", "feature/test-upstream"]).unwrap();
+
+        (temp, remote, local, collaborator)
+    }
 
     // ========================================================================
     // get_repo_name tests
@@ -2445,5 +2575,73 @@ mod tests {
             repo: "my-project".to_string(),
         };
         assert_eq!(id.to_key(), "my-org-my-project");
+    }
+
+    #[test]
+    fn test_git_pull_upstream_updates_from_tracking_branch() {
+        let (_temp, _remote, local, collaborator) = setup_remote_with_feature_branch();
+
+        commit_file(
+            &collaborator,
+            "feature.txt",
+            "seed change\nremote update\n",
+            "remote update",
+        );
+        git(&collaborator, &["push", "origin", "feature/test-upstream"]).unwrap();
+
+        let result = git_pull_upstream(local.to_str().unwrap()).unwrap();
+        let updated = std::fs::read_to_string(local.join("feature.txt")).unwrap();
+
+        assert!(
+            result.contains("Fast-forward") || result.contains("Updating"),
+            "unexpected merge output: {result}"
+        );
+        assert!(updated.contains("remote update"));
+    }
+
+    #[test]
+    fn test_git_pull_upstream_errors_without_tracking_branch() {
+        let temp = TempDir::new().unwrap();
+        init_repo(temp.path());
+        commit_file(temp.path(), "README.md", "base\n", "initial commit");
+        git(temp.path(), &["checkout", "-b", "feature/no-upstream"]).unwrap();
+
+        let result = git_pull_upstream(temp.path().to_str().unwrap());
+        let error = result.unwrap_err();
+
+        assert!(error.contains("has no upstream tracking branch"));
+    }
+
+    #[test]
+    fn test_git_pull_upstream_errors_on_detached_head() {
+        let temp = TempDir::new().unwrap();
+        init_repo(temp.path());
+        commit_file(temp.path(), "README.md", "base\n", "initial commit");
+        git(temp.path(), &["checkout", "--detach"]).unwrap();
+
+        let result = git_pull_upstream(temp.path().to_str().unwrap());
+        let error = result.unwrap_err();
+
+        assert!(error.contains("HEAD is detached"));
+    }
+
+    #[test]
+    fn test_git_pull_upstream_reports_merge_conflicts() {
+        let (_temp, _remote, local, collaborator) = setup_remote_with_feature_branch();
+
+        std::fs::write(local.join("feature.txt"), "local conflict\n").unwrap();
+        git(&local, &["add", "feature.txt"]).unwrap();
+        git(&local, &["commit", "-m", "local conflict"]).unwrap();
+
+        std::fs::write(collaborator.join("feature.txt"), "remote conflict\n").unwrap();
+        git(&collaborator, &["add", "feature.txt"]).unwrap();
+        git(&collaborator, &["commit", "-m", "remote conflict"]).unwrap();
+        git(&collaborator, &["push", "origin", "feature/test-upstream"]).unwrap();
+
+        let result = git_pull_upstream(local.to_str().unwrap());
+        let error = result.unwrap_err();
+
+        assert!(error.contains("Merge conflicts in:"));
+        git(&local, &["merge", "--abort"]).unwrap();
     }
 }

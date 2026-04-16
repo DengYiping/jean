@@ -40,6 +40,7 @@ export interface CommandContext {
   viewGitDiff: () => void
   rebaseWorktree: () => Promise<void>
   gitPull: () => Promise<void>
+  gitPullUpstream: () => Promise<void>
   refreshGitStatus: () => void
 
   // Sessions

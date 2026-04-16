@@ -121,6 +121,7 @@ interface MobileToolbarMenuProps {
   onSetExecutionMode: (mode: ExecutionMode) => void
 
   handlePullClick: () => void
+  handlePullUpstreamClick: () => void
   handlePushClick: () => void
   handleUncommittedDiffClick: () => void
   handleBranchDiffClick: () => void
@@ -168,6 +169,7 @@ export function MobileToolbarMenu({
   onBackendChange,
   onSetExecutionMode,
   handlePullClick,
+  handlePullUpstreamClick,
   handlePushClick,
   handleUncommittedDiffClick,
   handleBranchDiffClick,
@@ -266,6 +268,13 @@ export function MobileToolbarMenu({
             Pull
             <span className="ml-auto text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
               D
+            </span>
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={handlePullUpstreamClick}>
+            <ArrowDownToLine className="h-4 w-4" />
+            Upstream Pull
+            <span className="ml-auto text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+              T
             </span>
           </DropdownMenuItem>
           <DropdownMenuItem onClick={handlePushClick}>

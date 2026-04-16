@@ -10,6 +10,7 @@ import {
   getGitPollInterval,
   triggerImmediateGitPoll,
   gitPull,
+  gitPullUpstream,
   getGitRemotes,
   setRemotePollInterval,
   getRemotePollInterval,
@@ -225,6 +226,28 @@ describe('git-status service', () => {
 
       await expect(gitPull('/path', 'main')).rejects.toThrow(
         'Git pull only available in Tauri'
+      )
+    })
+  })
+
+  describe('gitPullUpstream', () => {
+    it('calls invoke and returns output', async () => {
+      mockInvoke.mockResolvedValueOnce('Already up to date.')
+
+      const result = await gitPullUpstream('/path/to/repo')
+
+      expect(result).toBe('Already up to date.')
+      expect(mockInvoke).toHaveBeenCalledWith('git_pull_upstream', {
+        worktreePath: '/path/to/repo',
+      })
+    })
+
+    it('throws when not in Tauri', async () => {
+      const { isTauri } = vi.mocked(await import('@/services/projects'))
+      isTauri.mockReturnValue(false)
+
+      await expect(gitPullUpstream('/path')).rejects.toThrow(
+        'Git upstream pull only available in Tauri'
       )
     })
   })

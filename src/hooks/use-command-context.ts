@@ -18,7 +18,11 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useInstalledBackends } from '@/hooks/useInstalledBackends'
 import { chatQueryKeys } from '@/services/chat'
 import { projectsQueryKeys } from '@/services/projects'
-import { triggerImmediateGitPoll, performGitPull } from '@/services/git-status'
+import {
+  triggerImmediateGitPoll,
+  performGitPull,
+  performGitPullUpstream,
+} from '@/services/git-status'
 
 /**
  * Command context hook - provides essential actions for commands
@@ -548,6 +552,20 @@ export function useCommandContext(
     })
   }, [getTargetPath, queryClient])
 
+  const doGitPullUpstream = useCallback(async () => {
+    const worktreePath = getTargetPath()
+    if (!worktreePath) {
+      notify('No project or worktree selected', undefined, { type: 'error' })
+      return
+    }
+
+    const { activeWorktreeId } = useChatStore.getState()
+    await performGitPullUpstream({
+      worktreeId: activeWorktreeId ?? '',
+      worktreePath,
+    })
+  }, [getTargetPath])
+
   // Git - Refresh git status immediately
   const refreshGitStatus = useCallback(() => {
     triggerImmediateGitPoll()
@@ -788,6 +806,7 @@ export function useCommandContext(
       viewGitDiff,
       rebaseWorktree,
       gitPull: doGitPull,
+      gitPullUpstream: doGitPullUpstream,
       refreshGitStatus,
 
       // Sessions
@@ -877,6 +896,7 @@ export function useCommandContext(
       viewGitDiff,
       rebaseWorktree,
       doGitPull,
+      doGitPullUpstream,
       refreshGitStatus,
       createSession,
       closeSession,

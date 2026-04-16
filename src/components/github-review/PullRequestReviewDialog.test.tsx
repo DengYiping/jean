@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@/test/test-utils'
+import { act, fireEvent, render, screen, waitFor } from '@/test/test-utils'
 import { useUIStore } from '@/store/ui-store'
 import { PullRequestReviewDialog } from './PullRequestReviewDialog'
 import type { GitHubPullRequestReviewData } from '@/types/github'
@@ -140,14 +140,18 @@ describe('PullRequestReviewDialog', () => {
     createInlineCommentMock.mockResolvedValue(undefined)
     replyToCommentMock.mockResolvedValue(undefined)
     submitReviewMock.mockResolvedValue(undefined)
-    useUIStore.getState().openPullRequestReviewDialog({
-      projectPath: '/tmp/project',
-      prNumber: 42,
+    act(() => {
+      useUIStore.getState().openPullRequestReviewDialog({
+        projectPath: '/tmp/project',
+        prNumber: 42,
+      })
     })
   })
 
   afterEach(() => {
-    useUIStore.getState().closePullRequestReviewDialog()
+    act(() => {
+      useUIStore.getState().closePullRequestReviewDialog()
+    })
     vi.clearAllMocks()
   })
 
@@ -160,7 +164,9 @@ describe('PullRequestReviewDialog', () => {
     fireEvent.change(screen.getByPlaceholderText('Reply to this thread'), {
       target: { value: 'Updated in the latest push.' },
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Reply' }))
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Reply' }))
+    })
 
     await waitFor(() => {
       expect(replyToCommentMock).toHaveBeenCalledWith({
@@ -181,7 +187,9 @@ describe('PullRequestReviewDialog', () => {
     if (!inlineCommentButton) {
       throw new Error('Missing inline comment button')
     }
-    fireEvent.click(inlineCommentButton)
+    await act(async () => {
+      fireEvent.click(inlineCommentButton)
+    })
 
     await waitFor(() => {
       expect(createInlineCommentMock).toHaveBeenCalledWith({
@@ -209,7 +217,9 @@ describe('PullRequestReviewDialog', () => {
     if (!approveButton) {
       throw new Error('Missing approve button')
     }
-    fireEvent.click(approveButton)
+    await act(async () => {
+      fireEvent.click(approveButton)
+    })
 
     await waitFor(() => {
       expect(submitReviewMock).toHaveBeenCalledWith({

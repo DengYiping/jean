@@ -14,6 +14,7 @@ import {
   triggerImmediateGitPoll,
   triggerImmediateRemotePoll,
   performGitPull,
+  performGitPullUpstream,
 } from '@/services/git-status'
 import { prStatusQueryKeys } from '@/services/pr-status'
 import type { PrStatusEvent } from '@/types/pr-status'
@@ -54,6 +55,8 @@ interface UseGitOperationsReturn {
   handleCommitAndPush: (remote?: string) => Promise<void>
   /** Pulls changes from remote */
   handlePull: (remote?: string) => Promise<void>
+  /** Pulls changes from the current branch's upstream tracking branch */
+  handlePullUpstream: () => Promise<void>
   /** Pushes commits to remote */
   handlePush: (remote?: string) => Promise<void>
   /** Creates PR with AI-generated title and description */
@@ -276,6 +279,24 @@ export function useGitOperations({
       project?.default_branch,
     ]
   )
+
+  const handlePullUpstream = useCallback(async () => {
+    if (!activeWorktreePath || !activeWorktreeId) return
+
+    await performGitPullUpstream({
+      worktreeId: activeWorktreeId,
+      worktreePath: activeWorktreePath,
+      branchLabel: worktree?.branch,
+      projectId: project?.id,
+      onMergeConflict: () => {
+        window.dispatchEvent(
+          new CustomEvent('magic-command', {
+            detail: { command: 'resolve-conflicts' },
+          })
+        )
+      },
+    })
+  }, [activeWorktreeId, activeWorktreePath, project?.id, worktree?.branch])
 
   // Handle Push - pushes commits to remote
   const handlePush = useCallback(
@@ -966,6 +987,7 @@ ${resolveInstructions}`
     handleCommit,
     handleCommitAndPush,
     handlePull,
+    handlePullUpstream,
     handlePush,
     handleOpenPr,
     handleReview,

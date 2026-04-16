@@ -248,6 +248,11 @@ pub async fn dispatch_command(
             let result = crate::projects::git_pull(worktree_path, base_branch, remote).await?;
             to_value(result)
         }
+        "git_pull_upstream" => {
+            let worktree_path: String = field(&args, "worktreePath", "worktree_path")?;
+            let result = crate::projects::git_pull_upstream(worktree_path).await?;
+            to_value(result)
+        }
         "git_push" => {
             let worktree_path: String = field(&args, "worktreePath", "worktree_path")?;
             let pr_number: Option<u32> = field_opt(&args, "prNumber", "pr_number")?;

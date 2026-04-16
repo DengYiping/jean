@@ -6,6 +6,7 @@ import {
   triggerImmediateGitPoll,
   fetchWorktreesStatus,
   performGitPull,
+  performGitPullUpstream,
 } from '@/services/git-status'
 import { useChatStore } from '@/store/chat-store'
 import { useRemotePicker } from '@/hooks/useRemotePicker'
@@ -239,6 +240,17 @@ export const ChatToolbar = memo(function ChatToolbar({
     onResolveConflicts,
   ])
 
+  const handlePullUpstreamClick = useCallback(async () => {
+    if (!activeWorktreePath || !worktreeId) return
+    await performGitPullUpstream({
+      worktreeId,
+      worktreePath: activeWorktreePath,
+      branchLabel: activeWorktreePath.split('/').pop() ?? undefined,
+      projectId,
+      onMergeConflict: onResolveConflicts,
+    })
+  }, [activeWorktreePath, worktreeId, projectId, onResolveConflicts])
+
   const handlePushClick = useCallback(() => {
     if (!activeWorktreePath || !worktreeId) return
     pickRemoteOrRun(async remote => {
@@ -325,6 +337,7 @@ export const ChatToolbar = memo(function ChatToolbar({
           onBackendChange={onBackendChange}
           onSetExecutionMode={onSetExecutionMode}
           handlePullClick={handlePullClick}
+          handlePullUpstreamClick={handlePullUpstreamClick}
           handlePushClick={handlePushClick}
           handleUncommittedDiffClick={handleUncommittedDiffClick}
           handleBranchDiffClick={handleBranchDiffClick}

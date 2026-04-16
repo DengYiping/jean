@@ -17,6 +17,7 @@ interface MagicCommandHandlers {
   handleCommit: () => void
   handleCommitAndPush: () => void
   handlePull: () => void
+  handlePullUpstream: () => void
   handlePush: () => void
   handleOpenPr: () => void
   handleReview: () => void
@@ -50,6 +51,7 @@ export function useMagicCommands({
   handleCommit,
   handleCommitAndPush,
   handlePull,
+  handlePullUpstream,
   handlePush,
   handleOpenPr,
   handleReview,
@@ -69,6 +71,7 @@ export function useMagicCommands({
     handleCommit,
     handleCommitAndPush,
     handlePull,
+    handlePullUpstream,
     handlePush,
     handleOpenPr,
     handleReview,
@@ -89,6 +92,7 @@ export function useMagicCommands({
       handleCommit,
       handleCommitAndPush,
       handlePull,
+      handlePullUpstream,
       handlePush,
       handleOpenPr,
       handleReview,
@@ -132,6 +136,9 @@ export function useMagicCommands({
           break
         case 'pull':
           handlers.handlePull()
+          break
+        case 'pull-upstream':
+          handlers.handlePullUpstream()
           break
         case 'push':
           handlers.handlePush()

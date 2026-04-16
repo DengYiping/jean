@@ -6,6 +6,7 @@ const { registerCommands, getAllCommands, executeCommand, clearRegistry } =
 const { notificationCommands } = await import('./notification-commands')
 const { projectCommands } = await import('./project-commands')
 const { githubCommands } = await import('./github-commands')
+const { gitCommands } = await import('./git-commands')
 const { useProjectsStore } = await import('@/store/projects-store')
 
 const createMockContext = (): CommandContext => ({
@@ -31,6 +32,7 @@ const createMockContext = (): CommandContext => ({
   viewGitDiff: vi.fn(),
   rebaseWorktree: vi.fn().mockResolvedValue(undefined),
   gitPull: vi.fn().mockResolvedValue(undefined),
+  gitPullUpstream: vi.fn().mockResolvedValue(undefined),
   refreshGitStatus: vi.fn(),
 
   // Sessions
@@ -229,6 +231,30 @@ describe('Notification Commands', () => {
     const toastCmd = commands.find(c => c.id === 'notification.test-toast')
     expect(toastCmd).toBeDefined()
     expect(toastCmd?.label).toBe('Test Toast Notification')
+  })
+})
+
+describe('Git Commands', () => {
+  let mockContext: CommandContext
+
+  beforeEach(() => {
+    clearRegistry()
+    mockContext = createMockContext()
+    registerCommands(gitCommands)
+  })
+
+  it('registers upstream pull command', () => {
+    const commands = getAllCommands(mockContext)
+    const pullUpstream = commands.find(c => c.id === 'git.pull-upstream')
+    expect(pullUpstream).toBeDefined()
+    expect(pullUpstream?.label).toBe('Update From Upstream Branch')
+  })
+
+  it('executes upstream pull command', async () => {
+    const result = await executeCommand('git.pull-upstream', mockContext)
+
+    expect(result.success).toBe(true)
+    expect(mockContext.gitPullUpstream).toHaveBeenCalled()
   })
 })
 

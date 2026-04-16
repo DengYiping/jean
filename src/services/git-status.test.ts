@@ -16,6 +16,8 @@ import {
   getRemotePollInterval,
   triggerImmediateRemotePoll,
   getGitDiff,
+  readFileContent,
+  readGitFileContent,
   useGitStatus,
   type WorktreePollingInfo,
 } from './git-status'
@@ -364,6 +366,38 @@ describe('git-status service', () => {
       await expect(getGitDiff('/path', 'uncommitted')).rejects.toThrow(
         'Git diff only available in Tauri'
       )
+    })
+  })
+
+  describe('readFileContent', () => {
+    it('calls invoke with path', async () => {
+      mockInvoke.mockResolvedValueOnce('file body')
+
+      const result = await readFileContent('/tmp/example.ts')
+
+      expect(result).toBe('file body')
+      expect(mockInvoke).toHaveBeenCalledWith('read_file_content', {
+        path: '/tmp/example.ts',
+      })
+    })
+  })
+
+  describe('readGitFileContent', () => {
+    it('calls invoke with worktree path, file path, and git ref', async () => {
+      mockInvoke.mockResolvedValueOnce('branch file body')
+
+      const result = await readGitFileContent(
+        '/tmp/worktree',
+        'src/example.ts',
+        'HEAD'
+      )
+
+      expect(result).toBe('branch file body')
+      expect(mockInvoke).toHaveBeenCalledWith('read_git_file_content', {
+        worktreePath: '/tmp/worktree',
+        filePath: 'src/example.ts',
+        gitRef: 'HEAD',
+      })
     })
   })
 

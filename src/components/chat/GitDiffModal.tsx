@@ -26,12 +26,15 @@ import {
   ChevronsUpDown,
   PanelLeft,
   Check,
+  Eye,
 } from 'lucide-react'
 import {
   parsePatchFiles,
+  getFiletypeFromFileName,
   type SelectedLineRange,
   type DiffLineAnnotation,
   type FileDiffMetadata,
+  type FileContents,
 } from '@pierre/diffs'
 import {
   Dialog,
@@ -56,6 +59,8 @@ import {
 } from '@/components/ui/tooltip'
 import {
   getGitDiff,
+  readFileContent,
+  readGitFileContent,
   revertFile,
   triggerImmediateGitPoll,
 } from '@/services/git-status'
@@ -89,6 +94,7 @@ import {
   getStatusColor,
   type DiffComment,
 } from './MemoizedFileDiff'
+import { MemoizedFileView } from './MemoizedFileView'
 import type { GitDiff, DiffRequest } from '@/types/git-diff'
 
 // PERFORMANCE: Stable empty array reference for files without comments
@@ -97,6 +103,36 @@ const EMPTY_ANNOTATIONS: DiffLineAnnotation<DiffComment>[] = []
 
 // Re-export for consumers that imported from this file
 export type { DiffComment, MemoizedFileDiffProps } from './MemoizedFileDiff'
+
+function getTouchedLinesFromFileDiff(fileDiff: FileDiffMetadata): number[] {
+  const touchedLines = new Set<number>()
+
+  for (const hunk of fileDiff.hunks) {
+    let newLineNumber = hunk.additionStart
+
+    for (const content of hunk.hunkContent) {
+      if (content.type === 'context') {
+        newLineNumber += content.lines.length
+        continue
+      }
+
+      const maxLines = Math.max(
+        content.additions.length,
+        content.deletions.length
+      )
+
+      for (let index = 0; index < maxLines; index++) {
+        const newLine = content.additions[index]
+        if (newLine != null) {
+          touchedLines.add(newLineNumber)
+          newLineNumber++
+        }
+      }
+    }
+  }
+
+  return Array.from(touchedLines).sort((a, b) => a - b)
+}
 
 /** Props for the isolated comment input bar */
 interface CommentInputBarProps {
@@ -266,6 +302,14 @@ export function GitDiffModal({
   } | null>(null)
   const [isReverting, setIsReverting] = useState(false)
 
+  // Full-file view state
+  const [viewMode, setViewMode] = useState<'diff' | 'file'>('diff')
+  const [fileContentCache, setFileContentCache] = useState<Map<string, string>>(
+    new Map()
+  )
+  const [isLoadingFileContent, setIsLoadingFileContent] = useState(false)
+  const [fileContentError, setFileContentError] = useState<string | null>(null)
+
   // Resolve theme to actual dark/light value
   const resolvedThemeType = useMemo((): 'dark' | 'light' => {
     if (theme === 'system') {
@@ -293,6 +337,8 @@ export function GitDiffModal({
           request.baseBranch
         )
         setDiff(result)
+        // Invalidate cached file contents since the working tree may have changed
+        setFileContentCache(new Map())
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err))
       } finally {
@@ -423,6 +469,10 @@ export function GitDiffModal({
       setShowMobileSidebar(false)
       setCachedBranchStats(null)
       setCachedUncommittedStats(null)
+      setViewMode('diff')
+      setFileContentCache(new Map())
+      setIsLoadingFileContent(false)
+      setFileContentError(null)
       if (switchTimeoutRef.current) {
         clearTimeout(switchTimeoutRef.current)
       }
@@ -670,6 +720,202 @@ export function GitDiffModal({
   // Check if there are any files to display
   const hasFiles = flattenedFiles.length > 0
 
+  // Look up backend metadata for the selected file (for is_binary and status)
+  const selectedBackendFile = useMemo(() => {
+    if (!selectedFile || !diff?.files) return null
+    return diff.files.find(f => f.path === selectedFile.fileName) ?? null
+  }, [selectedFile, diff?.files])
+
+  const isSelectedFileDeleted =
+    selectedFile?.fileDiff.type === 'deleted' ||
+    selectedBackendFile?.status === 'deleted'
+  const isSelectedFileBinary = selectedBackendFile?.is_binary ?? false
+
+  // Fetch file content on demand for file-view mode
+  const fetchFileContent = useCallback(
+    async (
+      filePath: string,
+      request: DiffRequest,
+      gitRef: string | null,
+      diffType: GitDiff['diff_type']
+    ) => {
+      setIsLoadingFileContent(true)
+      setFileContentError(null)
+      try {
+        const content =
+          diffType === 'branch' && gitRef
+            ? await readGitFileContent(request.worktreePath, filePath, gitRef)
+            : await readFileContent(
+                `${request.worktreePath.replace(/[/\\]+$/, '')}/${filePath}`
+              )
+        setFileContentCache(prev => {
+          if (prev.has(filePath)) return prev
+          const next = new Map(prev)
+          next.set(filePath, content)
+          return next
+        })
+      } catch (err) {
+        setFileContentError(err instanceof Error ? err.message : String(err))
+      } finally {
+        setIsLoadingFileContent(false)
+      }
+    },
+    []
+  )
+
+  useEffect(() => {
+    if (viewMode !== 'file') return
+    if (!selectedFile || !diffRequest) return
+    if (isSelectedFileDeleted || isSelectedFileBinary) return
+    if (fileContentCache.has(selectedFile.fileName)) {
+      setFileContentError(null)
+      return
+    }
+    void fetchFileContent(
+      selectedFile.fileName,
+      diffRequest,
+      diff?.target_ref ?? null,
+      diff?.diff_type ??
+        (activeDiffType === 'branch' ? 'branch' : 'uncommitted')
+    )
+  }, [
+    viewMode,
+    selectedFile,
+    diffRequest,
+    diff?.target_ref,
+    diff?.diff_type,
+    activeDiffType,
+    isSelectedFileDeleted,
+    isSelectedFileBinary,
+    fileContentCache,
+    fetchFileContent,
+  ])
+
+  // Build FileContents for the selected file once loaded
+  const selectedFileContents = useMemo((): FileContents | null => {
+    if (!selectedFile || viewMode !== 'file') return null
+    const contents = fileContentCache.get(selectedFile.fileName)
+    if (contents === undefined) return null
+    return {
+      name: selectedFile.fileName,
+      contents,
+      lang: getFiletypeFromFileName(selectedFile.fileName),
+      cacheKey: `${selectedFile.fileName}-${contents.length}`,
+    }
+  }, [selectedFile, viewMode, fileContentCache])
+
+  const selectedTouchedLines = useMemo(() => {
+    if (!selectedFile || viewMode !== 'file') return []
+
+    return getTouchedLinesFromFileDiff(selectedFile.fileDiff)
+  }, [selectedFile, viewMode])
+
+  const toggleViewMode = useCallback(() => {
+    setViewMode(prev => (prev === 'diff' ? 'file' : 'diff'))
+  }, [])
+
+  const renderSelectedFilePanel = useCallback(() => {
+    if (!selectedFile) {
+      return (
+        <div className="flex items-center justify-center h-full text-muted-foreground">
+          Select a file to view its diff
+        </div>
+      )
+    }
+
+    if (viewMode === 'file') {
+      if (isSelectedFileDeleted) {
+        return (
+          <div className="px-4 py-8 text-center text-muted-foreground text-sm">
+            This file was deleted. Switch to diff view to see the removed
+            content.
+          </div>
+        )
+      }
+
+      if (isSelectedFileBinary) {
+        return (
+          <div className="px-4 py-8 text-center text-muted-foreground text-sm">
+            Binary file - cannot display as text.
+          </div>
+        )
+      }
+
+      if (!selectedFileContents && !fileContentError) {
+        return (
+          <div className="flex items-center justify-center py-8 text-muted-foreground">
+            <Loader2
+              className={cn(
+                'h-5 w-5 mr-2',
+                isLoadingFileContent && 'animate-spin'
+              )}
+            />
+            Loading file...
+          </div>
+        )
+      }
+
+      if (fileContentError) {
+        return (
+          <div className="m-3 flex items-center gap-2 py-4 px-3 bg-destructive/10 text-destructive rounded-md">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span className="text-sm">{fileContentError}</span>
+          </div>
+        )
+      }
+
+      if (selectedFileContents) {
+        return (
+          <MemoizedFileView
+            key={`file-${selectedFile.key}`}
+            fileContents={selectedFileContents}
+            fileName={selectedFile.fileName}
+            themeType={resolvedThemeType}
+            syntaxThemeDark={preferences?.syntax_theme_dark ?? 'vitesse-black'}
+            syntaxThemeLight={preferences?.syntax_theme_light ?? 'github-light'}
+            touchedLines={selectedTouchedLines}
+          />
+        )
+      }
+    }
+
+    return (
+      <MemoizedFileDiff
+        key={selectedFile.key}
+        fileDiff={selectedFile.fileDiff}
+        fileName={selectedFile.fileName}
+        annotations={getAnnotationsForFile(selectedFile.fileName)}
+        selectedLines={
+          activeFileName === selectedFile.fileName ? selectedRange : null
+        }
+        themeType={resolvedThemeType}
+        syntaxThemeDark={preferences?.syntax_theme_dark ?? 'vitesse-black'}
+        syntaxThemeLight={preferences?.syntax_theme_light ?? 'github-light'}
+        diffStyle={diffStyle}
+        onLineSelected={getLineSelectedCallback(selectedFile.fileName)}
+        onRemoveComment={handleRemoveComment}
+      />
+    )
+  }, [
+    selectedFile,
+    viewMode,
+    isSelectedFileDeleted,
+    isSelectedFileBinary,
+    isLoadingFileContent,
+    selectedFileContents,
+    selectedTouchedLines,
+    fileContentError,
+    resolvedThemeType,
+    preferences?.syntax_theme_dark,
+    preferences?.syntax_theme_light,
+    getAnnotationsForFile,
+    activeFileName,
+    selectedRange,
+    diffStyle,
+    getLineSelectedCallback,
+    handleRemoveComment,
+  ])
+
   // Handle file selection from sidebar
   // Use transition to keep sidebar responsive while diff renders
   const handleSelectFile = useCallback((index: number) => {
@@ -743,6 +989,9 @@ export function GitDiffModal({
           setSelectedFileIndex(i => Math.max(i - 1, 0))
         })
         switchTimeoutRef.current = setTimeout(() => setIsSwitching(false), 150)
+      } else if (e.key === 'f' && activeDiffType !== 'commits') {
+        e.preventDefault()
+        setViewMode(v => (v === 'diff' ? 'file' : 'diff'))
       }
     }
 
@@ -916,45 +1165,74 @@ export function GitDiffModal({
                     {gitDiffSelectedFiles.size !== 1 ? 's' : ''} selected
                   </span>
                 )}
-              {/* View mode toggle */}
-              <div className="flex min-h-10 items-center rounded-lg bg-muted p-1.5">
+              {/* Split/Unified toggle - only in diff mode */}
+              {viewMode === 'diff' && (
+                <div className="flex min-h-10 items-center rounded-lg bg-muted p-1.5">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        onClick={() => setDiffStyle('split')}
+                        className={cn(
+                          'flex min-h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1.5 text-xs font-medium leading-none transition-colors sm:px-3',
+                          diffStyle === 'split'
+                            ? 'bg-background shadow-sm text-foreground'
+                            : 'text-muted-foreground hover:text-foreground'
+                        )}
+                      >
+                        <Columns2 className="h-3.5 w-3.5 shrink-0" />
+                        <span className="hidden sm:inline">Split</span>
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>Side-by-side view</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        onClick={() => setDiffStyle('unified')}
+                        className={cn(
+                          'flex min-h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1.5 text-xs font-medium leading-none transition-colors sm:px-3',
+                          diffStyle === 'unified'
+                            ? 'bg-background shadow-sm text-foreground'
+                            : 'text-muted-foreground hover:text-foreground'
+                        )}
+                      >
+                        <Rows3 className="h-3.5 w-3.5 shrink-0" />
+                        <span className="hidden sm:inline">Stacked</span>
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>Unified view</TooltipContent>
+                  </Tooltip>
+                </div>
+              )}
+              {/* Diff/File view toggle - not shown in commits tab */}
+              {activeDiffType !== 'commits' && hasFiles && (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
                       type="button"
-                      onClick={() => setDiffStyle('split')}
+                      onClick={toggleViewMode}
                       className={cn(
-                        'flex min-h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1.5 text-xs font-medium leading-none transition-colors sm:px-3',
-                        diffStyle === 'split'
-                          ? 'bg-background shadow-sm text-foreground'
-                          : 'text-muted-foreground hover:text-foreground'
+                        'flex min-h-8 items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1.5 text-xs font-medium leading-none transition-colors sm:px-3',
+                        viewMode === 'file'
+                          ? 'bg-accent text-foreground'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                       )}
                     >
-                      <Columns2 className="h-3.5 w-3.5 shrink-0" />
-                      <span className="hidden sm:inline">Split</span>
+                      <Eye className="h-3.5 w-3.5 shrink-0" />
+                      <span className="hidden sm:inline">
+                        {viewMode === 'file' ? 'View Diff' : 'View File'}
+                      </span>
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent>Side-by-side view</TooltipContent>
+                  <TooltipContent>
+                    {viewMode === 'file'
+                      ? 'Switch back to diff view'
+                      : 'View full file (press F)'}
+                  </TooltipContent>
                 </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      onClick={() => setDiffStyle('unified')}
-                      className={cn(
-                        'flex min-h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1.5 text-xs font-medium leading-none transition-colors sm:px-3',
-                        diffStyle === 'unified'
-                          ? 'bg-background shadow-sm text-foreground'
-                          : 'text-muted-foreground hover:text-foreground'
-                      )}
-                    >
-                      <Rows3 className="h-3.5 w-3.5 shrink-0" />
-                      <span className="hidden sm:inline">Stacked</span>
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent>Unified view</TooltipContent>
-                </Tooltip>
-              </div>
+              )}
               {/* Execute and Edit buttons */}
               {comments.length > 0 && (onAddToPrompt || onExecutePrompt) && (
                 <div className="flex items-center gap-1">
@@ -1074,11 +1352,21 @@ export function GitDiffModal({
               {hasFiles && (
                 <div className="mt-2 shrink-0">
                   {/* Hint when no selection */}
-                  {!selectedRange && comments.length === 0 && (
+                  {viewMode === 'diff' &&
+                    !selectedRange &&
+                    comments.length === 0 && (
+                      <div className="flex items-center gap-2 px-3 h-10 text-muted-foreground">
+                        <MessageSquarePlus className="h-4 w-4 shrink-0" />
+                        <span className="text-sm">
+                          Click on line numbers to select code and add comments
+                        </span>
+                      </div>
+                    )}
+                  {viewMode === 'file' && comments.length === 0 && (
                     <div className="flex items-center gap-2 px-3 h-10 text-muted-foreground">
-                      <MessageSquarePlus className="h-4 w-4 shrink-0" />
+                      <Eye className="h-4 w-4 shrink-0" />
                       <span className="text-sm">
-                        Click on line numbers to select code and add comments
+                        Viewing full file — switch to diff view to add comments
                       </span>
                     </div>
                   )}
@@ -1253,41 +1541,7 @@ export function GitDiffModal({
                           (isSwitching || isLoading) && 'opacity-60'
                         )}
                       >
-                        {selectedFile ? (
-                          <div className="px-1">
-                            <MemoizedFileDiff
-                              key={selectedFile.key}
-                              fileDiff={selectedFile.fileDiff}
-                              fileName={selectedFile.fileName}
-                              annotations={getAnnotationsForFile(
-                                selectedFile.fileName
-                              )}
-                              selectedLines={
-                                activeFileName === selectedFile.fileName
-                                  ? selectedRange
-                                  : null
-                              }
-                              themeType={resolvedThemeType}
-                              syntaxThemeDark={
-                                preferences?.syntax_theme_dark ??
-                                'vitesse-black'
-                              }
-                              syntaxThemeLight={
-                                preferences?.syntax_theme_light ??
-                                'github-light'
-                              }
-                              diffStyle={diffStyle}
-                              onLineSelected={getLineSelectedCallback(
-                                selectedFile.fileName
-                              )}
-                              onRemoveComment={handleRemoveComment}
-                            />
-                          </div>
-                        ) : (
-                          <div className="flex items-center justify-center h-full text-muted-foreground">
-                            Select a file to view its diff
-                          </div>
-                        )}
+                        <div className="px-1">{renderSelectedFilePanel()}</div>
                       </div>
                     </div>
                   )}
@@ -1456,41 +1710,9 @@ export function GitDiffModal({
                             (isSwitching || isLoading) && 'opacity-60'
                           )}
                         >
-                          {selectedFile ? (
-                            <div className="px-2">
-                              <MemoizedFileDiff
-                                key={selectedFile.key}
-                                fileDiff={selectedFile.fileDiff}
-                                fileName={selectedFile.fileName}
-                                annotations={getAnnotationsForFile(
-                                  selectedFile.fileName
-                                )}
-                                selectedLines={
-                                  activeFileName === selectedFile.fileName
-                                    ? selectedRange
-                                    : null
-                                }
-                                themeType={resolvedThemeType}
-                                syntaxThemeDark={
-                                  preferences?.syntax_theme_dark ??
-                                  'vitesse-black'
-                                }
-                                syntaxThemeLight={
-                                  preferences?.syntax_theme_light ??
-                                  'github-light'
-                                }
-                                diffStyle={diffStyle}
-                                onLineSelected={getLineSelectedCallback(
-                                  selectedFile.fileName
-                                )}
-                                onRemoveComment={handleRemoveComment}
-                              />
-                            </div>
-                          ) : (
-                            <div className="flex items-center justify-center h-full text-muted-foreground">
-                              Select a file to view its diff
-                            </div>
-                          )}
+                          <div className="px-2">
+                            {renderSelectedFilePanel()}
+                          </div>
                         </div>
                       </ResizablePanel>
                     </ResizablePanelGroup>

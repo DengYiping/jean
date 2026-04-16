@@ -106,6 +106,16 @@ export const defaultResponses: Record<string, unknown> = {
   trigger_immediate_remote_poll: null,
   fetch_worktrees_status: null,
   git_pull_upstream: 'Already up to date.',
+  get_git_diff: {
+    diff_type: 'uncommitted',
+    base_ref: 'HEAD',
+    target_ref: 'working directory',
+    total_additions: 0,
+    total_deletions: 0,
+    files: [],
+    raw_patch: '',
+  },
+  read_git_file_content: '',
 
   // MCP
   get_mcp_servers: [],
@@ -120,6 +130,7 @@ export const defaultResponses: Record<string, unknown> = {
 
   // Files
   list_worktree_files: [],
+  read_file_content: '',
 
   // GitHub
   list_github_issues: { issues: [], has_next_page: false },

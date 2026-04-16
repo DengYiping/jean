@@ -224,6 +224,14 @@ pub async fn dispatch_command(
                 crate::projects::get_git_diff(worktree_path, diff_type, base_branch).await?;
             to_value(result)
         }
+        "read_git_file_content" => {
+            let worktree_path: String = field(&args, "worktreePath", "worktree_path")?;
+            let file_path: String = field(&args, "filePath", "file_path")?;
+            let git_ref: String = field(&args, "gitRef", "git_ref")?;
+            let result =
+                crate::projects::read_git_file_content(worktree_path, file_path, git_ref).await?;
+            to_value(result)
+        }
         "get_commit_history" => {
             let worktree_path: String = field(&args, "worktreePath", "worktree_path")?;
             let branch: Option<String> = field_opt(&args, "branch", "branch")?;
@@ -1120,7 +1128,13 @@ pub async fn dispatch_command(
         // Chat - File operations
         // =====================================================================
         "read_file_content" => {
-            let file_path: String = field(&args, "filePath", "file_path")?;
+            let file_path = if let Some(path) = field_opt::<String>(&args, "path", "path")? {
+                path
+            } else if let Some(path) = field_opt::<String>(&args, "filePath", "file_path")? {
+                path
+            } else {
+                return Err("Missing field 'path'".to_string());
+            };
             let result = crate::chat::read_file_content(file_path).await?;
             to_value(result)
         }

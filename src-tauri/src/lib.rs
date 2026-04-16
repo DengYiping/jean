@@ -3005,6 +3005,8 @@ pub fn run() {
             chat::read_file_content,
             chat::write_file_content,
             chat::open_file_in_default_app,
+            // Projects commands - Git-backed file preview
+            projects::read_git_file_content,
             // Chat commands - Saved context handling
             chat::list_saved_contexts,
             chat::save_context_file,

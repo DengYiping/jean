@@ -153,6 +153,12 @@ export interface Worktree {
   archived_at?: number
   /** Unix timestamp when worktree was last opened/viewed by the user */
   last_opened_at?: number
+  /** Automation owner ID for automation-created worktrees */
+  automation_id?: string
+  /** Human-readable automation name for automation-created worktrees */
+  automation_name?: string
+  /** Whether this worktree is owned by an automation */
+  automation_owned?: boolean
 }
 
 // =============================================================================
@@ -170,6 +176,9 @@ export interface WorktreeCreatingEvent {
   issue_number?: number
   security_alert_number?: number
   advisory_ghsa_id?: string
+  automation_id?: string
+  automation_name?: string
+  automation_owned?: boolean
 }
 
 /** Event payload when worktree creation completes */

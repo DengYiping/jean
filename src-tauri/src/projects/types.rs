@@ -25,6 +25,12 @@ pub enum MergeType {
     Rebase,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AutomationWorktreeMetadata {
+    pub automation_id: String,
+    pub automation_name: String,
+}
+
 /// A port entry in jean.json
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PortEntry {
@@ -238,6 +244,15 @@ pub struct Worktree {
     /// Unix timestamp when worktree was last opened/viewed by the user
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_opened_at: Option<u64>,
+    /// Automation owner ID for automation-created worktrees
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub automation_id: Option<String>,
+    /// Human-readable automation name for worktree badges
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub automation_name: Option<String>,
+    /// Whether this worktree is owned by an automation
+    #[serde(default)]
+    pub automation_owned: bool,
 }
 
 /// Container for all persisted project data
@@ -458,6 +473,15 @@ pub struct WorktreeCreatingEvent {
     pub security_alert_number: Option<u64>,
     /// Advisory GHSA ID (if created from an advisory)
     pub advisory_ghsa_id: Option<String>,
+    /// Automation owner ID (if created by an automation)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub automation_id: Option<String>,
+    /// Human-readable automation name (if created by an automation)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub automation_name: Option<String>,
+    /// Whether this worktree is owned by an automation
+    #[serde(default)]
+    pub automation_owned: bool,
 }
 
 /// Event emitted when worktree creation completes successfully

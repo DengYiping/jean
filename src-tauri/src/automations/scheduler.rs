@@ -1,15 +1,17 @@
 use chrono::{Datelike, Duration, Local, LocalResult, TimeZone, Timelike, Weekday};
 use tauri::AppHandle;
+use uuid::Uuid;
 
 use super::storage::{ensure_memory_file, load_automations, with_automations_mut};
-use super::types::{Automation, AutomationLastRunStatus, AutomationStatus};
+use super::types::{Automation, AutomationLastRunStatus, AutomationStatus, AutomationTargetMode};
 use crate::automations::AutomationManager;
 use crate::chat::storage::{load_metadata, with_sessions_mut};
 use crate::chat::types::{Backend, EffortLevel, Session, ThinkingLevel};
 use crate::chat::{resolve_default_backend, send_chat_message};
 use crate::http_server::EmitExt;
-use crate::projects::storage::load_projects_data;
-use crate::projects::types::Worktree;
+use crate::projects::storage::{load_projects_data, sanitize_directory_name};
+use crate::projects::types::{AutomationWorktreeMetadata, Worktree};
+use crate::projects::{archive_worktree, create_worktree};
 
 pub const AUTOMATION_TICK_INTERVAL_SECS: u64 = 30;
 
@@ -126,6 +128,16 @@ async fn run_targets(
     app: &AppHandle,
     automation: &Automation,
 ) -> Result<AutomationLastRunStatus, String> {
+    match automation.target_mode {
+        AutomationTargetMode::ExistingWorktrees => run_existing_targets(app, automation).await,
+        AutomationTargetMode::FreshWorktree => run_fresh_target(app, automation).await,
+    }
+}
+
+async fn run_existing_targets(
+    app: &AppHandle,
+    automation: &Automation,
+) -> Result<AutomationLastRunStatus, String> {
     if automation.target_worktree_ids.is_empty() {
         return Ok(AutomationLastRunStatus::Skipped);
     }
@@ -183,6 +195,93 @@ async fn run_targets(
     } else {
         Err(failures.join("\n"))
     }
+}
+
+async fn run_fresh_target(
+    app: &AppHandle,
+    automation: &Automation,
+) -> Result<AutomationLastRunStatus, String> {
+    let pending_worktree = create_worktree(
+        app.clone(),
+        automation.project_id.clone(),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(build_fresh_worktree_name(&automation.name, now_secs())),
+        Some(AutomationWorktreeMetadata {
+            automation_id: automation.id.clone(),
+            automation_name: automation.name.clone(),
+        }),
+    )
+    .await?;
+
+    let worktree = wait_for_worktree_ready(app, &pending_worktree.id).await?;
+    let session_id = ensure_automation_session(app, automation, &worktree)?;
+    let prompt = build_automation_prompt(app, automation)?;
+
+    send_chat_message(
+        app.clone(),
+        session_id,
+        worktree.id.clone(),
+        worktree.path.clone(),
+        prompt,
+        automation.model.clone(),
+        automation.execution_mode.clone(),
+        parse_thinking_level(automation.thinking_level.as_deref())?,
+        parse_effort_level(automation.effort_level.as_deref())?,
+        None,
+        None,
+        None,
+        None,
+        Some(false),
+        automation.provider.clone(),
+        automation.backend.clone(),
+    )
+    .await?;
+
+    archive_previous_fresh_runs(app, automation, &worktree.id).await?;
+    Ok(AutomationLastRunStatus::Completed)
+}
+
+async fn wait_for_worktree_ready(app: &AppHandle, worktree_id: &str) -> Result<Worktree, String> {
+    let deadline = now_secs() + 120;
+    loop {
+        if let Some(worktree) = load_projects_data(app)?.find_worktree(worktree_id).cloned() {
+            return Ok(worktree);
+        }
+        if now_secs() >= deadline {
+            return Err(format!(
+                "Timed out waiting for automation worktree {worktree_id} to be created."
+            ));
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+}
+
+async fn archive_previous_fresh_runs(
+    app: &AppHandle,
+    automation: &Automation,
+    keep_worktree_id: &str,
+) -> Result<(), String> {
+    let worktree_ids: Vec<String> = load_projects_data(app)?
+        .worktrees
+        .into_iter()
+        .filter(|worktree| worktree.project_id == automation.project_id)
+        .filter(|worktree| worktree.archived_at.is_none())
+        .filter(|worktree| worktree.automation_owned)
+        .filter(|worktree| worktree.automation_id.as_deref() == Some(automation.id.as_str()))
+        .filter(|worktree| worktree.id != keep_worktree_id)
+        .map(|worktree| worktree.id)
+        .collect();
+
+    for worktree_id in worktree_ids {
+        archive_worktree(app.clone(), worktree_id).await?;
+    }
+
+    Ok(())
 }
 
 fn ensure_automation_session(
@@ -289,7 +388,7 @@ fn parse_effort_level(value: Option<&str>) -> Result<Option<EffortLevel>, String
 fn emit_automations_invalidation(app: &AppHandle, automation_id: &str) {
     let _ = app.emit_all(
         "cache:invalidate",
-        &serde_json::json!({ "keys": ["automations", "sessions"] }),
+        &serde_json::json!({ "keys": ["automations", "sessions", "projects"] }),
     );
     let _ = app.emit_all(
         "automation:run-updated",
@@ -297,6 +396,25 @@ fn emit_automations_invalidation(app: &AppHandle, automation_id: &str) {
             automation_id: automation_id.to_string(),
         },
     );
+}
+
+fn build_fresh_worktree_name(automation_name: &str, timestamp: u64) -> String {
+    let sanitized = sanitize_directory_name(automation_name)
+        .to_ascii_lowercase()
+        .trim_matches('-')
+        .to_string();
+    let sanitized = if sanitized.is_empty() {
+        "automation".to_string()
+    } else {
+        sanitized
+    };
+    let suffix = Uuid::new_v4()
+        .to_string()
+        .split('-')
+        .next()
+        .unwrap_or("run")
+        .to_string();
+    format!("automation-{sanitized}-{timestamp}-{suffix}")
 }
 
 #[derive(Debug, Clone)]
@@ -691,5 +809,12 @@ mod tests {
         )
         .expect_err("daily window should fail");
         assert!(error.contains("only supported for hourly"));
+    }
+
+    #[test]
+    fn builds_fresh_worktree_name_from_automation_name() {
+        let name = build_fresh_worktree_name("Daily Triage!", 1_760_000_000);
+        assert!(name.starts_with("automation-daily-triage-1760000000-"));
+        assert!(!name.contains(' '));
     }
 }

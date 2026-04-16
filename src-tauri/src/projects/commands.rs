@@ -35,11 +35,11 @@ use super::linear_issues::{
 use super::names::generate_unique_workspace_name;
 use super::storage::{get_project_worktrees_dir, load_projects_data, save_projects_data};
 use super::types::{
-    JeanConfig, MergeType, Project, SessionType, Worktree, WorktreeArchivedEvent,
-    WorktreeBranchExistsEvent, WorktreeCreateErrorEvent, WorktreeCreatedEvent,
-    WorktreeCreatingEvent, WorktreeDeleteErrorEvent, WorktreeDeletedEvent, WorktreeDeletingEvent,
-    WorktreePathExistsEvent, WorktreePermanentlyDeletedEvent, WorktreeSetupCompleteEvent,
-    WorktreeUnarchivedEvent,
+    AutomationWorktreeMetadata, JeanConfig, MergeType, Project, SessionType, Worktree,
+    WorktreeArchivedEvent, WorktreeBranchExistsEvent, WorktreeCreateErrorEvent,
+    WorktreeCreatedEvent, WorktreeCreatingEvent, WorktreeDeleteErrorEvent, WorktreeDeletedEvent,
+    WorktreeDeletingEvent, WorktreePathExistsEvent, WorktreePermanentlyDeletedEvent,
+    WorktreeSetupCompleteEvent, WorktreeUnarchivedEvent,
 };
 use crate::claude_cli::resolve_cli_binary;
 use crate::codex_cli::resolve_cli_binary as resolve_codex_cli_binary;
@@ -576,6 +576,7 @@ pub async fn create_worktree(
     advisory_context: Option<AdvisoryContext>,
     linear_context: Option<LinearIssueContext>,
     custom_name: Option<String>,
+    automation_metadata: Option<AutomationWorktreeMetadata>,
 ) -> Result<Worktree, String> {
     log::trace!("Creating worktree for project: {project_id}");
 
@@ -711,6 +712,13 @@ pub async fn create_worktree(
         issue_number: issue_context.as_ref().map(|ctx| ctx.number as u64),
         security_alert_number: security_context.as_ref().map(|ctx| ctx.number as u64),
         advisory_ghsa_id: advisory_context.as_ref().map(|ctx| ctx.ghsa_id.clone()),
+        automation_id: automation_metadata
+            .as_ref()
+            .map(|metadata| metadata.automation_id.clone()),
+        automation_name: automation_metadata
+            .as_ref()
+            .map(|metadata| metadata.automation_name.clone()),
+        automation_owned: automation_metadata.is_some(),
     };
     if let Err(e) = app.emit_all("worktree:creating", &creating_event) {
         log::error!("Failed to emit worktree:creating event: {e}");
@@ -757,6 +765,13 @@ pub async fn create_worktree(
         archived_at: None,
         label: None,
         last_opened_at: None,
+        automation_id: automation_metadata
+            .as_ref()
+            .map(|metadata| metadata.automation_id.clone()),
+        automation_name: automation_metadata
+            .as_ref()
+            .map(|metadata| metadata.automation_name.clone()),
+        automation_owned: automation_metadata.is_some(),
     };
 
     // Clone values for the background thread
@@ -773,6 +788,7 @@ pub async fn create_worktree(
     let security_context_clone = security_context.clone();
     let advisory_context_clone = advisory_context.clone();
     let linear_context_clone = linear_context.clone();
+    let automation_metadata_clone = automation_metadata.clone();
 
     // Spawn background thread for git operations
     thread::spawn(move || {
@@ -1301,6 +1317,13 @@ pub async fn create_worktree(
                     archived_at: None,
                     label: None,
                     last_opened_at: None,
+                    automation_id: automation_metadata_clone
+                        .as_ref()
+                        .map(|metadata| metadata.automation_id.clone()),
+                    automation_name: automation_metadata_clone
+                        .as_ref()
+                        .map(|metadata| metadata.automation_name.clone()),
+                    automation_owned: automation_metadata_clone.is_some(),
                 };
 
                 data.add_worktree(worktree.clone());
@@ -1454,6 +1477,9 @@ pub async fn create_worktree_from_existing_branch(
         issue_number: issue_context.as_ref().map(|ctx| ctx.number as u64),
         security_alert_number: security_context.as_ref().map(|ctx| ctx.number as u64),
         advisory_ghsa_id: advisory_context.as_ref().map(|ctx| ctx.ghsa_id.clone()),
+        automation_id: None,
+        automation_name: None,
+        automation_owned: false,
     };
     if let Err(e) = app.emit_all("worktree:creating", &creating_event) {
         log::error!("Failed to emit worktree:creating event: {e}");
@@ -1500,6 +1526,9 @@ pub async fn create_worktree_from_existing_branch(
         archived_at: None,
         label: None,
         last_opened_at: None,
+        automation_id: None,
+        automation_name: None,
+        automation_owned: false,
     };
 
     // Clone values for the background thread
@@ -1883,6 +1912,9 @@ pub async fn create_worktree_from_existing_branch(
                     archived_at: None,
                     label: None,
                     last_opened_at: None,
+                    automation_id: None,
+                    automation_name: None,
+                    automation_owned: false,
                 };
 
                 data.add_worktree(worktree.clone());
@@ -2067,6 +2099,9 @@ pub async fn checkout_pr(
         issue_number: None,
         security_alert_number: None,
         advisory_ghsa_id: None,
+        automation_id: None,
+        automation_name: None,
+        automation_owned: false,
     };
     if let Err(e) = app.emit_all("worktree:creating", &creating_event) {
         log::error!("Failed to emit worktree:creating event: {e}");
@@ -2110,6 +2145,9 @@ pub async fn checkout_pr(
         archived_at: None,
         label: None,
         last_opened_at: None,
+        automation_id: None,
+        automation_name: None,
+        automation_owned: false,
     };
 
     // Clone values for background thread
@@ -2429,6 +2467,9 @@ pub async fn checkout_pr(
                     archived_at: None,
                     label: None,
                     last_opened_at: None,
+                    automation_id: None,
+                    automation_name: None,
+                    automation_owned: false,
                 };
 
                 data.add_worktree(worktree.clone());
@@ -2726,6 +2767,9 @@ pub async fn create_base_session(app: AppHandle, project_id: String) -> Result<W
         archived_at: None,
         label: None,
         last_opened_at: None,
+        automation_id: None,
+        automation_name: None,
+        automation_owned: false,
     };
 
     data.add_worktree(session.clone());
@@ -3123,6 +3167,9 @@ pub async fn import_worktree(
         archived_at: None,
         label: None,
         last_opened_at: None,
+        automation_id: None,
+        automation_name: None,
+        automation_owned: false,
     };
 
     data.add_worktree(worktree.clone());

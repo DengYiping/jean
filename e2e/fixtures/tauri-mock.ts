@@ -182,6 +182,10 @@ export const test = base.extend<TauriMockFixtures>({
               project_id: (args?.projectId as string) ?? 'project-1',
               name: args?.name ?? 'Automation',
               prompt: args?.prompt ?? '',
+              target_mode:
+                (args?.target_mode as string) ??
+                (args?.targetMode as string) ??
+                'existing_worktrees',
               target_worktree_ids: structuredClone(
                 (args?.target_worktree_ids as string[]) ??
                   (args?.targetWorktreeIds as string[]) ??
@@ -234,6 +238,8 @@ export const test = base.extend<TauriMockFixtures>({
             Object.assign(automation, {
               name: args?.name,
               prompt: args?.prompt,
+              target_mode:
+                args?.target_mode ?? args?.targetMode ?? automation.target_mode,
               target_worktree_ids: structuredClone(
                 (args?.target_worktree_ids as string[]) ??
                   (args?.targetWorktreeIds as string[]) ??

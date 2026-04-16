@@ -2,7 +2,7 @@ use tauri::{AppHandle, State};
 
 use super::scheduler::{compute_next_run_at, now_secs};
 use super::storage::{load_automations, with_automations_mut};
-use super::types::{Automation, AutomationStatus};
+use super::types::{Automation, AutomationStatus, AutomationTargetMode};
 use super::AutomationManager;
 
 #[tauri::command]
@@ -26,6 +26,7 @@ pub async fn create_automation(
     project_id: String,
     name: String,
     prompt: String,
+    target_mode: AutomationTargetMode,
     target_worktree_ids: Vec<String>,
     backend: Option<String>,
     model: Option<String>,
@@ -40,6 +41,7 @@ pub async fn create_automation(
     validate_automation_inputs(
         &name,
         &prompt,
+        &target_mode,
         &target_worktree_ids,
         &schedule_rrule,
         run_window_start_hour,
@@ -51,6 +53,7 @@ pub async fn create_automation(
         project_id,
         name,
         prompt,
+        target_mode,
         target_worktree_ids,
         schedule_rrule,
     );
@@ -86,6 +89,7 @@ pub async fn update_automation(
     id: String,
     name: String,
     prompt: String,
+    target_mode: AutomationTargetMode,
     target_worktree_ids: Vec<String>,
     backend: Option<String>,
     model: Option<String>,
@@ -101,6 +105,7 @@ pub async fn update_automation(
     validate_automation_inputs(
         &name,
         &prompt,
+        &target_mode,
         &target_worktree_ids,
         &schedule_rrule,
         run_window_start_hour,
@@ -115,6 +120,7 @@ pub async fn update_automation(
             .ok_or_else(|| "Automation not found.".to_string())?;
         automation.name = name.clone();
         automation.prompt = prompt.clone();
+        automation.target_mode = target_mode.clone();
         automation.target_worktree_ids = target_worktree_ids.clone();
         automation.backend = normalize_opt(backend.clone());
         automation.model = normalize_opt(model.clone());
@@ -214,6 +220,7 @@ pub async fn resume_automation(
 fn validate_automation_inputs(
     name: &str,
     prompt: &str,
+    target_mode: &AutomationTargetMode,
     target_worktree_ids: &[String],
     schedule_rrule: &str,
     run_window_start_hour: Option<u32>,
@@ -225,7 +232,9 @@ fn validate_automation_inputs(
     if prompt.trim().is_empty() {
         return Err("Automation prompt cannot be empty.".to_string());
     }
-    if target_worktree_ids.is_empty() {
+    if matches!(target_mode, AutomationTargetMode::ExistingWorktrees)
+        && target_worktree_ids.is_empty()
+    {
         return Err("Select at least one target worktree.".to_string());
     }
     let _ = compute_next_run_at(
@@ -235,6 +244,39 @@ fn validate_automation_inputs(
         now_secs(),
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fresh_worktree_mode_allows_empty_targets() {
+        let result = validate_automation_inputs(
+            "Daily triage",
+            "Do the work",
+            &AutomationTargetMode::FreshWorktree,
+            &[],
+            "FREQ=DAILY;INTERVAL=1;BYHOUR=9;BYMINUTE=0",
+            None,
+            None,
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn existing_worktree_mode_requires_targets() {
+        let result = validate_automation_inputs(
+            "Daily triage",
+            "Do the work",
+            &AutomationTargetMode::ExistingWorktrees,
+            &[],
+            "FREQ=DAILY;INTERVAL=1;BYHOUR=9;BYMINUTE=0",
+            None,
+            None,
+        );
+        assert!(result.is_err());
+    }
 }
 
 fn normalize_opt(value: Option<String>) -> Option<String> {

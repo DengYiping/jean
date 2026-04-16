@@ -83,6 +83,8 @@ pub async fn dispatch_command(
             let advisory_context = field_opt(&args, "advisoryContext", "advisory_context")?;
             let linear_context = field_opt(&args, "linearContext", "linear_context")?;
             let custom_name = field_opt(&args, "customName", "custom_name")?;
+            let automation_metadata =
+                field_opt(&args, "automationMetadata", "automation_metadata")?;
             let result = crate::projects::create_worktree(
                 app.clone(),
                 project_id,
@@ -93,6 +95,7 @@ pub async fn dispatch_command(
                 advisory_context,
                 linear_context,
                 custom_name,
+                automation_metadata,
             )
             .await?;
             // No cache invalidation here — worktree creation uses event-based sync
@@ -2444,6 +2447,7 @@ pub async fn dispatch_command(
             let project_id = field(&args, "projectId", "project_id")?;
             let name = from_field(&args, "name")?;
             let prompt = from_field(&args, "prompt")?;
+            let target_mode = field(&args, "targetMode", "target_mode")?;
             let target_worktree_ids = field(&args, "targetWorktreeIds", "target_worktree_ids")?;
             let backend = field_opt(&args, "backend", "backend")?;
             let model = field_opt(&args, "model", "model")?;
@@ -2462,6 +2466,7 @@ pub async fn dispatch_command(
                 project_id,
                 name,
                 prompt,
+                target_mode,
                 target_worktree_ids,
                 backend,
                 model,
@@ -2480,6 +2485,7 @@ pub async fn dispatch_command(
             let id = from_field(&args, "id")?;
             let name = from_field(&args, "name")?;
             let prompt = from_field(&args, "prompt")?;
+            let target_mode = field(&args, "targetMode", "target_mode")?;
             let target_worktree_ids = field(&args, "targetWorktreeIds", "target_worktree_ids")?;
             let backend = field_opt(&args, "backend", "backend")?;
             let model = field_opt(&args, "model", "model")?;
@@ -2499,6 +2505,7 @@ pub async fn dispatch_command(
                 id,
                 name,
                 prompt,
+                target_mode,
                 target_worktree_ids,
                 backend,
                 model,

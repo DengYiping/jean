@@ -981,6 +981,9 @@ pub async fn restore_session_with_base(
         label: None,
         archived_at: None,
         last_opened_at: None,
+        automation_id: None,
+        automation_name: None,
+        automation_owned: false,
     };
 
     projects_data.add_worktree(new_worktree.clone());

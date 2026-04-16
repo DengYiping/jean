@@ -13,11 +13,14 @@ export type AutomationLastRunStatus =
   | 'failed'
   | 'skipped'
 
+export type AutomationTargetMode = 'existing_worktrees' | 'fresh_worktree'
+
 export interface Automation {
   id: string
   project_id: string
   name: string
   prompt: string
+  target_mode: AutomationTargetMode
   target_worktree_ids: string[]
   backend?: Backend | null
   model?: string | null
@@ -41,6 +44,7 @@ export interface Automation {
 export interface AutomationUpsertInput {
   name: string
   prompt: string
+  target_mode: AutomationTargetMode
   target_worktree_ids: string[]
   backend?: Backend | null
   model?: string | null

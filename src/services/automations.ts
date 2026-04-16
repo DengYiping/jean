@@ -18,6 +18,7 @@ function toAutomationCommandPayload(input: AutomationUpsertInput) {
   return {
     name: input.name,
     prompt: input.prompt,
+    targetMode: input.target_mode,
     targetWorktreeIds: input.target_worktree_ids,
     backend: input.backend,
     model: input.model,

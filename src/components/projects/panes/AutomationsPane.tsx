@@ -34,7 +34,11 @@ import {
   useUpdateAutomation,
 } from '@/services/automations'
 import { useWorktrees } from '@/services/projects'
-import type { Automation, AutomationStatus } from '@/types/automations'
+import type {
+  Automation,
+  AutomationStatus,
+  AutomationTargetMode,
+} from '@/types/automations'
 import type {
   Backend,
   EffortLevel,
@@ -56,6 +60,7 @@ import {
 interface AutomationFormState {
   name: string
   prompt: string
+  targetMode: AutomationTargetMode
   targetWorktreeIds: string[]
   backend: Backend
   model: string
@@ -85,6 +90,7 @@ function emptyForm(worktrees: Worktree[]): AutomationFormState {
   return {
     name: '',
     prompt: '',
+    targetMode: 'existing_worktrees',
     targetWorktreeIds: defaultTargetIds(worktrees),
     backend: 'codex',
     model: '',
@@ -116,10 +122,13 @@ function fromAutomation(
   return {
     name: automation.name,
     prompt: automation.prompt,
+    targetMode: automation.target_mode ?? 'existing_worktrees',
     targetWorktreeIds:
-      automation.target_worktree_ids.length > 0
-        ? automation.target_worktree_ids
-        : defaultTargetIds(worktrees),
+      automation.target_mode === 'fresh_worktree'
+        ? []
+        : automation.target_worktree_ids.length > 0
+          ? automation.target_worktree_ids
+          : defaultTargetIds(worktrees),
     backend: automation.backend ?? 'codex',
     model: automation.model ?? '',
     provider: automation.provider ?? '',
@@ -137,11 +146,13 @@ function fromAutomation(
   }
 }
 
-function buildAutomationInput(form: AutomationFormState) {
+export function buildAutomationInput(form: AutomationFormState) {
   return {
     name: form.name.trim(),
     prompt: form.prompt.trim(),
-    target_worktree_ids: form.targetWorktreeIds,
+    target_mode: form.targetMode,
+    target_worktree_ids:
+      form.targetMode === 'fresh_worktree' ? [] : form.targetWorktreeIds,
     backend: form.backend,
     model: form.model.trim() || null,
     provider: form.provider.trim() || null,
@@ -478,9 +489,45 @@ export function AutomationsPane({
                 />
               </div>
               <div className="space-y-2">
+                <Label>Run Target</Label>
+                <Select
+                  value={form.targetMode}
+                  onValueChange={value =>
+                    setForm(current => ({
+                      ...current,
+                      targetMode: value as AutomationTargetMode,
+                      targetWorktreeIds:
+                        value === 'fresh_worktree'
+                          ? []
+                          : current.targetWorktreeIds.length > 0
+                            ? current.targetWorktreeIds
+                            : defaultTargetIds(activeWorktrees),
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="existing_worktrees">
+                      Existing worktrees
+                    </SelectItem>
+                    <SelectItem value="fresh_worktree">
+                      Fresh worktree each run
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
                 <Label>Targets</Label>
                 <div className="space-y-2 rounded-md border p-3">
-                  {activeWorktrees.length === 0 ? (
+                  {form.targetMode === 'fresh_worktree' ? (
+                    <p className="text-sm text-muted-foreground">
+                      Each run creates a brand new worktree from the project
+                      default branch, then archives older automation-created
+                      runs.
+                    </p>
+                  ) : activeWorktrees.length === 0 ? (
                     <p className="text-sm text-muted-foreground">
                       Add or restore a worktree before configuring targets.
                     </p>

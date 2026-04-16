@@ -801,17 +801,22 @@ function handleWorktreeReady(
 
   // Skip auto-navigation for background-created worktrees (CMD+Click)
   const isBackground = useUIStore.getState().consumePendingBackgroundCreation()
+  const isAutomationOwned = worktree.automation_owned === true
 
   // Select in sidebar
   const { expandProject, selectWorktree } = useProjectsStore.getState()
   expandProject(worktree.project_id)
-  if (!isBackground) {
+  if (!isBackground && !isAutomationOwned) {
     selectWorktree(worktree.id)
   }
 
   // Register worktree path
   const { setActiveWorktree, registerWorktreePath } = useChatStore.getState()
   registerWorktreePath(worktree.id, worktree.path)
+
+  if (isAutomationOwned) {
+    return
+  }
 
   // Fire-and-forget: detect and link PR if not already linked
   if (!worktree.pr_url) {
@@ -945,6 +950,9 @@ export function useWorktreeEvents() {
               issue_number,
               security_alert_number,
               advisory_ghsa_id,
+              automation_id: event.payload.automation_id,
+              automation_name: event.payload.automation_name,
+              automation_owned: event.payload.automation_owned,
               created_at: Math.floor(Date.now() / 1000),
               status: 'pending' as const,
               session_type: 'worktree' as Worktree['session_type'],
@@ -978,40 +986,42 @@ export function useWorktreeEvents() {
         handleWorktreeReady(worktree, queryClient)
         clearPendingTimeout(worktree.id)
 
-        const openWorktreeAction = {
-          label: 'Open',
-          onClick: () => {
-            const { selectWorktree, selectProject } =
-              useProjectsStore.getState()
-            selectProject(worktree.project_id)
-            selectWorktree(worktree.id)
-            // Clear active worktree so we land on ProjectCanvasView (not bare
-            // ChatWindow), then open the session modal with the full header.
-            const { clearActiveWorktree } = useChatStore.getState()
-            clearActiveWorktree()
-            // Use both mechanisms: markWorktreeForAutoOpenSession for when the
-            // canvas is mounting (lazy-loaded), and a deferred event dispatch
-            // for when it's already mounted. The auto-open effect consumes the
-            // mark, so only one will take effect.
-            useUIStore.getState().markWorktreeForAutoOpenSession(worktree.id)
-            setTimeout(() => {
-              window.dispatchEvent(
-                new CustomEvent('open-worktree-modal', {
-                  detail: {
-                    worktreeId: worktree.id,
-                    worktreePath: worktree.path,
-                  },
-                })
-              )
-            }, 0)
-          },
-        }
+        if (!worktree.automation_owned) {
+          const openWorktreeAction = {
+            label: 'Open',
+            onClick: () => {
+              const { selectWorktree, selectProject } =
+                useProjectsStore.getState()
+              selectProject(worktree.project_id)
+              selectWorktree(worktree.id)
+              // Clear active worktree so we land on ProjectCanvasView (not bare
+              // ChatWindow), then open the session modal with the full header.
+              const { clearActiveWorktree } = useChatStore.getState()
+              clearActiveWorktree()
+              // Use both mechanisms: markWorktreeForAutoOpenSession for when the
+              // canvas is mounting (lazy-loaded), and a deferred event dispatch
+              // for when it's already mounted. The auto-open effect consumes the
+              // mark, so only one will take effect.
+              useUIStore.getState().markWorktreeForAutoOpenSession(worktree.id)
+              setTimeout(() => {
+                window.dispatchEvent(
+                  new CustomEvent('open-worktree-modal', {
+                    detail: {
+                      worktreeId: worktree.id,
+                      worktreePath: worktree.path,
+                    },
+                  })
+                )
+              }, 0)
+            },
+          }
 
-        toast.success(`Worktree ready: ${worktree.name}`, {
-          id: `worktree-creating-${worktree.id}`,
-          duration: 5000,
-          action: openWorktreeAction,
-        })
+          toast.success(`Worktree ready: ${worktree.name}`, {
+            id: `worktree-creating-${worktree.id}`,
+            duration: 5000,
+            action: openWorktreeAction,
+          })
+        }
       })
     )
 

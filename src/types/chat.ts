@@ -16,13 +16,13 @@ export type MessageRole = 'user' | 'assistant'
 export type ThinkingLevel = 'off' | 'think' | 'megathink' | 'ultrathink'
 
 /**
- * Effort level for Opus 4.6 adaptive thinking
+ * Effort level for Opus adaptive thinking
  * Controls --settings {"effort": "<level>"} via CLI
  * Replaces ThinkingLevel when model is Opus (latest) on CLI >= 2.1.32
  * - low: Minimal thinking, skips for simple tasks
  * - medium: Moderate thinking, may skip for very simple queries
  * - high: Deep reasoning (default), almost always thinks
- * - max: No constraints on thinking depth (Opus 4.6 only)
+ * - max: No constraints on thinking depth
  */
 export type EffortLevel = 'low' | 'medium' | 'high' | 'max'
 
@@ -92,7 +92,7 @@ export interface ChatMessage {
   execution_mode?: ExecutionMode
   /** Thinking level when this message was sent (user messages only) */
   thinking_level?: ThinkingLevel
-  /** Effort level when this message was sent (user messages only, Opus 4.6) */
+  /** Effort level when this message was sent (user messages only, Opus) */
   effort_level?: EffortLevel
   /** True if this message was recovered from a crash */
   recovered?: boolean
@@ -913,7 +913,7 @@ export interface QueuedMessage {
   executionMode: ExecutionMode
   /** Thinking level setting (snapshot at queue time) */
   thinkingLevel: ThinkingLevel
-  /** Effort level for Opus 4.6 adaptive thinking (snapshot at queue time) */
+  /** Effort level for Opus adaptive thinking (snapshot at queue time) */
   effortLevel?: EffortLevel
   /** MCP config JSON to pass to CLI (snapshot at queue time) */
   mcpConfig?: string

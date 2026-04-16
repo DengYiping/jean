@@ -501,7 +501,7 @@ const PROMPT_SECTIONS: PromptSection[] = [
 const PROMPT_CONFIGS = PROMPT_SECTIONS.flatMap(s => s.configs)
 
 const CLAUDE_MODEL_OPTIONS: { value: MagicPromptModel; label: string }[] = [
-  { value: 'opus', label: 'Opus 4.6' },
+  { value: 'opus', label: 'Opus 4.7' },
   { value: 'sonnet', label: 'Sonnet 4.6' },
   { value: 'haiku', label: 'Haiku' },
 ]

@@ -120,7 +120,7 @@ interface ChatUIState {
   // Thinking level per session (defaults to 'off')
   thinkingLevels: Record<string, ThinkingLevel>
 
-  // Effort level per session (for Opus 4.6 adaptive thinking)
+  // Effort level per session (for Opus adaptive thinking)
   effortLevels: Record<string, EffortLevel>
 
   // Selected backend per session (claude, codex, or opencode)
@@ -353,7 +353,7 @@ interface ChatUIState {
   // Actions - Thinking level (session-based)
   setThinkingLevel: (sessionId: string, level: ThinkingLevel) => void
   getThinkingLevel: (sessionId: string) => ThinkingLevel
-  // Actions - Effort level (session-based, for Opus 4.6 adaptive thinking)
+  // Actions - Effort level (session-based, for Opus adaptive thinking)
   setEffortLevel: (sessionId: string, level: EffortLevel) => void
   getEffortLevel: (sessionId: string) => EffortLevel
 
@@ -1370,7 +1370,7 @@ export const useChatStore = create<ChatUIState>()(
 
       getThinkingLevel: sessionId => get().thinkingLevels[sessionId] ?? 'off',
 
-      // Effort level (session-based, for Opus 4.6 adaptive thinking)
+      // Effort level (session-based, for Opus adaptive thinking)
       setEffortLevel: (sessionId, level) =>
         set(
           state => ({

@@ -2,6 +2,7 @@
 export type KeybindingAction =
   | 'focus_chat_input'
   | 'toggle_left_sidebar'
+  | 'open_new_project_dialog'
   | 'open_preferences'
   | 'open_commit_modal'
   | 'open_git_diff'
@@ -58,6 +59,7 @@ export interface KeybindingDefinition {
 export const DEFAULT_KEYBINDINGS: KeybindingsMap = {
   focus_chat_input: 'mod+l',
   toggle_left_sidebar: 'mod+b',
+  open_new_project_dialog: 'mod+shift+n',
   open_preferences: 'mod+comma',
   open_commit_modal: 'mod+shift+c',
   open_git_diff: 'mod+g',
@@ -109,6 +111,13 @@ export const KEYBINDING_DEFINITIONS: KeybindingDefinition[] = [
     label: 'Toggle left sidebar',
     description: 'Show or hide the projects sidebar',
     default_shortcut: 'mod+b',
+    category: 'navigation',
+  },
+  {
+    action: 'open_new_project_dialog',
+    label: 'New project',
+    description: 'Open the new project dialog',
+    default_shortcut: 'mod+shift+n',
     category: 'navigation',
   },
   {

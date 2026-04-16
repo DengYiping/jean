@@ -77,4 +77,17 @@ describe('eventToShortcutString', () => {
       category: 'chat',
     })
   })
+
+  it('registers the new project dialog shortcut in defaults and settings metadata', () => {
+    expect(DEFAULT_KEYBINDINGS.open_new_project_dialog).toBe('mod+shift+n')
+    expect(
+      KEYBINDING_DEFINITIONS.find(
+        definition => definition.action === 'open_new_project_dialog'
+      )
+    ).toMatchObject({
+      label: 'New project',
+      default_shortcut: 'mod+shift+n',
+      category: 'navigation',
+    })
+  })
 })

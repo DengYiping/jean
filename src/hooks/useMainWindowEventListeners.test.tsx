@@ -1,5 +1,9 @@
+import React from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { renderHook } from '@testing-library/react'
 import { useChatStore } from '@/store/chat-store'
+import { useProjectsStore } from '@/store/projects-store'
 import { useTerminalStore } from '@/store/terminal-store'
 import { useUIStore } from '@/store/ui-store'
 import {
@@ -7,6 +11,7 @@ import {
   closeActiveTerminalTabForShortcut,
   getTerminalShortcutWorktreeId,
   switchActiveTerminalTabByIndexForShortcut,
+  useMainWindowEventListeners,
 } from './useMainWindowEventListeners'
 
 const { mockInvoke, mockListen, mockDisposeTerminal } = vi.hoisted(() => ({
@@ -24,6 +29,31 @@ vi.mock('@/lib/terminal-instances', () => ({
   disposeTerminal: mockDisposeTerminal,
   startHeadless: vi.fn(),
 }))
+
+vi.mock('@/services/preferences', () => ({
+  usePreferences: () => ({ data: undefined }),
+}))
+
+vi.mock('./use-command-context', () => ({
+  useCommandContext: () => ({
+    openPreferences: vi.fn(),
+  }),
+}))
+
+function createWrapper() {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  })
+
+  return function Wrapper({ children }: { children: React.ReactNode }) {
+    return (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
+  }
+}
 
 function focusTerminal() {
   document.body.innerHTML = ''
@@ -113,6 +143,28 @@ describe('useMainWindowEventListeners terminal shortcuts', () => {
       planDialogOpen: false,
       gitDiffModalOpen: false,
       githubDashboardOpen: false,
+    })
+
+    useProjectsStore.setState({
+      selectedProjectId: null,
+      selectedWorktreeId: null,
+      expandedProjectIds: new Set(),
+      expandedWorktreeIds: new Set(),
+      dashboardWorktreeCollapseOverrides: {},
+      expandedFolderIds: new Set(),
+      projectAccessTimestamps: {},
+      projectCanvasSettings: {},
+      addProjectDialogOpen: false,
+      addProjectParentFolderId: null,
+      projectSettingsDialogOpen: false,
+      projectSettingsProjectId: null,
+      projectSettingsInitialPane: null,
+      gitInitModalOpen: false,
+      gitInitModalPath: null,
+      cloneModalOpen: false,
+      jeanConfigWizardOpen: false,
+      jeanConfigWizardProjectId: null,
+      editingFolderId: null,
     })
   })
 
@@ -268,5 +320,47 @@ describe('useMainWindowEventListeners terminal shortcuts', () => {
     expect(
       useTerminalStore.getState().activeTerminalIds['modal-worktree']
     ).toBe('term-1')
+  })
+
+  it('opens the new project dialog when the shortcut is pressed', () => {
+    renderHook(() => useMainWindowEventListeners(), {
+      wrapper: createWrapper(),
+    })
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'N',
+        code: 'KeyN',
+        metaKey: true,
+        shiftKey: true,
+        bubbles: true,
+      })
+    )
+
+    expect(useProjectsStore.getState().addProjectDialogOpen).toBe(true)
+  })
+
+  it('does not retrigger the new project shortcut while the add-project flow is open', () => {
+    const setAddProjectDialogOpen = vi.fn()
+    useProjectsStore.setState({
+      addProjectDialogOpen: true,
+      setAddProjectDialogOpen,
+    })
+
+    renderHook(() => useMainWindowEventListeners(), {
+      wrapper: createWrapper(),
+    })
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'N',
+        code: 'KeyN',
+        metaKey: true,
+        shiftKey: true,
+        bubbles: true,
+      })
+    )
+
+    expect(setAddProjectDialogOpen).not.toHaveBeenCalled()
   })
 })

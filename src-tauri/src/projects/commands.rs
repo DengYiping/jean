@@ -4826,6 +4826,42 @@ pub async fn get_git_diff(
     super::git_status::get_git_diff(&worktree_path, &diff_type, base_branch.as_deref())
 }
 
+/// Read file contents from a specific git ref for diff preview.
+///
+/// This avoids leaking dirty working tree changes into branch diff file view.
+#[tauri::command]
+pub async fn read_git_file_content(
+    worktree_path: String,
+    file_path: String,
+    git_ref: String,
+) -> Result<String, String> {
+    log::trace!("Reading git file content: {git_ref}:{file_path} in {worktree_path}");
+
+    const MAX_SIZE: usize = 10 * 1024 * 1024;
+    let object_spec = format!("{git_ref}:{file_path}");
+
+    let output = silent_command("git")
+        .args(["show", &object_spec])
+        .current_dir(&worktree_path)
+        .output()
+        .map_err(|e| format!("Failed to run git show: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Failed to read git file: {stderr}"));
+    }
+
+    if output.stdout.len() > MAX_SIZE {
+        return Err(format!(
+            "File too large: {} bytes (max {} bytes)",
+            output.stdout.len(),
+            MAX_SIZE
+        ));
+    }
+
+    String::from_utf8(output.stdout).map_err(|_| "File is not valid UTF-8 text".to_string())
+}
+
 /// Get paginated commit history for a branch
 #[tauri::command]
 pub async fn get_commit_history(

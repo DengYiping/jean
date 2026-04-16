@@ -561,6 +561,33 @@ export async function getGitDiff(
 }
 
 /**
+ * Read a text file directly from disk.
+ *
+ * Works in native and browser/headless mode via the transport layer.
+ */
+export async function readFileContent(path: string): Promise<string> {
+  return invoke<string>('read_file_content', { path })
+}
+
+/**
+ * Read file contents from a git ref without relying on the working tree.
+ *
+ * Used by branch diff preview so uncommitted edits do not leak into the file
+ * view for committed branch changes.
+ */
+export async function readGitFileContent(
+  worktreePath: string,
+  filePath: string,
+  gitRef: string
+): Promise<string> {
+  return invoke<string>('read_git_file_content', {
+    worktreePath,
+    filePath,
+    gitRef,
+  })
+}
+
+/**
  * Get paginated commit history for a branch.
  *
  * @param worktreePath - Path to the worktree/repository

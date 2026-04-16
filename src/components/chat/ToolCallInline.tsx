@@ -611,6 +611,218 @@ function normalizeTerminalOutput(text?: string): string {
   return lines.join('\n')
 }
 
+function tokenizeShellCommand(command: string): string[] {
+  const tokens: string[] = []
+  let current = ''
+  let quote: "'" | '"' | null = null
+
+  for (let i = 0; i < command.length; i++) {
+    const char = command[i]
+    if (char === undefined) {
+      continue
+    }
+
+    if (quote) {
+      if (char === quote) {
+        quote = null
+        continue
+      }
+
+      if (char === '\\' && quote === '"' && i + 1 < command.length) {
+        current += command[i + 1] ?? ''
+        i++
+        continue
+      }
+
+      current += char
+      continue
+    }
+
+    if (char === "'" || char === '"') {
+      quote = char
+      continue
+    }
+
+    if (char === '\\' && i + 1 < command.length) {
+      current += command[i + 1] ?? ''
+      i++
+      continue
+    }
+
+    if (/\s/.test(char)) {
+      if (current) {
+        tokens.push(current)
+        current = ''
+      }
+      continue
+    }
+
+    current += char
+  }
+
+  if (current) {
+    tokens.push(current)
+  }
+
+  return tokens
+}
+
+interface ParsedBashReadCommand {
+  type: 'read'
+  filePath: string
+  startLine: number
+  endLine: number
+  lineCount: number
+}
+
+interface ParsedBashSearchCommand {
+  type: 'search'
+  query: string
+  paths: string[]
+}
+
+type ParsedBashCommand = ParsedBashReadCommand | ParsedBashSearchCommand
+
+function parseSedReadCommand(argv: string[]): ParsedBashReadCommand | null {
+  if (argv[0] !== 'sed' || !argv.includes('-n')) {
+    return null
+  }
+
+  const rangeToken = argv.find(arg => /^(\d+),(\d+)p$/.test(arg))
+  const filePath = argv.at(-1)
+
+  if (!rangeToken || !filePath || filePath === rangeToken) {
+    return null
+  }
+
+  const match = rangeToken.match(/^(\d+),(\d+)p$/)
+  const startLineString = match?.[1]
+  const endLineString = match?.[2]
+  if (!startLineString || !endLineString) {
+    return null
+  }
+
+  const startLine = Number.parseInt(startLineString, 10)
+  const endLine = Number.parseInt(endLineString, 10)
+  if (
+    Number.isNaN(startLine) ||
+    Number.isNaN(endLine) ||
+    startLine <= 0 ||
+    endLine < startLine
+  ) {
+    return null
+  }
+
+  return {
+    type: 'read',
+    filePath,
+    startLine,
+    endLine,
+    lineCount: endLine - startLine + 1,
+  }
+}
+
+function parseRipgrepSearchCommand(
+  argv: string[]
+): ParsedBashSearchCommand | null {
+  if (argv[0] !== 'rg') {
+    return null
+  }
+
+  const positional: string[] = []
+  let query: string | undefined
+  let parsingOptions = true
+
+  const optionsWithValue = new Set([
+    '-A',
+    '-B',
+    '-C',
+    '-E',
+    '-F',
+    '-M',
+    '-f',
+    '-g',
+    '-m',
+    '-r',
+    '-s',
+    '-t',
+    '-T',
+    '-x',
+    '--context',
+    '--colors',
+    '--encoding',
+    '--engine',
+    '--file',
+    '--glob',
+    '--iglob',
+    '--ignore-file',
+    '--max-columns',
+    '--max-count',
+    '--pre',
+    '--pre-glob',
+    '--regexp',
+    '--replace',
+    '--sort',
+    '--sortr',
+    '--type',
+    '--type-not',
+  ])
+
+  for (let i = 1; i < argv.length; i++) {
+    const arg = argv[i]
+    if (!arg) {
+      continue
+    }
+
+    if (parsingOptions && arg === '--') {
+      parsingOptions = false
+      continue
+    }
+
+    if (parsingOptions && (arg === '-e' || arg === '--regexp')) {
+      query = argv[i + 1]
+      i++
+      continue
+    }
+
+    if (parsingOptions && arg.startsWith('-')) {
+      if (optionsWithValue.has(arg)) {
+        i++
+      }
+      continue
+    }
+
+    positional.push(arg)
+  }
+
+  if (!query) {
+    query = positional.shift()
+  }
+
+  if (!query) {
+    return null
+  }
+
+  return {
+    type: 'search',
+    query,
+    paths: positional,
+  }
+}
+
+function parseBashCommand(command?: string): ParsedBashCommand | null {
+  if (!command) {
+    return null
+  }
+
+  const argv = tokenizeShellCommand(command)
+  if (argv.length === 0) {
+    return null
+  }
+
+  return parseSedReadCommand(argv) ?? parseRipgrepSearchCommand(argv)
+}
+
 function BashCommandView({
   command,
   description,
@@ -859,6 +1071,48 @@ function getToolDisplay(
     case 'Bash': {
       const command = input.command as string | undefined
       const description = input.description as string | undefined
+      const parsedCommand = parseBashCommand(command)
+      if (parsedCommand?.type === 'read') {
+        const filename = getFilename(parsedCommand.filePath)
+        return {
+          icon: <FileText className="h-4 w-4 shrink-0" />,
+          label: `Read ${parsedCommand.lineCount} lines`,
+          detail: filename,
+          filePath: parsedCommand.filePath,
+          expandedContent: [
+            `Path: ${parsedCommand.filePath}`,
+            `Lines: ${parsedCommand.startLine}-${parsedCommand.endLine}`,
+            command ? `Command: ${command}` : null,
+          ]
+            .filter(Boolean)
+            .join('\n'),
+        }
+      }
+
+      if (parsedCommand?.type === 'search') {
+        const pathSummary =
+          parsedCommand.paths.length === 0
+            ? '(cwd)'
+            : parsedCommand.paths.length === 1
+              ? parsedCommand.paths[0]
+              : `${parsedCommand.paths.length} paths`
+        return {
+          icon: <Search className="h-4 w-4 shrink-0" />,
+          label: 'File Search',
+          detail:
+            parsedCommand.paths.length === 1
+              ? `"${parsedCommand.query}" in ${parsedCommand.paths[0]}`
+              : parsedCommand.query,
+          expandedContent: [
+            `Query: ${parsedCommand.query}`,
+            `Path: ${pathSummary}`,
+            command ? `Command: ${command}` : null,
+          ]
+            .filter(Boolean)
+            .join('\n'),
+        }
+      }
+
       // Truncate long commands for display
       const truncatedCommand =
         command && command.length > 50

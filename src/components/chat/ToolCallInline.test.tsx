@@ -212,6 +212,69 @@ describe('ToolCallInline', () => {
     expect(screen.queryByText('Output:')).not.toBeInTheDocument()
   })
 
+  it('renders Codex sed read commands as file reads', () => {
+    render(
+      <ToolCallInline
+        toolCall={{
+          id: 'tool-sed-read',
+          name: 'Bash',
+          input: {
+            command: "sed -n '401,470p' src-tauri/src/projects/commands.rs",
+          },
+          output: '...file content...',
+        }}
+      />
+    )
+
+    expect(screen.getByText('Read 70 lines')).toBeInTheDocument()
+    expect(screen.getByText('commands.rs')).toBeInTheDocument()
+    expect(screen.queryByText(/^Bash$/)).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button'))
+
+    expect(
+      screen.getByText(
+        (_, element) =>
+          element?.textContent ===
+          "Path: src-tauri/src/projects/commands.rs\nLines: 401-470\nCommand: sed -n '401,470p' src-tauri/src/projects/commands.rs"
+      )
+    ).toBeInTheDocument()
+    expect(screen.getByText('Output:')).toBeInTheDocument()
+    expect(screen.getByText('...file content...')).toBeInTheDocument()
+  })
+
+  it('renders Codex rg commands as file searches', () => {
+    render(
+      <ToolCallInline
+        toolCall={{
+          id: 'tool-rg-search',
+          name: 'Bash',
+          input: {
+            command:
+              'rg -n "Clone from remote|clone from remote" src-tauri/src',
+          },
+          output: 'src-tauri/src/projects/commands.rs:123:Clone from remote',
+        }}
+      />
+    )
+
+    expect(screen.getByText('File Search')).toBeInTheDocument()
+    expect(
+      screen.getByText('"Clone from remote|clone from remote" in src-tauri/src')
+    ).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button'))
+
+    expect(
+      screen.getByText(
+        (_, element) =>
+          element?.textContent ===
+          'Query: Clone from remote|clone from remote\nPath: src-tauri/src\nCommand: rg -n "Clone from remote|clone from remote" src-tauri/src'
+      )
+    ).toBeInTheDocument()
+    expect(screen.getByText('Output:')).toBeInTheDocument()
+  })
+
   it('renders spawnAgent calls with structured agent status instead of raw output', () => {
     render(
       <ToolCallInline

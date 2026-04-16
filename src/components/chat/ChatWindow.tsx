@@ -599,7 +599,7 @@ export function ChatWindow({
 
   // CLI version for adaptive thinking feature detection
   const { data: cliStatus } = useClaudeCliStatus()
-  // Custom providers don't support Opus 4.6 adaptive thinking — use thinking levels instead
+  // Custom providers don't support Opus adaptive thinking — use thinking levels instead
   const useAdaptiveThinkingFlag =
     !isCustomProvider &&
     supportsAdaptiveThinking(selectedModel, cliStatus?.version ?? null)

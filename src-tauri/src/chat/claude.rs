@@ -341,7 +341,7 @@ fn build_claude_args(
     let mut settings_json: Option<serde_json::Value> = None;
 
     if let Some(effort) = effort_level {
-        // Opus 4.6 adaptive thinking: use effort parameter via --settings JSON
+        // Opus adaptive thinking: use effort parameter via --settings JSON
         if let Some(effort_value) = effort.effort_value() {
             let obj = settings_json.get_or_insert_with(|| serde_json::json!({}));
             if let Some(map) = obj.as_object_mut() {

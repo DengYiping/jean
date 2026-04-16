@@ -910,7 +910,7 @@ export interface AppPreferences {
   theme: string
   selected_model: ClaudeModel // Claude model ID passed to --model flag
   thinking_level: ThinkingLevel // Thinking level: 'off' | 'think' | 'megathink' | 'ultrathink'
-  default_effort_level: EffortLevel // Effort level for Opus 4.6 adaptive thinking: 'low' | 'medium' | 'high' | 'max'
+  default_effort_level: EffortLevel // Effort level for Opus adaptive thinking: 'low' | 'medium' | 'high' | 'max'
   terminal: TerminalApp // Terminal app: 'terminal' | 'warp' | 'ghostty' | 'iterm2' | 'powershell' | 'windows-terminal'
   editor: EditorApp // Editor app: 'zed' | 'vscode' | 'cursor' | 'xcode'
   open_in: OpenInDefault // Default Open In action: 'editor' | 'terminal' | 'finder' | 'github'
@@ -1088,7 +1088,7 @@ export type ClaudeModel =
   | 'haiku'
 
 export const modelOptions: { value: ClaudeModel; label: string }[] = [
-  { value: 'opus', label: 'Claude Opus 4.6' },
+  { value: 'opus', label: 'Claude Opus 4.7' },
   { value: 'claude-opus-4-6[1m]', label: 'Claude Opus 4.6 (1M)' },
   { value: 'opus-fast', label: 'Claude Opus 4.6 Fast' },
   { value: 'claude-opus-4-6[1m]-fast', label: 'Claude Opus 4.6 (1M) Fast' },

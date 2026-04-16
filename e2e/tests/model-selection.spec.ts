@@ -37,13 +37,13 @@ test.describe('Model Selection', () => {
     await modelCombobox.click()
     await mockPage.waitForTimeout(200)
 
-    // Select "Opus 4.6"
-    await mockPage.getByRole('option', { name: 'Opus 4.6' }).click()
+    // Select "Opus 4.7"
+    await mockPage.getByRole('option', { name: 'Opus 4.7' }).click()
     await mockPage.waitForTimeout(500)
 
-    // Verify the selector now shows Opus 4.6
+    // Verify the selector now shows Opus 4.7
     const updatedCombobox = mockPage.locator('button[role="combobox"]', {
-      hasText: 'Opus 4.6',
+      hasText: 'Opus 4.7',
     })
     await expect(updatedCombobox).toBeVisible({ timeout: 3000 })
   })

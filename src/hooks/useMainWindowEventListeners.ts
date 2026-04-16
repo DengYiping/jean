@@ -135,6 +135,10 @@ function executeKeybindingAction(
       setLeftSidebarVisible(!leftSidebarVisible)
       break
     }
+    case 'open_new_project_dialog':
+      logger.debug('Keybinding: open_new_project_dialog')
+      useProjectsStore.getState().setAddProjectDialogOpen(true)
+      break
     case 'open_preferences':
       logger.debug('Keybinding: open_preferences')
       commandContext.openPreferences()
@@ -511,7 +515,15 @@ export function useMainWindowEventListeners() {
         uiState.updatePrModalOpen
       )
         return
-      if (useProjectsStore.getState().projectSettingsDialogOpen) return
+      const projectsState = useProjectsStore.getState()
+      if (
+        projectsState.projectSettingsDialogOpen ||
+        projectsState.addProjectDialogOpen ||
+        projectsState.gitInitModalOpen ||
+        projectsState.cloneModalOpen
+      ) {
+        return
+      }
 
       // When terminal is focused, remap shortcuts for terminal-specific actions
       // and block all others so they don't interfere with terminal usage.

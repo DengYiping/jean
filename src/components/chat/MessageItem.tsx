@@ -38,6 +38,7 @@ import {
   stripFindingBlocks,
 } from './review-finding-utils'
 import { ReviewFindingsList } from './ReviewFindingBlock'
+import { MessageSettingsBadges } from './MessageSettingsBadges'
 import {
   extractImagePaths,
   extractTextFilePaths,
@@ -656,6 +657,13 @@ export const MessageItem = memo(function MessageItem({
           )}
           <div className="text-foreground border border-border rounded-lg px-3 py-2 bg-muted/20 min-w-0 break-words">
             {messageBoxContent}
+            <MessageSettingsBadges
+              model={message.model}
+              executionMode={message.execution_mode}
+              thinkingLevel={message.thinking_level}
+              effortLevel={message.effort_level}
+              isCursor={message.model?.startsWith('cursor/') ?? false}
+            />
           </div>
         </div>
       ) : (

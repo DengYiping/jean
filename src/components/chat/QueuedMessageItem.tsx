@@ -17,6 +17,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import {
+  Brain,
   ClipboardList,
   GripVertical,
   Hammer,
@@ -25,6 +26,12 @@ import {
   Zap,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import {
+  EFFORT_LEVEL_OPTIONS,
+  MODEL_OPTIONS,
+  THINKING_LEVEL_OPTIONS,
+} from '@/components/chat/toolbar/toolbar-options'
+import { formatOpencodeModelLabel } from '@/components/chat/toolbar/toolbar-utils'
 import type { QueuedMessage } from '@/types/chat'
 
 interface SortableQueuedMessageItemProps {
@@ -69,6 +76,23 @@ const SortableQueuedMessageItem = memo(function SortableQueuedMessageItem({
     onSteer(sessionId, message.id)
   }, [message.id, onSteer, sessionId])
 
+  const modelLabel =
+    MODEL_OPTIONS.find(o => o.value === message.model)?.label ??
+    (message.model.includes('/')
+      ? formatOpencodeModelLabel(message.model)
+      : message.model)
+
+  const effortLabel = message.effortLevel
+    ? (EFFORT_LEVEL_OPTIONS.find(o => o.value === message.effortLevel)?.label ??
+      message.effortLevel)
+    : null
+
+  const thinkingLabel =
+    message.thinkingLevel !== 'off'
+      ? (THINKING_LEVEL_OPTIONS.find(o => o.value === message.thinkingLevel)
+          ?.label ?? message.thinkingLevel)
+      : null
+
   return (
     <div ref={setNodeRef} style={style}>
       <div
@@ -110,6 +134,22 @@ const SortableQueuedMessageItem = memo(function SortableQueuedMessageItem({
             )}
             <span className="capitalize">{message.executionMode}</span>
           </span>
+
+          <span className="shrink-0 rounded bg-muted/80 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+            {modelLabel}
+          </span>
+
+          {effortLabel ? (
+            <span className="shrink-0 inline-flex items-center gap-1 rounded bg-muted/80 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+              <Brain className="h-2.5 w-2.5" />
+              {effortLabel}
+            </span>
+          ) : thinkingLabel ? (
+            <span className="shrink-0 inline-flex items-center gap-1 rounded bg-muted/80 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+              <Brain className="h-2.5 w-2.5" />
+              {thinkingLabel}
+            </span>
+          ) : null}
 
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">

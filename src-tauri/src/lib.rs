@@ -1646,6 +1646,18 @@ async fn load_preferences(app: AppHandle) -> Result<AppPreferences, String> {
     normalize_preferences(&mut preferences);
     let mut needs_resave = migrate_loaded_preferences(&mut preferences);
 
+    // Migrate legacy magic-prompt model names ("opus" → "claude-opus-4-7")
+    // and legacy auto-naming models ("haiku" → "sonnet")
+    let mut needs_resave = preferences.magic_prompt_models.migrate_legacy_defaults();
+    if preferences.branch_naming_model == "haiku" {
+        preferences.branch_naming_model = default_branch_naming_model();
+        needs_resave = true;
+    }
+    if preferences.session_naming_model == "haiku" {
+        preferences.session_naming_model = default_session_naming_model();
+        needs_resave = true;
+    }
+
     // Migrate CLI profiles: move settings_json from preferences.json to standalone files
     for profile in &mut preferences.custom_cli_profiles {
         let path = match get_cli_profile_path(&profile.name) {

@@ -60,12 +60,13 @@ function mapCodexReasoningToEffort(
 }
 
 function getDefaultModelForBackend(
-  backend: 'claude' | 'codex' | 'opencode' | undefined,
+  backend: 'claude' | 'codex' | 'opencode' | 'cursor' | undefined,
   preferences:
     | {
         selected_model?: string | null
         selected_codex_model?: string | null
         selected_opencode_model?: string | null
+        selected_cursor_model?: string | null
       }
     | undefined
 ): string {
@@ -75,7 +76,10 @@ function getDefaultModelForBackend(
   if (backend === 'opencode') {
     return preferences?.selected_opencode_model ?? 'opencode/gpt-5.3-codex'
   }
-  return preferences?.selected_model ?? 'opus'
+  if (backend === 'cursor') {
+    return preferences?.selected_cursor_model ?? 'cursor/auto'
+  }
+  return preferences?.selected_model ?? 'claude-opus-4-7'
 }
 
 interface UseClearContextApprovalParams {

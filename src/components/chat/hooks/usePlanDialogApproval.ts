@@ -22,6 +22,20 @@ import type { McpServerInfo } from '@/types/chat'
 import { buildPlanApprovalMessage } from '../plan-approval-message'
 import { applyOptimisticPlanApproval } from './optimistic-plan-approval'
 
+const THINKING_LEVEL_VALUES = new Set<ThinkingLevel>([
+  'off',
+  'think',
+  'megathink',
+  'ultrathink',
+])
+
+function isThinkingLevel(
+  value: string | null | undefined
+): value is ThinkingLevel {
+  if (!value) return false
+  return THINKING_LEVEL_VALUES.has(value as ThinkingLevel)
+}
+
 interface UsePlanDialogApprovalParams {
   activeSessionId: string | null | undefined
   activeWorktreeId: string | null | undefined
@@ -30,8 +44,10 @@ interface UsePlanDialogApprovalParams {
   selectedModelRef: RefObject<string>
   buildModelRef: RefObject<string | null>
   buildBackendRef: RefObject<string | null>
+  buildThinkingLevelRef: RefObject<string | null>
   yoloModelRef: RefObject<string | null>
   yoloBackendRef: RefObject<string | null>
+  yoloThinkingLevelRef: RefObject<string | null>
   selectedProviderRef: RefObject<string | null>
   selectedThinkingLevelRef: RefObject<ThinkingLevel>
   selectedEffortLevelRef: RefObject<EffortLevel>
@@ -39,7 +55,7 @@ interface UsePlanDialogApprovalParams {
   isCodexBackendRef: RefObject<boolean>
   mcpServersDataRef: RefObject<McpServerInfo[] | undefined>
   enabledMcpServersRef: RefObject<string[]>
-  selectedBackendRef: RefObject<'claude' | 'codex' | 'opencode'>
+  selectedBackendRef: RefObject<'claude' | 'codex' | 'opencode' | 'cursor'>
   markAtBottom: () => void
 }
 
@@ -55,8 +71,10 @@ export function usePlanDialogApproval({
   selectedModelRef,
   buildModelRef,
   buildBackendRef,
+  buildThinkingLevelRef,
   yoloModelRef,
   yoloBackendRef,
+  yoloThinkingLevelRef,
   selectedProviderRef,
   selectedThinkingLevelRef,
   selectedEffortLevelRef,
@@ -174,14 +192,15 @@ export function usePlanDialogApproval({
           )
         })
 
-      const modelOverride =
-        mode === 'yolo' ? yoloModelRef.current : buildModelRef.current
       const backendOverride =
         mode === 'yolo' ? yoloBackendRef.current : buildBackendRef.current
+      const overridesApply =
+        !backendOverride || backendOverride === selectedBackendRef.current
+      const appliedBackendOverride = overridesApply ? backendOverride : null
       const message = buildPlanApprovalMessage({
         mode,
         backend:
-          (backendOverride as Session['backend'] | null) ??
+          (appliedBackendOverride as Session['backend'] | null) ??
           (isCodexBackendRef.current ? 'codex' : null),
         updatedPlan,
         originalPlan: null,
@@ -192,35 +211,39 @@ export function usePlanDialogApproval({
         configuredCodexPrompt: preferences?.magic_prompts?.plan_approval_codex,
       })
 
-      setExecutionMode(activeSessionId, mode)
-      invoke('broadcast_session_setting', {
-        sessionId: activeSessionId,
-        key: 'executionMode',
-        value: mode,
-      }).catch(err => {
-        logger.error(
-          '[usePlanDialogApproval] Broadcast executionMode=' +
-            mode +
-            ' failed:',
-          err
-        )
-      })
-      invoke('broadcast_session_setting', {
-        sessionId: activeSessionId,
-        key: 'waitingForInput',
-        value: 'false',
-      }).catch(err => {
-        logger.error(
-          '[usePlanDialogApproval] Broadcast waitingForInput=false failed:',
-          err
-        )
-      })
+      const modelOverride = overridesApply
+        ? mode === 'yolo'
+          ? yoloModelRef.current
+          : buildModelRef.current
+        : null
+
+      if (modelOverride) {
+        useChatStore.getState().setSelectedModel(activeSessionId, modelOverride)
+      }
+
+      const thinkingOverride = overridesApply
+        ? mode === 'yolo'
+          ? yoloThinkingLevelRef.current
+          : buildThinkingLevelRef.current
+        : null
+      const resolvedThinkingLevel: ThinkingLevel = isThinkingLevel(
+        thinkingOverride
+      )
+        ? thinkingOverride
+        : selectedThinkingLevelRef.current
+
+      if (isThinkingLevel(thinkingOverride)) {
+        useChatStore
+          .getState()
+          .setThinkingLevel(activeSessionId, resolvedThinkingLevel)
+      }
 
       const model = modelOverride ?? selectedModelRef.current
+      setExecutionMode(activeSessionId, mode)
       const modeLabel = mode === 'yolo' ? 'Yolo' : 'Build'
       const overrideStr =
-        modelOverride || backendOverride
-          ? [backendOverride, model].filter(Boolean).join(' / ')
+        modelOverride || appliedBackendOverride
+          ? [appliedBackendOverride, model].filter(Boolean).join(' / ')
           : ''
       if (overrideStr) toast.info(`${modeLabel}: ${overrideStr}`)
       const displayMessage = overrideStr
@@ -237,7 +260,7 @@ export function usePlanDialogApproval({
         model,
         provider: selectedProviderRef.current,
         executionMode: mode,
-        thinkingLevel: selectedThinkingLevelRef.current,
+        thinkingLevel: resolvedThinkingLevel,
         effortLevel:
           useAdaptiveThinkingRef.current || isCodexBackendRef.current
             ? selectedEffortLevelRef.current
@@ -245,7 +268,7 @@ export function usePlanDialogApproval({
         mcpConfig: buildMcpConfigJson(
           mcpServersDataRef.current ?? [],
           enabledMcpServersRef.current,
-          (backendOverride as string) ?? selectedBackendRef.current
+          (appliedBackendOverride as string) ?? selectedBackendRef.current
         ),
         queuedAt: Date.now(),
       }
@@ -266,7 +289,11 @@ export function usePlanDialogApproval({
       queryClient,
       selectedModelRef,
       buildModelRef,
+      buildBackendRef,
+      buildThinkingLevelRef,
       yoloModelRef,
+      yoloBackendRef,
+      yoloThinkingLevelRef,
       selectedProviderRef,
       selectedThinkingLevelRef,
       selectedEffortLevelRef,
@@ -274,6 +301,7 @@ export function usePlanDialogApproval({
       isCodexBackendRef,
       mcpServersDataRef,
       enabledMcpServersRef,
+      selectedBackendRef,
       markAtBottom,
       preferences,
     ]

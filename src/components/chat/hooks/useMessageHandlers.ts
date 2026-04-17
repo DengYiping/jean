@@ -194,7 +194,10 @@ function getDefaultModelForBackend(
   if (backend === 'opencode') {
     return preferences?.selected_opencode_model ?? 'opencode/gpt-5.3-codex'
   }
-  return preferences?.selected_model ?? 'opus'
+  if (backend === 'cursor') {
+    return preferences?.selected_cursor_model ?? 'cursor/auto'
+  }
+  return preferences?.selected_model ?? 'claude-opus-4-7'
 }
 
 function getPlanApprovalPromptOptions(
@@ -656,10 +659,21 @@ export function useMessageHandlers({
       // Send approval message so the backend continues with execution
       // NOTE: setLastSentMessage is critical for permission denial flow - without it,
       // the denied message context won't be set and approval UI won't work
+      const sessionBackend = useChatStore.getState().selectedBackends[sessionId]
+      const buildBackendOverride = buildBackendRef.current
+      const overridesApply =
+        !buildBackendOverride || buildBackendOverride === sessionBackend
+      const buildModel = overridesApply
+        ? (buildModelRef.current ?? selectedModelRef.current)
+        : selectedModelRef.current
+      const buildThinking =
+        overridesApply && isThinkingLevel(buildThinkingLevelRef.current)
+          ? buildThinkingLevelRef.current
+          : selectedThinkingLevelRef.current
       setLastSentMessage(sessionId, message)
       setError(sessionId, null)
       addSendingSession(sessionId)
-      setSelectedModel(sessionId, selectedModelRef.current)
+      setSelectedModel(sessionId, buildModel)
       setExecutingMode(sessionId, 'build')
       const markPromise = markPlanApprovedService(
         worktreeId,
@@ -698,9 +712,9 @@ export function useMessageHandlers({
               worktreeId,
               worktreePath,
               message,
-              model: selectedModelRef.current,
+              model: buildModel,
               executionMode: 'build',
-              thinkingLevel: selectedThinkingLevelRef.current,
+              thinkingLevel: buildThinking,
               effortLevel: useAdaptiveThinkingRef.current
                 ? selectedEffortLevelRef.current
                 : undefined,
@@ -788,11 +802,24 @@ export function useMessageHandlers({
         updatedPlan,
         ...getPlanApprovalPromptOptions(preferences),
       })
+      // Resolve yolo overrides (skip if backend override doesn't match session)
+      const sessionBackendYolo =
+        useChatStore.getState().selectedBackends[sessionId]
+      const yoloBackendOverride = yoloBackendRef.current
+      const yoloOverridesApply =
+        !yoloBackendOverride || yoloBackendOverride === sessionBackendYolo
+      const yoloModel = yoloOverridesApply
+        ? (yoloModelRef.current ?? selectedModelRef.current)
+        : selectedModelRef.current
+      const yoloThinking =
+        yoloOverridesApply && isThinkingLevel(yoloThinkingLevelRef.current)
+          ? yoloThinkingLevelRef.current
+          : selectedThinkingLevelRef.current
       // Send approval message so the backend continues with execution
       setLastSentMessage(sessionId, message)
       setError(sessionId, null)
       addSendingSession(sessionId)
-      setSelectedModel(sessionId, selectedModelRef.current)
+      setSelectedModel(sessionId, yoloModel)
       setExecutingMode(sessionId, 'yolo')
       const markPromise = markPlanApprovedService(
         worktreeId,
@@ -831,9 +858,9 @@ export function useMessageHandlers({
               worktreeId,
               worktreePath,
               message,
-              model: selectedModelRef.current,
+              model: yoloModel,
               executionMode: 'yolo',
-              thinkingLevel: selectedThinkingLevelRef.current,
+              thinkingLevel: yoloThinking,
               effortLevel: useAdaptiveThinkingRef.current
                 ? selectedEffortLevelRef.current
                 : undefined,
@@ -907,9 +934,24 @@ export function useMessageHandlers({
     // anchoring handle the plan collapse smoothly.
     markAtBottom()
 
+    // Resolve build overrides (skip if backend override doesn't match session)
+    const streamBuildSessionBackend =
+      useChatStore.getState().selectedBackends[sessionId]
+    const streamBuildBackendOverride = buildBackendRef.current
+    const streamBuildOverridesApply =
+      !streamBuildBackendOverride ||
+      streamBuildBackendOverride === streamBuildSessionBackend
+    const streamBuildModel = streamBuildOverridesApply
+      ? (buildModelRef.current ?? selectedModelRef.current)
+      : selectedModelRef.current
+    const streamBuildThinking =
+      streamBuildOverridesApply &&
+      isThinkingLevel(buildThinkingLevelRef.current)
+        ? buildThinkingLevelRef.current
+        : selectedThinkingLevelRef.current
     // Explicitly set to build mode (not toggle, to avoid switching back to plan if already in build)
     setMode(sessionId, 'build')
-    setSelectedModel(sessionId, selectedModelRef.current)
+    setSelectedModel(sessionId, streamBuildModel)
 
     // Send approval message to Claude so it continues with execution
     // NOTE: setLastSentMessage is critical for permission denial flow - without it,
@@ -933,9 +975,9 @@ export function useMessageHandlers({
         worktreeId,
         worktreePath,
         message: buildApprovalMsg,
-        model: selectedModelRef.current,
+        model: streamBuildModel,
         executionMode: 'build',
-        thinkingLevel: selectedThinkingLevelRef.current,
+        thinkingLevel: streamBuildThinking,
         effortLevel: useAdaptiveThinkingRef.current
           ? selectedEffortLevelRef.current
           : undefined,
@@ -998,9 +1040,23 @@ export function useMessageHandlers({
     // anchoring handle the plan collapse smoothly.
     markAtBottom()
 
+    // Resolve yolo overrides (skip if backend override doesn't match session)
+    const streamYoloSessionBackend =
+      useChatStore.getState().selectedBackends[sessionId]
+    const streamYoloBackendOverride = yoloBackendRef.current
+    const streamYoloOverridesApply =
+      !streamYoloBackendOverride ||
+      streamYoloBackendOverride === streamYoloSessionBackend
+    const streamYoloModel = streamYoloOverridesApply
+      ? (yoloModelRef.current ?? selectedModelRef.current)
+      : selectedModelRef.current
+    const streamYoloThinking =
+      streamYoloOverridesApply && isThinkingLevel(yoloThinkingLevelRef.current)
+        ? yoloThinkingLevelRef.current
+        : selectedThinkingLevelRef.current
     // Set to yolo mode for auto-approval of all future tools
     setMode(sessionId, 'yolo')
-    setSelectedModel(sessionId, selectedModelRef.current)
+    setSelectedModel(sessionId, streamYoloModel)
 
     // Send approval message to Claude so it continues with execution
     const preferences = queryClient.getQueryData<AppPreferences>(
@@ -1022,9 +1078,9 @@ export function useMessageHandlers({
         worktreeId,
         worktreePath,
         message: yoloApprovalMsg,
-        model: selectedModelRef.current,
+        model: streamYoloModel,
         executionMode: 'yolo',
-        thinkingLevel: selectedThinkingLevelRef.current,
+        thinkingLevel: streamYoloThinking,
         effortLevel: useAdaptiveThinkingRef.current
           ? selectedEffortLevelRef.current
           : undefined,

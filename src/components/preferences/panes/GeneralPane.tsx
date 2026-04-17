@@ -8,7 +8,13 @@ import React, {
 import { invoke } from '@/lib/transport'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Loader2, ChevronDown, Check, ChevronsUpDown } from 'lucide-react'
+import {
+  Loader2,
+  ChevronDown,
+  Check,
+  ChevronsUpDown,
+  Play,
+} from 'lucide-react'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
@@ -1446,7 +1452,7 @@ export const GeneralPane: React.FC = () => {
             description="Claude model for AI assistance"
           >
             <Select
-              value={preferences?.selected_model ?? 'opus'}
+              value={preferences?.selected_model ?? 'claude-opus-4-7'}
               onValueChange={handleModelChange}
             >
               <SelectTrigger>
@@ -1844,42 +1850,72 @@ export const GeneralPane: React.FC = () => {
             label="Waiting sound"
             description="Play when session needs your input"
           >
-            <Select
-              value={preferences?.waiting_sound ?? 'none'}
-              onValueChange={handleWaitingSoundChange}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {notificationSoundOptions.map(option => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex items-center gap-2">
+              <Select
+                value={preferences?.waiting_sound ?? 'none'}
+                onValueChange={handleWaitingSoundChange}
+              >
+                <SelectTrigger className="w-full sm:min-w-96">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {notificationSoundOptions.map(option => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                variant="outline"
+                size="icon"
+                disabled={
+                  !preferences?.waiting_sound ||
+                  preferences.waiting_sound === 'none'
+                }
+                onClick={() =>
+                  playNotificationSound(preferences?.waiting_sound ?? 'none')
+                }
+              >
+                <Play className="h-4 w-4" />
+              </Button>
+            </div>
           </InlineField>
 
           <InlineField
             label="Review sound"
             description="Play when session finishes"
           >
-            <Select
-              value={preferences?.review_sound ?? 'none'}
-              onValueChange={handleReviewSoundChange}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {notificationSoundOptions.map(option => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex items-center gap-2">
+              <Select
+                value={preferences?.review_sound ?? 'none'}
+                onValueChange={handleReviewSoundChange}
+              >
+                <SelectTrigger className="w-full sm:min-w-96">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {notificationSoundOptions.map(option => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                variant="outline"
+                size="icon"
+                disabled={
+                  !preferences?.review_sound ||
+                  preferences.review_sound === 'none'
+                }
+                onClick={() =>
+                  playNotificationSound(preferences?.review_sound ?? 'none')
+                }
+              >
+                <Play className="h-4 w-4" />
+              </Button>
+            </div>
           </InlineField>
         </div>
       </SettingsSection>

@@ -211,6 +211,8 @@ export interface Session {
   last_run_execution_mode?: ExecutionMode
   /** User-assigned label with color (e.g. "Needs testing") */
   label?: LabelData
+  /** Backend-derived session summary for list and unread surfaces */
+  session_derived_state?: SessionDerivedState
   /** Messages queued for sending (synced between native + web clients) */
   queued_messages?: QueuedMessage[]
 }
@@ -245,6 +247,47 @@ export interface WorktreeSessions {
   version: number
   /** Whether branch naming has been attempted for this worktree */
   branch_naming_completed?: boolean
+}
+
+export type SessionDerivedStatus =
+  | 'idle'
+  | 'planning'
+  | 'vibing'
+  | 'yoloing'
+  | 'waiting'
+  | 'review'
+  | 'permission'
+  | 'completed'
+
+export type SessionWaitingType = 'question' | 'plan'
+
+export interface SessionDerivedState {
+  status: SessionDerivedStatus
+  effective_execution_mode?: ExecutionMode | null
+  is_waiting: boolean
+  waiting_type?: SessionWaitingType | null
+  has_question: boolean
+  has_exit_plan: boolean
+  pending_plan_message_id?: string | null
+  plan_file_path?: string | null
+  plan_content?: string | null
+  permission_denial_count: number
+  has_recap: boolean
+  latest_activity_at: number
+  is_unread: boolean
+}
+
+export interface UnreadSessionEntry {
+  session: Session
+  project_id: string
+  project_name: string
+  worktree_id: string
+  worktree_name: string
+  worktree_path: string
+}
+
+export interface UnreadSessionsResponse {
+  entries: UnreadSessionEntry[]
 }
 
 /**

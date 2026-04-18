@@ -55,6 +55,90 @@ export const test = base.extend<TauriMockFixtures>({
           return sessionStore[worktreeId]
         }
 
+        function deriveSessionState(session: Record<string, unknown>) {
+          const waitingForInput = Boolean(session.waiting_for_input)
+          const waitingType = waitingForInput
+            ? ((session.waiting_for_input_type as string | null | undefined) ??
+              (session.pending_plan_message_id ? 'plan' : 'question'))
+            : null
+          const lastRunStatus =
+            (session.last_run_status as string | undefined) ?? null
+          const effectiveExecutionMode =
+            (session.last_run_execution_mode as string | undefined) ??
+            (session.selected_execution_mode as string | undefined) ??
+            null
+          let status = 'idle'
+          const permissionCount = Array.isArray(
+            session.pending_permission_denials
+          )
+            ? session.pending_permission_denials.length
+            : 0
+
+          if (permissionCount > 0) status = 'permission'
+          else if (waitingForInput) status = 'waiting'
+          else if (session.is_reviewing || session.review_results)
+            status = 'review'
+          else if (
+            lastRunStatus === 'running' ||
+            lastRunStatus === 'resumable'
+          ) {
+            status =
+              effectiveExecutionMode === 'build'
+                ? 'vibing'
+                : effectiveExecutionMode === 'yolo'
+                  ? 'yoloing'
+                  : 'planning'
+          } else if (lastRunStatus === 'completed') status = 'completed'
+
+          const actionableStatus =
+            lastRunStatus === 'completed' ||
+            lastRunStatus === 'cancelled' ||
+            lastRunStatus === 'crashed'
+          const isUnread =
+            !session.archived_at &&
+            (permissionCount > 0 ||
+              waitingForInput ||
+              Boolean(session.is_reviewing) ||
+              actionableStatus) &&
+            (((session.last_opened_at as number | undefined) ?? null) ===
+              null ||
+              (session.last_opened_at as number) <
+                ((session.updated_at as number | undefined) ?? 0))
+
+          return {
+            status,
+            effective_execution_mode: effectiveExecutionMode,
+            is_waiting: waitingForInput,
+            waiting_type: waitingType,
+            has_question: waitingType === 'question',
+            has_exit_plan: waitingType === 'plan',
+            pending_plan_message_id:
+              waitingType === 'plan'
+                ? ((session.pending_plan_message_id as string | undefined) ??
+                  null)
+                : null,
+            plan_file_path:
+              (session.plan_file_path as string | undefined) ?? null,
+            plan_content: null,
+            permission_denial_count: permissionCount,
+            has_recap: Boolean(session.digest),
+            latest_activity_at:
+              (session.last_message_at as number | undefined) ??
+              (session.updated_at as number | undefined) ??
+              (session.created_at as number | undefined) ??
+              0,
+            is_unread: isUnread,
+          }
+        }
+
+        function cloneSessionWithDerivedState(
+          session: Record<string, unknown>
+        ) {
+          const cloned = structuredClone(session)
+          cloned.session_derived_state = deriveSessionState(cloned)
+          return cloned
+        }
+
         // Commands that need dynamic responses based on args
         const dynamicHandlers: Record<
           string,
@@ -65,7 +149,9 @@ export const test = base.extend<TauriMockFixtures>({
             const store = getWorktreeStore(wid)
             return {
               worktree_id: wid,
-              sessions: store.sessions,
+              sessions: store.sessions.map(session =>
+                cloneSessionWithDerivedState(session)
+              ),
               active_session_id: store.active_session_id,
               version: 2,
             }
@@ -80,11 +166,12 @@ export const test = base.extend<TauriMockFixtures>({
               name,
               order: store.sessions.length,
               created_at: Date.now() / 1000,
+              updated_at: Date.now() / 1000,
               messages: [],
             }
             store.sessions.unshift(session)
             store.active_session_id = session.id
-            return session
+            return cloneSessionWithDerivedState(session)
           },
           rename_session: args => {
             const wid = (args?.worktreeId as string) ?? 'unknown'
@@ -144,14 +231,50 @@ export const test = base.extend<TauriMockFixtures>({
             const store = getWorktreeStore(wid)
             const session = store.sessions.find(s => s.id === args?.sessionId)
             return session
-              ? structuredClone(session)
+              ? cloneSessionWithDerivedState(session)
               : {
                   id: args?.sessionId ?? 'unknown',
                   name: 'Session',
                   order: 0,
                   created_at: Date.now() / 1000,
+                  updated_at: Date.now() / 1000,
                   messages: [],
+                  session_derived_state: deriveSessionState({
+                    created_at: Date.now() / 1000,
+                    updated_at: Date.now() / 1000,
+                    messages: [],
+                  }),
                 }
+          },
+          list_unread_sessions: () => {
+            const entries: Array<Record<string, unknown>> = []
+            for (const [worktreeId, store] of Object.entries(sessionStore)) {
+              for (const session of store.sessions) {
+                const derived = deriveSessionState(session)
+                if (!derived.is_unread) continue
+                entries.push({
+                  project_id: 'project-1',
+                  project_name: 'E2E Project',
+                  worktree_id: worktreeId,
+                  worktree_name: worktreeId,
+                  worktree_path: `/tmp/${worktreeId}`,
+                  session: {
+                    ...structuredClone(session),
+                    session_derived_state: derived,
+                  },
+                })
+              }
+            }
+            return { entries }
+          },
+          get_unread_count: () => {
+            let count = 0
+            for (const store of Object.values(sessionStore)) {
+              for (const session of store.sessions) {
+                if (deriveSessionState(session).is_unread) count += 1
+              }
+            }
+            return count
           },
           send_chat_message: args => {
             // Return a mock assistant ChatMessage

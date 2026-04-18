@@ -9,15 +9,19 @@ import { Kbd } from '@/components/ui/kbd'
 import { cn } from '@/lib/utils'
 import { invoke } from '@/lib/transport'
 import { useQueryClient } from '@tanstack/react-query'
-import { useAllSessions } from '@/services/chat'
+import { chatQueryKeys, useUnreadSessions } from '@/services/chat'
 import { useProjectsStore } from '@/store/projects-store'
 import { useChatStore } from '@/store/chat-store'
 import { useUIStore } from '@/store/ui-store'
 import { useUnreadCount } from './useUnreadCount'
 import { formatShortcutDisplay } from '@/types/keybindings'
-import type { Session } from '@/types/chat'
+import type {
+  Session,
+  UnreadSessionEntry,
+  UnreadSessionsResponse,
+} from '@/types/chat'
 import { useIsMobile } from '@/hooks/use-mobile'
-import { getUnreadSessionStatus, isUnreadSession } from './unread-session-utils'
+import { getUnreadSessionStatus } from './unread-session-utils'
 
 function formatRelativeTime(timestamp: number): string {
   const ms = timestamp < 1_000_000_000_000 ? timestamp * 1000 : timestamp
@@ -32,14 +36,7 @@ function formatRelativeTime(timestamp: number): string {
   return `${Math.floor(diffMs / dayMs)}d ago`
 }
 
-interface UnreadItem {
-  session: Session
-  projectId: string
-  projectName: string
-  worktreeId: string
-  worktreeName: string
-  worktreePath: string
-}
+type UnreadItem = UnreadSessionEntry
 
 interface UnreadBellProps {
   title: string
@@ -53,7 +50,7 @@ export function UnreadBell({ title, hideTitle }: UnreadBellProps) {
   const isMobile = useIsMobile()
   const queryClient = useQueryClient()
   const unreadCount = useUnreadCount()
-  const { data: allSessions, isLoading } = useAllSessions(open)
+  const { data: unreadSessions, isLoading } = useUnreadSessions(open)
   // Listen for command palette event to open the popover
   useEffect(() => {
     const handler = () => setOpen(true)
@@ -72,7 +69,10 @@ export function UnreadBell({ title, hideTitle }: UnreadBellProps) {
   // Invalidate cache each time popover opens
   useEffect(() => {
     if (open) {
-      queryClient.invalidateQueries({ queryKey: ['all-sessions'] })
+      queryClient.invalidateQueries({
+        queryKey: chatQueryKeys.unreadSessions(),
+      })
+      queryClient.invalidateQueries({ queryKey: chatQueryKeys.unreadCount() })
       setFocusedIndex(0)
     }
   }, [open, queryClient])
@@ -80,34 +80,39 @@ export function UnreadBell({ title, hideTitle }: UnreadBellProps) {
   // Invalidate when any session is opened (so the count stays fresh)
   useEffect(() => {
     const handler = () =>
-      queryClient.invalidateQueries({ queryKey: ['all-sessions'] })
+      Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: chatQueryKeys.unreadSessions(),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: chatQueryKeys.unreadCount(),
+        }),
+      ])
     window.addEventListener('session-opened', handler)
     return () => window.removeEventListener('session-opened', handler)
   }, [queryClient])
 
   const unreadItems = useMemo((): UnreadItem[] => {
-    if (!allSessions) return []
-    const results: UnreadItem[] = []
-    for (const entry of allSessions.entries) {
-      for (const session of entry.sessions) {
-        if (isUnreadSession(session)) {
-          results.push({
-            session,
-            projectId: entry.project_id,
-            projectName: entry.project_name,
-            worktreeId: entry.worktree_id,
-            worktreeName: entry.worktree_name,
-            worktreePath: entry.worktree_path,
-          })
-        }
-      }
-    }
-    return results.sort((a, b) => b.session.updated_at - a.session.updated_at)
-  }, [allSessions])
+    return unreadSessions?.entries ?? []
+  }, [unreadSessions])
 
   const markSessionsReadOptimistically = useCallback(
     (sessionIds: string[]) => {
       const now = Math.floor(Date.now() / 1000)
+      queryClient.setQueryData<UnreadSessionsResponse>(
+        chatQueryKeys.unreadSessions(),
+        old => {
+          if (!old) return old
+          return {
+            entries: old.entries.filter(
+              entry => !sessionIds.includes(entry.session.id)
+            ),
+          }
+        }
+      )
+      queryClient.setQueryData<number>(chatQueryKeys.unreadCount(), old =>
+        Math.max(0, (old ?? unreadCount) - sessionIds.length)
+      )
       queryClient.setQueryData(['all-sessions'], old => {
         if (!old) return old
         const data = old as { entries?: { sessions?: Session[] }[] }
@@ -125,14 +130,15 @@ export function UnreadBell({ title, hideTitle }: UnreadBellProps) {
         }
       })
     },
-    [queryClient]
+    [queryClient, unreadCount]
   )
 
   const handleMarkAllRead = useCallback(async () => {
     const ids = unreadItems.map(item => item.session.id)
     markSessionsReadOptimistically(ids)
     await invoke('set_sessions_last_opened_bulk', { sessionIds: ids })
-    queryClient.invalidateQueries({ queryKey: ['all-sessions'] })
+    queryClient.invalidateQueries({ queryKey: chatQueryKeys.unreadSessions() })
+    queryClient.invalidateQueries({ queryKey: chatQueryKeys.unreadCount() })
     window.dispatchEvent(new CustomEvent('session-opened'))
   }, [unreadItems, queryClient, markSessionsReadOptimistically])
 
@@ -142,7 +148,10 @@ export function UnreadBell({ title, hideTitle }: UnreadBellProps) {
       await invoke('set_session_last_opened', {
         sessionId: item.session.id,
       })
-      queryClient.invalidateQueries({ queryKey: ['all-sessions'] })
+      queryClient.invalidateQueries({
+        queryKey: chatQueryKeys.unreadSessions(),
+      })
+      queryClient.invalidateQueries({ queryKey: chatQueryKeys.unreadCount() })
       window.dispatchEvent(new CustomEvent('session-opened'))
       // Adjust focus: stay at same index or move up if at end
       setFocusedIndex(i => {
@@ -160,15 +169,18 @@ export function UnreadBell({ title, hideTitle }: UnreadBellProps) {
       const { setActiveSession, clearActiveWorktree, setLastOpenedForProject } =
         useChatStore.getState()
 
-      const crossProject = selectedProjectId !== item.projectId
+      const projectId = item.project_id
+      const worktreeId = item.worktree_id
+      const worktreePath = item.worktree_path
+      const crossProject = selectedProjectId !== projectId
       if (crossProject) {
-        selectProject(item.projectId)
+        selectProject(projectId)
       }
 
       // Navigate to ProjectCanvasView
       clearActiveWorktree()
-      setActiveSession(item.worktreeId, item.session.id)
-      setLastOpenedForProject(item.projectId, item.worktreeId, item.session.id)
+      setActiveSession(worktreeId, item.session.id)
+      setLastOpenedForProject(projectId, worktreeId, item.session.id)
       markSessionsReadOptimistically([item.session.id])
       setOpen(false)
 
@@ -176,7 +188,7 @@ export function UnreadBell({ title, hideTitle }: UnreadBellProps) {
         // Component remounts with new projectId key — use store-based auto-open
         useUIStore
           .getState()
-          .markWorktreeForAutoOpenSession(item.worktreeId, item.session.id)
+          .markWorktreeForAutoOpenSession(worktreeId, item.session.id)
       } else {
         // Same project, component stays mounted — use event
         setTimeout(() => {
@@ -184,8 +196,8 @@ export function UnreadBell({ title, hideTitle }: UnreadBellProps) {
             new CustomEvent('open-session-modal', {
               detail: {
                 sessionId: item.session.id,
-                worktreeId: item.worktreeId,
-                worktreePath: item.worktreePath,
+                worktreeId,
+                worktreePath,
               },
             })
           )
@@ -323,7 +335,7 @@ export function UnreadBell({ title, hideTitle }: UnreadBellProps) {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
                       <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/50 shrink-0">
-                        {item.projectName}
+                        {item.project_name}
                       </span>
                       <span className="text-[11px] text-muted-foreground/40 shrink-0 ml-auto">
                         {formatRelativeTime(item.session.updated_at)}

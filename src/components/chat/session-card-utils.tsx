@@ -146,6 +146,7 @@ export function computeSessionCardData(
   const toolCalls = activeToolCalls[session.id] ?? []
   const answeredSet = answeredQuestions[session.id]
   const isStoreReviewing = reviewingSessions[session.id] ?? false
+  const derived = session.session_derived_state
 
   // Check streaming tool calls for waiting state
   const hasStreamingQuestion = toolCalls.some(
@@ -156,15 +157,30 @@ export function computeSessionCardData(
   )
 
   // Check persisted session state for waiting status
-  let hasPendingQuestion = false
-  let hasPendingExitPlan = false
-  let planContent: string | null = null
+  const hasPendingQuestion =
+    !isStoreReviewing &&
+    !sessionSending &&
+    !hasStreamingQuestion &&
+    (derived?.has_question ??
+      ((session.waiting_for_input ?? false) &&
+        (session.waiting_for_input_type ?? 'question') === 'question'))
+  const hasPendingExitPlan =
+    !isStoreReviewing &&
+    !sessionSending &&
+    !hasStreamingExitPlan &&
+    (derived?.has_exit_plan ??
+      ((session.waiting_for_input ?? false) &&
+        (session.waiting_for_input_type === 'plan' ||
+          (!!session.pending_plan_message_id &&
+            session.waiting_for_input_type == null))))
+  let planContent: string | null = derived?.plan_content ?? null
 
   // Use persisted plan_file_path from session metadata (primary source)
-  let planFilePath: string | null = session.plan_file_path ?? null
+  let planFilePath: string | null =
+    derived?.plan_file_path ?? session.plan_file_path ?? null
   // Use persisted pending_plan_message_id (primary source for Canvas view)
   let pendingPlanMessageId: string | null =
-    session.pending_plan_message_id ?? null
+    derived?.pending_plan_message_id ?? session.pending_plan_message_id ?? null
 
   // Helper to extract inline plan from ExitPlanMode tool call
   const getInlinePlan = (tcs: typeof toolCalls): string | null => {
@@ -175,47 +191,18 @@ export function computeSessionCardData(
   }
 
   // Use persisted waiting_for_input flag from session metadata
-  const persistedWaitingForInput = session.waiting_for_input ?? false
+  const persistedWaitingForInput =
+    derived?.is_waiting ?? session.waiting_for_input ?? false
 
-  // Check if there are approved plan message IDs
-  const approvedPlanIds = new Set(session.approved_plan_message_ids ?? [])
-
-  if (!sessionSending) {
-    const messages = session.messages
-
-    // Try to find plan file path from messages if not in persisted state
-    if (!planFilePath) {
-      for (let i = messages.length - 1; i >= 0; i--) {
-        const msg = messages[i]
-        if (msg?.tool_calls) {
-          const path = findPlanFilePath(msg.tool_calls)
-          if (path) {
-            planFilePath = path
-            break
-          }
+  if (!sessionSending && !planFilePath) {
+    for (let i = session.messages.length - 1; i >= 0; i--) {
+      const msg = session.messages[i]
+      if (msg?.tool_calls) {
+        const path = findPlanFilePath(msg.tool_calls)
+        if (path) {
+          planFilePath = path
+          break
         }
-      }
-    }
-
-    // Check the last assistant message for pending questions/plans
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i]
-      if (msg?.role === 'assistant' && msg.tool_calls) {
-        // Check for unanswered questions
-        hasPendingQuestion = msg.tool_calls.some(
-          tc => isAskUserQuestion(tc) && !answeredSet?.has(tc.id)
-        )
-        // Check for unanswered ExitPlanMode (not approved)
-        const hasExitPlan = msg.tool_calls.some(isExitPlanMode)
-        if (hasExitPlan && !msg.plan_approved && !approvedPlanIds.has(msg.id)) {
-          hasPendingExitPlan = true
-          pendingPlanMessageId = msg.id
-          // Check for inline plan content
-          if (!planFilePath) {
-            planContent = getInlinePlan(msg.tool_calls)
-          }
-        }
-        break // Only check the last assistant message
       }
     }
   }
@@ -254,6 +241,7 @@ export function computeSessionCardData(
   // - If pending_plan_message_id exists → it's a plan
   // - If waiting but no pending_plan_message_id → it's likely a question
   const inferredWaitingType =
+    derived?.waiting_type ??
     session.waiting_for_input_type ??
     (pendingPlanMessageId ? 'plan' : 'question')
   // When sessionSending is true, persisted waiting flags are stale (same as isWaiting above)
@@ -276,9 +264,12 @@ export function computeSessionCardData(
   const sessionDenials = pendingPermissionDenials[session.id] ?? []
   const persistedDenials = session.pending_permission_denials ?? []
   const hasPermissionDenials =
-    sessionDenials.length > 0 || persistedDenials.length > 0
+    sessionDenials.length > 0 ||
+    (derived?.permission_denial_count ?? persistedDenials.length) > 0
   const permissionDenialCount =
-    sessionDenials.length > 0 ? sessionDenials.length : persistedDenials.length
+    sessionDenials.length > 0
+      ? sessionDenials.length
+      : (derived?.permission_denial_count ?? persistedDenials.length)
 
   // Execution mode
   const executionMode = sessionSending
@@ -286,7 +277,11 @@ export function computeSessionCardData(
       executionModes[session.id] ??
       session.selected_execution_mode ??
       'plan')
-    : (executionModes[session.id] ?? session.selected_execution_mode ?? 'plan')
+    : (executingModes[session.id] ??
+      executionModes[session.id] ??
+      derived?.effective_execution_mode ??
+      session.selected_execution_mode ??
+      'plan')
 
   // Determine status
   // Priority: permission > waiting > sending (active) > review > restart recovery > completed > idle
@@ -303,25 +298,19 @@ export function computeSessionCardData(
     status = 'yoloing'
   } else if (isStoreReviewing || session.review_results) {
     status = 'review'
-  } else if (
-    !sessionSending &&
-    (session.last_run_status === 'running' ||
-      session.last_run_status === 'resumable')
-  ) {
-    // Session has a running/resumable process (detected on app restart)
-    // Show actual execution mode from persisted run data
-    const mode = session.last_run_execution_mode ?? 'plan'
-    if (mode === 'plan') status = 'planning'
-    else if (mode === 'build') status = 'vibing'
-    else if (mode === 'yolo') status = 'yoloing'
-  } else if (!sessionSending && session.last_run_status === 'completed') {
-    status = 'completed'
+  } else if (!sessionSending && derived?.status) {
+    status =
+      derived.status === 'permission'
+        ? 'permission'
+        : derived.status === 'waiting'
+          ? 'waiting'
+          : derived.status
   }
 
   // Check for session recap/digest
   // Zustand has priority (freshly generated), fall back to persisted digest
   const recapDigest = sessionDigests[session.id] ?? session.digest ?? null
-  const hasRecap = recapDigest !== null
+  const hasRecap = recapDigest !== null || derived?.has_recap === true
 
   // Label from Zustand store (populated from persisted data on load)
   const label = sessionLabels[session.id] ?? null

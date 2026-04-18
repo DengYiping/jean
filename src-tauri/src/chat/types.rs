@@ -35,6 +35,77 @@ pub struct LabelData {
     pub color: String,
 }
 
+// ============================================================================
+// Derived Session State Types
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionDerivedStatus {
+    Idle,
+    Planning,
+    Vibing,
+    Yoloing,
+    Waiting,
+    Review,
+    Permission,
+    Completed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionWaitingType {
+    Question,
+    Plan,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SessionDerivedState {
+    pub status: SessionDerivedStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effective_execution_mode: Option<String>,
+    pub is_waiting: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub waiting_type: Option<SessionWaitingType>,
+    pub has_question: bool,
+    pub has_exit_plan: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_plan_message_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan_file_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan_content: Option<String>,
+    pub permission_denial_count: u32,
+    pub has_recap: bool,
+    pub latest_activity_at: u64,
+    pub is_unread: bool,
+}
+
+fn is_exit_plan_mode(tool_call: &ToolCall) -> bool {
+    tool_call.name == "ExitPlanMode"
+}
+
+fn find_plan_content(tool_calls: &[ToolCall]) -> Option<String> {
+    tool_calls.iter().rev().find_map(|tool_call| {
+        if !is_exit_plan_mode(tool_call) {
+            return None;
+        }
+        tool_call
+            .input
+            .as_object()
+            .and_then(|input| input.get("plan"))
+            .and_then(|plan| plan.as_str())
+            .map(ToOwned::to_owned)
+    })
+}
+
+fn find_latest_plan_content(messages: &[ChatMessage]) -> Option<String> {
+    messages
+        .iter()
+        .rev()
+        .find_map(|message| find_plan_content(&message.tool_calls))
+}
+
 /// Deserializes label from either a plain string (old format) or a LabelData object (new format).
 fn deserialize_label_compat<'de, D>(deserializer: D) -> Result<Option<LabelData>, D::Error>
 where
@@ -520,6 +591,9 @@ pub struct Session {
         deserialize_with = "deserialize_label_compat"
     )]
     pub label: Option<LabelData>,
+    /// Backend-derived session summary used by frontend list and unread surfaces.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_derived_state: Option<SessionDerivedState>,
 
     // ========================================================================
     // Queued messages (synced between native + web clients)
@@ -583,6 +657,7 @@ impl Session {
             last_run_status: None,
             last_run_execution_mode: None,
             label: None,
+            session_derived_state: None,
             queued_messages: vec![],
         }
     }
@@ -595,6 +670,113 @@ impl Session {
     /// Create a default "Session 1" session with a specific backend
     pub fn default_session_with_backend(backend: Backend) -> Self {
         Self::new("Session 1".to_string(), 0, backend)
+    }
+
+    pub fn waiting_type(&self) -> Option<SessionWaitingType> {
+        if !self.waiting_for_input {
+            return None;
+        }
+
+        match self.waiting_for_input_type.as_deref() {
+            Some("plan") => Some(SessionWaitingType::Plan),
+            Some("question") => Some(SessionWaitingType::Question),
+            _ => {
+                if self.pending_plan_message_id.is_some() {
+                    Some(SessionWaitingType::Plan)
+                } else {
+                    Some(SessionWaitingType::Question)
+                }
+            }
+        }
+    }
+
+    pub fn latest_activity_at(&self) -> u64 {
+        self.last_message_at
+            .unwrap_or(self.updated_at.max(self.created_at))
+    }
+
+    pub fn is_unread(&self) -> bool {
+        if self.archived_at.is_some() {
+            return false;
+        }
+
+        let has_finished_run = matches!(
+            self.last_run_status,
+            Some(RunStatus::Completed | RunStatus::Cancelled | RunStatus::Crashed)
+        );
+        let is_actionable = has_finished_run
+            || self.waiting_for_input
+            || self.is_reviewing
+            || !self.pending_permission_denials.is_empty();
+
+        if !is_actionable {
+            return false;
+        }
+
+        match self.last_opened_at {
+            Some(last_opened_at) => last_opened_at < self.updated_at,
+            None => true,
+        }
+    }
+
+    pub fn derive_state(&self) -> SessionDerivedState {
+        let waiting_type = self.waiting_type();
+        let is_waiting = self.waiting_for_input;
+        let permission_denial_count = self.pending_permission_denials.len() as u32;
+        let effective_execution_mode = self
+            .last_run_execution_mode
+            .clone()
+            .or_else(|| self.selected_execution_mode.clone());
+        let status = if permission_denial_count > 0 {
+            SessionDerivedStatus::Permission
+        } else if is_waiting {
+            SessionDerivedStatus::Waiting
+        } else if self.is_reviewing || self.review_results.is_some() {
+            SessionDerivedStatus::Review
+        } else if matches!(
+            self.last_run_status,
+            Some(RunStatus::Running | RunStatus::Resumable)
+        ) {
+            match effective_execution_mode.as_deref() {
+                Some("build") => SessionDerivedStatus::Vibing,
+                Some("yolo") => SessionDerivedStatus::Yoloing,
+                _ => SessionDerivedStatus::Planning,
+            }
+        } else if matches!(self.last_run_status, Some(RunStatus::Completed)) {
+            SessionDerivedStatus::Completed
+        } else {
+            SessionDerivedStatus::Idle
+        };
+
+        let has_exit_plan =
+            permission_denial_count == 0 && waiting_type == Some(SessionWaitingType::Plan);
+        let has_question =
+            permission_denial_count == 0 && waiting_type == Some(SessionWaitingType::Question);
+        let pending_plan_message_id = if has_exit_plan {
+            self.pending_plan_message_id.clone()
+        } else {
+            None
+        };
+
+        SessionDerivedState {
+            status,
+            effective_execution_mode,
+            is_waiting,
+            waiting_type: waiting_type.clone(),
+            has_question,
+            has_exit_plan,
+            pending_plan_message_id,
+            plan_file_path: self.plan_file_path.clone(),
+            plan_content: find_latest_plan_content(&self.messages),
+            permission_denial_count,
+            has_recap: self.digest.is_some(),
+            latest_activity_at: self.latest_activity_at(),
+            is_unread: self.is_unread(),
+        }
+    }
+
+    pub fn refresh_derived_state(&mut self) {
+        self.session_derived_state = Some(self.derive_state());
     }
 }
 
@@ -731,7 +913,7 @@ impl SessionMetadata {
             .max()
             .unwrap_or(self.created_at);
         let last_message_at = self.runs.last().map(|r| r.ended_at.unwrap_or(r.started_at));
-        Session {
+        let mut session = Session {
             id: self.id.clone(),
             name: self.name.clone(),
             order: self.order,
@@ -776,8 +958,11 @@ impl SessionMetadata {
             last_run_status: last_run.map(|r| r.status.clone()),
             last_run_execution_mode: last_run.and_then(|r| r.execution_mode.clone()),
             label: self.label.clone(),
+            session_derived_state: None,
             queued_messages: self.queued_messages.clone(),
-        }
+        };
+        session.refresh_derived_state();
+        session
     }
 
     /// Update metadata from a Session struct (sync UI state back)
@@ -969,6 +1154,23 @@ pub struct AllSessionsEntry {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AllSessionsResponse {
     pub entries: Vec<AllSessionsEntry>,
+}
+
+/// Single unread session with project/worktree context.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnreadSessionEntry {
+    pub project_id: String,
+    pub project_name: String,
+    pub worktree_id: String,
+    pub worktree_name: String,
+    pub worktree_path: String,
+    pub session: Session,
+}
+
+/// Response for listing unread sessions across all worktrees.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnreadSessionsResponse {
+    pub entries: Vec<UnreadSessionEntry>,
 }
 
 // ============================================================================
@@ -1585,6 +1787,75 @@ mod tests {
         assert_eq!(session.order, 0);
     }
 
+    #[test]
+    fn test_session_derive_state_prefers_permission_over_waiting() {
+        let mut session = Session::default_session();
+        session.waiting_for_input = true;
+        session.waiting_for_input_type = Some("question".to_string());
+        session.pending_permission_denials.push(PermissionDenial {
+            tool_name: "Bash".to_string(),
+            tool_use_id: "tool-1".to_string(),
+            tool_input: serde_json::json!({"command": "echo test"}),
+            rpc_id: None,
+        });
+
+        let derived = session.derive_state();
+        assert_eq!(derived.status, SessionDerivedStatus::Permission);
+        assert_eq!(derived.permission_denial_count, 1);
+        assert!(!derived.has_question);
+    }
+
+    #[test]
+    fn test_session_derive_state_infers_plan_waiting_type() {
+        let mut session = Session::default_session();
+        session.waiting_for_input = true;
+        session.pending_plan_message_id = Some("msg-plan".to_string());
+        session.messages.push(ChatMessage {
+            id: "msg-plan".to_string(),
+            session_id: session.id.clone(),
+            role: MessageRole::Assistant,
+            content: String::new(),
+            timestamp: 42,
+            tool_calls: vec![ToolCall {
+                id: "tool-plan".to_string(),
+                name: "ExitPlanMode".to_string(),
+                input: serde_json::json!({"plan": "Do the thing"}),
+                output: None,
+                parent_tool_use_id: None,
+            }],
+            ..ChatMessage::default()
+        });
+
+        let derived = session.derive_state();
+        assert_eq!(derived.status, SessionDerivedStatus::Waiting);
+        assert_eq!(derived.waiting_type, Some(SessionWaitingType::Plan));
+        assert!(derived.has_exit_plan);
+        assert_eq!(derived.pending_plan_message_id.as_deref(), Some("msg-plan"));
+        assert_eq!(derived.plan_content.as_deref(), Some("Do the thing"));
+    }
+
+    #[test]
+    fn test_session_derive_state_marks_completed_session_unread() {
+        let mut session = Session::default_session();
+        session.updated_at = 20;
+        session.last_run_status = Some(RunStatus::Completed);
+
+        let derived = session.derive_state();
+        assert_eq!(derived.status, SessionDerivedStatus::Completed);
+        assert!(derived.is_unread);
+    }
+
+    #[test]
+    fn test_session_derive_state_marks_opened_idle_session_read() {
+        let mut session = Session::default_session();
+        session.updated_at = 20;
+        session.last_opened_at = Some(20);
+
+        let derived = session.derive_state();
+        assert_eq!(derived.status, SessionDerivedStatus::Idle);
+        assert!(!derived.is_unread);
+    }
+
     // ========================================================================
     // SessionMetadata tests
     // ========================================================================
@@ -1727,6 +1998,13 @@ mod tests {
         let session = metadata.to_session();
         assert_eq!(session.updated_at, 250);
         assert_eq!(session.last_message_at, Some(200));
+        assert_eq!(
+            session
+                .session_derived_state
+                .as_ref()
+                .map(|state| &state.status),
+            Some(&SessionDerivedStatus::Completed)
+        );
     }
 
     #[test]

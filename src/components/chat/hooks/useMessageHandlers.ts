@@ -336,6 +336,12 @@ export function useMessageHandlers({
           ),
         }
       })
+      queryClient.invalidateQueries({
+        queryKey: chatQueryKeys.unreadSessions(),
+      })
+      queryClient.invalidateQueries({
+        queryKey: chatQueryKeys.unreadCount(),
+      })
 
       invoke('update_session_state', {
         worktreeId,

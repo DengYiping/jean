@@ -75,4 +75,31 @@ describe('unread-session-utils', () => {
 
     expect(isUnreadSession(session)).toBe(false)
   })
+
+  it('prefers backend-derived unread state when available', () => {
+    const session = createSession({
+      waiting_for_input: false,
+      session_derived_state: {
+        status: 'waiting',
+        effective_execution_mode: 'plan',
+        is_waiting: true,
+        waiting_type: 'plan',
+        has_question: false,
+        has_exit_plan: true,
+        pending_plan_message_id: 'plan-msg-1',
+        plan_file_path: null,
+        plan_content: null,
+        permission_denial_count: 0,
+        has_recap: false,
+        latest_activity_at: 10,
+        is_unread: true,
+      },
+    })
+
+    expect(isUnreadSession(session)).toBe(true)
+    expect(getUnreadSessionStatus(session)).toMatchObject({
+      label: 'Needs approval',
+      className: 'text-yellow-500',
+    })
+  })
 })

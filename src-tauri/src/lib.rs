@@ -2954,6 +2954,8 @@ pub fn run() {
             // Chat commands - Session management
             chat::get_sessions,
             chat::list_all_sessions,
+            chat::list_unread_sessions,
+            chat::get_unread_count,
             chat::get_session,
             chat::create_session,
             chat::rename_session,

@@ -16,8 +16,8 @@ use super::storage::{
 };
 use super::types::{
     AllSessionsEntry, AllSessionsResponse, Backend, ChatMessage, ClaudeContext, EffortLevel,
-    LabelData, MessageRole, RunStatus, Session, SessionDigest, ThinkingLevel, WorktreeIndex,
-    WorktreeSessions,
+    LabelData, MessageRole, RunStatus, Session, SessionDigest, ThinkingLevel, UnreadSessionEntry,
+    UnreadSessionsResponse, WorktreeIndex, WorktreeSessions,
 };
 use crate::claude_cli::resolve_cli_binary;
 use crate::http_server::EmitExt;
@@ -274,6 +274,59 @@ pub async fn list_all_sessions(app: AppHandle) -> Result<AllSessionsResponse, St
     Ok(AllSessionsResponse { entries })
 }
 
+/// List unread sessions across all worktrees and projects.
+#[tauri::command]
+pub async fn list_unread_sessions(app: AppHandle) -> Result<UnreadSessionsResponse, String> {
+    log::trace!("Listing unread sessions across all worktrees");
+
+    let projects_data = load_projects_data(&app)?;
+    let mut entries = Vec::new();
+
+    for project in &projects_data.projects {
+        let worktrees = projects_data.worktrees_for_project(&project.id);
+
+        for worktree in worktrees {
+            match load_sessions(&app, &worktree.path, &worktree.id) {
+                Ok(sessions_data) => {
+                    for session in sessions_data.sessions {
+                        if session
+                            .session_derived_state
+                            .as_ref()
+                            .is_some_and(|state| state.is_unread)
+                        {
+                            entries.push(UnreadSessionEntry {
+                                project_id: project.id.clone(),
+                                project_name: project.name.clone(),
+                                worktree_id: worktree.id.clone(),
+                                worktree_name: worktree.name.clone(),
+                                worktree_path: worktree.path.clone(),
+                                session,
+                            });
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::warn!(
+                        "Failed to load sessions for unread list in worktree {}: {}",
+                        worktree.id,
+                        e
+                    );
+                }
+            }
+        }
+    }
+
+    entries.sort_by(|a, b| b.session.updated_at.cmp(&a.session.updated_at));
+    Ok(UnreadSessionsResponse { entries })
+}
+
+/// Count unread sessions across all worktrees and projects.
+#[tauri::command]
+pub async fn get_unread_count(app: AppHandle) -> Result<u32, String> {
+    let unread = list_unread_sessions(app).await?;
+    Ok(unread.entries.len() as u32)
+}
+
 /// Get a single session with full message history
 #[tauri::command]
 pub async fn get_session(
@@ -306,6 +359,7 @@ pub async fn get_session(
 
     session.last_message_at = messages.iter().map(|message| message.timestamp).max();
     session.messages = messages;
+    session.refresh_derived_state();
     Ok(session)
 }
 

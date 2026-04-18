@@ -14,6 +14,7 @@ import type {
   ChatMessage,
   ChatHistory,
   Session,
+  UnreadSessionsResponse,
   WorktreeSessions,
   Question,
   QuestionAnswer,
@@ -47,6 +48,8 @@ export const chatQueryKeys = {
     [...chatQueryKeys.all, 'sessions', worktreeId] as const,
   session: (sessionId: string) =>
     [...chatQueryKeys.all, 'session', sessionId] as const,
+  unreadSessions: () => [...chatQueryKeys.all, 'unread-sessions'] as const,
+  unreadCount: () => [...chatQueryKeys.all, 'unread-count'] as const,
 }
 
 // ============================================================================
@@ -307,6 +310,42 @@ export function useAllSessions(enabled = true) {
     },
     enabled,
     staleTime: 1000 * 60 * 5, // 5 minutes
+    gcTime: 1000 * 60 * 5,
+  })
+}
+
+export function useUnreadSessions(enabled = true) {
+  return useQuery({
+    queryKey: chatQueryKeys.unreadSessions(),
+    queryFn: async (): Promise<UnreadSessionsResponse> => {
+      try {
+        logger.debug('Loading unread sessions')
+        return await invoke<UnreadSessionsResponse>('list_unread_sessions')
+      } catch (error) {
+        logger.error('Failed to load unread sessions', { error })
+        return { entries: [] }
+      }
+    },
+    enabled,
+    staleTime: 1000 * 60,
+    gcTime: 1000 * 60 * 5,
+  })
+}
+
+export function useUnreadSessionCount(enabled = true) {
+  return useQuery({
+    queryKey: chatQueryKeys.unreadCount(),
+    queryFn: async (): Promise<number> => {
+      try {
+        logger.debug('Loading unread session count')
+        return await invoke<number>('get_unread_count')
+      } catch (error) {
+        logger.error('Failed to load unread session count', { error })
+        return 0
+      }
+    },
+    enabled,
+    staleTime: 1000 * 30,
     gcTime: 1000 * 60 * 5,
   })
 }

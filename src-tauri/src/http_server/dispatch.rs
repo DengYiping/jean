@@ -812,6 +812,14 @@ pub async fn dispatch_command(
             let result = crate::chat::list_all_sessions(app.clone()).await?;
             to_value(result)
         }
+        "list_unread_sessions" => {
+            let result = crate::chat::list_unread_sessions(app.clone()).await?;
+            to_value(result)
+        }
+        "get_unread_count" => {
+            let result = crate::chat::get_unread_count(app.clone()).await?;
+            to_value(result)
+        }
         "get_session" => {
             let worktree_id: String = field(&args, "worktreeId", "worktree_id")?;
             let worktree_path: String = field(&args, "worktreePath", "worktree_path")?;

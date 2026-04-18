@@ -650,7 +650,7 @@ pub fn load_sessions(
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs();
-            Session {
+            let mut session = Session {
                 id: entry.id.clone(),
                 name: entry.name.clone(),
                 order: entry.order,
@@ -694,8 +694,11 @@ pub fn load_sessions(
                 last_run_status: None,
                 last_run_execution_mode: None,
                 label: None,
+                session_derived_state: None,
                 queued_messages: vec![],
-            }
+            };
+            session.refresh_derived_state();
+            session
         };
         sessions.push(session);
     }
@@ -739,7 +742,7 @@ where
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs();
-            Session {
+            let mut session = Session {
                 id: entry.id.clone(),
                 name: entry.name.clone(),
                 order: entry.order,
@@ -783,8 +786,11 @@ where
                 last_run_status: None,
                 last_run_execution_mode: None,
                 label: None,
+                session_derived_state: None,
                 queued_messages: vec![],
-            }
+            };
+            session.refresh_derived_state();
+            session
         };
         hydrated_sessions.push(session);
     }

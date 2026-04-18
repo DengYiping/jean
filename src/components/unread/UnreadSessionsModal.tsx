@@ -3,12 +3,16 @@ import { BellDot, Loader2, CheckCircle2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { invoke } from '@/lib/transport'
 import { useQueryClient } from '@tanstack/react-query'
-import { useAllSessions } from '@/services/chat'
+import { chatQueryKeys, useUnreadSessions } from '@/services/chat'
 import { useProjectsStore } from '@/store/projects-store'
 import { useChatStore } from '@/store/chat-store'
 import { useUIStore } from '@/store/ui-store'
-import type { Session } from '@/types/chat'
-import { getUnreadSessionStatus, isUnreadSession } from './unread-session-utils'
+import type {
+  Session,
+  UnreadSessionEntry,
+  UnreadSessionsResponse,
+} from '@/types/chat'
+import { getUnreadSessionStatus } from './unread-session-utils'
 
 interface UnreadSessionsDrawerProps {
   open: boolean
@@ -35,14 +39,7 @@ function formatRelativeTime(timestamp: number): string {
   return `${days}d ago`
 }
 
-interface UnreadItem {
-  session: Session
-  projectId: string
-  projectName: string
-  worktreeId: string
-  worktreeName: string
-  worktreePath: string
-}
+type UnreadItem = UnreadSessionEntry
 
 export function UnreadSessionsDrawer({
   open,
@@ -51,11 +48,14 @@ export function UnreadSessionsDrawer({
   const queryClient = useQueryClient()
   const panelRef = useRef<HTMLDivElement>(null)
   const [focusedIndex, setFocusedIndex] = useState(-1)
-  const { data: allSessions, isLoading } = useAllSessions(open)
+  const { data: unreadSessions, isLoading } = useUnreadSessions(open)
   // Invalidate cached data each time panel opens so manually-read sessions disappear
   useEffect(() => {
     if (open) {
-      queryClient.invalidateQueries({ queryKey: ['all-sessions'] })
+      queryClient.invalidateQueries({
+        queryKey: chatQueryKeys.unreadSessions(),
+      })
+      queryClient.invalidateQueries({ queryKey: chatQueryKeys.unreadCount() })
       setFocusedIndex(-1)
       // Auto-focus panel for keyboard nav
       setTimeout(() => panelRef.current?.focus(), 50)
@@ -63,31 +63,26 @@ export function UnreadSessionsDrawer({
   }, [open, queryClient])
 
   const unreadItems = useMemo((): UnreadItem[] => {
-    if (!allSessions) return []
-
-    const results: UnreadItem[] = []
-
-    for (const entry of allSessions.entries) {
-      for (const session of entry.sessions) {
-        if (isUnreadSession(session)) {
-          results.push({
-            session,
-            projectId: entry.project_id,
-            projectName: entry.project_name,
-            worktreeId: entry.worktree_id,
-            worktreeName: entry.worktree_name,
-            worktreePath: entry.worktree_path,
-          })
-        }
-      }
-    }
-
-    return results.sort((a, b) => b.session.updated_at - a.session.updated_at)
-  }, [allSessions])
+    return unreadSessions?.entries ?? []
+  }, [unreadSessions])
 
   const markSessionsReadOptimistically = useCallback(
     (sessionIds: string[]) => {
       const now = Math.floor(Date.now() / 1000)
+      queryClient.setQueryData<UnreadSessionsResponse>(
+        chatQueryKeys.unreadSessions(),
+        old => {
+          if (!old) return old
+          return {
+            entries: old.entries.filter(
+              entry => !sessionIds.includes(entry.session.id)
+            ),
+          }
+        }
+      )
+      queryClient.setQueryData<number>(chatQueryKeys.unreadCount(), old =>
+        Math.max(0, (old ?? unreadItems.length) - sessionIds.length)
+      )
       queryClient.setQueryData(['all-sessions'], old => {
         if (!old) return old
         const data = old as { entries?: { sessions?: Session[] }[] }
@@ -105,14 +100,15 @@ export function UnreadSessionsDrawer({
         }
       })
     },
-    [queryClient]
+    [queryClient, unreadItems.length]
   )
 
   const handleMarkAllRead = useCallback(async () => {
     const ids = unreadItems.map(item => item.session.id)
     markSessionsReadOptimistically(ids)
     await invoke('set_sessions_last_opened_bulk', { sessionIds: ids })
-    queryClient.invalidateQueries({ queryKey: ['all-sessions'] })
+    queryClient.invalidateQueries({ queryKey: chatQueryKeys.unreadSessions() })
+    queryClient.invalidateQueries({ queryKey: chatQueryKeys.unreadCount() })
     window.dispatchEvent(new CustomEvent('session-opened'))
   }, [unreadItems, queryClient, markSessionsReadOptimistically])
 
@@ -122,7 +118,10 @@ export function UnreadSessionsDrawer({
       await invoke('set_session_last_opened', {
         sessionId: item.session.id,
       })
-      queryClient.invalidateQueries({ queryKey: ['all-sessions'] })
+      queryClient.invalidateQueries({
+        queryKey: chatQueryKeys.unreadSessions(),
+      })
+      queryClient.invalidateQueries({ queryKey: chatQueryKeys.unreadCount() })
       window.dispatchEvent(new CustomEvent('session-opened'))
       setFocusedIndex(i => {
         const newTotal = unreadItems.length - 1
@@ -138,14 +137,17 @@ export function UnreadSessionsDrawer({
       const { selectedProjectId, selectProject } = useProjectsStore.getState()
       const { setActiveSession, clearActiveWorktree } = useChatStore.getState()
 
-      const crossProject = selectedProjectId !== item.projectId
+      const projectId = item.project_id
+      const worktreeId = item.worktree_id
+      const worktreePath = item.worktree_path
+      const crossProject = selectedProjectId !== projectId
       if (crossProject) {
-        selectProject(item.projectId)
+        selectProject(projectId)
       }
 
       // Navigate to ProjectCanvasView
       clearActiveWorktree()
-      setActiveSession(item.worktreeId, item.session.id)
+      setActiveSession(worktreeId, item.session.id)
       markSessionsReadOptimistically([item.session.id])
       onOpenChange(false)
 
@@ -153,7 +155,7 @@ export function UnreadSessionsDrawer({
         // Component remounts with new projectId key — use store-based auto-open
         useUIStore
           .getState()
-          .markWorktreeForAutoOpenSession(item.worktreeId, item.session.id)
+          .markWorktreeForAutoOpenSession(worktreeId, item.session.id)
       } else {
         // Same project, component stays mounted — use event
         setTimeout(() => {
@@ -161,8 +163,8 @@ export function UnreadSessionsDrawer({
             new CustomEvent('open-session-modal', {
               detail: {
                 sessionId: item.session.id,
-                worktreeId: item.worktreeId,
-                worktreePath: item.worktreePath,
+                worktreeId,
+                worktreePath,
               },
             })
           )
@@ -292,7 +294,7 @@ export function UnreadSessionsDrawer({
                     )}
                   />
                   <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/50 shrink-0">
-                    {item.projectName}
+                    {item.project_name}
                   </span>
                   <span className="text-[13px] truncate flex-1 min-w-0">
                     {item.session.name}

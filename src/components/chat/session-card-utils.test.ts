@@ -87,4 +87,33 @@ describe('computeSessionCardData', () => {
     expect(data.hasExitPlanMode).toBe(false)
     expect(data.pendingPlanMessageId).toBeNull()
   })
+
+  it('uses backend-derived state for persisted waiting plan metadata', () => {
+    const session = createSession({
+      waiting_for_input: true,
+      session_derived_state: {
+        status: 'waiting',
+        effective_execution_mode: 'plan',
+        is_waiting: true,
+        waiting_type: 'plan',
+        has_question: false,
+        has_exit_plan: true,
+        pending_plan_message_id: 'plan-msg-1',
+        plan_file_path: '/tmp/plan.md',
+        plan_content: 'Implement the thing',
+        permission_denial_count: 0,
+        has_recap: false,
+        latest_activity_at: 10,
+        is_unread: true,
+      },
+    })
+
+    const data = computeSessionCardData(session, createStoreState())
+
+    expect(data.status).toBe('waiting')
+    expect(data.hasExitPlanMode).toBe(true)
+    expect(data.pendingPlanMessageId).toBe('plan-msg-1')
+    expect(data.planFilePath).toBe('/tmp/plan.md')
+    expect(data.planContent).toBe('Implement the thing')
+  })
 })

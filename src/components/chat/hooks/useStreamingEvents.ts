@@ -126,6 +126,15 @@ function updateAllSessionsCache(
   })
 }
 
+function invalidateUnreadQueries(queryClient: QueryClient): void {
+  queryClient.invalidateQueries({
+    queryKey: chatQueryKeys.unreadSessions(),
+  })
+  queryClient.invalidateQueries({
+    queryKey: chatQueryKeys.unreadCount(),
+  })
+}
+
 function applyPermissionWaitingState(
   session: Session,
   denials: PermissionDenial[],
@@ -1356,6 +1365,7 @@ export default function useStreamingEvents({
           queryKey: chatQueryKeys.sessions(worktreeId),
         })
         queryClient.invalidateQueries({ queryKey: ['all-sessions'] })
+        invalidateUnreadQueries(queryClient)
         // Invalidate individual session so cross-client viewers get the
         // complete conversation (user message + assistant response).
         queryClient.invalidateQueries({
@@ -1528,6 +1538,7 @@ export default function useStreamingEvents({
         })
       }
       queryClient.invalidateQueries({ queryKey: ['all-sessions'] })
+      invalidateUnreadQueries(queryClient)
     })
 
     // Handle cancellation (user pressed Cmd+Option+Backspace / Ctrl+Alt+Backspace)
@@ -1803,6 +1814,7 @@ export default function useStreamingEvents({
             })
           }
           queryClient.invalidateQueries({ queryKey: ['all-sessions'] })
+          invalidateUnreadQueries(queryClient)
         }
 
         if (resolvedWorktreeId && wtPath) {
@@ -1917,6 +1929,7 @@ export default function useStreamingEvents({
       queryClient.invalidateQueries({
         queryKey: ['all-sessions'],
       })
+      invalidateUnreadQueries(queryClient)
     })
 
     const unlistenThreadTokenUsage = listen<ThreadTokenUsageEvent>(

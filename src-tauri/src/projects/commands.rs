@@ -686,7 +686,7 @@ pub async fn create_worktree(
 
     // Build worktree path: <base>/<project-name>/<workspace-name>
     let project_worktrees_dir =
-        get_project_worktrees_dir(&project.name, project.worktrees_dir.as_deref())?;
+        get_project_worktrees_dir(&app, &project.name, project.worktrees_dir.as_deref())?;
     allow_project_in_asset_scope(&app, &project.path);
     if let Some(worktrees_dir) = project_worktrees_dir.to_str() {
         allow_project_in_asset_scope(&app, worktrees_dir);
@@ -1455,7 +1455,7 @@ pub async fn create_worktree_from_existing_branch(
 
     // Build worktree path: <base>/<project-name>/<workspace-name>
     let project_worktrees_dir =
-        get_project_worktrees_dir(&project.name, project.worktrees_dir.as_deref())?;
+        get_project_worktrees_dir(&app, &project.name, project.worktrees_dir.as_deref())?;
     let worktree_path = project_worktrees_dir.join(&name);
     let worktree_path_str = worktree_path
         .to_str()
@@ -2019,7 +2019,7 @@ pub async fn checkout_pr(
     // interfere with name dedup. The background thread will clean up leftover
     // git worktrees/branches/directories.
     let project_worktrees_dir =
-        get_project_worktrees_dir(&project.name, project.worktrees_dir.as_deref())?;
+        get_project_worktrees_dir(&app, &project.name, project.worktrees_dir.as_deref())?;
     let had_archived = data.worktrees.iter().any(|w| {
         w.project_id == project_id && w.pr_number == Some(pr_number) && w.archived_at.is_some()
     });
@@ -3310,7 +3310,8 @@ pub async fn open_project_worktrees_folder(
         .find_project(&project_id)
         .ok_or_else(|| format!("Project not found: {project_id}"))?;
 
-    let worktrees_dir = get_project_worktrees_dir(&project.name, project.worktrees_dir.as_deref())?;
+    let worktrees_dir =
+        get_project_worktrees_dir(&app, &project.name, project.worktrees_dir.as_deref())?;
     let path_str = worktrees_dir
         .to_str()
         .ok_or_else(|| "Invalid worktrees directory path".to_string())?

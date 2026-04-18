@@ -577,7 +577,8 @@ export function GeneralPane({
           label="Base Directory"
           description={
             <>
-              Where new worktrees are created. Defaults to{' '}
+              Override where this project&apos;s new worktrees are created.
+              Defaults to the global setting, which falls back to{' '}
               <code className="text-[11px] bg-muted px-1 py-0.5 rounded">
                 ~/jean
               </code>
@@ -586,7 +587,7 @@ export function GeneralPane({
         >
           <div className="flex items-center gap-2">
             <Input
-              placeholder="~/jean (default)"
+              placeholder="Use global default"
               value={displayedWorktreesDir}
               onChange={e => setLocalWorktreesDir(e.target.value)}
               className="flex-1 text-sm"

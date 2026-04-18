@@ -25,8 +25,22 @@ pub fn get_projects_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(app_data_dir.join("projects.json"))
 }
 
-/// Get the base directory for all worktrees (~/jean)
-pub fn get_worktrees_base_dir() -> Result<PathBuf, String> {
+fn expand_home_path(path: &str) -> PathBuf {
+    if path == "~" {
+        return dirs::home_dir().unwrap_or_else(|| PathBuf::from(path));
+    }
+
+    if let Some(rest) = path.strip_prefix("~/") {
+        if let Some(home) = dirs::home_dir() {
+            return home.join(rest);
+        }
+    }
+
+    PathBuf::from(path)
+}
+
+/// Get the legacy default base directory for all worktrees (~/jean)
+fn get_default_worktrees_base_dir() -> Result<PathBuf, String> {
     let home_dir = dirs::home_dir().ok_or_else(|| "Failed to get home directory".to_string())?;
 
     let jean_dir = home_dir.join("jean");
@@ -38,17 +52,39 @@ pub fn get_worktrees_base_dir() -> Result<PathBuf, String> {
     Ok(jean_dir)
 }
 
+/// Get the effective base directory for worktrees.
+/// Project-specific overrides win. Otherwise the global preference is used.
+pub fn get_worktrees_base_dir(
+    app: &AppHandle,
+    configured_base_dir: Option<&str>,
+) -> Result<PathBuf, String> {
+    let base_dir = if let Some(dir) = configured_base_dir {
+        expand_home_path(dir)
+    } else if let Ok(preferences) = crate::load_preferences_sync(app) {
+        preferences
+            .worktrees_base_dir
+            .as_deref()
+            .map(expand_home_path)
+            .unwrap_or(get_default_worktrees_base_dir()?)
+    } else {
+        get_default_worktrees_base_dir()?
+    };
+
+    std::fs::create_dir_all(&base_dir)
+        .map_err(|e| format!("Failed to create worktrees base directory: {e}"))?;
+
+    Ok(base_dir)
+}
+
 /// Get the directory for a specific project's worktrees.
-/// When `custom_base_dir` is Some, uses that instead of ~/jean as the base.
+/// When `custom_base_dir` is Some, uses that instead of the global default base.
 /// In both cases, `<project-name>` subdirectory is appended.
 pub fn get_project_worktrees_dir(
+    app: &AppHandle,
     project_name: &str,
     custom_base_dir: Option<&str>,
 ) -> Result<PathBuf, String> {
-    let base_dir = match custom_base_dir {
-        Some(dir) => PathBuf::from(dir),
-        None => get_worktrees_base_dir()?,
-    };
+    let base_dir = get_worktrees_base_dir(app, custom_base_dir)?;
     let project_dir = base_dir.join(sanitize_directory_name(project_name));
 
     // Ensure the directory exists

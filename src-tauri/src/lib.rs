@@ -108,6 +108,8 @@ pub struct AppPreferences {
     pub chat_font: String, // Font family for chat: jetbrains-mono, fira-code, source-code-pro, inter, geist, roboto, lato
     #[serde(default)]
     pub git_cli_path: Option<String>, // Optional git executable override (None = use git from PATH)
+    #[serde(default)]
+    pub worktrees_base_dir: Option<String>, // Default base directory for worktrees when project override is unset
     #[serde(default = "default_git_poll_interval")]
     pub git_poll_interval: u64, // Git status polling interval in seconds (10-600)
     #[serde(default = "default_remote_poll_interval")]
@@ -1198,6 +1200,7 @@ impl Default for AppPreferences {
             ui_font: default_ui_font(),
             chat_font: default_chat_font(),
             git_cli_path: None,
+            worktrees_base_dir: None,
             git_poll_interval: default_git_poll_interval(),
             remote_poll_interval: default_remote_poll_interval(),
             github_dashboard_fetch_interval: default_github_dashboard_fetch_interval(),
@@ -1282,6 +1285,7 @@ fn normalize_optional_path(path: &mut Option<String>) {
 
 fn normalize_preferences(preferences: &mut AppPreferences) {
     normalize_optional_path(&mut preferences.git_cli_path);
+    normalize_optional_path(&mut preferences.worktrees_base_dir);
     normalize_optional_path(&mut preferences.claude_update_command);
     normalize_optional_path(&mut preferences.codex_update_command);
     normalize_optional_path(&mut preferences.opencode_launch_command);
@@ -2561,6 +2565,7 @@ pub fn run() {
                     for project in &data.projects {
                         crate::projects::allow_project_in_asset_scope(&app_handle, &project.path);
                         match crate::projects::storage::get_project_worktrees_dir(
+                            &app_handle,
                             &project.name,
                             project.worktrees_dir.as_deref(),
                         ) {

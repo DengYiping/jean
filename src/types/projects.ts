@@ -54,7 +54,7 @@ export interface Project {
   github_account_host?: string | null
   /** GitHub user to target for gh commands in this project (undefined = gh active host/account) */
   github_account_user?: string | null
-  /** Custom base directory for worktrees (undefined = use default ~/jean) */
+  /** Custom base directory for worktrees (undefined = use global default, which falls back to ~/jean) */
   worktrees_dir?: string | null
   /** Linear personal API key for fetching issues (per-project) */
   linear_api_key?: string | null
@@ -87,7 +87,7 @@ export interface Worktree {
   project_id: string
   /** Random workspace name (e.g., "fuzzy-tiger") */
   name: string
-  /** Absolute path to worktree (configurable base dir, defaults to ~/jean/<project>/<name>) */
+  /** Absolute path to worktree (configurable base dir, defaults to global/<project>/<name>, falling back to ~/jean/<project>/<name>) */
   path: string
   /** Git branch name (same as workspace name) */
   branch: string

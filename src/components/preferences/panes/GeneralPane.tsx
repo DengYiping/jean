@@ -1684,6 +1684,13 @@ export const GeneralPane: React.FC = () => {
             />
           )}
 
+          {isNativeApp() && (
+            <WorktreesBaseDirField
+              preferences={preferences}
+              patchPreferences={patchPreferences}
+            />
+          )}
+
           <InlineField
             label="Allow web tools in plan mode"
             description="WebFetch/WebSearch for Claude, --search for Codex"
@@ -2198,6 +2205,61 @@ const GitCliPathField: FC<{
         <Input
           className="w-80"
           placeholder="System default (git)"
+          value={localValue}
+          onChange={e => setLocalValue(e.target.value)}
+        />
+        <Button
+          size="sm"
+          onClick={handleSave}
+          disabled={!hasChanges || patchPreferences.isPending}
+        >
+          {patchPreferences.isPending && (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          )}
+          Save
+        </Button>
+      </div>
+    </InlineField>
+  )
+}
+
+const WorktreesBaseDirField: FC<{
+  preferences: AppPreferences | undefined
+  patchPreferences: ReturnType<typeof usePatchPreferences>
+}> = ({ preferences, patchPreferences }) => {
+  const [localValue, setLocalValue] = useState(
+    preferences?.worktrees_base_dir ?? ''
+  )
+
+  useEffect(() => {
+    setLocalValue(preferences?.worktrees_base_dir ?? '')
+  }, [preferences?.worktrees_base_dir])
+
+  const hasChanges = localValue !== (preferences?.worktrees_base_dir ?? '')
+
+  const handleSave = useCallback(() => {
+    if (!preferences) return
+    const trimmed = localValue.trim()
+    patchPreferences.mutate({
+      worktrees_base_dir: trimmed.length > 0 ? trimmed : null,
+    })
+  }, [preferences, patchPreferences, localValue])
+
+  return (
+    <InlineField
+      label="Default worktrees directory"
+      description={
+        <>
+          Base directory for new worktrees when a project does not override it.
+          Supports <code>~</code>. Leave blank to use <code>~/jean</code>.
+          Existing worktrees are not moved automatically.
+        </>
+      }
+    >
+      <div className="flex items-center gap-2">
+        <Input
+          className="w-80"
+          placeholder="~/jean"
           value={localValue}
           onChange={e => setLocalValue(e.target.value)}
         />

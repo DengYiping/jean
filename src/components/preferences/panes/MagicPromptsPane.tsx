@@ -25,15 +25,8 @@ import {
 import { usePreferences, usePatchPreferences } from '@/services/preferences'
 import { useInstalledBackends } from '@/hooks/useInstalledBackends'
 import { useAvailableOpencodeModels } from '@/services/opencode-cli'
-import { useAvailableCursorModels } from '@/services/cursor-cli'
-import {
-  formatCursorModelLabel,
-  formatOpencodeModelLabel,
-} from '@/components/chat/toolbar/toolbar-utils'
-import {
-  CURSOR_MODEL_OPTIONS as CURSOR_FALLBACK_OPTIONS,
-  OPENCODE_MODEL_OPTIONS as OPENCODE_FALLBACK_OPTIONS,
-} from '@/components/chat/toolbar/toolbar-options'
+import { formatOpencodeModelLabel } from '@/components/chat/toolbar/toolbar-utils'
+import { OPENCODE_MODEL_OPTIONS as OPENCODE_FALLBACK_OPTIONS } from '@/components/chat/toolbar/toolbar-options'
 import {
   DEFAULT_INVESTIGATE_ISSUE_PROMPT,
   DEFAULT_INVESTIGATE_PR_PROMPT,
@@ -80,7 +73,6 @@ import {
   type CliBackend,
 } from '@/types/preferences'
 import { cn } from '@/lib/utils'
-import { BackendLabel } from '@/components/ui/backend-label'
 
 interface VariableInfo {
   name: string
@@ -348,15 +340,6 @@ const PROMPT_SECTIONS: PromptSection[] = [
             name: '{commit_count}',
             description: 'Number of commits in the PR',
           },
-          {
-            name: '{context}',
-            description: 'Loaded issue/PR/security/Linear context content',
-          },
-          {
-            name: '{related_pull_requests}',
-            description:
-              'Exact PR reference strings derived from merged PRs mentioned in commit subjects.',
-          },
           { name: '{commits}', description: 'List of commit messages' },
           { name: '{diff}', description: 'Git diff of all changes' },
         ],
@@ -568,7 +551,6 @@ export const MagicPromptsPane: React.FC = () => {
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   const { data: availableOpencodeModels } = useAvailableOpencodeModels()
-  const { data: availableCursorModels } = useAvailableCursorModels()
   const { installedBackends } = useInstalledBackends()
 
   const formatOpenCodeLabel = (value: string) => {
@@ -587,18 +569,6 @@ export const MagicPromptsPane: React.FC = () => {
       label: formatOpenCodeLabel(value),
     }))
   }, [availableOpencodeModels])
-  const cursorModelOptions = useMemo(() => {
-    const models = availableCursorModels?.length
-      ? availableCursorModels.map(model => ({
-          value: `cursor/${model.id}`,
-          label: model.label || formatCursorModelLabel(model.id),
-        }))
-      : CURSOR_FALLBACK_OPTIONS
-    return models.map(option => ({
-      value: option.value as MagicPromptModel,
-      label: option.label || formatCursorModelLabel(option.value),
-    }))
-  }, [availableCursorModels])
 
   const currentPrompts = preferences?.magic_prompts ?? DEFAULT_MAGIC_PROMPTS
   const currentModels =
@@ -1006,11 +976,6 @@ export const MagicPromptsPane: React.FC = () => {
                     {installedBackends.includes('opencode') && (
                       <SelectItem value="opencode">OpenCode</SelectItem>
                     )}
-                    {installedBackends.includes('cursor') && (
-                      <SelectItem value="cursor">
-                        <BackendLabel backend="cursor" />
-                      </SelectItem>
-                    )}
                     {installedBackends.includes('codex') && (
                       <SelectItem value="codex">Codex</SelectItem>
                     )}
@@ -1063,7 +1028,6 @@ export const MagicPromptsPane: React.FC = () => {
                             ...filteredClaudeOptions,
                             ...CODEX_MODEL_OPTIONS,
                             ...opencodeModelOptions,
-                            ...cursorModelOptions,
                           ]
                           return (
                             allOptions.find(o => o.value === resolvedModel)
@@ -1160,32 +1124,6 @@ export const MagicPromptsPane: React.FC = () => {
                             ))}
                           </CommandGroup>
                         )}
-                        {effectiveBackend === 'cursor' && (
-                          <CommandGroup
-                            heading={<BackendLabel backend="cursor" />}
-                          >
-                            {cursorModelOptions.map(opt => (
-                              <CommandItem
-                                key={opt.value}
-                                value={`${opt.label} ${opt.value}`}
-                                onSelect={() => {
-                                  handleModelChange(opt.value)
-                                  setModelPopoverOpen(false)
-                                }}
-                              >
-                                <span className="text-xs">{opt.label}</span>
-                                <Check
-                                  className={cn(
-                                    'ml-auto h-3 w-3',
-                                    currentModel === opt.value
-                                      ? 'opacity-100'
-                                      : 'opacity-0'
-                                  )}
-                                />
-                              </CommandItem>
-                            ))}
-                          </CommandGroup>
-                        )}
                       </CommandList>
                     </Command>
                   </PopoverContent>
@@ -1248,7 +1186,7 @@ export const MagicPromptsPane: React.FC = () => {
             value={localValue}
             onChange={e => handleChange(e.target.value)}
             onBlur={handleBlur}
-            className="flex-1 min-h-0 h-full font-mono text-base resize-none md:text-xs"
+            className="flex-1 min-h-0 h-full font-mono text-xs resize-none"
             placeholder={selectedConfig.defaultValue}
           />
         </div>

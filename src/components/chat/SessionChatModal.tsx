@@ -77,7 +77,6 @@ import type { DiffRequest } from '@/types/git-diff'
 import { ChatWindow } from './ChatWindow'
 import { ModalTerminalDrawer } from './ModalTerminalDrawer'
 import { OpenInButton } from '@/components/open-in/OpenInButton'
-import { DevToolsDropdown } from './DevToolsDropdown'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -430,29 +429,6 @@ export function SessionChatModal({
     removalBehavior: preferences?.removal_behavior,
   })
 
-  // Select the visually adjacent session after closing a tab.
-  // Uses the sorted tab order (what the user sees) rather than backend storage order.
-  // Ref is updated after sortedSessions is computed (below).
-  const sortedSessionsRef = useRef<Session[]>([])
-
-  const selectVisualNeighbor = useCallback(
-    (closedId: string) => {
-      const activeId = useChatStore.getState().activeSessionIds[worktreeId]
-      if (activeId !== closedId) return // Only switch if closing the active tab
-      const sorted = sortedSessionsRef.current
-      const idx = sorted.findIndex(s => s.id === closedId)
-      if (idx === -1) return
-      // Left neighbor first, then right
-      const left = idx > 0 ? sorted[idx - 1] : undefined
-      const right = idx < sorted.length - 1 ? sorted[idx + 1] : undefined
-      const nextId = left?.id ?? right?.id ?? null
-      if (nextId) {
-        useChatStore.getState().setActiveSession(worktreeId, nextId)
-      }
-    },
-    [worktreeId]
-  )
-
   // CMD+W: close the active session tab, or close modal if last tab
   const [closeConfirmOpen, setCloseConfirmOpen] = useState(false)
   const pendingCloseAction = useRef<(() => void) | null>(null)
@@ -475,7 +451,6 @@ export function SessionChatModal({
           }
           onClose()
         } else if (currentSessionId) {
-          selectVisualNeighbor(currentSessionId)
           handleDeleteSession(currentSessionId)
         }
       }
@@ -502,7 +477,6 @@ export function SessionChatModal({
     onClose,
     handleArchiveSession,
     handleDeleteSession,
-    selectVisualNeighbor,
     preferences?.confirm_session_close,
   ])
 
@@ -556,11 +530,6 @@ export function SessionChatModal({
       return a.created_at - b.created_at
     })
   }, [sessions, storeState])
-
-  // Keep ref in sync for selectVisualNeighbor (declared above sortedSessions)
-  useEffect(() => {
-    sortedSessionsRef.current = sortedSessions
-  }, [sortedSessions])
 
   // Off-screen waiting tab indicators
   const { hasLeft: hasWaitingLeft, hasRight: hasWaitingRight } =
@@ -740,8 +709,6 @@ export function SessionChatModal({
         if (closeConfirmOpen) return
         // Don't close if ESC originated inside a child dialog/sheet portal
         if (portalAncestor) return
-        // Don't close if ESC originated inside the pinned terminal
-        if (terminalAncestor) return
 
         handleClose()
       }
@@ -825,30 +792,15 @@ export function SessionChatModal({
                   projectId={project.id}
                   projectPath={project.path}
                 />
-                {project && (
-                  <div className="hidden items-center gap-2 md:flex">
-                    <NewIssuesBadge
-                      projectPath={project.path}
-                      projectId={project.id}
-                    />
-                    <OpenPRsBadge
-                      projectPath={project.path}
-                      projectId={project.id}
-                    />
-                    <FailedRunsBadge projectPath={project.path} />
-                  </div>
-                )}
-                {worktree && project && (
-                  <WorktreeDropdownMenu
-                    worktree={worktree}
-                    projectId={project.id}
-                    projectPath={project.path}
-                    uncommittedAdded={uncommittedAdded}
-                    uncommittedRemoved={uncommittedRemoved}
-                    branchDiffAdded={isBase ? 0 : branchDiffAdded}
-                    branchDiffRemoved={isBase ? 0 : branchDiffRemoved}
-                    onUncommittedDiffClick={handleUncommittedDiffClick}
-                    onBranchDiffClick={handleBranchDiffClick}
+              )}
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              {/* Desktop: inline action buttons */}
+              {isNativeApp() && (
+                <div className="hidden sm:flex items-center gap-1">
+                  <OpenInButton
+                    worktreePath={worktreePath}
+                    branch={worktree?.branch}
                   />
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -918,11 +870,7 @@ export function SessionChatModal({
                           variant="ghost"
                           size="sm"
                           className="h-7 px-2 text-xs"
-                          onClick={() => {
-                            useTerminalStore
-                              .getState()
-                              .toggleModalTerminal(worktreeId)
-                          }}
+                          onClick={handleRun}
                         >
                           <Play className="h-3 w-3" />
                         </Button>
@@ -999,18 +947,14 @@ export function SessionChatModal({
                     {worktree?.branch && (
                       <DropdownMenuItem
                         onSelect={() =>
-                          openInEditor.mutate({
-                            worktreePath,
-                            editor: preferences?.editor,
+                          openOnGitHub.mutate({
+                            repoPath: worktreePath,
+                            branch: worktree.branch,
                           })
                         }
                       >
-                        <Code className="h-4 w-4" />
-                        {getOpenInDefaultLabel(
-                          'editor',
-                          preferences?.editor,
-                          preferences?.terminal
-                        )}
+                        <Github className="h-4 w-4" />
+                        GitHub
                       </DropdownMenuItem>
                     )}
                     <DropdownMenuSeparator />
@@ -1085,180 +1029,112 @@ export function SessionChatModal({
                         }}
                       >
                         <Terminal className="h-4 w-4" />
-                        {getOpenInDefaultLabel(
-                          'terminal',
-                          preferences?.editor,
-                          preferences?.terminal
-                        )}
+                        Copy Resume Command
                       </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onSelect={() => openInFinder.mutate(worktreePath)}
-                      >
-                        <FolderOpen className="h-4 w-4" />
-                        Finder
-                      </DropdownMenuItem>
-                      {worktree?.branch && (
-                        <DropdownMenuItem
-                          onSelect={() =>
-                            openOnGitHub.mutate({
-                              repoPath: worktreePath,
-                              branch: worktree.branch,
-                            })
-                          }
-                        >
-                          <Github className="h-4 w-4" />
-                          GitHub
-                        </DropdownMenuItem>
-                      )}
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        onSelect={() =>
-                          useTerminalStore
-                            .getState()
-                            .toggleModalTerminal(worktreeId)
-                        }
-                      >
-                        <Terminal className="h-4 w-4" />
-                        Terminal
-                      </DropdownMenuItem>
-                      {runScripts.length === 1 && (
-                        <DropdownMenuItem onSelect={handleRun}>
-                          <Play
-                            className={`h-4 w-4 ${hasFailedTerminal ? 'text-red-500' : hasRunningTerminal ? 'text-amber-500 dark:text-yellow-400 animate-icon-glow' : ''}`}
-                          />
-                          Run
-                        </DropdownMenuItem>
-                      )}
-                      {runScripts.length > 1 && (
-                        <DropdownMenuSub>
-                          <DropdownMenuSubTrigger>
-                            <Play
-                              className={`h-4 w-4 ${hasFailedTerminal ? 'text-red-500' : hasRunningTerminal ? 'text-amber-500 dark:text-yellow-400 animate-icon-glow' : ''}`}
-                            />
-                            Run
-                          </DropdownMenuSubTrigger>
-                          <DropdownMenuSubContent>
-                            {runScripts.map((cmd, i) => (
-                              <DropdownMenuItem
-                                key={i}
-                                onSelect={() => handleRunCommand(cmd)}
-                                className="font-mono text-xs"
-                              >
-                                {cmd}
-                              </DropdownMenuItem>
-                            ))}
-                          </DropdownMenuSubContent>
-                        </DropdownMenuSub>
-                      )}
-                      {currentResumeCommand && (
-                        <DropdownMenuItem
-                          onSelect={() => {
-                            void copyToClipboard(currentResumeCommand)
-                              .then(() =>
-                                toast.success('Resume command copied')
-                              )
-                              .catch(() =>
-                                toast.error('Failed to copy resume command')
-                              )
-                          }}
-                        >
-                          <Terminal className="h-4 w-4" />
-                          Copy Resume Command
-                        </DropdownMenuItem>
-                      )}
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        disabled={!hasRecap}
-                        onSelect={() =>
-                          window.dispatchEvent(new CustomEvent('open-recap'))
-                        }
-                      >
-                        <Sparkles className="h-4 w-4" />
-                        Recap
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        disabled={!hasPlan}
-                        onSelect={() =>
-                          window.dispatchEvent(new CustomEvent('open-plan'))
-                        }
-                      >
-                        <FileText className="h-4 w-4" />
-                        Plan
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
-                <ModalCloseButton onClick={handleClose} />
-              </div>
+                    )}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      disabled={!hasRecap}
+                      onSelect={() =>
+                        window.dispatchEvent(new CustomEvent('open-recap'))
+                      }
+                    >
+                      <Sparkles className="h-4 w-4" />
+                      Recap
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={!hasPlan}
+                      onSelect={() =>
+                        window.dispatchEvent(new CustomEvent('open-plan'))
+                      }
+                    >
+                      <FileText className="h-4 w-4" />
+                      Plan
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+              <ModalCloseButton onClick={handleClose} />
             </div>
           </div>
+        </div>
 
-          {/* Session tabs */}
-          {sessions.length > 0 && (
-            <div
-              className={cn(
-                'relative flex shrink-0 items-center gap-0.5 border-b pr-4',
-                MODAL_TERMINAL_SECONDARY_ROW_CLASS
-              )}
+        {/* Session tabs */}
+        {sessions.length > 0 && (
+          <div className="shrink-0 border-b flex items-center gap-0.5 pr-4 relative">
+            {hasWaitingLeft && (
+              <button
+                type="button"
+                onClick={() => scrollToFirstWaiting('left')}
+                className="absolute left-0 top-0 bottom-0 w-1 bg-yellow-500 animate-blink rounded-r z-10 cursor-pointer"
+                aria-label="Scroll to waiting session"
+              />
+            )}
+            {hasWaitingRight && (
+              <button
+                type="button"
+                onClick={() => scrollToFirstWaiting('right')}
+                className="absolute right-0 top-0 bottom-0 w-1 bg-yellow-500 animate-blink rounded-l z-10 cursor-pointer"
+                aria-label="Scroll to waiting session"
+              />
+            )}
+            <ScrollArea
+              className="min-w-0 flex-1"
+              viewportClassName="overflow-x-auto overflow-y-hidden overscroll-x-contain overscroll-y-none touch-pan-x scrollbar-hide [-webkit-overflow-scrolling:touch]"
+              viewportRef={modalTabScrollRef}
             >
-              {hasWaitingLeft && (
-                <button
-                  type="button"
-                  onClick={() => scrollToFirstWaiting('left')}
-                  className="absolute left-0 top-0 bottom-0 w-1 bg-yellow-500 animate-blink rounded-r z-10 cursor-pointer"
-                  aria-label="Scroll to waiting session"
-                />
-              )}
-              {hasWaitingRight && (
-                <button
-                  type="button"
-                  onClick={() => scrollToFirstWaiting('right')}
-                  className="absolute right-0 top-0 bottom-0 w-1 bg-yellow-500 animate-blink rounded-l z-10 cursor-pointer"
-                  aria-label="Scroll to waiting session"
-                />
-              )}
-              <ScrollArea
-                className="min-w-0 flex-1"
-                viewportClassName="overflow-x-auto overflow-y-hidden overscroll-x-contain overscroll-y-none touch-pan-x scrollbar-hide [-webkit-overflow-scrolling:touch]"
-                viewportRef={modalTabScrollRef}
-              >
-                <div className="flex min-w-max items-center gap-1.5 py-1 px-3">
-                  {sortedSessions.map((session, idx) => {
-                    const isActive = session.id === currentSessionId
-                    const status = getSessionStatus(session, storeState)
-                    const config = statusConfig[status]
-                    const chatState = useChatStore.getState()
-                    const sessionLabel = chatState.sessionLabels[session.id]
-                    const sessionHasPlan =
-                      !!planFilePaths[session.id] || !!session.plan_file_path
-                    const sessionHasRecap =
-                      !!sessionDigests[session.id] || !!session.digest
-                    const resumeCommand = getResumeCommand(session)
-                    return (
-                      <ContextMenu key={session.id}>
-                        <ContextMenuTrigger asChild>
-                          <button
-                            data-session-id={session.id}
-                            onClick={() => handleTabClick(session.id)}
-                            onDoubleClick={() =>
-                              handleStartRenameImmediate(
-                                session.id,
-                                session.name
-                              )
-                            }
-                            className={cn(
-                              'group/tab flex rounded items-center gap-2 px-2.5 py-1.5 text-xs transition-colors whitespace-nowrap border border-transparent',
-                              isActive
-                                ? 'bg-muted text-foreground'
-                                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
-                              status === 'waiting' &&
-                                'border-dashed border-yellow-500 dark:border-yellow-400'
-                            )}
-                          >
-                            <StatusIndicator
-                              status={config.indicatorStatus}
-                              variant={config.indicatorVariant}
-                              className="h-1.5 w-1.5"
+              <div className="flex min-w-max items-center gap-1.5 py-1 px-3">
+                {sortedSessions.map((session, idx) => {
+                  const isActive = session.id === currentSessionId
+                  const status = getSessionStatus(session, storeState)
+                  const config = statusConfig[status]
+                  const chatState = useChatStore.getState()
+                  const sessionLabel = chatState.sessionLabels[session.id]
+                  const sessionHasPlan =
+                    !!planFilePaths[session.id] || !!session.plan_file_path
+                  const sessionHasRecap =
+                    !!sessionDigests[session.id] || !!session.digest
+                  const resumeCommand = getResumeCommand(session)
+                  return (
+                    <ContextMenu key={session.id}>
+                      <ContextMenuTrigger asChild>
+                        <button
+                          data-session-id={session.id}
+                          onClick={() => handleTabClick(session.id)}
+                          onDoubleClick={() =>
+                            handleStartRenameImmediate(session.id, session.name)
+                          }
+                          className={cn(
+                            'group/tab flex rounded items-center gap-2 px-2.5 py-1.5 text-xs transition-colors whitespace-nowrap border border-transparent',
+                            isActive
+                              ? 'bg-muted text-foreground'
+                              : 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
+                            status === 'waiting' &&
+                              'border-dashed border-yellow-500 dark:border-yellow-400'
+                          )}
+                        >
+                          <StatusIndicator
+                            status={config.indicatorStatus}
+                            variant={config.indicatorVariant}
+                            className="h-1.5 w-1.5"
+                          />
+                          {idx < 9 && (
+                            <kbd className="shrink-0 rounded border border-border/50 px-1 py-px text-[9px] font-medium leading-none text-muted-foreground/70">
+                              ⌘{idx + 1}
+                            </kbd>
+                          )}
+                          {renamingSessionId === session.id ? (
+                            <input
+                              ref={renameInputRef}
+                              type="text"
+                              value={renameValue}
+                              onChange={e => setRenameValue(e.target.value)}
+                              onBlur={() => handleRenameSubmit(session.id)}
+                              onKeyDown={e =>
+                                handleRenameKeyDown(e, session.id)
+                              }
+                              onClick={e => e.stopPropagation()}
+                              className="w-full min-w-0 bg-transparent text-xs outline-none"
                             />
                           ) : (
                             session.name
@@ -1294,71 +1170,54 @@ export function SessionChatModal({
                                 } else {
                                   handleArchiveSession(session.id)
                                 }
-                                onClick={e => e.stopPropagation()}
-                                className="w-full min-w-0 bg-transparent text-base outline-none md:text-xs"
-                              />
-                            ) : (
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <span className="truncate max-w-48">
-                                    {session.name}
-                                  </span>
-                                </TooltipTrigger>
-                                <TooltipContent side="bottom">
-                                  {session.name}
-                                </TooltipContent>
-                              </Tooltip>
-                            )}
-                            {renamingSessionId !== session.id && (
-                              <DismissButton
-                                tooltip={
-                                  sessions.filter(s => !s.archived_at).length <=
-                                  1
-                                    ? 'Close worktree'
-                                    : 'Remove session'
-                                }
-                                onClick={e => {
-                                  e.stopPropagation()
-                                  const activeSessions = sessions.filter(
-                                    s => !s.archived_at
-                                  )
-                                  if (activeSessions.length <= 1) {
-                                    const action = () => {
-                                      handleDeleteSession(session.id)
-                                      onClose()
-                                    }
-                                    const sessionIsEmpty =
-                                      !session.message_count
-                                    if (
-                                      preferences?.confirm_session_close !==
-                                        false &&
-                                      !sessionIsEmpty
-                                    ) {
-                                      pendingCloseAction.current = action
-                                      setCloseConfirmOpen(true)
-                                    } else {
-                                      action()
-                                    }
-                                  } else {
-                                    selectVisualNeighbor(session.id)
-                                    handleArchiveSession(session.id)
-                                  }
-                                }}
-                                className="ml-0.5 opacity-60 sm:opacity-0 sm:group-hover/tab:opacity-60 hover:!opacity-100"
-                                size="xs"
-                              />
-                            )}
-                          </button>
-                        </ContextMenuTrigger>
-                        <ContextMenuContent className="w-64">
-                          <ContextMenuItem
-                            onSelect={() =>
-                              handleStartRename(session.id, session.name)
-                            }
-                          >
-                            <Pencil className="mr-2 h-4 w-4" />
-                            Rename
-                          </ContextMenuItem>
+                              }}
+                              className="ml-0.5 opacity-60 sm:opacity-0 sm:group-hover/tab:opacity-60 hover:!opacity-100"
+                              size="xs"
+                            />
+                          )}
+                        </button>
+                      </ContextMenuTrigger>
+                      <ContextMenuContent className="w-64">
+                        <ContextMenuItem
+                          onSelect={() =>
+                            handleStartRename(session.id, session.name)
+                          }
+                        >
+                          <Pencil className="mr-2 h-4 w-4" />
+                          Rename
+                        </ContextMenuItem>
+                        <ContextMenuItem
+                          onSelect={() => {
+                            setLabelTargetSessionId(session.id)
+                            setLabelModalOpen(true)
+                          }}
+                        >
+                          <Tag className="mr-2 h-4 w-4" />
+                          {sessionLabel ? 'Remove Label' : 'Add Label'}
+                        </ContextMenuItem>
+                        <ContextMenuItem
+                          onSelect={() => {
+                            const { reviewingSessions, setSessionReviewing } =
+                              useChatStore.getState()
+                            const isReviewing =
+                              reviewingSessions[session.id] ||
+                              !!session.review_results
+                            setSessionReviewing(session.id, !isReviewing)
+                          }}
+                        >
+                          {status === 'review' ? (
+                            <>
+                              <EyeOff className="mr-2 h-4 w-4" />
+                              Mark as Idle
+                            </>
+                          ) : (
+                            <>
+                              <Eye className="mr-2 h-4 w-4" />
+                              Mark for Review
+                            </>
+                          )}
+                        </ContextMenuItem>
+                        {resumeCommand && (
                           <ContextMenuItem
                             onSelect={() => {
                               void navigator.clipboard
@@ -1371,8 +1230,8 @@ export function SessionChatModal({
                                 )
                             }}
                           >
-                            <Tag className="mr-2 h-4 w-4" />
-                            {sessionLabel ? 'Remove Label' : 'Add Label'}
+                            <Terminal className="mr-2 h-4 w-4" />
+                            Copy Resume Command
                           </ContextMenuItem>
                         )}
                         <ContextMenuSeparator />
@@ -1490,42 +1349,13 @@ export function SessionChatModal({
               worktreePath={worktreePath}
             />
           )}
-
-          <div className="min-h-0 flex-1 overflow-hidden">
-            {currentSessionId && (
-              <ChatWindow
-                key={currentSessionId}
-                isModal
-                worktreeId={worktreeId}
-                worktreePath={worktreePath}
-              />
-            )}
-          </div>
         </div>
 
-        {isNativeApp() &&
-          isModalTerminalOpen &&
-          modalTerminalDockMode === 'right' && (
-            <ModalTerminalDrawer
-              worktreeId={worktreeId}
-              worktreePath={worktreePath}
-              dockMode="right"
-            />
-          )}
-        {isNativeApp() &&
-          isModalTerminalOpen &&
-          modalTerminalDockMode === 'bottom' && (
-            <ModalTerminalDrawer
-              worktreeId={worktreeId}
-              worktreePath={worktreePath}
-              dockMode="bottom"
-            />
-          )}
-        {isNativeApp() && modalTerminalDockMode === 'floating' && (
+        {/* Terminal side drawer */}
+        {isNativeApp() && (
           <ModalTerminalDrawer
             worktreeId={worktreeId}
             worktreePath={worktreePath}
-            dockMode="floating"
           />
         )}
         {diffRequest && (

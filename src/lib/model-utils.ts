@@ -14,10 +14,7 @@ const ADAPTIVE_THINKING_MIN_CLI_VERSION = '2.1.32'
 /**
  * Resolve which CLI backend to use based on the model string.
  */
-export function resolveBackend(
-  model: string
-): 'claude' | 'codex' | 'opencode' | 'cursor' {
-  if (model.startsWith('cursor/')) return 'cursor'
+export function resolveBackend(model: string): 'claude' | 'codex' | 'opencode' {
   if (model.startsWith('opencode/')) return 'opencode'
   if (model.startsWith('codex') || model.includes('codex')) return 'codex'
   return 'claude'
@@ -30,18 +27,12 @@ export function resolveBackend(
  * Returns true when:
  * - Model is a Claude adaptive-thinking model ('opus' or 'sonnet')
  * - CLI version is >= 2.1.32
- *
- * Sonnet models use traditional thinking levels, not adaptive thinking.
  */
 export function supportsAdaptiveThinking(
   model: string,
   cliVersion: string | null | undefined
 ): boolean {
-  const isOpusModel =
-    model === 'opus' ||
-    model === 'opus-fast' ||
-    model.startsWith('claude-opus-')
-  if (!isOpusModel) return false
+  if (model !== 'opus' && model !== 'sonnet') return false
   if (!cliVersion) return false
   return compareVersions(cliVersion, ADAPTIVE_THINKING_MIN_CLI_VERSION) >= 0
 }

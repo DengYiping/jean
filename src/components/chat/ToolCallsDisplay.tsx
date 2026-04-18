@@ -1,10 +1,6 @@
 import { memo, useState, useCallback } from 'react'
 import type { ToolCall, Question, QuestionAnswer } from '@/types/chat'
-import {
-  hasQuestionAnswerOutput,
-  isAskUserQuestion,
-  isPlanToolCall,
-} from '@/types/chat'
+import { isAskUserQuestion, isExitPlanMode } from '@/types/chat'
 import { AskUserQuestion } from './AskUserQuestion'
 
 /**
@@ -24,14 +20,7 @@ function mergeAskUserQuestions(tools: ToolCall[]): Question[] {
       const key = q.header ?? q.question
       if (!seenHeaders.has(key)) {
         seenHeaders.add(key)
-        // Normalize OpenCode's "multiple" field to "multiSelect"
-        const normalized: Question = {
-          ...q,
-          multiSelect:
-            q.multiSelect ??
-            (q as unknown as Record<string, unknown>).multiple === true,
-        }
-        merged.push(normalized)
+        merged.push(q)
       }
     }
   }
@@ -65,7 +54,7 @@ interface ToolCallsDisplayProps {
 
 /**
  * Display for tool calls - shows Edit tools prominently, collapses others
- * Note: plan approval tools are handled by ExitPlanModeButton component (rendered after content)
+ * Note: ExitPlanMode is handled by ExitPlanModeButton component (rendered after content)
  * Memoized to prevent re-renders when parent state changes
  */
 export const ToolCallsDisplay = memo(function ToolCallsDisplay({
@@ -88,11 +77,9 @@ export const ToolCallsDisplay = memo(function ToolCallsDisplay({
   }, [])
 
   // Separate special tools from regular tools
-  // Note: plan approval tools are handled separately outside this component (after content)
+  // Note: ExitPlanMode is handled separately outside this component (after content)
   // Note: Edit tools are handled by EditedFilesDisplay at the bottom of the message
-  const isQuestionTool = (t: ToolCall) =>
-    isAskUserQuestion(t) || t.name === 'question'
-  const questionTools = toolCalls.filter(isQuestionTool)
+  const questionTools = toolCalls.filter(isAskUserQuestion)
   const otherTools = toolCalls.filter(
     t => !isAskUserQuestion(t) && !isExitPlanMode(t) && t.name !== 'FileChange'
   )
@@ -147,10 +134,7 @@ export const ToolCallsDisplay = memo(function ToolCallsDisplay({
           key={mergedToolId}
           toolCallId={mergedToolId}
           questions={mergedQuestions}
-          hasFollowUpMessage={
-            hasFollowUpMessage ||
-            questionTools.some(t => hasQuestionAnswerOutput(t.output))
-          }
+          hasFollowUpMessage={hasFollowUpMessage}
           isSkipped={areQuestionsSkipped?.(sessionId) ?? false}
           onSubmit={(toolCallId, answers) =>
             onQuestionAnswer?.(toolCallId, answers, mergedQuestions)
@@ -159,18 +143,15 @@ export const ToolCallsDisplay = memo(function ToolCallsDisplay({
           readOnly={
             hasFollowUpMessage ||
             isQuestionAnswered(sessionId, mergedToolId) ||
-            areQuestionsSkipped?.(sessionId) ||
-            questionTools.some(t => hasQuestionAnswerOutput(t.output))
+            areQuestionsSkipped?.(sessionId)
           }
           submittedAnswers={
             hasFollowUpMessage ||
             isQuestionAnswered(sessionId, mergedToolId) ||
-            areQuestionsSkipped?.(sessionId) ||
-            questionTools.some(t => hasQuestionAnswerOutput(t.output))
+            areQuestionsSkipped?.(sessionId)
               ? getSubmittedAnswers(sessionId, mergedToolId)
               : undefined
           }
-          toolOutput={questionTools.find(t => t.id === mergedToolId)?.output}
         />
       )}
     </div>

@@ -1,19 +1,23 @@
 import {
   Brain,
+  ChevronDown,
   CircleDot,
+  ClipboardList,
   ExternalLink,
   FolderOpen,
   GitMerge,
   GitPullRequest,
+  Hammer,
   Loader2,
   MessageSquare,
   Plug,
   Sparkles,
   Wand2,
+  Zap,
 } from 'lucide-react'
-import { useCallback } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Input } from '@/components/ui/input'
 import { Kbd } from '@/components/ui/kbd'
-import { BackendLabel } from '@/components/ui/backend-label'
 import {
   Tooltip,
   TooltipContent,
@@ -53,11 +57,12 @@ import type {
 } from '@/types/pr-status'
 import { openExternal } from '@/lib/platform'
 import { cn } from '@/lib/utils'
+import { CheckStatusButton } from '@/components/chat/toolbar/CheckStatusButton'
 import {
   McpStatusDot,
   mcpStatusHint,
 } from '@/components/chat/toolbar/McpStatusDot'
-import { groupServersByBackend, mcpKey } from '@/services/mcp'
+import { groupServersByBackend, BACKEND_LABELS } from '@/services/mcp'
 import type { CliBackend } from '@/types/preferences'
 import {
   EFFORT_LEVEL_OPTIONS,
@@ -67,12 +72,10 @@ import {
   getPrStatusDisplay,
   getProviderDisplayName,
 } from '@/components/chat/toolbar/toolbar-utils'
-import { DesktopBackendModelPicker } from '@/components/chat/toolbar/DesktopBackendModelPicker'
-import { ExecutionModeDropdown } from '@/components/chat/toolbar/ExecutionModeDropdown'
 
 interface DesktopToolbarControlsProps {
   hasPendingQuestions: boolean
-  selectedBackend: 'claude' | 'codex' | 'opencode' | 'cursor'
+  selectedBackend: 'claude' | 'codex' | 'opencode'
   selectedModel: string
   selectedProvider: string | null
   selectedThinkingLevel: ThinkingLevel
@@ -83,6 +86,8 @@ interface DesktopToolbarControlsProps {
   sessionHasMessages?: boolean
   providerLocked?: boolean
   customCliProfiles: CustomCliProfile[]
+  filteredModelOptions: { value: string; label: string }[]
+  selectedModelLabel: string
   isCodex: boolean
 
   prUrl: string | undefined
@@ -106,9 +111,11 @@ interface DesktopToolbarControlsProps {
   attachedSavedContexts: AttachedSavedContext[]
 
   providerDropdownOpen: boolean
+  modelDropdownOpen: boolean
   thinkingDropdownOpen: boolean
   mcpDropdownOpen: boolean
   setProviderDropdownOpen: (open: boolean) => void
+  setModelDropdownOpen: (open: boolean) => void
   setThinkingDropdownOpen: (open: boolean) => void
   onMcpDropdownOpenChange: (open: boolean) => void
 
@@ -120,14 +127,9 @@ interface DesktopToolbarControlsProps {
   installedBackends: ('claude' | 'codex' | 'opencode')[]
   onBackendChange: (backend: 'claude' | 'codex' | 'opencode') => void
   onSetExecutionMode: (mode: ExecutionMode) => void
-  availableExecutionModes: ExecutionMode[]
   onToggleMcpServer: (name: string) => void
 
   handleModelChange: (value: string) => void
-  handleBackendModelChange: (
-    backend: 'claude' | 'codex' | 'opencode' | 'cursor',
-    model: string
-  ) => void
   handleProviderChange: (value: string) => void
   handleThinkingLevelChange: (value: string) => void
   handleEffortLevelChange: (value: string) => void
@@ -152,13 +154,15 @@ export function DesktopToolbarControls({
   sessionHasMessages,
   providerLocked,
   customCliProfiles,
+  filteredModelOptions,
+  selectedModelLabel,
   isCodex,
   prUrl,
   prNumber,
   displayStatus,
-  checkStatus: _checkStatus,
+  checkStatus,
   mergeableStatus,
-  activeWorktreePath: _activeWorktreePath,
+  activeWorktreePath,
   availableMcpServers,
   enabledMcpServers,
   activeMcpCount,
@@ -169,9 +173,11 @@ export function DesktopToolbarControls({
   loadedLinearContexts,
   attachedSavedContexts,
   providerDropdownOpen,
+  modelDropdownOpen,
   thinkingDropdownOpen,
   mcpDropdownOpen,
   setProviderDropdownOpen,
+  setModelDropdownOpen,
   setThinkingDropdownOpen,
   onMcpDropdownOpenChange,
   onOpenMagicModal,
@@ -180,11 +186,10 @@ export function DesktopToolbarControls({
   onLoadContext,
   onOpenPullRequestReview,
   installedBackends,
+  onBackendChange,
   onSetExecutionMode,
-  availableExecutionModes,
   onToggleMcpServer,
   handleModelChange,
-  handleBackendModelChange,
   handleProviderChange,
   handleThinkingLevelChange,
   handleEffortLevelChange,
@@ -207,12 +212,33 @@ export function DesktopToolbarControls({
   const loadedLinearCount = loadedLinearContexts.length
   const loadedContextCount = attachedSavedContexts.length
   const providerDisplayName = getProviderDisplayName(selectedProvider)
+  const [modelSearchQuery, setModelSearchQuery] = useState('')
+  const modelSearchInputRef = useRef<HTMLInputElement>(null)
+  const visibleModelOptions = useMemo(() => {
+    const query = modelSearchQuery.trim().toLowerCase()
+    if (!query) return filteredModelOptions
+    return filteredModelOptions.filter(
+      option =>
+        option.label.toLowerCase().includes(query) ||
+        option.value.toLowerCase().includes(query)
+    )
+  }, [filteredModelOptions, modelSearchQuery])
+
+  useEffect(() => {
+    if (!modelDropdownOpen) return
+    requestAnimationFrame(() => {
+      modelSearchInputRef.current?.focus()
+      modelSearchInputRef.current?.select()
+    })
+  }, [modelDropdownOpen])
 
   return (
     <>
+      <div className="block @xl:hidden h-4 w-px bg-border/50" />
+
       <button
         type="button"
-        className="hidden @xl:flex h-8 items-center gap-1 px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+        className="hidden @xl:flex h-8 items-center gap-1 rounded-l-lg px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
         disabled={hasPendingQuestions}
         onClick={onOpenMagicModal}
       >
@@ -241,6 +267,7 @@ export function DesktopToolbarControls({
                   )}
                 />
                 {activeMcpCount > 0 && <span>{activeMcpCount}</span>}
+                <ChevronDown className="h-3 w-3 opacity-50" />
               </button>
             </DropdownMenuTrigger>
           </TooltipTrigger>
@@ -269,17 +296,13 @@ export function DesktopToolbarControls({
                     <>
                       {idx > 0 && <DropdownMenuSeparator />}
                       <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-medium py-1">
-                        <BackendLabel
-                          backend={backend}
-                          badgeClassName="text-[8px] leading-3"
-                        />
+                        {BACKEND_LABELS[backend] ?? backend}
                       </DropdownMenuLabel>
                     </>
                   )}
                   {(grouped[backend] ?? []).map(server => {
-                    const key = mcpKey(backend, server.name)
-                    const status = mcpStatuses?.[key]
-                    const hint = mcpStatusHint(status, backend)
+                    const status = mcpStatuses?.[server.name]
+                    const hint = mcpStatusHint(status)
                     const item = (
                       <DropdownMenuCheckboxItem
                         key={`${backend}-${server.name}`}
@@ -287,12 +310,12 @@ export function DesktopToolbarControls({
                           !server.disabled &&
                           enabledMcpServers.includes(server.name)
                         }
-                        onCheckedChange={() => onToggleMcpServer(key)}
+                        onCheckedChange={() => onToggleMcpServer(server.name)}
                         disabled={server.disabled}
                         className={server.disabled ? 'opacity-50' : undefined}
                       >
                         <span className="flex items-center gap-1.5">
-                          <McpStatusDot status={status} backend={backend} />
+                          <McpStatusDot status={status} />
                           {server.name}
                         </span>
                         <span className="ml-auto pl-4 text-xs text-muted-foreground">
@@ -331,21 +354,6 @@ export function DesktopToolbarControls({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            disabled={hasPendingQuestions}
-            onClick={onAttach}
-            className="hidden @xl:flex h-8 items-center justify-center px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
-            aria-label="Attach images"
-          >
-            <Paperclip className="h-3.5 w-3.5" />
-          </button>
-        </TooltipTrigger>
-        <TooltipContent>Attach images from device</TooltipContent>
-      </Tooltip>
-
       {(loadedIssueCount > 0 ||
         loadedPRCount > 0 ||
         loadedLinearCount > 0 ||
@@ -378,6 +386,7 @@ export function DesktopToolbarControls({
                   {loadedContextCount > 0 &&
                     `${loadedContextCount} Context${loadedContextCount > 1 ? 's' : ''}`}
                 </span>
+                <ChevronDown className="h-3 w-3 opacity-50" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-64">
@@ -526,6 +535,10 @@ export function DesktopToolbarControls({
                   <GitPullRequest className="h-3.5 w-3.5" />
                 )}
                 <span>#{prNumber}</span>
+                <CheckStatusButton
+                  status={checkStatus ?? null}
+                  projectPath={activeWorktreePath}
+                />
               </a>
             </TooltipTrigger>
             <TooltipContent>
@@ -641,6 +654,7 @@ export function DesktopToolbarControls({
                       className="hidden @xl:flex h-8 items-center gap-1.5 px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
                     >
                       <span>{providerDisplayName}</span>
+                      <ChevronDown className="h-3 w-3 opacity-50" />
                     </button>
                   </DropdownMenuTrigger>
                 </TooltipTrigger>
@@ -804,6 +818,7 @@ export function DesktopToolbarControls({
                       )?.label
                     }
                   </span>
+                  <ChevronDown className="h-3 w-3 opacity-50" />
                 </button>
               </DropdownMenuTrigger>
             </TooltipTrigger>
@@ -860,6 +875,7 @@ export function DesktopToolbarControls({
                       )?.label
                     }
                   </span>
+                  <ChevronDown className="h-3 w-3 opacity-50" />
                 </button>
               </DropdownMenuTrigger>
             </TooltipTrigger>
@@ -893,14 +909,63 @@ export function DesktopToolbarControls({
 
       <div className="hidden @xl:block h-4 w-px bg-border/50" />
 
-      <ExecutionModeDropdown
-        executionMode={executionMode}
-        availableModes={availableExecutionModes}
-        disabled={hasPendingQuestions}
-        onSetExecutionMode={onSetExecutionMode}
-        className="hidden @xl:flex"
-        onCloseAutoFocus={focusChatInput}
-      />
+      <DropdownMenu>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                disabled={hasPendingQuestions}
+                className="hidden @xl:flex h-8 items-center gap-1.5 px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+              >
+                {executionMode === 'plan' && (
+                  <ClipboardList className="h-3.5 w-3.5 text-yellow-600 dark:text-yellow-400" />
+                )}
+                {executionMode === 'build' && (
+                  <Hammer className="h-3.5 w-3.5" />
+                )}
+                {executionMode === 'yolo' && (
+                  <Zap className="h-3.5 w-3.5 text-red-500 dark:text-red-400" />
+                )}
+                <ChevronDown className="h-3 w-3 opacity-50" />
+              </button>
+            </DropdownMenuTrigger>
+          </TooltipTrigger>
+          <TooltipContent>
+            {`${executionMode.charAt(0).toUpperCase() + executionMode.slice(1)} mode (Shift+Tab to cycle)`}
+          </TooltipContent>
+        </Tooltip>
+        <DropdownMenuContent align="start" onCloseAutoFocus={focusChatInput}>
+          <DropdownMenuRadioGroup
+            value={executionMode}
+            onValueChange={v => onSetExecutionMode(v as ExecutionMode)}
+          >
+            <DropdownMenuRadioItem value="plan">
+              <ClipboardList className="mr-2 h-4 w-4" />
+              Plan
+              <span className="ml-auto pl-4 text-xs text-muted-foreground">
+                Read-only
+              </span>
+            </DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="build">
+              <Hammer className="mr-2 h-4 w-4" />
+              Build
+              <span className="ml-auto pl-4 text-xs text-muted-foreground">
+                Auto-edits
+              </span>
+            </DropdownMenuRadioItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuRadioItem
+              value="yolo"
+              className="text-red-600 focus:text-red-600 dark:text-red-400 dark:focus:text-red-400"
+            >
+              <Zap className="mr-2 h-4 w-4" />
+              Yolo
+              <span className="ml-auto pl-4 text-xs">No limits!</span>
+            </DropdownMenuRadioItem>
+          </DropdownMenuRadioGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </>
   )
 }

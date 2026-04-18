@@ -66,49 +66,6 @@ const CLI_DISPLAY_NAMES: Record<CliUpdateInfo['type'], string> = {
 }
 
 /**
- * Resolve the effective CLI version/path/source by falling back to path detection
- * when the preference-based status shows the CLI is not installed (e.g. system-installed
- * Codex with default 'jean' preference → Jean binary missing → use path detection instead).
- */
-function resolveCliInfo(
-  status:
-    | { installed: boolean; version?: string | null; path?: string | null }
-    | undefined,
-  pathInfo:
-    | {
-        found: boolean
-        version?: string | null
-        path?: string | null
-        package_manager?: string | null
-      }
-    | undefined,
-  preferredSource: 'jean' | 'path' | undefined
-): {
-  version: string | null
-  path: string | null
-  source: 'jean' | 'path'
-  packageManager: string | null
-} {
-  if (status?.installed && status.version) {
-    return {
-      version: status.version,
-      path: status.path ?? null,
-      source: preferredSource ?? 'jean',
-      packageManager: pathInfo?.package_manager ?? null,
-    }
-  }
-  if (pathInfo?.found && pathInfo.version) {
-    return {
-      version: pathInfo.version,
-      path: pathInfo.path ?? null,
-      source: 'path',
-      packageManager: pathInfo.package_manager ?? null,
-    }
-  }
-  return { version: null, path: null, source: 'path', packageManager: null }
-}
-
-/**
  * Hook that checks for CLI updates on startup and periodically (every hour).
  * Shows toast notifications when updates are detected.
  * Should be called once in App.tsx.
@@ -184,8 +141,7 @@ export function useCliVersionCheck() {
       claudeVersionsLoading ||
       ghVersionsLoading ||
       codexVersionsLoading ||
-      opencodeVersionsLoading ||
-      preferencesLoading
+      opencodeVersionsLoading
     if (isLoading) return
 
     const updates: CliUpdateInfo[] = []

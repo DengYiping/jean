@@ -506,7 +506,6 @@ async fn init_handler(Query(params): Query<WsAuth>, State(state): State<AppState
                                 wt_id,
                                 wt_path,
                                 sess_id.clone(),
-                                None,
                             )
                             .await
                             {

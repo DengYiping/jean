@@ -11,7 +11,6 @@ import type {
   ExecutionMode,
   Session,
 } from '@/types/chat'
-import { normalizeExecutionModeForBackend } from '@/types/chat'
 import { applySessionSettingToSession } from '@/components/chat/hooks/session-setting-sync'
 
 interface UseToolbarHandlersParams {
@@ -22,15 +21,14 @@ interface UseToolbarHandlersParams {
   activeWorktreeIdRef: RefObject<string | null | undefined>
   activeWorktreePathRef: RefObject<string | null | undefined>
   enabledMcpServersRef: RefObject<string[]>
-  selectedBackend: 'claude' | 'codex' | 'opencode' | 'cursor'
-  installedBackends: ('claude' | 'codex' | 'opencode' | 'cursor')[]
+  selectedBackend: 'claude' | 'codex' | 'opencode'
+  installedBackends: ('claude' | 'codex' | 'opencode')[]
   session: Session | null | undefined
   preferences:
     | {
         selected_model?: string
         selected_codex_model?: string
         selected_opencode_model?: string
-        selected_cursor_model?: string
         custom_cli_profiles?: { name: string }[]
       }
     | undefined
@@ -78,87 +76,6 @@ export function useToolbarHandlers({
   setExecutionMode,
   setLoadContextModalOpen,
 }: UseToolbarHandlersParams) {
-  const persistToolbarBackendAndModel = useCallback(
-    (backend: 'claude' | 'codex' | 'opencode' | 'cursor', model: string) => {
-      const nextExecutionMode = normalizeExecutionModeForBackend(
-        backend,
-        session?.selected_execution_mode ?? 'plan'
-      )
-
-      if (activeSessionId && activeWorktreeId && activeWorktreePath) {
-        useChatStore.getState().setSelectedBackend(activeSessionId, backend)
-        useChatStore.getState().setSelectedModel(activeSessionId, model)
-        useChatStore
-          .getState()
-          .setExecutionMode(activeSessionId, nextExecutionMode)
-        queryClient.setQueryData(
-          chatQueryKeys.session(activeSessionId),
-          (old: Session | null | undefined) =>
-            old
-              ? applySessionSettingToSession(
-                  applySessionSettingToSession(
-                    applySessionSettingToSession(old, 'backend', backend),
-                    'model',
-                    model
-                  ),
-                  'executionMode',
-                  nextExecutionMode
-                )
-              : old
-        )
-        invoke('broadcast_session_setting', {
-          sessionId: activeSessionId,
-          key: 'backend',
-          value: backend,
-        }).catch(() => undefined)
-        invoke('broadcast_session_setting', {
-          sessionId: activeSessionId,
-          key: 'model',
-          value: model,
-        }).catch(() => undefined)
-        invoke('broadcast_session_setting', {
-          sessionId: activeSessionId,
-          key: 'executionMode',
-          value: nextExecutionMode,
-        }).catch(() => undefined)
-        setSessionBackend.mutate(
-          {
-            sessionId: activeSessionId,
-            worktreeId: activeWorktreeId,
-            worktreePath: activeWorktreePath,
-            backend,
-          },
-          {
-            onSuccess: () => {
-              setSessionModel.mutate({
-                sessionId: activeSessionId,
-                worktreeId: activeWorktreeId,
-                worktreePath: activeWorktreePath,
-                model,
-              })
-              invoke('update_session_state', {
-                worktreeId: activeWorktreeId,
-                worktreePath: activeWorktreePath,
-                sessionId: activeSessionId,
-                selectedExecutionMode: nextExecutionMode,
-              }).catch(() => undefined)
-            },
-          }
-        )
-      }
-      window.dispatchEvent(new CustomEvent('focus-chat-input'))
-    },
-    [
-      activeSessionId,
-      activeWorktreeId,
-      activeWorktreePath,
-      queryClient,
-      session?.selected_execution_mode,
-      setSessionBackend,
-      setSessionModel,
-    ]
-  )
-
   const handleToolbarModelChange = useCallback(
     (model: string) => {
       if (activeSessionId && activeWorktreeId && activeWorktreePath) {
@@ -201,23 +118,61 @@ export function useToolbarHandlers({
               ? (preferences?.selected_opencode_model ??
                 'opencode/gpt-5.3-codex')
               : ((preferences?.selected_model as string) ?? DEFAULT_MODEL)
-
-      persistToolbarBackendAndModel(backend, model)
+        useChatStore.getState().setSelectedBackend(activeSessionId, backend)
+        useChatStore.getState().setSelectedModel(activeSessionId, model)
+        queryClient.setQueryData(
+          chatQueryKeys.session(activeSessionId),
+          (old: Session | null | undefined) =>
+            old
+              ? applySessionSettingToSession(
+                  applySessionSettingToSession(old, 'backend', backend),
+                  'model',
+                  model
+                )
+              : old
+        )
+        invoke('broadcast_session_setting', {
+          sessionId: activeSessionId,
+          key: 'backend',
+          value: backend,
+        }).catch(() => undefined)
+        invoke('broadcast_session_setting', {
+          sessionId: activeSessionId,
+          key: 'model',
+          value: model,
+        }).catch(() => undefined)
+        setSessionBackend.mutate(
+          {
+            sessionId: activeSessionId,
+            worktreeId: activeWorktreeId,
+            worktreePath: activeWorktreePath,
+            backend,
+          },
+          {
+            onSuccess: () => {
+              setSessionModel.mutate({
+                sessionId: activeSessionId,
+                worktreeId: activeWorktreeId,
+                worktreePath: activeWorktreePath,
+                model,
+              })
+            },
+          }
+        )
+      }
+      window.dispatchEvent(new CustomEvent('focus-chat-input'))
     },
     [
-      persistToolbarBackendAndModel,
-      preferences?.selected_codex_model,
-      preferences?.selected_cursor_model,
+      activeSessionId,
+      activeWorktreeId,
+      activeWorktreePath,
       preferences?.selected_model,
+      preferences?.selected_codex_model,
       preferences?.selected_opencode_model,
+      queryClient,
+      setSessionBackend,
+      setSessionModel,
     ]
-  )
-
-  const handleToolbarBackendModelChange = useCallback(
-    (backend: 'claude' | 'codex' | 'opencode' | 'cursor', model: string) => {
-      persistToolbarBackendAndModel(backend, model)
-    },
-    [persistToolbarBackendAndModel]
   )
 
   const handleTabBackendSwitch = useCallback(() => {
@@ -325,23 +280,13 @@ export function useToolbarHandlers({
       const sessionId = activeSessionIdRef.current
       const worktreeId = activeWorktreeIdRef.current
       const worktreePath = activeWorktreePathRef.current
-      const normalizedMode = normalizeExecutionModeForBackend(
-        selectedBackend,
-        mode
-      )
 
       if (sessionId) {
-        setExecutionMode(sessionId, normalizedMode)
+        setExecutionMode(sessionId, mode)
         queryClient.setQueryData(
           chatQueryKeys.session(sessionId),
           (old: Session | null | undefined) =>
-            old
-              ? applySessionSettingToSession(
-                  old,
-                  'executionMode',
-                  normalizedMode
-                )
-              : old
+            old ? applySessionSettingToSession(old, 'executionMode', mode) : old
         )
 
         // Persist immediately so browser/WebSocket mode survives reloads
@@ -351,14 +296,14 @@ export function useToolbarHandlers({
             worktreeId,
             worktreePath,
             sessionId,
-            selectedExecutionMode: normalizedMode,
+            selectedExecutionMode: mode,
           }).catch(() => undefined)
         }
 
         invoke('broadcast_session_setting', {
           sessionId,
           key: 'executionMode',
-          value: normalizedMode,
+          value: mode,
         }).catch(() => undefined)
       }
       window.dispatchEvent(new CustomEvent('focus-chat-input'))
@@ -385,7 +330,6 @@ export function useToolbarHandlers({
   return {
     handleToolbarModelChange,
     handleToolbarBackendChange,
-    handleToolbarBackendModelChange,
     handleTabBackendSwitch,
     handleToolbarProviderChange,
     handleToolbarThinkingLevelChange,

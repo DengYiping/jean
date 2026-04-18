@@ -8,12 +8,11 @@ import React, {
 import { invoke } from '@/lib/transport'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Loader2, ChevronDown, Check, ChevronsUpDown, Play } from 'lucide-react'
+import { Loader2, ChevronDown, Check, ChevronsUpDown } from 'lucide-react'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
-import { BackendLabel } from '@/components/ui/backend-label'
 import { Input } from '@/components/ui/input'
 import {
   Command,
@@ -48,19 +47,10 @@ import {
   opencodeCliQueryKeys,
 } from '@/services/opencode-cli'
 import { useUIStore } from '@/store/ui-store'
-import {
-  getCursorInstallCommand,
-  useCursorCliStatus,
-  useCursorCliAuth,
-  useCursorPathDetection,
-  useAvailableCursorModels,
-  cursorCliQueryKeys,
-} from '@/services/cursor-cli'
 import type { ClaudeAuthStatus } from '@/types/claude-cli'
 import type { GhAuthStatus } from '@/types/gh-cli'
 import type { CodexAuthStatus } from '@/types/codex-cli'
 import type { OpenCodeAuthStatus } from '@/types/opencode-cli'
-import type { CursorAuthStatus } from '@/types/cursor-cli'
 import {
   Select,
   SelectContent,
@@ -103,7 +93,6 @@ import {
   type ClaudeModel,
   type CodexModel,
   type CodexReasoningEffort,
-  type CursorModel,
   type CliBackend,
   type TerminalApp,
   type EditorApp,
@@ -111,14 +100,8 @@ import {
   openInDefaultOptions,
   type OpenInDefault,
 } from '@/types/preferences'
-import {
-  CURSOR_MODEL_OPTIONS,
-  OPENCODE_MODEL_OPTIONS,
-} from '@/components/chat/toolbar/toolbar-options'
-import {
-  formatCursorModelLabel,
-  formatOpencodeModelLabel,
-} from '@/components/chat/toolbar/toolbar-utils'
+import { OPENCODE_MODEL_OPTIONS } from '@/components/chat/toolbar/toolbar-options'
+import { formatOpencodeModelLabel } from '@/components/chat/toolbar/toolbar-utils'
 import { playNotificationSound } from '@/lib/sounds'
 import type { ThinkingLevel, EffortLevel } from '@/types/chat'
 import { isNativeApp } from '@/lib/environment'
@@ -198,16 +181,8 @@ export const GeneralPane: React.FC = () => {
     useOpenCodeCliAuth({
       enabled: !!opencodeStatus?.installed,
     })
-  const { data: cursorAuth, isLoading: isCursorAuthLoading } = useCursorCliAuth(
-    {
-      enabled: !!cursorStatus?.installed,
-    }
-  )
   const { data: availableOpencodeModels } = useAvailableOpencodeModels({
     enabled: !!opencodeStatus?.installed,
-  })
-  const { data: availableCursorModels } = useAvailableCursorModels({
-    enabled: !!cursorStatus?.installed,
   })
 
   // Track which auth check is in progress (for manual refresh)
@@ -215,10 +190,8 @@ export const GeneralPane: React.FC = () => {
   const [checkingGhAuth, setCheckingGhAuth] = useState(false)
   const [checkingCodexAuth, setCheckingCodexAuth] = useState(false)
   const [checkingOpenCodeAuth, setCheckingOpenCodeAuth] = useState(false)
-  const [checkingCursorAuth, setCheckingCursorAuth] = useState(false)
   const [openCodeModelPopoverOpen, setOpenCodeModelPopoverOpen] =
     useState(false)
-  const [cursorModelPopoverOpen, setCursorModelPopoverOpen] = useState(false)
   const [buildModelPopoverOpen, setBuildModelPopoverOpen] = useState(false)
   const [yoloModelPopoverOpen, setYoloModelPopoverOpen] = useState(false)
 
@@ -345,24 +318,16 @@ export const GeneralPane: React.FC = () => {
   const claudeInstalled = cliStatus?.installed
   const codexInstalled = codexStatus?.installed
   const opencodeInstalled = opencodeStatus?.installed
-  const cursorInstalled = cursorStatus?.installed
   const effectiveBackend = useMemo(() => {
     const installed: Record<string, boolean | undefined> = {
       claude: claudeInstalled,
       codex: codexInstalled,
       opencode: opencodeInstalled,
-      cursor: cursorInstalled,
     }
     if (installed[stored]) return stored
     const first = backendOptions.find(o => installed[o.value])
     return first?.value ?? stored
-  }, [
-    stored,
-    claudeInstalled,
-    codexInstalled,
-    opencodeInstalled,
-    cursorInstalled,
-  ])
+  }, [stored, claudeInstalled, codexInstalled, opencodeInstalled])
 
   const handleCodexModelChange = (value: CodexModel) => {
     if (preferences) {
@@ -381,12 +346,6 @@ export const GeneralPane: React.FC = () => {
   const handleOpenCodeModelChange = (value: string) => {
     if (preferences) {
       patchPreferences.mutate({ selected_opencode_model: value })
-    }
-  }
-
-  const handleCursorModelChange = (value: CursorModel) => {
-    if (preferences) {
-      patchPreferences.mutate({ selected_cursor_model: value })
     }
   }
 
@@ -409,26 +368,6 @@ export const GeneralPane: React.FC = () => {
   const selectedOpenCodeModelLabel =
     openCodeModelOptions.find(option => option.value === selectedOpenCodeModel)
       ?.label ?? formatOpenCodeModelLabelForSettings(selectedOpenCodeModel)
-  const selectedCursorModel =
-    preferences?.selected_cursor_model ?? 'cursor/auto'
-  const cursorModelOptions: { value: CursorModel; label: string }[] = (
-    availableCursorModels?.length
-      ? availableCursorModels.map(model => ({
-          value: `cursor/${model.id}` as CursorModel,
-          label: model.label || formatCursorModelLabel(model.id),
-        }))
-      : (CURSOR_MODEL_OPTIONS as { value: CursorModel; label: string }[])
-  ).map(option => ({
-    value: option.value,
-    label: option.label || formatCursorModelLabel(option.value),
-  }))
-  const selectedCursorModelLabel =
-    cursorModelOptions.find(option => option.value === selectedCursorModel)
-      ?.label ?? formatCursorModelLabel(selectedCursorModel)
-  const buildBackendOptions = backendOptions
-  const cursorAuthMessage = cursorAuth?.timed_out
-    ? 'Auth check timed out. Try again or run login manually.'
-    : cursorAuth?.error
 
   const handleCodexMultiAgentToggle = (enabled: boolean) => {
     if (preferences) {
@@ -929,7 +868,7 @@ export const GeneralPane: React.FC = () => {
                 </Button>
               ) : (
                 <Button
-                  className="w-full sm:w-40"
+                  className="w-40"
                   onClick={() => openCliUpdateModal('gh')}
                 >
                   Install
@@ -1049,7 +988,14 @@ export const GeneralPane: React.FC = () => {
 
       {isNativeApp() && (
         <SettingsSection
-          title="OpenCode CLI"
+          title={
+            <>
+              OpenCode CLI{' '}
+              <span className="ml-1 rounded bg-primary/15 px-1 py-px text-[9px] font-semibold uppercase text-primary">
+                BETA
+              </span>
+            </>
+          }
           actions={
             opencodeStatus?.installed ? (
               checkingOpenCodeAuth || isOpenCodeAuthLoading ? (
@@ -1145,122 +1091,6 @@ export const GeneralPane: React.FC = () => {
         </SettingsSection>
       )}
 
-      {isNativeApp() && (
-        <SettingsSection
-          title={
-            <span className="inline-flex items-center gap-2">
-              <BackendLabel backend="cursor" />
-              <span>CLI</span>
-            </span>
-          }
-          actions={
-            cursorStatus?.installed ? (
-              checkingCursorAuth || isCursorAuthLoading ? (
-                <span className="text-sm text-muted-foreground flex items-center gap-2">
-                  <Loader2 className="size-3 animate-spin" />
-                  Checking...
-                </span>
-              ) : cursorAuth?.authenticated ? (
-                <span className="text-sm text-muted-foreground flex items-center gap-2">
-                  Logged in
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleCursorRelogin}
-                  >
-                    Relogin
-                  </Button>
-                </span>
-              ) : (
-                <Button variant="outline" size="sm" onClick={handleCursorLogin}>
-                  Login
-                </Button>
-              )
-            ) : (
-              <Button variant="outline" size="sm" onClick={handleCursorInstall}>
-                Install
-              </Button>
-            )
-          }
-        >
-          <div className="space-y-4">
-            <InlineField
-              label={cursorStatus?.installed ? 'Version' : 'Status'}
-              description={
-                cursorStatus?.installed
-                  ? 'Cursor Agent can be logged in and self-updated from Jean.'
-                  : 'Cursor Agent can be installed from Jean or discovered from your system PATH.'
-              }
-            >
-              {isCursorLoading ? (
-                <Loader2 className="size-4 animate-spin text-muted-foreground" />
-              ) : cursorStatus?.installed ? (
-                <div className="flex items-center gap-2">
-                  <span className="text-sm">
-                    {cursorStatus.version ?? 'Installed'}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleCursorUpdate}
-                  >
-                    Run self-update
-                  </Button>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground">
-                    Not found in PATH
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleCursorInstall}
-                  >
-                    Install now
-                  </Button>
-                </div>
-              )}
-            </InlineField>
-            {cursorStatus?.installed &&
-              !cursorAuth?.authenticated &&
-              cursorAuthMessage && (
-                <div className="text-xs text-muted-foreground">
-                  {cursorAuthMessage}
-                </div>
-              )}
-            {(cursorStatus?.installed || cursorPathDetection?.found) && (
-              <InlineField
-                label="Source"
-                description={
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        onClick={() =>
-                          handleCopyPath(
-                            cursorPathDetection?.path ?? cursorStatus?.path
-                          )
-                        }
-                        className="text-left hover:underline cursor-pointer"
-                      >
-                        {cursorPathDetection?.path ??
-                          cursorStatus?.path ??
-                          'System PATH'}
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent>Click to copy path</TooltipContent>
-                  </Tooltip>
-                }
-              >
-                <span className="text-sm text-muted-foreground">
-                  System PATH
-                </span>
-              </InlineField>
-            )}
-          </div>
-        </SettingsSection>
-      )}
-
       <SettingsSection title="Defaults">
         <div className="space-y-4">
           <InlineField
@@ -1281,13 +1111,11 @@ export const GeneralPane: React.FC = () => {
                       ? cliStatus?.installed
                       : option.value === 'codex'
                         ? codexStatus?.installed
-                        : option.value === 'opencode'
-                          ? opencodeStatus?.installed
-                          : cursorStatus?.installed
+                        : opencodeStatus?.installed
                   )
                   .map(option => (
                     <SelectItem key={option.value} value={option.value}>
-                      <BackendLabel backend={option.value} />
+                      {option.label}
                     </SelectItem>
                   ))}
               </SelectContent>
@@ -1309,9 +1137,9 @@ export const GeneralPane: React.FC = () => {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="default">Default</SelectItem>
-                    {buildBackendOptions.map(option => (
+                    {backendOptions.map(option => (
                       <SelectItem key={option.value} value={option.value}>
-                        <BackendLabel backend={option.value} />
+                        {option.label}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1467,7 +1295,7 @@ export const GeneralPane: React.FC = () => {
                     <SelectItem value="default">Default</SelectItem>
                     {backendOptions.map(option => (
                       <SelectItem key={option.value} value={option.value}>
-                        <BackendLabel backend={option.value} />
+                        {option.label}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1770,7 +1598,10 @@ export const GeneralPane: React.FC = () => {
           {/* OpenCode subsection */}
           <div className="pt-2">
             <div className="text-sm font-semibold text-foreground/80 mb-3">
-              OpenCode
+              OpenCode{' '}
+              <span className="ml-1 rounded bg-primary/15 px-1 py-px text-[9px] font-semibold uppercase text-primary">
+                BETA
+              </span>
             </div>
           </div>
 
@@ -1821,73 +1652,6 @@ export const GeneralPane: React.FC = () => {
                             className={cn(
                               'ml-auto h-4 w-4',
                               selectedOpenCodeModel === option.value
-                                ? 'opacity-100'
-                                : 'opacity-0'
-                            )}
-                          />
-                        </CommandItem>
-                      ))}
-                    </CommandGroup>
-                  </CommandList>
-                </Command>
-              </PopoverContent>
-            </Popover>
-          </InlineField>
-
-          {/* Cursor subsection */}
-          <div className="pt-2">
-            <div className="mb-3 text-sm font-semibold text-foreground/80">
-              <BackendLabel backend="cursor" />
-            </div>
-          </div>
-
-          <InlineField
-            label="Model"
-            description="Cursor model for AI assistance"
-          >
-            <Popover
-              open={cursorModelPopoverOpen}
-              onOpenChange={setCursorModelPopoverOpen}
-            >
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  role="combobox"
-                  aria-expanded={cursorModelPopoverOpen}
-                  aria-label="Select Cursor model"
-                  className="w-80 max-w-full justify-between"
-                >
-                  <span className="max-w-[16rem] truncate text-left">
-                    {selectedCursorModelLabel}
-                  </span>
-                  <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent
-                align="start"
-                className="w-[var(--radix-popover-trigger-width)] p-0"
-              >
-                <Command>
-                  <CommandInput placeholder="Search models..." />
-                  <CommandList onWheel={e => e.stopPropagation()}>
-                    <CommandEmpty>No models found.</CommandEmpty>
-                    <CommandGroup>
-                      {cursorModelOptions.map(option => (
-                        <CommandItem
-                          key={option.value}
-                          value={`${option.label} ${option.value}`}
-                          onSelect={() => {
-                            handleCursorModelChange(option.value)
-                            setCursorModelPopoverOpen(false)
-                          }}
-                        >
-                          <span className="max-w-[18rem] truncate">
-                            {option.label}
-                          </span>
-                          <Check
-                            className={cn(
-                              'ml-auto h-4 w-4',
-                              selectedCursorModel === option.value
                                 ? 'opacity-100'
                                 : 'opacity-0'
                             )}
@@ -2380,7 +2144,7 @@ const AiLanguageField: FC<{
     >
       <div className="flex items-center gap-2">
         <Input
-          className="w-full sm:w-40"
+          className="w-40"
           placeholder="Default"
           value={localValue}
           onChange={e => setLocalValue(e.target.value)}

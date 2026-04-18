@@ -10,11 +10,6 @@ export interface WorkflowRunDetail {
   projectPath: string | null
 }
 
-export interface InvestigateOverride {
-  backend: 'claude' | 'codex' | 'opencode' | 'cursor'
-  model: string
-}
-
 interface MagicCommandHandlers {
   handleSaveContext: () => void
   handleLoadContext: () => void
@@ -27,12 +22,9 @@ interface MagicCommandHandlers {
   handleOpenPr: () => void
   handleReview: () => void
   handleMerge: () => void
-  handleResolveConflicts: (override?: InvestigateOverride) => void
+  handleResolveConflicts: () => void
   handleInvestigateWorkflowRun: (detail: WorkflowRunDetail) => void
-  handleInvestigate: (
-    type: 'issue' | 'pr',
-    override?: InvestigateOverride
-  ) => void
+  handleInvestigate: (type: 'issue' | 'pr') => void
   handleReviewComments: (prompt: string) => void
 }
 
@@ -161,15 +153,11 @@ export function useMagicCommands({
           handlers.handleMerge()
           break
         case 'resolve-conflicts':
-          handlers.handleResolveConflicts(
-            (rest as { override?: InvestigateOverride }).override
-          )
+          handlers.handleResolveConflicts()
           break
         case 'investigate':
           handlers.handleInvestigate(
-            (rest as { type: 'issue' | 'pr'; override?: InvestigateOverride })
-              .type ?? 'issue',
-            (rest as { override?: InvestigateOverride }).override
+            (rest as { type: 'issue' | 'pr' }).type ?? 'issue'
           )
           break
         case 'investigate-workflow-run':

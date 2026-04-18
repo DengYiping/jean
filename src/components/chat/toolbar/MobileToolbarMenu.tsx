@@ -1,7 +1,8 @@
-import { useState, type ReactNode } from 'react'
+import { useState } from 'react'
 import {
   ArrowDownToLine,
   ArrowUpToLine,
+  Bot,
   BookmarkPlus,
   Brain,
   Check,
@@ -18,6 +19,7 @@ import {
   MoreHorizontal,
   Pencil,
   Sparkles,
+  Zap,
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -61,22 +63,23 @@ import {
 } from '@/components/chat/toolbar/toolbar-utils'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { cn } from '@/lib/utils'
-import { BackendLabel } from '@/components/ui/backend-label'
 
 interface MobileToolbarMenuProps {
   isDisabled: boolean
   hasOpenPr: boolean
+  sessionHasMessages?: boolean
   providerLocked?: boolean
-  selectedBackend: 'claude' | 'codex' | 'opencode' | 'cursor'
+  selectedBackend: 'claude' | 'codex' | 'opencode'
   selectedProvider: string | null
-  backendModelLabel: ReactNode
-  backendModelLabelText: string
+  selectedModel: string
   selectedEffortLevel: EffortLevel
   selectedThinkingLevel: ThinkingLevel
   hideThinkingLevel?: boolean
   useAdaptiveThinking: boolean
   isCodex: boolean
+  executionMode: ExecutionMode
   customCliProfiles: CustomCliProfile[]
+  filteredModelOptions: { value: string; label: string }[]
 
   uncommittedAdded: number
   uncommittedRemoved: number
@@ -113,7 +116,9 @@ interface MobileToolbarMenuProps {
   onReview: () => void
   onMerge: () => void
   onResolveConflicts: () => void
-  onOpenBackendModelPicker: () => void
+  installedBackends: ('claude' | 'codex' | 'opencode')[]
+  onBackendChange: (backend: 'claude' | 'codex' | 'opencode') => void
+  onSetExecutionMode: (mode: ExecutionMode) => void
 
   handlePullClick: () => void
   handlePullUpstreamClick: () => void
@@ -121,6 +126,7 @@ interface MobileToolbarMenuProps {
   handleUncommittedDiffClick: () => void
   handleBranchDiffClick: () => void
   handleProviderChange: (value: string) => void
+  handleModelChange: (value: string) => void
   handleEffortLevelChange: (value: string) => void
   handleThinkingLevelChange: (value: string) => void
 }
@@ -128,17 +134,19 @@ interface MobileToolbarMenuProps {
 export function MobileToolbarMenu({
   isDisabled,
   hasOpenPr,
+  sessionHasMessages,
   providerLocked,
   selectedBackend,
   selectedProvider,
-  backendModelLabel,
-  backendModelLabelText,
+  selectedModel,
   selectedEffortLevel,
   selectedThinkingLevel,
   hideThinkingLevel,
   useAdaptiveThinking,
   isCodex,
+  executionMode,
   customCliProfiles,
+  filteredModelOptions,
   uncommittedAdded,
   uncommittedRemoved,
   branchDiffAdded,
@@ -146,8 +154,8 @@ export function MobileToolbarMenu({
   prUrl,
   prNumber,
   displayStatus,
-  checkStatus: _checkStatus,
-  activeWorktreePath: _activeWorktreePath,
+  checkStatus,
+  activeWorktreePath,
   onSaveContext,
   onLoadContext,
   onCommit,
@@ -157,36 +165,60 @@ export function MobileToolbarMenu({
   onReview,
   onMerge,
   onResolveConflicts,
-  onOpenBackendModelPicker,
+  installedBackends,
+  onBackendChange,
+  onSetExecutionMode,
   handlePullClick,
   handlePullUpstreamClick,
   handlePushClick,
   handleUncommittedDiffClick,
   handleBranchDiffClick,
   handleProviderChange,
+  handleModelChange,
   handleEffortLevelChange,
   handleThinkingLevelChange,
 }: MobileToolbarMenuProps) {
   const isMobile = useIsMobile()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [modelSheetOpen, setModelSheetOpen] = useState(false)
+  const [modelSearchQuery, setModelSearchQuery] = useState('')
   const providerDisplayName = getProviderDisplayName(selectedProvider)
   const selectedModelLabel = filteredModelOptions.find(
     o => o.value === selectedModel
   )?.label
 
-  const openBackendModelPicker = () => {
+  const openModelSheet = () => {
     setMenuOpen(false)
-    requestAnimationFrame(() => onOpenBackendModelPicker())
+    setModelSearchQuery('')
+    requestAnimationFrame(() => setModelSheetOpen(true))
   }
+  const normalizedModelQuery = modelSearchQuery.trim().toLowerCase()
+  const visibleModelOptions = normalizedModelQuery
+    ? filteredModelOptions.filter(option => {
+        const label = option.label.toLowerCase()
+        const value = option.value.toLowerCase()
+        return (
+          label.includes(normalizedModelQuery) ||
+          value.includes(normalizedModelQuery)
+        )
+      })
+    : filteredModelOptions
 
   return (
-    <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          aria-label="More actions"
-          className="flex @xl:hidden h-8 items-center gap-1 rounded-l-lg px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
-          disabled={isDisabled}
+    <>
+      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            className="flex @xl:hidden h-8 items-center gap-1 rounded-l-lg px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+            disabled={isDisabled}
+          >
+            <MoreHorizontal className="h-4 w-4" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align={isMobile ? 'end' : 'start'}
+          className="w-56"
         >
           <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">
             Context

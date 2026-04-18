@@ -126,7 +126,7 @@ pub struct ThreadTokenUsageEvent {
 // Message Types
 // ============================================================================
 
-/// Backend for a chat session (Claude CLI, Codex CLI, OpenCode, or Cursor)
+/// Backend for a chat session (Claude CLI, Codex CLI, or OpenCode)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum Backend {
@@ -134,7 +134,6 @@ pub enum Backend {
     Claude,
     Codex,
     Opencode,
-    Cursor,
 }
 
 /// Role of a chat message sender
@@ -157,7 +156,7 @@ pub enum ThinkingLevel {
     Ultrathink,
 }
 
-/// Effort level for Opus adaptive thinking
+/// Effort level for Opus 4.6 adaptive thinking
 /// Controls --settings {"effort": "<level>"} via CLI
 /// Replaces ThinkingLevel when model is Opus (latest) on CLI >= 2.1.32
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
@@ -169,7 +168,6 @@ pub enum EffortLevel {
     Medium,
     #[default]
     High,
-    Xhigh,
     Max,
 }
 
@@ -181,7 +179,6 @@ impl EffortLevel {
             EffortLevel::Low => Some("low"),
             EffortLevel::Medium => Some("medium"),
             EffortLevel::High => Some("high"),
-            EffortLevel::Xhigh => Some("xhigh"),
             EffortLevel::Max => Some("max"),
         }
     }
@@ -241,142 +238,6 @@ pub struct PermissionDeniedEvent {
     pub session_id: String,
     pub worktree_id: String,
     pub denials: Vec<PermissionDenial>,
-}
-
-/// Pending Codex permission request awaiting user response
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CodexPermissionRequest {
-    pub rpc_id: u64,
-    pub item_id: String,
-    pub permissions: serde_json::Value,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reason: Option<String>,
-}
-
-/// Parsed command action details from Codex command approval requests
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CodexCommandAction {
-    pub command: String,
-    #[serde(rename = "type")]
-    pub kind: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub path: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub query: Option<String>,
-}
-
-/// Managed-network approval context for a command approval request
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CodexNetworkApprovalContext {
-    pub host: String,
-    pub protocol: String,
-}
-
-/// Persistent network policy amendment offered by Codex
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CodexNetworkPolicyAmendment {
-    pub action: String,
-    pub host: String,
-}
-
-/// Pending Codex command approval request awaiting user response
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CodexCommandApprovalRequest {
-    pub rpc_id: u64,
-    pub item_id: String,
-    pub thread_id: String,
-    pub turn_id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub approval_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub command: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub command_actions: Option<Vec<CodexCommandAction>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cwd: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reason: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub network_approval_context: Option<CodexNetworkApprovalContext>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub proposed_execpolicy_amendment: Option<Vec<String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub proposed_network_policy_amendments: Option<Vec<CodexNetworkPolicyAmendment>>,
-}
-
-/// Pending Codex request-user-input prompt awaiting user response
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CodexUserInputRequest {
-    pub rpc_id: u64,
-    pub item_id: String,
-    pub questions: serde_json::Value,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub thread_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub turn_id: Option<String>,
-}
-
-/// Pending Codex MCP elicitation request awaiting user response
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CodexMcpElicitationRequest {
-    pub rpc_id: u64,
-    pub server_name: String,
-    pub message: String,
-    pub mode: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub requested_schema: Option<serde_json::Value>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub url: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub elicitation_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub meta: Option<serde_json::Value>,
-}
-
-/// Pending Codex dynamic tool call request awaiting user response
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CodexDynamicToolCallRequest {
-    pub rpc_id: u64,
-    pub call_id: String,
-    pub tool: String,
-    pub arguments: serde_json::Value,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct CodexPermissionRequestEvent {
-    pub session_id: String,
-    pub worktree_id: String,
-    pub request: CodexPermissionRequest,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct CodexCommandApprovalRequestEvent {
-    pub session_id: String,
-    pub worktree_id: String,
-    pub request: CodexCommandApprovalRequest,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct CodexUserInputRequestEvent {
-    pub session_id: String,
-    pub worktree_id: String,
-    pub request: CodexUserInputRequest,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct CodexMcpElicitationRequestEvent {
-    pub session_id: String,
-    pub worktree_id: String,
-    pub request: CodexMcpElicitationRequest,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct CodexDynamicToolCallRequestEvent {
-    pub session_id: String,
-    pub worktree_id: String,
-    pub request: CodexDynamicToolCallRequest,
 }
 
 /// Context for a denied message that can be re-sent after permission approval
@@ -553,9 +414,6 @@ pub struct Session {
     /// OpenCode session ID for resuming conversations
     #[serde(default)]
     pub opencode_session_id: Option<String>,
-    /// Cursor chat ID for resuming conversations
-    #[serde(default)]
-    pub cursor_chat_id: Option<String>,
     /// Selected model for this session
     #[serde(default)]
     pub selected_model: Option<String>,
@@ -615,21 +473,6 @@ pub struct Session {
     /// Pending permission denials awaiting user approval
     #[serde(default)]
     pub pending_permission_denials: Vec<PermissionDenial>,
-    /// Pending Codex permission requests awaiting user approval
-    #[serde(default)]
-    pub pending_codex_permission_requests: Vec<CodexPermissionRequest>,
-    /// Pending Codex command approval requests awaiting user approval
-    #[serde(default)]
-    pub pending_codex_command_approval_requests: Vec<CodexCommandApprovalRequest>,
-    /// Pending Codex request-user-input prompts awaiting user approval
-    #[serde(default)]
-    pub pending_codex_user_input_requests: Vec<CodexUserInputRequest>,
-    /// Pending Codex MCP elicitation requests awaiting user approval
-    #[serde(default)]
-    pub pending_codex_mcp_elicitation_requests: Vec<CodexMcpElicitationRequest>,
-    /// Pending Codex dynamic tool call requests awaiting user approval
-    #[serde(default)]
-    pub pending_codex_dynamic_tool_call_requests: Vec<CodexDynamicToolCallRequest>,
     /// Original message context for re-send after permission approval
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub denied_message_context: Option<DeniedMessageContext>,
@@ -670,9 +513,6 @@ pub struct Session {
     /// Execution mode of the last run (plan/build/yolo)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_run_execution_mode: Option<String>,
-    /// Unix timestamp when the last run started
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_run_started_at: Option<u64>,
     /// User-assigned label with color (e.g. "Needs testing")
     #[serde(
         default,
@@ -687,28 +527,6 @@ pub struct Session {
     /// Messages queued for sending (persisted so they survive page refresh / sync across clients)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub queued_messages: Vec<serde_json::Value>,
-
-    // ========================================================================
-    // Pagination metadata (populated by get_session)
-    // ========================================================================
-    /// Total number of runs in this session's metadata (for "more available" check)
-    #[serde(default)]
-    pub total_runs: usize,
-    /// Index (in metadata.runs) of the first run included in `messages`.
-    /// 0 means oldest run is loaded; > 0 means older runs exist on disk.
-    #[serde(default)]
-    pub loaded_run_start_index: usize,
-}
-
-/// Result of loading a window of session messages from disk.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LoadedMessages {
-    /// Parsed messages for the requested window of runs (chronological order).
-    pub messages: Vec<ChatMessage>,
-    /// Total number of runs in this session's metadata.
-    pub total_runs: usize,
-    /// Index of the first run included in `messages`.
-    pub loaded_run_start_index: usize,
 }
 
 impl Session {
@@ -733,7 +551,6 @@ impl Session {
             claude_session_id: None,
             codex_thread_id: None,
             opencode_session_id: None,
-            cursor_chat_id: None,
             selected_model: None,
             selected_thinking_level: None,
             selected_effort_level: None,
@@ -753,11 +570,6 @@ impl Session {
             fixed_findings: vec![],
             review_results: None,
             pending_permission_denials: vec![],
-            pending_codex_permission_requests: vec![],
-            pending_codex_command_approval_requests: vec![],
-            pending_codex_user_input_requests: vec![],
-            pending_codex_mcp_elicitation_requests: vec![],
-            pending_codex_dynamic_tool_call_requests: vec![],
             denied_message_context: None,
             is_reviewing: false,
             waiting_for_input: false,
@@ -770,11 +582,8 @@ impl Session {
             digest: None,
             last_run_status: None,
             last_run_execution_mode: None,
-            last_run_started_at: None,
             label: None,
             queued_messages: vec![],
-            total_runs: 0,
-            loaded_run_start_index: 0,
         }
     }
 
@@ -935,7 +744,6 @@ impl SessionMetadata {
             claude_session_id: self.claude_session_id.clone(),
             codex_thread_id: self.codex_thread_id.clone(),
             opencode_session_id: self.opencode_session_id.clone(),
-            cursor_chat_id: self.cursor_chat_id.clone(),
             selected_model: self.selected_model.clone(),
             selected_thinking_level: self.selected_thinking_level.clone(),
             selected_effort_level: self.selected_effort_level.clone(),
@@ -954,17 +762,6 @@ impl SessionMetadata {
             fixed_findings: self.fixed_findings.clone(),
             review_results: self.review_results.clone(),
             pending_permission_denials: self.pending_permission_denials.clone(),
-            pending_codex_permission_requests: self.pending_codex_permission_requests.clone(),
-            pending_codex_command_approval_requests: self
-                .pending_codex_command_approval_requests
-                .clone(),
-            pending_codex_user_input_requests: self.pending_codex_user_input_requests.clone(),
-            pending_codex_mcp_elicitation_requests: self
-                .pending_codex_mcp_elicitation_requests
-                .clone(),
-            pending_codex_dynamic_tool_call_requests: self
-                .pending_codex_dynamic_tool_call_requests
-                .clone(),
             denied_message_context: self.denied_message_context.clone(),
             is_reviewing: self.is_reviewing,
             waiting_for_input: self.waiting_for_input,
@@ -978,11 +775,8 @@ impl SessionMetadata {
             // Populate from last run for status recovery on app restart
             last_run_status: last_run.map(|r| r.status.clone()),
             last_run_execution_mode: last_run.and_then(|r| r.execution_mode.clone()),
-            last_run_started_at: last_run.map(|r| r.started_at),
             label: self.label.clone(),
             queued_messages: self.queued_messages.clone(),
-            total_runs: self.runs.len(),
-            loaded_run_start_index: self.runs.len(),
         }
     }
 
@@ -994,7 +788,6 @@ impl SessionMetadata {
         self.claude_session_id = session.claude_session_id.clone();
         self.codex_thread_id = session.codex_thread_id.clone();
         self.opencode_session_id = session.opencode_session_id.clone();
-        self.cursor_chat_id = session.cursor_chat_id.clone();
         self.selected_model = session.selected_model.clone();
         self.selected_thinking_level = session.selected_thinking_level.clone();
         self.selected_effort_level = session.selected_effort_level.clone();
@@ -1012,14 +805,6 @@ impl SessionMetadata {
         self.fixed_findings = session.fixed_findings.clone();
         self.review_results = session.review_results.clone();
         self.pending_permission_denials = session.pending_permission_denials.clone();
-        self.pending_codex_permission_requests = session.pending_codex_permission_requests.clone();
-        self.pending_codex_command_approval_requests =
-            session.pending_codex_command_approval_requests.clone();
-        self.pending_codex_user_input_requests = session.pending_codex_user_input_requests.clone();
-        self.pending_codex_mcp_elicitation_requests =
-            session.pending_codex_mcp_elicitation_requests.clone();
-        self.pending_codex_dynamic_tool_call_requests =
-            session.pending_codex_dynamic_tool_call_requests.clone();
         self.denied_message_context = session.denied_message_context.clone();
         self.is_reviewing = session.is_reviewing;
         self.waiting_for_input = session.waiting_for_input;
@@ -1224,7 +1009,7 @@ pub struct RunEntry {
     /// Thinking level (off, think, megathink, ultrathink)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thinking_level: Option<String>,
-    /// Effort level for Opus adaptive thinking (low, medium, high, xhigh, max)
+    /// Effort level for Opus 4.6 adaptive thinking (low, medium, high, max)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effort_level: Option<String>,
     /// Unix timestamp when run started
@@ -1252,16 +1037,6 @@ pub struct RunEntry {
     /// Token usage for this run (captured from Claude CLI result)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<UsageData>,
-    /// Codex thread ID — persisted per-run so crash recovery can resume via thread/resume
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub codex_thread_id: Option<String>,
-    /// Codex turn ID — set when a turn is in-flight, cleared on completion.
-    /// Presence indicates a turn was active when Jean crashed.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub codex_turn_id: Option<String>,
-    /// Cursor chat ID — persisted per-run so future runs can resume the same chat.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cursor_chat_id: Option<String>,
 }
 
 /// Session metadata - single source of truth for session data and run history
@@ -1292,9 +1067,6 @@ pub struct SessionMetadata {
     /// OpenCode session ID for resuming conversations
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub opencode_session_id: Option<String>,
-    /// Cursor chat ID for resuming conversations
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cursor_chat_id: Option<String>,
     /// Selected model for this session
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub selected_model: Option<String>,
@@ -1336,21 +1108,6 @@ pub struct SessionMetadata {
     /// Pending permission denials awaiting user approval
     #[serde(default)]
     pub pending_permission_denials: Vec<PermissionDenial>,
-    /// Pending Codex permission requests awaiting user approval
-    #[serde(default)]
-    pub pending_codex_permission_requests: Vec<CodexPermissionRequest>,
-    /// Pending Codex command approval requests awaiting user approval
-    #[serde(default)]
-    pub pending_codex_command_approval_requests: Vec<CodexCommandApprovalRequest>,
-    /// Pending Codex request-user-input prompts awaiting user approval
-    #[serde(default)]
-    pub pending_codex_user_input_requests: Vec<CodexUserInputRequest>,
-    /// Pending Codex MCP elicitation requests awaiting user approval
-    #[serde(default)]
-    pub pending_codex_mcp_elicitation_requests: Vec<CodexMcpElicitationRequest>,
-    /// Pending Codex dynamic tool call requests awaiting user approval
-    #[serde(default)]
-    pub pending_codex_dynamic_tool_call_requests: Vec<CodexDynamicToolCallRequest>,
     /// Original message context for re-send after permission approval
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub denied_message_context: Option<DeniedMessageContext>,
@@ -1458,8 +1215,6 @@ pub struct SessionDebugInfo {
     pub manifest_file: Option<String>,
     /// Claude CLI session ID (if any)
     pub claude_session_id: Option<String>,
-    /// Cursor chat ID (if any)
-    pub cursor_chat_id: Option<String>,
     /// Path to Claude CLI's JSONL file (in ~/.claude/projects/)
     pub claude_jsonl_file: Option<String>,
     /// List of JSONL run log files for this session
@@ -1485,7 +1240,6 @@ impl SessionMetadata {
             claude_session_id: None,
             codex_thread_id: None,
             opencode_session_id: None,
-            cursor_chat_id: None,
             selected_model: None,
             selected_thinking_level: None,
             selected_effort_level: None,
@@ -1499,11 +1253,6 @@ impl SessionMetadata {
             fixed_findings: vec![],
             review_results: None,
             pending_permission_denials: vec![],
-            pending_codex_permission_requests: vec![],
-            pending_codex_command_approval_requests: vec![],
-            pending_codex_user_input_requests: vec![],
-            pending_codex_mcp_elicitation_requests: vec![],
-            pending_codex_dynamic_tool_call_requests: vec![],
             denied_message_context: None,
             is_reviewing: false,
             waiting_for_input: false,
@@ -1883,9 +1632,6 @@ mod tests {
             claude_session_id: None,
             pid: Some(12345),
             usage: None,
-            codex_thread_id: None,
-            codex_turn_id: None,
-            cursor_chat_id: None,
         });
 
         assert!(metadata.find_run("run-1").is_some());
@@ -1922,9 +1668,6 @@ mod tests {
             claude_session_id: None,
             pid: None,
             usage: None,
-            codex_thread_id: None,
-            codex_turn_id: None,
-            cursor_chat_id: None,
         });
 
         assert!(metadata.latest_claude_session_id().is_none());
@@ -1947,9 +1690,6 @@ mod tests {
             claude_session_id: Some("claude-sess-abc".to_string()),
             pid: None,
             usage: None,
-            codex_thread_id: None,
-            codex_turn_id: None,
-            cursor_chat_id: None,
         });
 
         assert_eq!(metadata.latest_claude_session_id(), Some("claude-sess-abc"));

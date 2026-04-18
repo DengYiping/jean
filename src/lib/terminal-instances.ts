@@ -36,41 +36,6 @@ interface PersistentTerminal {
 
 // Module-level Map - persists across React mount/unmount cycles
 const instances = new Map<string, PersistentTerminal>()
-const FALLBACK_TERMINAL_BACKGROUND = '#101010'
-const FALLBACK_TERMINAL_FOREGROUND = '#fafafa'
-const FALLBACK_TERMINAL_SELECTION = '#242424'
-
-function getRootColorVariable(name: string, fallback: string): string {
-  if (typeof window === 'undefined' || typeof document === 'undefined') {
-    return fallback
-  }
-
-  const value = getComputedStyle(document.documentElement)
-    .getPropertyValue(name)
-    .trim()
-
-  return value || fallback
-}
-
-function getTerminalTheme() {
-  const foreground = getRootColorVariable(
-    '--card-foreground',
-    FALLBACK_TERMINAL_FOREGROUND
-  )
-
-  return {
-    background: getRootColorVariable(
-      '--background',
-      FALLBACK_TERMINAL_BACKGROUND
-    ),
-    foreground,
-    cursor: foreground,
-    selectionBackground: getRootColorVariable(
-      '--muted',
-      FALLBACK_TERMINAL_SELECTION
-    ),
-  }
-}
 
 // TODO: Add memory cap for detached terminals (e.g., 20 max)
 // For now, typical usage won't hit memory limits
@@ -91,7 +56,6 @@ export function getOrCreateTerminal(
 ): PersistentTerminal {
   const existing = instances.get(terminalId)
   if (existing) {
-    existing.terminal.options.theme = getTerminalTheme()
     return existing
   }
 
@@ -109,7 +73,12 @@ export function getOrCreateTerminal(
     fontSize: 13,
     fontFamily:
       'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace',
-    theme: getTerminalTheme(),
+    theme: {
+      background: '#1a1a1a',
+      foreground: '#e5e5e5',
+      cursor: '#e5e5e5',
+      selectionBackground: '#404040',
+    },
     allowProposedApi: true,
   })
 
@@ -178,17 +147,12 @@ export function getOrCreateTerminal(
       const inst = instances.get(terminalId)
       inst?.onStopped?.(exitCode, signal)
 
-      // Auto-close terminal tab on clean exit:
-      // - code 0 — any terminal
-      // - SIGINT (Ctrl+C) or SIGTERM (graceful stop) — user or system stop
-      // SIGKILL, SIGSEGV, SIGABRT, etc. are NOT clean → mark as failed.
+      // Auto-close terminal tab on:
+      // 1. Successful exit (code 0) — any terminal
+      // 2. SIGINT (Ctrl+C) — only for "run" terminals (have a command)
+      const isInterrupt = signal != null && signal.includes('Interrupt')
       const isRunTerminal = inst?.command != null
-      const isIntentionalSignal =
-        signal != null &&
-        (signal.includes('Interrupt') || signal.includes('Terminated'))
-      const isCleanExit = exitCode === 0 || isIntentionalSignal
-
-      if (isCleanExit && inst) {
+      if (inst && (exitCode === 0 || (isInterrupt && isRunTerminal))) {
         const wId = inst.worktreeId
         setTimeout(() => {
           if (!instances.has(terminalId)) return // Already disposed
@@ -205,9 +169,6 @@ export function getOrCreateTerminal(
             useTerminalStore.getState().setModalTerminalOpen(wId, false)
           }
         }, 0)
-      } else if (isRunTerminal) {
-        // Non-zero exit on a run terminal → mark as failed (red indicator in sidebar)
-        useTerminalStore.getState().setTerminalFailed(terminalId, true)
       }
     }
   }).then(unlisten => listeners.push(unlisten))
@@ -270,8 +231,6 @@ export async function attachToContainer(
     initialized,
   } = instance
   const terminalElement = terminal.element
-
-  terminal.options.theme = getTerminalTheme()
 
   if (!terminalElement) {
     // First attach - call open() to create DOM element

@@ -9,8 +9,7 @@ import {
 } from '@/types/preferences'
 
 const notificationSoundAssetMap: Partial<Record<NotificationSound, string>> = {
-  workwork: '/sounds/work-work.mp3',
-  jobsdone: '/sounds/jobs-done.mp3',
+  choochoo: '/sounds/peon-work-work.mp3',
 }
 
 // Single audio instance to prevent overlapping sounds

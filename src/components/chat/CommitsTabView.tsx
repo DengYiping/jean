@@ -33,7 +33,6 @@ import {
   TooltipTrigger,
   TooltipContent,
 } from '@/components/ui/tooltip'
-import { getFileLineStats } from '@/lib/diff-stats'
 import { cn } from '@/lib/utils'
 import { getFilename } from '@/lib/path-utils'
 import { useTheme } from '@/hooks/use-theme'
@@ -228,10 +227,12 @@ export function CommitsTabView({
       return parsed.flatMap((patch, patchIndex) =>
         patch.files.map((fileDiff, fileIndex) => {
           const fileName = fileDiff.name || fileDiff.prevName || 'unknown'
-          const { additions, deletions } = getFileLineStats(
-            fileDiff,
-            commitDiff.files
-          )
+          let additions = 0
+          let deletions = 0
+          for (const hunk of fileDiff.hunks) {
+            additions += hunk.additionCount
+            deletions += hunk.deletionCount
+          }
           return {
             key: `${patchIndex}-${fileIndex}`,
             fileName,
@@ -525,7 +526,7 @@ export function CommitsTabView({
                           setSelectedFileIndex(0)
                         }}
                         placeholder="Filter files..."
-                        className="w-full bg-muted text-base outline-none border border-border pl-7 pr-2 py-2.5 placeholder:text-muted-foreground focus:border-ring md:text-sm"
+                        className="w-full bg-muted text-sm outline-none border border-border pl-7 pr-2 py-2.5 placeholder:text-muted-foreground focus:border-ring"
                       />
                     </div>
                   </div>

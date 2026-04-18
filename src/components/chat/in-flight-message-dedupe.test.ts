@@ -112,33 +112,13 @@ describe('dedupeInFlightAssistantMessage', () => {
     ).toEqual([messages[0]])
   })
 
-  it('keeps a persisted completed assistant when no live stream remains', () => {
+  it('hides a trailing assistant even before streaming starts (prevents flicker)', () => {
     const messages = [
       createMessage({ id: 'user-1', role: 'user', content: 'Prompt' }),
       createMessage({
         id: 'assistant-1',
         role: 'assistant',
         content: 'Completed response',
-      }),
-    ]
-
-    expect(
-      dedupeInFlightAssistantMessage(messages, {
-        isSending: true,
-        streamingContent: '',
-        streamingContentBlocks: [],
-        streamingToolCalls: [],
-      })
-    ).toEqual(messages)
-  })
-
-  it('still hides an empty trailing assistant when no live stream exists', () => {
-    const messages = [
-      createMessage({ id: 'user-1', role: 'user', content: 'Prompt' }),
-      createMessage({
-        id: 'assistant-1',
-        role: 'assistant',
-        content: '',
       }),
     ]
 

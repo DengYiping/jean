@@ -128,30 +128,7 @@ export function PlanDisplay({
       {isOpen && (
         <div className="border-t border-border/50 px-3 py-3">
           <div>
-            <Markdown
-              className={cn(
-                'text-sm leading-7',
-                '[&_p]:my-0',
-                '[&_p+ul]:mt-3',
-                '[&_p+ol]:mt-3',
-                '[&_ul]:my-3',
-                '[&_ul]:pl-5',
-                '[&_ol]:my-3',
-                '[&_ol]:pl-5',
-                '[&_li]:my-1.5',
-                '[&_ul.contains-task-list]:list-none',
-                '[&_ul.contains-task-list]:pl-0',
-                '[&_ul.contains-task-list>li]:list-none',
-                '[&_ul.contains-task-list>li]:marker:content-none',
-                '[&_ul.contains-task-list>li]:flex',
-                '[&_ul.contains-task-list>li]:items-start',
-                '[&_ul.contains-task-list>li]:gap-2.5',
-                '[&_ul.contains-task-list>li]:py-0.5',
-                '[&_ul.contains-task-list>li:has(button[data-state=checked])]:opacity-60'
-              )}
-            >
-              {content}
-            </Markdown>
+            <Markdown className="text-sm">{content}</Markdown>
           </div>
         </div>
       )}

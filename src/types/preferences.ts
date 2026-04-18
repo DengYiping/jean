@@ -182,10 +182,6 @@ export const DEFAULT_PR_CONTENT_PROMPT = `<task>Generate a pull request title an
 {context}
 </related_context>
 
-<related_pull_requests>
-{related_pull_requests}
-</related_pull_requests>
-
 <commits>
 {commits}
 </commits>
@@ -671,14 +667,14 @@ export const DEFAULT_MAGIC_PROMPT_MODELS: MagicPromptModels = {
   investigate_issue_model: 'opus',
   investigate_pr_model: 'opus',
   investigate_workflow_run_model: 'opus',
-  pr_content_model: 'sonnet',
-  commit_message_model: 'sonnet',
+  pr_content_model: 'haiku',
+  commit_message_model: 'haiku',
   code_review_model: 'opus',
   context_summary_model: 'opus',
   resolve_conflicts_model: 'opus',
-  release_notes_model: 'sonnet',
-  session_naming_model: 'sonnet',
-  session_recap_model: 'sonnet',
+  release_notes_model: 'haiku',
+  session_naming_model: 'haiku',
+  session_recap_model: 'haiku',
   investigate_security_alert_model: 'opus',
   investigate_advisory_model: 'opus',
   investigate_linear_issue_model: 'opus',
@@ -907,23 +903,6 @@ export function resolveMagicPromptProvider(
   return value !== undefined ? value : (globalDefaultProvider ?? null)
 }
 
-/**
- * Resolve a magic prompt backend for a given key.
- * Explicit per-prompt backend wins. When unset/null, fall back to the
- * project/global default backend supplied by the caller.
- */
-export function resolveMagicPromptBackend(
-  backends: MagicPromptBackends | undefined,
-  key: keyof MagicPromptBackends,
-  defaultBackend: CliBackend | string | null | undefined
-): CliBackend | null {
-  const merged = { ...DEFAULT_MAGIC_PROMPT_BACKENDS, ...backends }
-  const value = merged[key]
-  return (
-    value !== undefined && value !== null ? value : (defaultBackend ?? null)
-  ) as CliBackend | null
-}
-
 // Types that match the Rust AppPreferences struct
 // Only contains settings that should be persisted to disk
 // Note: Field names use snake_case to match Rust struct exactly
@@ -987,7 +966,7 @@ export interface AppPreferences {
 
   confirm_session_close: boolean // Show confirmation dialog before closing sessions/worktrees
   default_execution_mode: ExecutionMode // Default execution mode for new sessions: 'plan', 'build', or 'yolo'
-  default_backend: CliBackend // Default CLI backend for new sessions: 'claude', 'codex', 'opencode', or 'cursor'
+  default_backend: CliBackend // Default CLI backend for new sessions: 'claude', 'codex', or 'opencode'
   selected_codex_model: CodexModel // Default Codex model
   selected_opencode_model: string // Default OpenCode model (provider/model)
   claude_update_command: string | null // Optional Claude install/update command, e.g. "pnpm install -g @anthropic-ai/claude-code"
@@ -1101,9 +1080,7 @@ export const fileEditModeOptions: { value: FileEditMode; label: string }[] = [
 ]
 
 export type ClaudeModel =
-  | 'claude-opus-4-7'
   | 'opus'
-  | 'claude-opus-4-5-20251101'
   | 'claude-opus-4-6[1m]'
   | 'opus-fast'
   | 'claude-opus-4-6[1m]-fast'
@@ -1136,7 +1113,6 @@ export const effortLevelOptions: {
   { value: 'low', label: 'Low', description: 'Minimal thinking' },
   { value: 'medium', label: 'Medium', description: 'Moderate thinking' },
   { value: 'high', label: 'High', description: 'Deep reasoning' },
-  { value: 'xhigh', label: 'xHigh', description: 'Extra high (Opus 4.7)' },
   { value: 'max', label: 'Max', description: 'No limits' },
 ]
 
@@ -1203,21 +1179,11 @@ export type MagicPromptReasoningEffort =
 // =============================================================================
 
 export type OpenCodeModel = `opencode/${string}`
-export type CursorModel = `cursor/${string}`
-export type MagicPromptModel =
-  | ClaudeModel
-  | CodexModel
-  | OpenCodeModel
-  | CursorModel
+export type MagicPromptModel = ClaudeModel | CodexModel | OpenCodeModel
 
 /** Check if a model string identifies an OpenCode model */
 export function isOpenCodeModel(model: string): model is OpenCodeModel {
   return model.startsWith('opencode/')
-}
-
-/** Check if a model string identifies a Cursor model */
-export function isCursorModel(model: string): model is CursorModel {
-  return model.startsWith('cursor/')
 }
 
 /** Check if a model string identifies a Codex model */
@@ -1241,13 +1207,12 @@ export const codexReasoningOptions: {
 // CLI Backend
 // =============================================================================
 
-export type CliBackend = 'claude' | 'codex' | 'opencode' | 'cursor'
+export type CliBackend = 'claude' | 'codex' | 'opencode'
 
 export const backendOptions: { value: CliBackend; label: string }[] = [
   { value: 'claude', label: 'Claude' },
   { value: 'codex', label: 'Codex' },
   { value: 'opencode', label: 'OpenCode' },
-  { value: 'cursor', label: 'Cursor' },
 ]
 
 export function resolveMagicPromptBackend(
@@ -1602,7 +1567,7 @@ export function getEditorLabel(editor: EditorApp | undefined): string {
 
 export const defaultPreferences: AppPreferences = {
   theme: 'system',
-  selected_model: 'claude-opus-4-7',
+  selected_model: 'opus',
   thinking_level: 'ultrathink',
   default_effort_level: 'high',
   terminal: isWindows ? 'powershell' : 'terminal',
@@ -1644,7 +1609,7 @@ export const defaultPreferences: AppPreferences = {
   http_server_localhost_only: true, // Default to localhost-only for security
   http_server_token_required: true, // Default: require token for security
   removal_behavior: 'delete', // Default: delete (permanent)
-  auto_save_context: false, // Default: disabled
+  auto_save_context: true, // Default: enabled
   auto_pull_base_branch: true, // Default: enabled
   show_create_page_issue_sources: true, // Default: enabled
   auto_archive_on_pr_merged: true, // Default: enabled

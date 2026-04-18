@@ -1,6 +1,5 @@
 //! Configuration and path management for the system OpenCode CLI.
 
-use crate::platform::silent_command;
 use std::path::PathBuf;
 use tauri::AppHandle;
 

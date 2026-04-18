@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import type { Backend, ClaudeSkill, ClaudeCommand } from '@/types/chat'
 import { isTauri } from '@/services/projects'
 
+// Query keys for Claude CLI skills and commands
 export const skillQueryKeys = {
   all: ['claude-cli'] as const,
   skills: (backend: Backend, worktreePath?: string | null) =>
@@ -55,8 +56,8 @@ export function useSkills(backend: Backend, worktreePath?: string | null) {
         ? skills.filter(skill => skill.enabled !== false)
         : skills
     },
-    staleTime: 1000 * 60 * 5,
-    gcTime: 1000 * 60 * 10,
+    staleTime: 1000 * 60 * 5, // Cache for 5 minutes
+    gcTime: 1000 * 60 * 10, // Keep in memory for 10 minutes
   })
 }
 
@@ -125,9 +126,11 @@ export function useSetCodexSkillEnabled() {
  */
 export function useClaudeCommands(worktreePath?: string | null) {
   return useQuery({
-    queryKey: skillQueryKeys.claudeCommands(worktreePath),
+    queryKey: skillQueryKeys.commands(worktreePath),
     queryFn: async (): Promise<ClaudeCommand[]> => {
-      if (!isTauri()) return []
+      if (!isTauri()) {
+        return []
+      }
 
       try {
         logger.debug('Loading Claude CLI custom commands')
@@ -143,112 +146,7 @@ export function useClaudeCommands(worktreePath?: string | null) {
         return []
       }
     },
-    staleTime: 1000 * 60 * 5,
-    gcTime: 1000 * 60 * 10,
+    staleTime: 1000 * 60 * 5, // Cache for 5 minutes
+    gcTime: 1000 * 60 * 10, // Keep in memory for 10 minutes
   })
-}
-
-export function useCodexSkills() {
-  return useQuery({
-    queryKey: skillQueryKeys.codexSkills(),
-    queryFn: async (): Promise<ClaudeSkill[]> => {
-      if (!isTauri()) return []
-
-      try {
-        logger.debug('Loading Codex CLI skills')
-        const skills = await invoke<ClaudeSkill[]>('list_codex_skills', {})
-        logger.info('Codex CLI skills loaded', { count: skills.length })
-        return skills
-      } catch (error) {
-        logger.error('Failed to load Codex CLI skills', { error })
-        return []
-      }
-    },
-    staleTime: 1000 * 60 * 5,
-    gcTime: 1000 * 60 * 10,
-  })
-}
-
-export interface BackendSkillsGroup {
-  backend: CliBackend
-  label: string
-  skills: ClaudeSkill[]
-  commands: ClaudeCommand[]
-  /** Optional plugin name for plugin-sourced groups */
-  pluginName?: string
-}
-
-export function usePluginSkills() {
-  return useQuery({
-    queryKey: skillQueryKeys.pluginSkills(),
-    queryFn: async (): Promise<PluginSkillGroup[]> => {
-      if (!isTauri()) return []
-
-      try {
-        logger.debug('Loading plugin skills')
-        const groups = await invoke<PluginSkillGroup[]>(
-          'list_plugin_skills',
-          {}
-        )
-        logger.info('Plugin skills loaded', { groupCount: groups.length })
-        return groups
-      } catch (error) {
-        logger.error('Failed to load plugin skills', { error })
-        return []
-      }
-    },
-    staleTime: 1000 * 60 * 5,
-    gcTime: 1000 * 60 * 10,
-  })
-}
-
-export function useAllBackendSkills(
-  worktreePath?: string | null,
-  installedBackends?: CliBackend[]
-): BackendSkillsGroup[] {
-  const claudeSkills = useClaudeSkills(worktreePath)
-  const claudeCommands = useClaudeCommands(worktreePath)
-  const codexSkills = useCodexSkills()
-  const pluginSkillGroups = usePluginSkills()
-
-  return useMemo(() => {
-    const groups: BackendSkillsGroup[] = []
-    const installed = new Set(installedBackends ?? [])
-
-    if (installed.has('claude')) {
-      const skills = claudeSkills.data ?? []
-      const commands = claudeCommands.data ?? []
-      if (skills.length > 0 || commands.length > 0) {
-        groups.push({ backend: 'claude', label: 'Claude', skills, commands })
-      }
-
-      // Add plugin skill groups (only when claude backend is available)
-      for (const group of pluginSkillGroups.data ?? []) {
-        if (group.skills.length > 0) {
-          groups.push({
-            backend: 'claude',
-            label: group.pluginName,
-            skills: group.skills,
-            commands: [],
-            pluginName: group.pluginName,
-          })
-        }
-      }
-    }
-
-    if (installed.has('codex')) {
-      const skills = codexSkills.data ?? []
-      if (skills.length > 0) {
-        groups.push({ backend: 'codex', label: 'Codex', skills, commands: [] })
-      }
-    }
-
-    return groups
-  }, [
-    claudeSkills.data,
-    claudeCommands.data,
-    codexSkills.data,
-    pluginSkillGroups.data,
-    installedBackends,
-  ])
 }

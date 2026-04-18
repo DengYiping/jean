@@ -1,4 +1,5 @@
 import { useCallback, type RefObject } from 'react'
+import { invoke } from '@/lib/transport'
 import { generateId } from '@/lib/uuid'
 import { toast } from 'sonner'
 import { persistEnqueue } from '@/services/chat'
@@ -8,6 +9,7 @@ import { getFilename } from '@/lib/path-utils'
 import type {
   QueuedMessage,
   ClaudeCommand,
+  ResolvedCommand,
   ExecutionMode,
   ThinkingLevel,
   EffortLevel,
@@ -27,7 +29,7 @@ interface UsePendingAttachmentsParams {
   isCodexBackendRef: RefObject<boolean>
   mcpServersDataRef: RefObject<McpServerInfo[] | undefined>
   enabledMcpServersRef: RefObject<string[]>
-  selectedBackendRef: RefObject<'claude' | 'codex' | 'opencode' | 'cursor'>
+  selectedBackendRef: RefObject<'claude' | 'codex' | 'opencode'>
   setInputDraft: (sessionId: string, draft: string) => void
   sendMessageNow: (queuedMsg: QueuedMessage) => void
 }
@@ -107,28 +109,8 @@ export function usePendingAttachments({
     (command: ClaudeCommand) => {
       if (!activeSessionId || !activeWorktreeId || !activeWorktreePath) return
 
-      const queuedMessage: QueuedMessage = {
-        id: generateId(),
-        message: `Run the /${command.name} command from ${command.path}`,
-        pendingImages: [],
-        pendingFiles: [],
-        pendingSkills: [],
-        pendingTextFiles: [],
-        model: selectedModelRef.current,
-        provider: selectedProviderRef.current,
-        executionMode: executionModeRef.current,
-        thinkingLevel: selectedThinkingLevelRef.current,
-        effortLevel:
-          useAdaptiveThinkingRef.current || isCodexBackendRef.current
-            ? selectedEffortLevelRef.current
-            : undefined,
-        mcpConfig: buildMcpConfigJson(
-          mcpServersDataRef.current ?? [],
-          enabledMcpServersRef.current,
-          selectedBackendRef.current
-        ),
-        queuedAt: Date.now(),
-      }
+      void (async () => {
+        const toastId = toast.loading(`Resolving /${command.name}...`)
 
         try {
           const resolved = await invoke<ResolvedCommand>(
@@ -186,9 +168,7 @@ export function usePendingAttachments({
             { id: toastId }
           )
         }
-      } else {
-        sendMessageNow(queuedMessage)
-      }
+      })()
     },
     [activeSessionId, activeWorktreeId, activeWorktreePath, sendMessageNow]
   )

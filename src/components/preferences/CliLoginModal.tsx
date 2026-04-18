@@ -7,7 +7,6 @@
  */
 
 import { useCallback, useEffect, useRef, useMemo, useState } from 'react'
-import { toast } from 'sonner'
 import { invoke, listen } from '@/lib/transport'
 import { useQueryClient } from '@tanstack/react-query'
 import { logger } from '@/lib/logger'
@@ -15,7 +14,6 @@ import { claudeCliQueryKeys } from '@/services/claude-cli'
 import { ghCliQueryKeys } from '@/services/gh-cli'
 import { codexCliQueryKeys } from '@/services/codex-cli'
 import { opencodeCliQueryKeys } from '@/services/opencode-cli'
-import { cursorCliQueryKeys } from '@/services/cursor-cli'
 import { githubQueryKeys } from '@/services/github'
 import {
   Dialog,
@@ -28,7 +26,6 @@ import { useUIStore } from '@/store/ui-store'
 import { useShallow } from 'zustand/react/shallow'
 import { useTerminal } from '@/hooks/useTerminal'
 import { disposeTerminal, setOnStopped } from '@/lib/terminal-instances'
-import { BackendLabel } from '@/components/ui/backend-label'
 
 export function CliLoginModal() {
   const [retryKey, setRetryKey] = useState(0)
@@ -61,10 +58,10 @@ export function CliLoginModal() {
 }
 
 interface CliLoginModalContentProps {
-  cliType: 'claude' | 'gh' | 'codex' | 'opencode' | 'cursor' | null
+  cliType: 'claude' | 'gh' | 'codex' | 'opencode' | null
   command: string
   commandArgs: string[] | null
-  action: 'login' | 'update' | 'install'
+  action: 'login' | 'update'
   onClose: () => void
   onRetry: () => void
 }
@@ -92,18 +89,7 @@ function CliLoginModalContent({
         ? 'Codex CLI'
         : cliType === 'opencode'
           ? 'OpenCode CLI'
-          : cliType === 'cursor'
-            ? 'Cursor CLI'
-            : 'GitHub CLI'
-  const cliTitle =
-    cliType === 'cursor' ? (
-      <span className="inline-flex items-center gap-2">
-        <BackendLabel backend="cursor" />
-        <span>CLI</span>
-      </span>
-    ) : (
-      cliName
-    )
+          : 'GitHub CLI'
 
   // Generate unique terminal ID for this login session
   const terminalId = useMemo(() => {
@@ -222,12 +208,7 @@ function CliLoginModalContent({
           queryClient.invalidateQueries({ queryKey: codexCliQueryKeys.all })
         } else if (cliType === 'opencode') {
           queryClient.invalidateQueries({ queryKey: opencodeCliQueryKeys.all })
-        } else if (cliType === 'cursor') {
-          queryClient.invalidateQueries({ queryKey: cursorCliQueryKeys.all })
         }
-
-        // Dismiss any lingering update toast for this CLI type
-        toast.dismiss(`cli-update-${cliType}`)
 
         onClose()
       }

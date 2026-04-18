@@ -133,7 +133,7 @@ export function JeanJsonPane({
               placeholder="e.g. npm install"
               value={localSetup}
               onChange={e => setLocalSetup(e.target.value)}
-              className="font-mono text-base md:text-sm"
+              className="font-mono text-sm"
             />
             <p className="text-xs text-muted-foreground">
               Runs automatically after a new worktree is created
@@ -151,7 +151,7 @@ export function JeanJsonPane({
                     next[i] = e.target.value
                     setLocalRun(next)
                   }}
-                  className="font-mono text-base md:text-sm"
+                  className="font-mono text-sm"
                 />
                 {localRun.length > 1 && (
                   <Button
@@ -193,7 +193,7 @@ export function JeanJsonPane({
                     next[i] = { ...entry, port: e.target.value }
                     setLocalPorts(next)
                   }}
-                  className="font-mono text-base md:text-sm w-24"
+                  className="font-mono text-sm w-24"
                 />
                 <Input
                   placeholder="Label"
@@ -203,7 +203,7 @@ export function JeanJsonPane({
                     next[i] = { ...entry, label: e.target.value }
                     setLocalPorts(next)
                   }}
-                  className="text-base md:text-sm"
+                  className="text-sm"
                 />
                 <Button
                   variant="ghost"
@@ -241,7 +241,7 @@ export function JeanJsonPane({
               placeholder="e.g. docker compose down"
               value={localTeardown}
               onChange={e => setLocalTeardown(e.target.value)}
-              className="font-mono text-base md:text-sm"
+              className="font-mono text-sm"
             />
             <p className="text-xs text-muted-foreground">
               Runs automatically before a worktree is deleted/archived

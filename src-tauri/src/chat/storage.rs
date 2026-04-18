@@ -663,7 +663,6 @@ pub fn load_sessions(
                 claude_session_id: None,
                 codex_thread_id: None,
                 opencode_session_id: None,
-                cursor_chat_id: None,
                 selected_model: None,
                 selected_thinking_level: None,
                 selected_effort_level: None,
@@ -682,11 +681,6 @@ pub fn load_sessions(
                 fixed_findings: vec![],
                 review_results: None,
                 pending_permission_denials: vec![],
-                pending_codex_permission_requests: vec![],
-                pending_codex_command_approval_requests: vec![],
-                pending_codex_user_input_requests: vec![],
-                pending_codex_mcp_elicitation_requests: vec![],
-                pending_codex_dynamic_tool_call_requests: vec![],
                 denied_message_context: None,
                 is_reviewing: false,
                 waiting_for_input: false,
@@ -699,11 +693,8 @@ pub fn load_sessions(
                 digest: None,
                 last_run_status: None,
                 last_run_execution_mode: None,
-                last_run_started_at: None,
                 label: None,
                 queued_messages: vec![],
-                total_runs: 0,
-                loaded_run_start_index: 0,
             }
         };
         sessions.push(session);
@@ -761,7 +752,6 @@ where
                 claude_session_id: None,
                 codex_thread_id: None,
                 opencode_session_id: None,
-                cursor_chat_id: None,
                 selected_model: None,
                 selected_thinking_level: None,
                 selected_effort_level: None,
@@ -780,11 +770,6 @@ where
                 fixed_findings: vec![],
                 review_results: None,
                 pending_permission_denials: vec![],
-                pending_codex_permission_requests: vec![],
-                pending_codex_command_approval_requests: vec![],
-                pending_codex_user_input_requests: vec![],
-                pending_codex_mcp_elicitation_requests: vec![],
-                pending_codex_dynamic_tool_call_requests: vec![],
                 denied_message_context: None,
                 is_reviewing: false,
                 waiting_for_input: false,
@@ -797,11 +782,8 @@ where
                 digest: None,
                 last_run_status: None,
                 last_run_execution_mode: None,
-                last_run_started_at: None,
                 label: None,
                 queued_messages: vec![],
-                total_runs: 0,
-                loaded_run_start_index: 0,
             }
         };
         hydrated_sessions.push(session);

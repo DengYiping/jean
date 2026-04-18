@@ -147,7 +147,7 @@ function JeanConfigWizardContent() {
               placeholder="e.g. npm install"
               value={setupScript}
               onChange={e => setSetupScript(e.target.value)}
-              className="font-mono text-base md:text-sm"
+              className="font-mono text-sm"
               autoFocus
             />
             <p className="text-xs text-muted-foreground">
@@ -165,7 +165,7 @@ function JeanConfigWizardContent() {
               placeholder="e.g. docker compose down"
               value={teardownScript}
               onChange={e => setTeardownScript(e.target.value)}
-              className="font-mono text-base md:text-sm"
+              className="font-mono text-sm"
             />
             <p className="text-xs text-muted-foreground">
               Runs before each worktree is deleted

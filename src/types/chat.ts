@@ -24,12 +24,12 @@ export type ThinkingLevel = 'off' | 'think' | 'megathink' | 'ultrathink'
  * - high: Deep reasoning (default), almost always thinks
  * - max: No constraints on thinking depth
  */
-export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+export type EffortLevel = 'low' | 'medium' | 'high' | 'max'
 
 /**
- * Backend for a chat session (Claude CLI, Codex CLI, OpenCode, or Cursor)
+ * Backend for a chat session (Claude CLI, Codex CLI, or OpenCode)
  */
-export type Backend = 'claude' | 'codex' | 'opencode' | 'cursor'
+export type Backend = 'claude' | 'codex' | 'opencode'
 
 /**
  * Execution mode for Claude CLI permission handling
@@ -41,28 +41,6 @@ export type ExecutionMode = 'plan' | 'build' | 'yolo'
 
 /** Cycle order for execution modes (used by Shift+Tab cycling) */
 export const EXECUTION_MODE_CYCLE: ExecutionMode[] = ['plan', 'build', 'yolo']
-
-export function getSupportedExecutionModes(
-  backend: Backend | undefined
-): ExecutionMode[] {
-  if (backend === 'cursor') return ['plan', 'yolo']
-  return EXECUTION_MODE_CYCLE
-}
-
-export function isExecutionModeSupported(
-  backend: Backend | undefined,
-  mode: ExecutionMode
-): boolean {
-  return getSupportedExecutionModes(backend).includes(mode)
-}
-
-export function normalizeExecutionModeForBackend(
-  backend: Backend | undefined,
-  mode: ExecutionMode
-): ExecutionMode {
-  if (isExecutionModeSupported(backend, mode)) return mode
-  return backend === 'cursor' ? 'yolo' : 'plan'
-}
 
 /**
  * A tool call made by Claude during a response
@@ -78,19 +56,6 @@ export interface ToolCall {
   output?: string
   /** Parent tool use ID for sub-agent tool calls (for parallel task attribution) */
   parent_tool_use_id?: string
-}
-
-export interface PlanStep {
-  step: string
-  status: 'pending' | 'in_progress' | 'completed'
-}
-
-export interface PlanToolInput {
-  plan?: string
-  plan_preview?: string
-  explanation?: string
-  steps?: PlanStep[]
-  source?: 'claude' | 'codex'
 }
 
 /**
@@ -171,7 +136,7 @@ export interface Session {
   messages: ChatMessage[]
   /** Message count (populated separately for efficiency when full messages not needed) */
   message_count?: number
-  /** Backend for this session (claude, codex, opencode, or cursor) */
+  /** Backend for this session (claude, codex, or opencode) */
   backend?: Backend
   /** Claude CLI session ID for resuming conversations */
   claude_session_id?: string
@@ -179,8 +144,6 @@ export interface Session {
   codex_thread_id?: string
   /** OpenCode session ID for resuming conversations */
   opencode_session_id?: string
-  /** Cursor chat ID for resuming conversations */
-  cursor_chat_id?: string
   /** Selected model for this session */
   selected_model?: string
   /** Selected thinking level for this session */
@@ -210,16 +173,6 @@ export interface Session {
   fixed_findings?: string[]
   /** Pending permission denials awaiting user approval */
   pending_permission_denials?: PermissionDenial[]
-  /** Pending Codex permission grant requests awaiting user approval */
-  pending_codex_permission_requests?: CodexPermissionRequest[]
-  /** Pending Codex command execution approvals awaiting user response */
-  pending_codex_command_approval_requests?: CodexCommandApprovalRequest[]
-  /** Pending Codex request-user-input prompts awaiting user approval */
-  pending_codex_user_input_requests?: CodexUserInputRequest[]
-  /** Pending Codex MCP elicitation requests awaiting user approval */
-  pending_codex_mcp_elicitation_requests?: CodexMcpElicitationRequest[]
-  /** Pending Codex dynamic tool call requests awaiting user approval */
-  pending_codex_dynamic_tool_call_requests?: CodexDynamicToolCallRequest[]
   /** Original message context for re-send after permission approval */
   denied_message_context?: DeniedMessageContext
   /** AI code review results for this session */
@@ -256,26 +209,10 @@ export interface Session {
   last_run_status?: RunStatus
   /** Execution mode of the last run (plan/build/yolo) */
   last_run_execution_mode?: ExecutionMode
-  /** Unix timestamp when the last run started */
-  last_run_started_at?: number
   /** User-assigned label with color (e.g. "Needs testing") */
   label?: LabelData
   /** Messages queued for sending (synced between native + web clients) */
   queued_messages?: QueuedMessage[]
-  /** Total number of runs in this session's metadata (for "more on disk" check) */
-  total_runs?: number
-  /** Index (in metadata.runs) of the first run included in `messages`. 0 = oldest loaded. */
-  loaded_run_start_index?: number
-}
-
-/**
- * Result of loading a window of session messages from disk.
- * Returned by `load_older_session_messages`.
- */
-export interface LoadedMessages {
-  messages: ChatMessage[]
-  total_runs: number
-  loaded_run_start_index: number
 }
 
 /**
@@ -485,134 +422,6 @@ export interface PermissionDeniedEvent {
   denials: PermissionDenial[]
 }
 
-export interface CodexRequestedFileSystemPermissions {
-  read?: string[] | null
-  write?: string[] | null
-}
-
-export interface CodexRequestedNetworkPermissions {
-  enabled?: boolean | null
-}
-
-export interface CodexPermissionRequest {
-  rpc_id: number
-  item_id: string
-  permissions: {
-    fileSystem?: CodexRequestedFileSystemPermissions | null
-    network?: CodexRequestedNetworkPermissions | null
-  }
-  reason?: string | null
-}
-
-export interface CodexPermissionRequestEvent {
-  session_id: string
-  worktree_id: string
-  request: CodexPermissionRequest
-}
-
-export interface CodexCommandAction {
-  command: string
-  type: 'read' | 'listFiles' | 'search' | 'unknown'
-  name?: string
-  path?: string | null
-  query?: string | null
-}
-
-export interface CodexNetworkApprovalContext {
-  host: string
-  protocol: 'http' | 'https' | 'socks5Tcp' | 'socks5Udp'
-}
-
-export interface CodexNetworkPolicyAmendment {
-  action: 'allow' | 'deny'
-  host: string
-}
-
-export interface CodexCommandApprovalRequest {
-  rpc_id: number
-  item_id: string
-  thread_id: string
-  turn_id: string
-  approval_id?: string | null
-  command?: string | null
-  command_actions?: CodexCommandAction[] | null
-  cwd?: string | null
-  reason?: string | null
-  network_approval_context?: CodexNetworkApprovalContext | null
-  proposed_execpolicy_amendment?: string[] | null
-  proposed_network_policy_amendments?: CodexNetworkPolicyAmendment[] | null
-}
-
-export interface CodexCommandApprovalRequestEvent {
-  session_id: string
-  worktree_id: string
-  request: CodexCommandApprovalRequest
-}
-
-export interface CodexUserInputOption {
-  label: string
-  description?: string
-}
-
-export interface CodexUserInputQuestion {
-  header: string
-  id: string
-  question: string
-  options?: CodexUserInputOption[] | null
-  isOther?: boolean
-  isSecret?: boolean
-}
-
-export interface CodexUserInputRequest {
-  rpc_id: number
-  item_id: string
-  questions: CodexUserInputQuestion[]
-  thread_id?: string
-  turn_id?: string
-}
-
-export interface CodexUserInputRequestEvent {
-  session_id: string
-  worktree_id: string
-  request: CodexUserInputRequest
-}
-
-export interface CodexMcpElicitationRequest {
-  rpc_id: number
-  server_name: string
-  message: string
-  mode: 'form' | 'url'
-  requested_schema?: unknown
-  url?: string
-  elicitation_id?: string | null
-  meta?: unknown
-}
-
-export interface CodexMcpElicitationRequestEvent {
-  session_id: string
-  worktree_id: string
-  request: CodexMcpElicitationRequest
-}
-
-export interface CodexDynamicToolCallRequest {
-  rpc_id: number
-  call_id: string
-  tool: string
-  arguments: unknown
-}
-
-export interface CodexDynamicToolCallRequestEvent {
-  session_id: string
-  worktree_id: string
-  request: CodexDynamicToolCallRequest
-}
-
-export interface CodexDynamicToolCallOutputContentItem {
-  type: 'inputText' | 'inputImage'
-  text?: string
-  imageUrl?: string
-}
-
 // ============================================================================
 // Thread Token Usage Types (Codex app-server v2 protocol)
 // ============================================================================
@@ -669,42 +478,6 @@ export interface Question {
   isOther?: boolean
   isSecret?: boolean
   options: QuestionOption[]
-  isOther?: boolean
-  isSecret?: boolean
-}
-
-export function normalizeCodexQuestions(questions: unknown): Question[] {
-  if (!Array.isArray(questions)) return []
-
-  return questions.map(question => {
-    const record =
-      typeof question === 'object' && question !== null
-        ? (question as Record<string, unknown>)
-        : {}
-    const rawOptions = Array.isArray(record.options) ? record.options : []
-
-    return {
-      header: String(record.header ?? ''),
-      question: String(record.question ?? ''),
-      multiSelect: false,
-      isOther: record.isOther === true,
-      isSecret: record.isSecret === true,
-      options: rawOptions.map(option => {
-        const optionRecord =
-          typeof option === 'object' && option !== null
-            ? (option as Record<string, unknown>)
-            : {}
-
-        return {
-          label: String(optionRecord.label ?? ''),
-          description:
-            typeof optionRecord.description === 'string'
-              ? optionRecord.description
-              : undefined,
-        }
-      }),
-    }
-  })
 }
 
 /**
@@ -716,14 +489,13 @@ export interface AskUserQuestionInput {
 }
 
 /**
- * Type guard to check if a tool call is AskUserQuestion (Claude) or question (OpenCode).
- * Both tools have the same input structure: { questions: Question[] }
+ * Type guard to check if a tool call is AskUserQuestion
  */
 export function isAskUserQuestion(
   toolCall: ToolCall
 ): toolCall is ToolCall & { input: AskUserQuestionInput } {
   return (
-    (toolCall.name === 'AskUserQuestion' || toolCall.name === 'question') &&
+    toolCall.name === 'AskUserQuestion' &&
     typeof toolCall.input === 'object' &&
     toolCall.input !== null &&
     'questions' in toolCall.input &&
@@ -732,66 +504,10 @@ export function isAskUserQuestion(
 }
 
 /**
- * True only when persisted question tool output represents a real answer.
- * Blocking-tool errors can also produce output and must not collapse the UI.
- */
-export function hasQuestionAnswerOutput(
-  output: string | null | undefined
-): boolean {
-  if (!output) return false
-
-  const trimmed = output.trim()
-  if (!trimmed) return false
-
-  if (trimmed === 'Answer questions?' || trimmed.startsWith('Error:')) {
-    return false
-  }
-
-  try {
-    const parsed = JSON.parse(trimmed)
-    if (
-      Array.isArray(parsed) &&
-      parsed.every(
-        answer =>
-          typeof answer === 'object' &&
-          answer !== null &&
-          'questionIndex' in answer &&
-          'selectedOptions' in answer
-      )
-    ) {
-      return true
-    }
-  } catch {
-    // Non-JSON outputs can still be valid answer payloads for other backends.
-  }
-
-  return true
-}
-
-/**
  * Type guard to check if a tool call is ExitPlanMode
  */
 export function isExitPlanMode(toolCall: ToolCall): boolean {
   return toolCall.name === 'ExitPlanMode'
-}
-
-/**
- * Type guard for native Codex planning surfaced through the tool-call model.
- */
-export function isCodexPlanTool(
-  toolCall: ToolCall
-): toolCall is ToolCall & { input: PlanToolInput } {
-  return toolCall.name === 'CodexPlan'
-}
-
-/**
- * Type guard for any plan-approval tool representation.
- * Includes legacy Claude ExitPlanMode and native Codex plans.
- */
-export function isPlanToolCall(
-  toolCall: ToolCall
-): toolCall is ToolCall & { input: PlanToolInput } {
-  return isExitPlanMode(toolCall) || isCodexPlanTool(toolCall)
 }
 
 // ============================================================================
@@ -1083,17 +799,6 @@ export interface ClaudeCommand {
   path: string
   /** Optional description from file header */
   description?: string
-}
-
-/**
- * A group of skills from an installed Claude plugin
- * Returned by the list_plugin_skills Tauri command
- */
-export interface PluginSkillGroup {
-  /** Plugin display name (e.g., "Superpowers", "Frontend Design") */
-  pluginName: string
-  /** Skills found in this plugin's skills/ directory */
-  skills: ClaudeSkill[]
 }
 
 /**

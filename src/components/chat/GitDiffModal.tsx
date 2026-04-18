@@ -52,7 +52,6 @@ import {
 import { cn } from '@/lib/utils'
 import { generateId } from '@/lib/uuid'
 import { getFilename } from '@/lib/path-utils'
-import { getFileLineStats } from '@/lib/diff-stats'
 import {
   Tooltip,
   TooltipTrigger,
@@ -197,7 +196,7 @@ const CommentInputBar = memo(function CommentInputBar({
         onChange={e => setInputValue(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="What should I do with this code?"
-        className="flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground md:text-sm"
+        className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
       />
       <button
         type="button"
@@ -607,7 +606,13 @@ export function GitDiffModal({
   const flattenedFiles = useMemo(() => {
     const fromPatch = parsedFiles.flatMap((patch, patchIndex) =>
       patch.files.map((fileDiff, fileIndex) => {
-        const { additions, deletions } = getFileLineStats(fileDiff, diff?.files)
+        // Pre-compute stats from hunks
+        let additions = 0
+        let deletions = 0
+        for (const hunk of fileDiff.hunks) {
+          additions += hunk.additionCount
+          deletions += hunk.deletionCount
+        }
         return {
           fileDiff,
           fileName: fileDiff.name || fileDiff.prevName || 'unknown',
@@ -624,7 +629,6 @@ export function GitDiffModal({
       const statusToType: Record<string, string> = {
         deleted: 'deleted',
         added: 'new',
-        untracked: 'new',
         renamed: 'rename-changed',
         modified: 'change',
       }
@@ -1422,7 +1426,7 @@ export function GitDiffModal({
                                   setSelectedFileIndex(0)
                                 }}
                                 placeholder="Filter files..."
-                                className="w-full bg-muted text-base outline-none border border-border pl-7 pr-2 py-2.5 placeholder:text-muted-foreground focus:border-ring md:text-sm"
+                                className="w-full bg-muted text-sm outline-none border border-border pl-7 pr-2 py-2.5 placeholder:text-muted-foreground focus:border-ring"
                               />
                             </div>
                           </div>
@@ -1573,7 +1577,7 @@ export function GitDiffModal({
                                     setSelectedFileIndex(0)
                                   }}
                                   placeholder="Filter files..."
-                                  className="w-full bg-muted text-base outline-none border border-border pl-7 pr-2 py-2.5 placeholder:text-muted-foreground focus:border-ring md:text-sm"
+                                  className="w-full bg-muted text-sm outline-none border border-border pl-7 pr-2 py-2.5 placeholder:text-muted-foreground focus:border-ring"
                                 />
                               </div>
                             </div>

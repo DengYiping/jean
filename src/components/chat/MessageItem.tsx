@@ -13,14 +13,7 @@ import type {
 import { isAskUserQuestion } from '@/types/chat'
 import { AskUserQuestion } from './AskUserQuestion'
 import { ToolCallInline, TaskCallInline, StackedGroup } from './ToolCallInline'
-import {
-  buildTimeline,
-  findPlanFilePath,
-  getPlanTextBlockIndicesToHide,
-  isDuplicatePlanTextBlock,
-  resolvePlanContent,
-  splitTextAroundPlan,
-} from './tool-call-utils'
+import { buildTimeline, findPlanFilePath } from './tool-call-utils'
 import { PlanDisplay } from './PlanFileDisplay'
 import { ImageLightbox } from './ImageLightbox'
 import { TextFileLightbox } from './TextFileLightbox'
@@ -53,13 +46,6 @@ import {
   extractSkillPaths,
   stripAllMarkers,
 } from './message-content-utils'
-import { hasQuestionAnswerOutput } from '@/types/chat'
-import {
-  EFFORT_LEVEL_OPTIONS,
-  MODEL_OPTIONS,
-  THINKING_LEVEL_OPTIONS,
-} from '@/components/chat/toolbar/toolbar-options'
-import { formatOpencodeModelLabel } from '@/components/chat/toolbar/toolbar-utils'
 
 interface MessageItemProps {
   /** The message to render */
@@ -208,6 +194,7 @@ export const MessageItem = memo(function MessageItem({
     message.role === 'user' ? extractSkillPaths(message.content) : []
   const displayContent =
     message.role === 'user' ? stripAllMarkers(message.content) : message.content
+
   // Show content if it's not empty
   const showContent = displayContent.trim()
 
@@ -263,25 +250,6 @@ export const MessageItem = memo(function MessageItem({
   }, [onCopyToInput, message])
 
   // Content for the message box (shared between user and assistant)
-  const resolvedPlan = resolvePlanContent({
-    toolCalls: message.tool_calls ?? [],
-    messageContent: message.content,
-    contentBlocks: message.content_blocks,
-  })
-  const hiddenPlanTextBlockIndices = getPlanTextBlockIndicesToHide(
-    message.content_blocks,
-    resolvedPlan.content
-  )
-  const fallbackTextSplit =
-    message.role === 'assistant'
-      ? splitTextAroundPlan(displayContent)
-      : { beforePlan: null, plan: null }
-  const fallbackPrePlanText =
-    message.role === 'assistant' &&
-    isDuplicatePlanTextBlock(displayContent, resolvedPlan.content)
-      ? fallbackTextSplit.beforePlan
-      : null
-
   const messageBoxContent = (
     <>
       {/* Show attached images for user messages */}
@@ -474,115 +442,15 @@ export const MessageItem = memo(function MessageItem({
                                 input.questions
                               )
                             }
-                            return (
-                              <Markdown streaming={message.cancelled}>
-                                {item.text}
-                              </Markdown>
-                            )
-                          }
-                          case 'task':
-                            return (
-                              <TaskCallInline
-                                taskToolCall={item.taskTool}
-                                subToolCalls={item.subTools}
-                                allToolCalls={message.tool_calls ?? []}
-                                onFileClick={onFileClick}
-                                isStreaming={false}
-                              />
-                            )
-                          case 'standalone':
-                            return (
-                              <ToolCallInline
-                                toolCall={item.tool}
-                                onFileClick={onFileClick}
-                                isStreaming={false}
-                              />
-                            )
-                          case 'stackedGroup':
-                            return (
-                              <StackedGroup
-                                items={item.items}
-                                onFileClick={onFileClick}
-                                isStreaming={false}
-                              />
-                            )
-                          case 'askUserQuestion': {
-                            // Question is answered if: (1) follow-up user message exists (Claude),
-                            // (2) ephemeral Zustand state says so, or (3) tool has output (OpenCode —
-                            // the tool_result is persisted in the message, surviving reloads)
-                            const isAnswered =
-                              hasFollowUpMessage ||
-                              isQuestionAnswered(
-                                message.session_id,
-                                item.tool.id
-                              ) ||
-                              hasQuestionAnswerOutput(item.tool.output)
-                            const rawInput = item.tool.input as {
-                              questions: (Question & { multiple?: boolean })[]
-                            }
-                            const normalizedQuestions = rawInput.questions.map(
-                              q => ({
-                                ...q,
-                                multiSelect:
-                                  q.multiSelect ?? q.multiple === true,
-                              })
-                            )
-                            return (
-                              <AskUserQuestion
-                                toolCallId={item.tool.id}
-                                questions={normalizedQuestions}
-                                introText={item.introText}
-                                hasFollowUpMessage={
-                                  hasFollowUpMessage ||
-                                  hasQuestionAnswerOutput(item.tool.output)
-                                }
-                                isSkipped={areQuestionsSkipped(
-                                  message.session_id
-                                )}
-                                onSubmit={(toolCallId, answers) =>
-                                  onQuestionAnswer(
-                                    toolCallId,
-                                    answers,
-                                    normalizedQuestions
+                            onSkip={onQuestionSkip}
+                            readOnly={isAnswered}
+                            submittedAnswers={
+                              isAnswered
+                                ? getSubmittedAnswers(
+                                    message.session_id,
+                                    item.tool.id
                                   )
-                                }
-                                onSkip={onQuestionSkip}
-                                readOnly={isAnswered}
-                                submittedAnswers={
-                                  isAnswered
-                                    ? getSubmittedAnswers(
-                                        message.session_id,
-                                        item.tool.id
-                                      )
-                                    : undefined
-                                }
-                                toolOutput={item.tool.output ?? undefined}
-                              />
-                            )
-                          }
-                          case 'enterPlanMode':
-                            return (
-                              <ToolCallInline
-                                toolCall={item.tool}
-                                onFileClick={onFileClick}
-                                isStreaming={false}
-                              />
-                            )
-                          case 'exitPlanMode': {
-                            const inlinePlan = resolvePlanContent({
-                              toolCalls: [item.tool],
-                              messageContent: message.content,
-                              contentBlocks: message.content_blocks,
-                            }).content
-                            if (inlinePlan) {
-                              return (
-                                <PlanDisplay
-                                  content={inlinePlan}
-                                  defaultCollapsed={
-                                    message.plan_approved || hasFollowUpMessage
-                                  }
-                                />
-                              )
+                                : undefined
                             }
                           />
                         )
@@ -624,10 +492,19 @@ export const MessageItem = memo(function MessageItem({
                           />
                         )
                       }
-                    />
-                  )}
-                </>
-              )
+                      case 'unknown':
+                        return (
+                          <div className="text-xs text-muted-foreground border rounded px-2 py-1">
+                            Unsupported content type: &quot;{item.rawType}&quot;
+                            — if you see this, please report it as a bug
+                          </div>
+                        )
+                      default:
+                        return null
+                    }
+                  })()}
+                </ErrorBoundary>
+              ))
             })()}
           </div>
           {/* Show ExitPlanMode button after all content blocks */}
@@ -644,7 +521,6 @@ export const MessageItem = memo(function MessageItem({
             onClearContextBuildApproval={handleClearContextApprovalBuild}
             onWorktreeBuildApproval={handleWorktreeBuildApproval}
             onWorktreeYoloApproval={handleWorktreeYoloApproval}
-            sessionId={sessionId}
             buttonRef={isLatestPlanRequest ? approveButtonRef : undefined}
             shortcut={approveShortcut}
             shortcutYolo={approveShortcutYolo}
@@ -655,11 +531,6 @@ export const MessageItem = memo(function MessageItem({
         </>
       ) : (
         <>
-          {message.role === 'assistant' && fallbackPrePlanText && (
-            <Markdown streaming={message.cancelled}>
-              {fallbackPrePlanText}
-            </Markdown>
-          )}
           {/* Fallback: Show tool calls first for assistant messages (old format) */}
           {message.role === 'assistant' &&
             (message.tool_calls?.length ?? 0) > 0 &&
@@ -673,15 +544,6 @@ export const MessageItem = memo(function MessageItem({
                 isQuestionAnswered={isQuestionAnswered}
                 getSubmittedAnswers={getSubmittedAnswers}
                 areQuestionsSkipped={areQuestionsSkipped}
-              />
-            )}
-          {message.role === 'assistant' &&
-            resolvedPlan.content &&
-            (message.tool_calls?.length ?? 0) > 0 &&
-            !skipToolCalls && (
-              <PlanDisplay
-                content={resolvedPlan.content}
-                defaultCollapsed={message.plan_approved || hasFollowUpMessage}
               />
             )}
           {/* Show content after tool calls */}
@@ -730,7 +592,6 @@ export const MessageItem = memo(function MessageItem({
                 onClearContextBuildApproval={handleClearContextApprovalBuild}
                 onWorktreeBuildApproval={handleWorktreeBuildApproval}
                 onWorktreeYoloApproval={handleWorktreeYoloApproval}
-                sessionId={sessionId}
                 buttonRef={isLatestPlanRequest ? approveButtonRef : undefined}
                 shortcut={approveShortcut}
                 shortcutYolo={approveShortcutYolo}
@@ -796,37 +657,6 @@ export const MessageItem = memo(function MessageItem({
           )}
           <div className="text-foreground border border-border rounded-lg px-3 py-2 bg-muted/20 min-w-0 break-words">
             {messageBoxContent}
-            {message.model && (
-              <div className="mt-1 flex items-center gap-1.5 text-[10px] text-muted-foreground/50">
-                {MODEL_OPTIONS.find(o => o.value === message.model)?.label ??
-                  (message.model?.includes('/') ? formatOpencodeModelLabel(message.model) : message.model)}
-                {message.execution_mode &&
-                  message.execution_mode !== 'plan' && (
-                    <span className="capitalize">
-                      · {message.execution_mode}
-                    </span>
-                  )}
-                {!message.model?.startsWith('cursor/') && message.effort_level && (
-                  <span>
-                    ·{' '}
-                    {EFFORT_LEVEL_OPTIONS.find(
-                      o => o.value === message.effort_level
-                    )?.label ?? message.effort_level}
-                  </span>
-                )}
-                {!message.model?.startsWith('cursor/') &&
-                  !message.effort_level &&
-                  message.thinking_level &&
-                  message.thinking_level !== 'off' && (
-                    <span>
-                      ·{' '}
-                      {THINKING_LEVEL_OPTIONS.find(
-                        o => o.value === message.thinking_level
-                      )?.label ?? message.thinking_level}
-                    </span>
-                  )}
-              </div>
-            )}
           </div>
         </div>
       ) : (

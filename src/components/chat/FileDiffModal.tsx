@@ -14,7 +14,6 @@ import { getGitDiff } from '@/services/git-status'
 import { useTheme } from '@/hooks/use-theme'
 import { usePreferences } from '@/services/preferences'
 import type { GitDiff } from '@/types/git-diff'
-import { getFileLineStats } from '@/lib/diff-stats'
 import { getFilename } from '@/lib/path-utils'
 import {
   Tooltip,
@@ -146,7 +145,13 @@ export function FileDiffModal({
   // Calculate stats from hunks
   const stats = useMemo(() => {
     if (!matchingFile) return { additions: 0, deletions: 0 }
-    return getFileLineStats(matchingFile.fileDiff)
+    let additions = 0
+    let deletions = 0
+    for (const hunk of matchingFile.fileDiff.hunks) {
+      additions += hunk.additionCount
+      deletions += hunk.deletionCount
+    }
+    return { additions, deletions }
   }, [matchingFile])
 
   // Memoize FileDiff options

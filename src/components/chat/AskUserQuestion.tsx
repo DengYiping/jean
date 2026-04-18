@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
@@ -11,7 +11,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
-import { ChevronRight, CheckCircle2, Circle } from 'lucide-react'
+import { ChevronRight, CheckCircle2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatShortcutDisplay, DEFAULT_KEYBINDINGS } from '@/types/keybindings'
 import type { Question, QuestionAnswer } from '@/types/chat'
@@ -35,8 +35,6 @@ interface AskUserQuestionProps {
   hasFollowUpMessage?: boolean
   /** Whether the question was explicitly skipped (not answered) */
   isSkipped?: boolean
-  /** Persisted tool output (fallback when Zustand state is lost after reload) */
-  toolOutput?: string
 }
 
 /**
@@ -53,7 +51,6 @@ export function AskUserQuestion({
   introText,
   hasFollowUpMessage = false,
   isSkipped = false,
-  toolOutput,
 }: AskUserQuestionProps) {
   // Local state for answers
   // Structure: answers[questionIndex] = { selectedOptions: [0, 2], customText: 'foo' }
@@ -67,46 +64,8 @@ export function AskUserQuestion({
     QuestionAnswer[] | null
   >(null)
 
-  // Reconstruct QuestionAnswer[] from toolOutput by trying JSON parse first,
-  // then matching option labels against the raw output string
-  const answersFromOutput = useMemo(() => {
-    if (!toolOutput) return null
-
-    // Try JSON parse first (our custom format stored at answer time)
-    try {
-      const parsed = JSON.parse(toolOutput)
-      if (
-        Array.isArray(parsed) &&
-        parsed.every(a => 'questionIndex' in a && 'selectedOptions' in a)
-      ) {
-        return parsed as QuestionAnswer[]
-      }
-    } catch {
-      // Not JSON — try matching raw output against option labels
-    }
-
-    // Match raw tool output against option labels
-    const answers: QuestionAnswer[] = []
-    for (let qIndex = 0; qIndex < questions.length; qIndex++) {
-      const question = questions[qIndex]
-      if (!question) continue
-      const selectedOptions: number[] = []
-      for (let oIndex = 0; oIndex < question.options.length; oIndex++) {
-        const label = question.options[oIndex]?.label
-        if (label && toolOutput.includes(label)) {
-          selectedOptions.push(oIndex)
-        }
-      }
-      if (selectedOptions.length > 0) {
-        answers.push({ questionIndex: qIndex, selectedOptions })
-      }
-    }
-    return answers.length > 0 ? answers : null
-  }, [toolOutput, questions])
-
-  // Use prop if available, fall back to local state, then to reconstructed from output
-  const effectiveAnswers =
-    submittedAnswers ?? localSubmittedAnswers ?? answersFromOutput
+  // Use prop if available, fall back to local state
+  const effectiveAnswers = submittedAnswers ?? localSubmittedAnswers
 
   // Toggle option selection (checkbox mode)
   const toggleOption = useCallback(
@@ -205,8 +164,8 @@ export function AskUserQuestion({
       // Explicit skip always shows "Skipped"
       if (isSkipped) return 'Skipped'
       // If a follow-up user message exists, the user DID respond — show "Answered"
-      // but details are unavailable.
-      if (hasFollowUpMessage) return 'Answered (details unavailable)'
+      // (specific answer text is unavailable since Zustand state is ephemeral)
+      if (hasFollowUpMessage) return 'Answered'
       return 'Skipped'
     }
 
@@ -228,9 +187,7 @@ export function AskUserQuestion({
       }
     }
 
-    return summaryParts.length > 0
-      ? summaryParts.join(' | ')
-      : 'Answered (details unavailable)'
+    return summaryParts.length > 0 ? summaryParts.join(' | ') : 'Answered'
   }, [effectiveAnswers, questions, isSkipped, hasFollowUpMessage])
 
   // Render collapsed summary for answered questions
@@ -399,7 +356,7 @@ export function AskUserQuestion({
                       value={answers.get(qIndex)?.customText ?? ''}
                       onChange={e => updateCustomText(qIndex, e.target.value)}
                       disabled={readOnly}
-                      className="cursor-text font-mono text-base select-text bg-white dark:bg-input md:text-sm"
+                      className="cursor-text font-mono text-sm select-text bg-white dark:bg-input"
                     />
                   </div>
                 ) : null}
@@ -437,7 +394,7 @@ export function AskUserQuestion({
 
   // Default: render full interactive question form
   return (
-    <div className="my-3 min-w-0 cursor-default rounded border border-muted bg-muted/30 p-4 font-mono text-sm select-none">
+    <div className="my-3 min-w-0 cursor-default rounded border border-primary/30 bg-primary/5 p-4 font-mono text-sm select-none">
       {renderQuestionContent()}
     </div>
   )

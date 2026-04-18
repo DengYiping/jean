@@ -13,10 +13,6 @@ export function useCanvasStoreState(): ChatStoreState {
   const executingModes = useChatStore(state => state.executingModes)
   const executionModes = useChatStore(state => state.executionModes)
   const activeToolCalls = useChatStore(state => state.activeToolCalls)
-  const streamingContents = useChatStore(state => state.streamingContents)
-  const streamingContentBlocks = useChatStore(
-    state => state.streamingContentBlocks
-  )
   const answeredQuestions = useChatStore(state => state.answeredQuestions)
   const waitingForInputSessionIds = useChatStore(
     state => state.waitingForInputSessionIds
@@ -34,8 +30,6 @@ export function useCanvasStoreState(): ChatStoreState {
       executingModes,
       executionModes,
       activeToolCalls,
-      streamingContents,
-      streamingContentBlocks,
       answeredQuestions,
       waitingForInputSessionIds,
       reviewingSessions,
@@ -48,8 +42,6 @@ export function useCanvasStoreState(): ChatStoreState {
       executingModes,
       executionModes,
       activeToolCalls,
-      streamingContents,
-      streamingContentBlocks,
       answeredQuestions,
       waitingForInputSessionIds,
       reviewingSessions,

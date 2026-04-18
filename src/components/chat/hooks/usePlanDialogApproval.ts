@@ -22,20 +22,6 @@ import type { McpServerInfo } from '@/types/chat'
 import { buildPlanApprovalMessage } from '../plan-approval-message'
 import { applyOptimisticPlanApproval } from './optimistic-plan-approval'
 
-const THINKING_LEVEL_VALUES = new Set<ThinkingLevel>([
-  'off',
-  'think',
-  'megathink',
-  'ultrathink',
-])
-
-function isThinkingLevel(
-  value: string | null | undefined
-): value is ThinkingLevel {
-  if (!value) return false
-  return THINKING_LEVEL_VALUES.has(value as ThinkingLevel)
-}
-
 interface UsePlanDialogApprovalParams {
   activeSessionId: string | null | undefined
   activeWorktreeId: string | null | undefined
@@ -44,10 +30,8 @@ interface UsePlanDialogApprovalParams {
   selectedModelRef: RefObject<string>
   buildModelRef: RefObject<string | null>
   buildBackendRef: RefObject<string | null>
-  buildThinkingLevelRef: RefObject<string | null>
   yoloModelRef: RefObject<string | null>
   yoloBackendRef: RefObject<string | null>
-  yoloThinkingLevelRef: RefObject<string | null>
   selectedProviderRef: RefObject<string | null>
   selectedThinkingLevelRef: RefObject<ThinkingLevel>
   selectedEffortLevelRef: RefObject<EffortLevel>
@@ -55,7 +39,7 @@ interface UsePlanDialogApprovalParams {
   isCodexBackendRef: RefObject<boolean>
   mcpServersDataRef: RefObject<McpServerInfo[] | undefined>
   enabledMcpServersRef: RefObject<string[]>
-  selectedBackendRef: RefObject<'claude' | 'codex' | 'opencode' | 'cursor'>
+  selectedBackendRef: RefObject<'claude' | 'codex' | 'opencode'>
   markAtBottom: () => void
 }
 
@@ -71,10 +55,8 @@ export function usePlanDialogApproval({
   selectedModelRef,
   buildModelRef,
   buildBackendRef,
-  buildThinkingLevelRef,
   yoloModelRef,
   yoloBackendRef,
-  yoloThinkingLevelRef,
   selectedProviderRef,
   selectedThinkingLevelRef,
   selectedEffortLevelRef,
@@ -255,7 +237,7 @@ export function usePlanDialogApproval({
         model,
         provider: selectedProviderRef.current,
         executionMode: mode,
-        thinkingLevel: resolvedThinkingLevel,
+        thinkingLevel: selectedThinkingLevelRef.current,
         effortLevel:
           useAdaptiveThinkingRef.current || isCodexBackendRef.current
             ? selectedEffortLevelRef.current
@@ -284,9 +266,7 @@ export function usePlanDialogApproval({
       queryClient,
       selectedModelRef,
       buildModelRef,
-      buildThinkingLevelRef,
       yoloModelRef,
-      yoloThinkingLevelRef,
       selectedProviderRef,
       selectedThinkingLevelRef,
       selectedEffortLevelRef,

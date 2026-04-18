@@ -4,7 +4,7 @@ import ReactMarkdown from 'react-markdown'
 import rehypeRaw from 'rehype-raw'
 import remarkGfm from 'remark-gfm'
 import remend from 'remend'
-import { Copy, Check, Table } from 'lucide-react'
+import { Copy, Check } from 'lucide-react'
 import { toast } from 'sonner'
 import { invoke } from '@/lib/transport'
 import { usePreferences } from '@/services/preferences'
@@ -14,7 +14,6 @@ import {
   TooltipTrigger,
   TooltipContent,
 } from '@/components/ui/tooltip'
-import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
 
 interface MarkdownProps {

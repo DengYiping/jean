@@ -23,22 +23,6 @@ import {
   type KeybindingsMap,
 } from '@/types/keybindings'
 
-const PLAN_DIALOG_APPROVAL_ACTIONS = new Set<KeybindingAction>([
-  'approve_plan',
-  'approve_plan_yolo',
-  'approve_plan_clear_context',
-  'approve_plan_clear_context_build',
-  'approve_plan_worktree_build',
-  'approve_plan_worktree_yolo',
-])
-
-export function shouldLetPlanDialogHandleAction(
-  action: KeybindingAction,
-  planDialogOpen: boolean
-): boolean {
-  return planDialogOpen && PLAN_DIALOG_APPROVAL_ACTIONS.has(action)
-}
-
 export function getTerminalShortcutWorktreeId(): string | null {
   const activeElement = document.activeElement
   const terminalFocused =
@@ -208,22 +192,20 @@ function executeKeybindingAction(
       }
       const resolvedWorktreePath = targetWorktreePath
 
-      const resolvedWorktreePath = targetWorktreePath
-
       // Fetch run scripts - use fetchQuery to handle uncached dashboard worktrees
       ;(async () => {
         let runScripts = queryClient.getQueryData<string[]>([
           'run-scripts',
-          resolvedWorktreePath,
+          targetWorktreePath,
         ])
 
         if (runScripts === undefined) {
           try {
             runScripts = await queryClient.fetchQuery<string[]>({
-              queryKey: ['run-scripts', resolvedWorktreePath],
+              queryKey: ['run-scripts', targetWorktreePath],
               queryFn: () =>
                 invoke<string[]>('get_run_scripts', {
-                  worktreePath: resolvedWorktreePath,
+                  worktreePath: targetWorktreePath,
                 }),
             })
           } catch {
@@ -434,17 +416,6 @@ function executeKeybindingAction(
         new CustomEvent('scroll-chat', { detail: { direction: 'down' } })
       )
       break
-    case 'search_chat': {
-      logger.debug('Keybinding: search_chat')
-      const uiStoreSearch = useUIStore.getState()
-      if (!uiStoreSearch.chatSearchOpen) {
-        uiStoreSearch.setChatSearchOpen(true)
-      } else {
-        // If open, dispatch event so the component can decide to close or re-focus
-        window.dispatchEvent(new CustomEvent('chat-search-toggle'))
-      }
-      break
-    }
     case 'open_github_dashboard':
       useUIStore.getState().setGitHubDashboardOpen(true)
       break

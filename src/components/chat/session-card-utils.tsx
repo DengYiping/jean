@@ -4,16 +4,15 @@ import type {
 } from '@/components/ui/status-indicator'
 import {
   isAskUserQuestion,
-  isPlanToolCall,
+  isExitPlanMode,
   type Session,
   type SessionDigest,
   type ExecutionMode,
   type ToolCall,
-  type ContentBlock,
   type PermissionDenial,
   type LabelData,
 } from '@/types/chat'
-import { findPlanFilePath, resolvePlanContent } from './tool-call-utils'
+import { findPlanFilePath } from './tool-call-utils'
 
 export type SessionStatus =
   | 'idle'
@@ -118,8 +117,6 @@ export interface ChatStoreState {
   executingModes: Record<string, ExecutionMode>
   executionModes: Record<string, ExecutionMode>
   activeToolCalls: Record<string, ToolCall[]>
-  streamingContents: Record<string, string>
-  streamingContentBlocks: Record<string, ContentBlock[]>
   answeredQuestions: Record<string, Set<string>>
   waitingForInputSessionIds: Record<string, boolean>
   reviewingSessions: Record<string, boolean>
@@ -137,8 +134,6 @@ export function computeSessionCardData(
     executingModes,
     executionModes,
     activeToolCalls,
-    streamingContents,
-    streamingContentBlocks,
     answeredQuestions,
     waitingForInputSessionIds,
     reviewingSessions,
@@ -149,8 +144,6 @@ export function computeSessionCardData(
 
   const sessionSending = sendingSessionIds[session.id] ?? false
   const toolCalls = activeToolCalls[session.id] ?? []
-  const streamingContent = streamingContents[session.id] ?? ''
-  const currentStreamingContentBlocks = streamingContentBlocks[session.id] ?? []
   const answeredSet = answeredQuestions[session.id]
   const isStoreReviewing = reviewingSessions[session.id] ?? false
 
@@ -159,7 +152,7 @@ export function computeSessionCardData(
     tc => isAskUserQuestion(tc) && !answeredSet?.has(tc.id)
   )
   const hasStreamingExitPlan = toolCalls.some(
-    tc => isPlanToolCall(tc) && !answeredSet?.has(tc.id)
+    tc => isExitPlanMode(tc) && !answeredSet?.has(tc.id)
   )
 
   // Check persisted session state for waiting status
@@ -173,13 +166,13 @@ export function computeSessionCardData(
   let pendingPlanMessageId: string | null =
     session.pending_plan_message_id ?? null
 
-  // Helper to extract inline plan from any plan tool call
-  const getInlinePlan = (tcs: typeof toolCalls): string | null =>
-    resolvePlanContent({
-      toolCalls: tcs,
-      messageContent: streamingContent,
-      contentBlocks: currentStreamingContentBlocks,
-    }).content
+  // Helper to extract inline plan from ExitPlanMode tool call
+  const getInlinePlan = (tcs: typeof toolCalls): string | null => {
+    const exitPlanTool = tcs.find(isExitPlanMode)
+    if (!exitPlanTool) return null
+    const input = exitPlanTool.input as { plan?: string } | undefined
+    return input?.plan ?? null
+  }
 
   // Use persisted waiting_for_input flag from session metadata
   const persistedWaitingForInput = session.waiting_for_input ?? false
@@ -212,18 +205,14 @@ export function computeSessionCardData(
         hasPendingQuestion = msg.tool_calls.some(
           tc => isAskUserQuestion(tc) && !answeredSet?.has(tc.id)
         )
-        // Check for unanswered plan approval
-        const hasExitPlan = msg.tool_calls.some(isPlanToolCall)
+        // Check for unanswered ExitPlanMode (not approved)
+        const hasExitPlan = msg.tool_calls.some(isExitPlanMode)
         if (hasExitPlan && !msg.plan_approved && !approvedPlanIds.has(msg.id)) {
           hasPendingExitPlan = true
           pendingPlanMessageId = msg.id
           // Check for inline plan content
           if (!planFilePath) {
-            planContent = resolvePlanContent({
-              toolCalls: msg.tool_calls,
-              messageContent: msg.content,
-              contentBlocks: msg.content_blocks,
-            }).content
+            planContent = getInlinePlan(msg.tool_calls)
           }
         }
         break // Only check the last assistant message
@@ -241,18 +230,11 @@ export function computeSessionCardData(
     }
   }
 
-  // Stale Zustand flag must not pin status to "waiting" when the backend has
-  // already moved the session into review. Backend `waiting_for_input` still
-  // flows through `persistedWaitingForInput` below, so genuine waiting wins.
-  const isInReviewState =
-    reviewingSessions[session.id] || !!session.review_results
-  const isExplicitlyWaiting = isInReviewState
-    ? false
-    : (waitingForInputSessionIds[session.id] ?? false)
-  const hasActionableStreamingPlan = hasStreamingExitPlan && !sessionSending
+  // Use persisted waiting state as fallback when messages aren't loaded
+  const isExplicitlyWaiting = waitingForInputSessionIds[session.id] ?? false
   const isWaitingFromMessages =
     hasStreamingQuestion ||
-    hasActionableStreamingPlan ||
+    hasStreamingExitPlan ||
     hasPendingQuestion ||
     hasPendingExitPlan
   // Once the local store has already moved the session into review, a stale
@@ -374,9 +356,6 @@ export function getResumeCommand(session: Session): string | null {
   }
   if (session.backend === 'opencode' && session.opencode_session_id) {
     return `opencode -s ${session.opencode_session_id}`
-  }
-  if (session.backend === 'cursor' && session.cursor_chat_id) {
-    return `cursor-agent --resume ${session.cursor_chat_id}`
   }
   return null
 }

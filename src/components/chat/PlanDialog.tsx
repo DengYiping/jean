@@ -7,7 +7,6 @@ import { readPlanFile } from '@/services/chat'
 import { usePreferences } from '@/services/preferences'
 import { getFilename } from '@/lib/path-utils'
 import { useUIStore } from '@/store/ui-store'
-import { useChatStore } from '@/store/chat-store'
 import { resolveApprovalLabel } from './approval-label-utils'
 import {
   Dialog,
@@ -90,13 +89,8 @@ export function PlanDialog({
   const filename = filePath ? getFilename(filePath) : null
   const queryClient = useQueryClient()
   const { data: preferences } = usePreferences()
-  const sessionBackend = useChatStore(state =>
-    _approvalContext?.sessionId
-      ? state.selectedBackends[_approvalContext.sessionId] ?? null
-      : null
-  )
-  const buildLabel = resolveApprovalLabel('build', preferences, sessionBackend)
-  const yoloLabel = resolveApprovalLabel('yolo', preferences, sessionBackend)
+  const buildLabel = resolveApprovalLabel('build', preferences)
+  const yoloLabel = resolveApprovalLabel('yolo', preferences)
 
   const { data: fetchedContent, isLoading } = useQuery({
     queryKey: ['planFile', filePath],

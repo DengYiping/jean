@@ -6,20 +6,13 @@ import { logger } from '@/lib/logger'
 import { copyToClipboard } from '@/lib/clipboard'
 import { Button } from '@/components/ui/button'
 import { Copy, FileText } from 'lucide-react'
-import type { Backend, SessionDebugInfo, RunStatus } from '@/types/chat'
+import type { SessionDebugInfo, RunStatus, UsageData } from '@/types/chat'
 import { cn } from '@/lib/utils'
-import { getSessionProviderDisplayName } from '@/components/chat/toolbar/toolbar-utils'
 import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
 } from '@/components/ui/tooltip'
-import {
-  formatSessionDebugDetails,
-  formatTokens,
-  formatUsage,
-  getStatusText,
-} from '@/lib/session-debug'
 
 interface SessionDebugPanelProps {
   worktreeId: string
@@ -27,8 +20,25 @@ interface SessionDebugPanelProps {
   sessionId: string
   selectedModel?: string
   selectedProvider?: string | null
-  selectedBackend?: Backend
+  selectedBackend?: string
   onFileClick?: (path: string) => void
+}
+
+/** Format token count for display (e.g., 1234 -> "1.2k", 123456 -> "123k") */
+function formatTokens(tokens: number): string {
+  if (tokens >= 1_000_000) {
+    return `${(tokens / 1_000_000).toFixed(1)}M`
+  }
+  if (tokens >= 1_000) {
+    return `${(tokens / 1_000).toFixed(1)}k`
+  }
+  return tokens.toString()
+}
+
+/** Format usage data for display */
+function formatUsage(usage: UsageData | undefined): string {
+  if (!usage) return ''
+  return `${formatTokens(usage.input_tokens)} in / ${formatTokens(usage.output_tokens)} out`
 }
 
 /** Get status color */
@@ -45,6 +55,18 @@ function getStatusColor(status: RunStatus): string {
       return 'text-blue-500'
     default:
       return 'text-muted-foreground'
+  }
+}
+
+/** Get display text for status */
+function getStatusText(status: RunStatus): string {
+  switch (status) {
+    case 'crashed':
+      return 'completed (recovered)'
+    case 'resumable':
+      return 'resumable'
+    default:
+      return status
   }
 }
 
@@ -69,29 +91,40 @@ export function SessionDebugPanel({
     refetchInterval: 1000, // Poll every second for real-time updates
   })
 
-  const providerDisplay = getSessionProviderDisplayName(
-    selectedBackend,
-    selectedProvider
-  )
-
   const handleCopyAll = useCallback(async () => {
     if (!debugInfo) return
 
+    const providerDisplay =
+      selectedBackend === 'codex'
+        ? 'OpenAI'
+        : !selectedProvider || selectedProvider === '__anthropic__'
+          ? 'Anthropic'
+          : selectedProvider
+
+    const lines = [
+      `session: ${sessionId}`,
+      `model: ${selectedModel ?? 'unknown'} / provider: ${providerDisplay}`,
+      `sessions file: ${debugInfo.sessions_file}`,
+      `runs dir: ${debugInfo.runs_dir}`,
+      `manifest: ${debugInfo.manifest_file || 'none'}`,
+      `total usage: ${formatUsage(debugInfo.total_usage)}`,
+      '',
+      `Run logs (${debugInfo.run_log_files.length}):`,
+      ...debugInfo.run_log_files.map(
+        f =>
+          `  ${getStatusText(f.status)} ${f.usage ? `(${formatUsage(f.usage)})` : ''} ${f.user_message_preview}`
+      ),
+    ]
+
     try {
-      const text = formatSessionDebugDetails({
-        sessionId,
-        selectedBackend,
-        selectedModel,
-        providerDisplay,
-        debugInfo,
-      })
+      const text = lines.join('\n')
       await copyToClipboard(text)
       toast.success('Copied to clipboard')
     } catch (error) {
       logger.error('Failed to copy:', error)
       toast.error(`Failed to copy: ${error}`)
     }
-  }, [debugInfo, providerDisplay, sessionId, selectedModel])
+  }, [debugInfo, sessionId, selectedModel, selectedProvider, selectedBackend])
 
   if (!debugInfo) {
     return null
@@ -118,14 +151,19 @@ export function SessionDebugPanel({
         session: <span className="text-foreground">{sessionId}</span>
       </div>
       <div className="text-muted-foreground">
-        backend:{' '}
-        <span className="text-foreground">{selectedBackend ?? 'unknown'}</span>
-      </div>
-      <div className="text-muted-foreground">
         model:{' '}
         <span className="text-foreground">{selectedModel ?? 'unknown'}</span>
         {' / '}
-        provider: <span className="text-foreground">{providerDisplay}</span>
+        provider:{' '}
+        <span className="text-foreground">
+          {selectedBackend === 'codex'
+            ? 'OpenAI'
+            : selectedBackend === 'opencode'
+              ? 'OpenCode'
+              : !selectedProvider || selectedProvider === '__anthropic__'
+                ? 'Anthropic'
+                : selectedProvider}
+        </span>
       </div>
       <Tooltip>
         <TooltipTrigger asChild>

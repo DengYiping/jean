@@ -9,6 +9,7 @@ import {
   Puzzle,
   FlaskConical,
   Globe,
+  Sparkles,
 } from 'lucide-react'
 import {
   Breadcrumb,
@@ -53,12 +54,18 @@ import { ProvidersPane } from './panes/ProvidersPane'
 import { IntegrationsPane } from './panes/IntegrationsPane'
 import { ExperimentalPane } from './panes/ExperimentalPane'
 import { WebAccessPane } from './panes/WebAccessPane'
+import { OpinionatedPane } from './panes/OpinionatedPane'
 
 const navigationItems = [
   {
     id: 'general' as const,
     name: 'General',
     icon: Settings,
+  },
+  {
+    id: 'opinionated' as const,
+    name: 'Opinionated',
+    icon: Sparkles,
   },
   {
     id: 'providers' as const,
@@ -113,6 +120,8 @@ const getPaneTitle = (pane: PreferencePane): string => {
   switch (pane) {
     case 'general':
       return 'General'
+    case 'opinionated':
+      return 'Opinionated'
     case 'appearance':
       return 'Appearance'
     case 'keybindings':
@@ -248,6 +257,7 @@ export function PreferencesDialog() {
 
             <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4 pt-0 min-h-0 custom-scrollbar">
               {activePane === 'general' && <GeneralPane />}
+              {activePane === 'opinionated' && <OpinionatedPane />}
               {activePane === 'appearance' && <AppearancePane />}
               {activePane === 'keybindings' && <KeybindingsPane />}
               {activePane === 'magic-prompts' && <MagicPromptsPane />}

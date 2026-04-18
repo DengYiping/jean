@@ -17,6 +17,7 @@ mod gh_cli;
 pub mod http_server;
 mod opencode_cli;
 mod opencode_server;
+mod opinionated;
 mod platform;
 mod projects;
 mod terminal;
@@ -3053,6 +3054,8 @@ pub fn run() {
             opencode_cli::get_available_opencode_versions,
             opencode_cli::install_opencode_cli,
             opencode_cli::list_opencode_models,
+            opinionated::check_opinionated_plugin_status,
+            opinionated::install_opinionated_plugin,
             // GitHub CLI management commands
             gh_cli::check_gh_cli_installed,
             gh_cli::detect_gh_in_path,

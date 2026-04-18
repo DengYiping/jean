@@ -15,6 +15,7 @@ use super::types::{JeanConfig, MergeType};
 ///
 /// For non-worktree repos, both point to the same `.git` directory.
 /// Returns `None` if the path is not a git repo or the command fails.
+#[allow(dead_code)]
 pub fn resolve_git_dirs(working_dir: &Path) -> Option<(String, String)> {
     let output = silent_command("git")
         .args(["rev-parse", "--git-dir", "--git-common-dir"])

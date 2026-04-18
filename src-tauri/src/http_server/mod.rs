@@ -16,6 +16,8 @@ static EVENT_SEQ: AtomicU64 = AtomicU64::new(1);
 /// Maximum events buffered per session for replay.
 const SESSION_BUFFER_CAP: usize = 2000;
 
+type SessionReplayBufferMap = HashMap<String, VecDeque<(u64, Arc<str>)>>;
+
 /// Events that are worth buffering for replay on reconnect.
 const REPLAYABLE_EVENTS: &[&str] = &[
     "chat:sending",
@@ -41,7 +43,7 @@ pub struct WsBroadcaster {
     tx: broadcast::Sender<WsEvent>,
     /// Per-session ring buffer for event replay on WebSocket reconnect.
     /// Key: session_id extracted from the event payload.
-    session_buffers: Mutex<HashMap<String, VecDeque<(u64, Arc<str>)>>>,
+    session_buffers: Mutex<SessionReplayBufferMap>,
 }
 
 /// A pre-serialized WebSocket event.

@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+#![allow(clippy::into_iter_on_ref)]
+
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::Deserialize;

@@ -17,6 +17,7 @@ import type {
   CodexReleaseInfo,
   CodexInstallProgress,
   CodexUsageSnapshot,
+  ResolvedCodexCommand,
 } from '@/types/codex-cli'
 
 import { hasBackend } from '@/lib/environment'
@@ -231,6 +232,24 @@ export function useInstallCodexCli() {
       toast.error('Failed to install Codex CLI', { description: message })
     },
   })
+}
+
+export async function resolveCodexUpdateCommand(): Promise<ResolvedCodexCommand | null> {
+  if (!isTauri()) return null
+
+  const result = await invoke<{
+    command: string
+    commandArgs: string[]
+    display: string
+  } | null>('resolve_codex_update_command')
+
+  return result
+    ? {
+        command: result.command,
+        commandArgs: result.commandArgs,
+        display: result.display,
+      }
+    : null
 }
 
 /**

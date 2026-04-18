@@ -79,6 +79,7 @@ export const defaultResponses: Record<string, unknown> = {
   check_claude_cli_installed: { installed: true, version: '1.0.0' },
   check_claude_cli_auth: { authenticated: true },
   resolve_claude_update_command: null,
+  resolve_codex_update_command: null,
   check_gh_cli_installed: { installed: true },
   check_gh_cli_auth: { authenticated: true },
   get_available_cli_versions: [],

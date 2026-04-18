@@ -38,6 +38,7 @@ import {
   useCodexCliStatus,
   useCodexCliAuth,
   codexCliQueryKeys,
+  resolveCodexUpdateCommand,
 } from '@/services/codex-cli'
 import {
   useOpenCodeCliStatus,
@@ -657,6 +658,39 @@ export const GeneralPane: React.FC = () => {
     queryClient.invalidateQueries({ queryKey: codexCliQueryKeys.auth() })
   }, [queryClient])
 
+  const handleCodexInstallOrUpdate = useCallback(async () => {
+    try {
+      const resolved = await resolveCodexUpdateCommand()
+      if (resolved) {
+        openCliLoginModal(
+          'codex',
+          resolved.command,
+          resolved.commandArgs,
+          'update'
+        )
+        return
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      toast.error('Failed to resolve Codex update command', {
+        description: message,
+      })
+      return
+    }
+
+    if (codexStatus?.installed) {
+      openCliUpdateModal('codex')
+      return
+    }
+
+    handleRefreshCodexStatus()
+  }, [
+    codexStatus?.installed,
+    handleRefreshCodexStatus,
+    openCliLoginModal,
+    openCliUpdateModal,
+  ])
+
   const handleRefreshOpenCodeStatus = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: opencodeCliQueryKeys.status() })
     queryClient.invalidateQueries({ queryKey: opencodeCliQueryKeys.auth() })
@@ -879,6 +913,11 @@ export const GeneralPane: React.FC = () => {
           }
         >
           <div className="space-y-4">
+            <CodexUpdateCommandField
+              preferences={preferences}
+              patchPreferences={patchPreferences}
+              queryClient={queryClient}
+            />
             <InlineField
               label={codexStatus?.installed ? 'Version' : 'Status'}
               description={
@@ -912,19 +951,35 @@ export const GeneralPane: React.FC = () => {
                   <Button
                     variant="outline"
                     size="sm"
+                    onClick={handleCodexInstallOrUpdate}
+                  >
+                    Update
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
                     onClick={handleRefreshCodexStatus}
                   >
                     Refresh
                   </Button>
                 </div>
               ) : (
-                <Button
-                  variant="outline"
-                  className="w-40"
-                  onClick={handleRefreshCodexStatus}
-                >
-                  Refresh
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    className="w-40"
+                    onClick={handleCodexInstallOrUpdate}
+                  >
+                    {preferences?.codex_update_command ? 'Install' : 'Refresh'}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRefreshCodexStatus}
+                  >
+                    Refresh
+                  </Button>
+                </div>
               )}
             </InlineField>
           </div>
@@ -2280,6 +2335,73 @@ const ClaudeUpdateCommandField: FC<{
         <Input
           className="w-80"
           placeholder="Manual host install (claude)"
+          value={localValue}
+          onChange={e => setLocalValue(e.target.value)}
+        />
+        <Button
+          size="sm"
+          onClick={handleSave}
+          disabled={!hasChanges || patchPreferences.isPending}
+        >
+          {patchPreferences.isPending && (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          )}
+          Save
+        </Button>
+      </div>
+    </InlineField>
+  )
+}
+
+const CodexUpdateCommandField: FC<{
+  preferences: AppPreferences | undefined
+  patchPreferences: ReturnType<typeof usePatchPreferences>
+  queryClient: ReturnType<typeof useQueryClient>
+}> = ({ preferences, patchPreferences, queryClient }) => {
+  const [localValue, setLocalValue] = useState(
+    preferences?.codex_update_command ?? ''
+  )
+
+  useEffect(() => {
+    setLocalValue(preferences?.codex_update_command ?? '')
+  }, [preferences?.codex_update_command])
+
+  const hasChanges = localValue !== (preferences?.codex_update_command ?? '')
+
+  const handleSave = useCallback(() => {
+    const trimmed = localValue.trim()
+    patchPreferences.mutate(
+      {
+        codex_update_command: trimmed.length > 0 ? trimmed : null,
+      },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({
+            queryKey: codexCliQueryKeys.status(),
+          })
+          queryClient.invalidateQueries({
+            queryKey: codexCliQueryKeys.auth(),
+          })
+        },
+      }
+    )
+  }, [localValue, patchPreferences, queryClient])
+
+  return (
+    <InlineField
+      label="Update command"
+      description={
+        <>
+          Optional command Jean should run to install or update Codex on your
+          host system. Leave blank to manage <code>codex</code> manually.
+          Example: <code>npm install -g @openai/codex</code>.
+        </>
+      }
+    >
+      <div className="flex items-center gap-2">
+        <Input
+          className="w-80"
+          placeholder="Manual host install (codex)"
           value={localValue}
           onChange={e => setLocalValue(e.target.value)}
         />

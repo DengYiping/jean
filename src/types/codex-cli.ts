@@ -32,6 +32,12 @@ export interface CodexInstallProgress {
   percent: number
 }
 
+export interface ResolvedCodexCommand {
+  command: string
+  commandArgs: string[]
+  display: string
+}
+
 export interface CodexUsageWindowSnapshot {
   usedPercent: number
   resetsAt: number | null

@@ -104,6 +104,7 @@ export const mockPreferences = {
   mcp_servers_enabled: false,
   experimental_features: {},
   claude_update_command: null,
+  codex_update_command: null,
 }
 
 export const mockUIState = {

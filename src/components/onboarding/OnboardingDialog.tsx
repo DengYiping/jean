@@ -21,7 +21,11 @@ import {
   useClaudeCliAuth,
   resolveClaudeUpdateCommand,
 } from '@/services/claude-cli'
-import { useCodexCliSetup, useCodexCliAuth } from '@/services/codex-cli'
+import {
+  useCodexCliSetup,
+  useCodexCliAuth,
+  resolveCodexUpdateCommand,
+} from '@/services/codex-cli'
 import {
   useOpenCodeCliSetup,
   useOpenCodeCliAuth,
@@ -37,7 +41,6 @@ import {
 } from './CliSetupComponents'
 import { toast } from 'sonner'
 import { usePreferences, usePatchPreferences } from '@/services/preferences'
-import type { ResolvedClaudeCommand } from '@/types/claude-cli'
 
 type AIBackend = 'claude' | 'codex' | 'opencode'
 type CliType = AIBackend | 'gh'
@@ -89,6 +92,12 @@ interface CliSetupData {
     options?: { onSuccess?: () => void; onError?: (error: Error) => void }
   ) => void
   currentVersion: string | null | undefined
+}
+
+interface ResolvedUpdateCommand {
+  command: string
+  commandArgs: string[]
+  display: string
 }
 
 const backendLabel: Record<CliType, string> = {
@@ -156,8 +165,11 @@ function OnboardingDialogContent() {
   const [opencodeInstallFailed, setOpencodeInstallFailed] = useState(false)
   const [ghInstallFailed, setGhInstallFailed] = useState(false)
   const [claudeInstallCommand, setClaudeInstallCommand] =
-    useState<ResolvedClaudeCommand | null>(null)
+    useState<ResolvedUpdateCommand | null>(null)
+  const [codexInstallCommand, setCodexInstallCommand] =
+    useState<ResolvedUpdateCommand | null>(null)
   const [claudeInstallAttempt, setClaudeInstallAttempt] = useState(0)
+  const [codexInstallAttempt, setCodexInstallAttempt] = useState(0)
   const [claudeLoginAttempt, setClaudeLoginAttempt] = useState(0)
   const [codexLoginAttempt, setCodexLoginAttempt] = useState(0)
   const [opencodeLoginAttempt, setOpencodeLoginAttempt] = useState(0)
@@ -172,6 +184,7 @@ function OnboardingDialogContent() {
     []
   )
   const claudeInstallTerminalId = `onboarding-claude-install-${loginSessionSeed}-${claudeInstallAttempt}`
+  const codexInstallTerminalId = `onboarding-codex-install-${loginSessionSeed}-${codexInstallAttempt}`
   const claudeLoginTerminalId = `onboarding-claude-login-${loginSessionSeed}-${claudeLoginAttempt}`
   const codexLoginTerminalId = `onboarding-codex-login-${loginSessionSeed}-${codexLoginAttempt}`
   const opencodeLoginTerminalId = `onboarding-opencode-login-${loginSessionSeed}-${opencodeLoginAttempt}`
@@ -321,7 +334,9 @@ function OnboardingDialogContent() {
       setOpencodeInstallFailed(false)
       setGhInstallFailed(false)
       setClaudeInstallCommand(null)
+      setCodexInstallCommand(null)
       setClaudeInstallAttempt(0)
+      setCodexInstallAttempt(0)
       setClaudeLoginAttempt(0)
       setCodexLoginAttempt(0)
       setOpencodeLoginAttempt(0)
@@ -533,18 +548,48 @@ function OnboardingDialogContent() {
     setClaudeInstallAttempt(prev => prev + 1)
   }, [])
 
-  const handleCodexInstall = useCallback(() => {
-    codexSetup.refetchStatus().then(result => {
-      if (result.data?.installed) {
-        setStep('codex-auth-checking')
-        codexAuth.refetch()
+  const handleCodexInstall = useCallback(async () => {
+    try {
+      const resolved = await resolveCodexUpdateCommand()
+      if (resolved) {
+        setCodexInstallCommand(resolved)
+        setStep('codex-installing')
         return
       }
-      toast.error(
-        'Codex CLI not found in PATH. Install `codex` on your system first.'
-      )
-    })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      toast.error('Failed to resolve Codex update command', {
+        description: message,
+      })
+      return
+    }
+
+    const result = await codexSetup.refetchStatus()
+    if (result.data?.installed) {
+      setStep('codex-auth-checking')
+      codexAuth.refetch()
+      return
+    }
+    toast.error(
+      'Codex CLI not found in PATH. Install `codex` on your system first.'
+    )
   }, [codexSetup, codexAuth])
+
+  const handleCodexInstallComplete = useCallback(async () => {
+    const result = await codexSetup.refetchStatus()
+    if (result.data?.installed) {
+      setStep('codex-auth-checking')
+      await codexAuth.refetch()
+      return
+    }
+
+    toast.error('Codex CLI was not found after running the install command.')
+    setStep('codex-setup')
+  }, [codexSetup, codexAuth])
+
+  const handleCodexInstallRetry = useCallback(() => {
+    setCodexInstallAttempt(prev => prev + 1)
+  }, [])
 
   const handleOpencodeInstall = useCallback(() => {
     opencodeSetup.refetchStatus().then(result => {
@@ -796,8 +841,9 @@ function OnboardingDialogContent() {
 
     if (
       step === 'claude-setup' ||
+      (step === 'claude-installing' && !claudeInstallCommand) ||
       step === 'codex-setup' ||
-      step === 'codex-installing' ||
+      (step === 'codex-installing' && !codexInstallCommand) ||
       step === 'opencode-setup' ||
       step === 'opencode-installing'
     ) {
@@ -809,6 +855,7 @@ function OnboardingDialogContent() {
 
     if (
       (step === 'claude-installing' && claudeInstallCommand) ||
+      (step === 'codex-installing' && codexInstallCommand) ||
       step === 'claude-auth-checking' ||
       step === 'claude-auth-login' ||
       step === 'codex-auth-checking' ||
@@ -820,11 +867,15 @@ function OnboardingDialogContent() {
         title:
           step === 'claude-installing' && claudeInstallCommand
             ? 'Install Claude CLI'
-            : `Authenticate ${backendName}`,
+            : step === 'codex-installing' && codexInstallCommand
+              ? 'Install Codex CLI'
+              : `Authenticate ${backendName}`,
         description:
           step === 'claude-installing' && claudeInstallCommand
             ? 'Run the configured Claude install/update command below.'
-            : `${backendName} requires authentication to function.`,
+            : step === 'codex-installing' && codexInstallCommand
+              ? 'Run the configured Codex install/update command below.'
+              : `${backendName} requires authentication to function.`,
       }
     }
 
@@ -949,6 +1000,20 @@ function OnboardingDialogContent() {
                 cliName="Claude CLI"
                 progress={cliData.progress}
               />
+            ) : step === 'codex-installing' && codexInstallCommand ? (
+              <AuthLoginState
+                cliName="Codex CLI"
+                terminalId={codexInstallTerminalId}
+                command={codexInstallCommand.command}
+                commandArgs={codexInstallCommand.commandArgs}
+                onComplete={handleCodexInstallComplete}
+                onRetry={handleCodexInstallRetry}
+                title="Codex install command"
+                description="Run the configured Codex install/update command below."
+                failureTitle="Install command exited unexpectedly"
+                completeLabel="Check Codex Status"
+                retryLabel="Retry Command"
+              />
             ) : step === 'codex-installing' && cliData ? (
               <InstallingState
                 cliName="Codex CLI"
@@ -1035,6 +1100,23 @@ function OnboardingDialogContent() {
               <HostInstallState
                 cliName="Codex CLI"
                 binaryName="codex"
+                expectedCommand={
+                  preferences?.codex_update_command?.trim() || undefined
+                }
+                description={
+                  preferences?.codex_update_command ? (
+                    <>
+                      Jean can run your configured Codex install/update command
+                      for you, then verify that <code>codex</code> is available
+                      on your host system.
+                    </>
+                  ) : undefined
+                }
+                buttonLabel={
+                  preferences?.codex_update_command
+                    ? 'Run install command'
+                    : undefined
+                }
                 onRefresh={handleCodexInstall}
               />
             ) : step === 'opencode-setup' ? (

@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
 
-use super::config::resolve_cli_binary;
+use super::config::{resolve_cli_binary, resolve_update_command, ResolvedCodexCommand};
 use crate::gh_cli::resolve_github_api_token;
 use crate::http_server::EmitExt;
 use crate::platform::silent_command;
@@ -50,6 +50,13 @@ pub struct CodexCliStatus {
     pub installed: bool,
     pub version: Option<String>,
     pub path: Option<String>,
+}
+
+#[tauri::command]
+pub async fn resolve_codex_update_command(
+    app: AppHandle,
+) -> Result<Option<ResolvedCodexCommand>, String> {
+    resolve_update_command(&app)
 }
 
 /// Auth status of the Codex CLI

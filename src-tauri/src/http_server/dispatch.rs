@@ -1861,6 +1861,10 @@ pub async fn dispatch_command(
             let result = crate::claude_cli::resolve_claude_update_command(app.clone()).await?;
             to_value(result)
         }
+        "resolve_codex_update_command" => {
+            let result = crate::codex_cli::resolve_codex_update_command(app.clone()).await?;
+            to_value(result)
+        }
         "get_claude_usage" => {
             let result = crate::claude_cli::get_claude_usage().await?;
             to_value(result)

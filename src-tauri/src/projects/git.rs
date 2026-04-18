@@ -1714,6 +1714,8 @@ pub fn open_pull_request(
     gh_binary: &std::path::Path,
 ) -> Result<String, String> {
     log::trace!("Opening pull request from {repo_path}");
+    let target_repo = get_repo_identifier(repo_path)?;
+    let target_repo_slug = format!("{}/{}", target_repo.owner, target_repo.repo);
 
     // Push current branch to remote first
     log::trace!("Pushing current branch to remote...");
@@ -1733,24 +1735,30 @@ pub fn open_pull_request(
     log::trace!("Push completed");
 
     // Build the gh pr create command
-    let mut args = vec!["pr", "create", "--fill"];
+    let mut args = vec![
+        "pr".to_string(),
+        "create".to_string(),
+        "--repo".to_string(),
+        target_repo_slug,
+        "--fill".to_string(),
+    ];
 
     if let Some(t) = title {
-        args.push("--title");
-        args.push(t);
+        args.push("--title".to_string());
+        args.push(t.to_string());
     }
 
     if let Some(b) = body {
-        args.push("--body");
-        args.push(b);
+        args.push("--body".to_string());
+        args.push(b.to_string());
     }
 
     if draft {
-        args.push("--draft");
+        args.push("--draft".to_string());
     }
 
     // Add --web to open in browser after creation
-    args.push("--web");
+    args.push("--web".to_string());
 
     log::trace!("Running gh command with args: {:?}", args);
 

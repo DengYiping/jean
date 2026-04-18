@@ -5405,6 +5405,10 @@ fn parse_pr_output(output: &str) -> Result<(u32, String), String> {
     Ok((pr_number, url))
 }
 
+fn format_repo_slug(repo: &git::RepoIdentifier) -> String {
+    format!("{}/{}", repo.owner, repo.repo)
+}
+
 /// Create a PR with AI-generated title and body
 ///
 /// This command:
@@ -5438,6 +5442,8 @@ pub async fn create_pr_with_ai_content(
 
     let target_branch = &project.default_branch;
     let current_branch = git::get_current_branch(&worktree_path)?;
+    let target_repo = git::get_repo_identifier(&worktree_path)?;
+    let target_repo_slug = format_repo_slug(&target_repo);
 
     // Check if we're on the target branch (can't create PR to same branch)
     if current_branch == *target_branch {
@@ -5531,7 +5537,14 @@ pub async fn create_pr_with_ai_content(
 
     // Check if a PR already exists for this branch before spending time/tokens on AI generation
     let view_output = build_gh_command(&app, Some(&worktree_path))
-        .args(["pr", "view", "--json", "number,url,title"])
+        .args([
+            "pr",
+            "view",
+            "--repo",
+            &target_repo_slug,
+            "--json",
+            "number,url,title",
+        ])
         .current_dir(&worktree_path)
         .output();
 
@@ -5669,8 +5682,12 @@ pub async fn create_pr_with_ai_content(
         .args([
             "pr",
             "create",
+            "--repo",
+            &target_repo_slug,
             "--base",
             target_branch,
+            "--head",
+            &current_branch,
             "--title",
             &pr_content.title,
             "--body",
@@ -5685,7 +5702,14 @@ pub async fn create_pr_with_ai_content(
         if stderr.contains("already exists") {
             // Try to look up the existing PR and link it to the worktree
             let view_output = build_gh_command(&app, Some(&worktree_path))
-                .args(["pr", "view", "--json", "number,url,title"])
+                .args([
+                    "pr",
+                    "view",
+                    "--repo",
+                    &target_repo_slug,
+                    "--json",
+                    "number,url,title",
+                ])
                 .current_dir(&worktree_path)
                 .output();
 

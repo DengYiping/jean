@@ -344,9 +344,9 @@ export function AutomationsPane({
                 onClick={() => setSelectedAutomationId(automation.id)}
               >
                 <CardHeader className="pb-2">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <CardTitle className="truncate text-base">
+                  <div className="flex flex-col items-start gap-2 sm:flex-row sm:justify-between">
+                    <div className="min-w-0 flex-1">
+                      <CardTitle className="line-clamp-2 text-base leading-snug sm:line-clamp-1">
                         {automation.name}
                       </CardTitle>
                       <p className="mt-1 text-xs text-muted-foreground">
@@ -355,7 +355,10 @@ export function AutomationsPane({
                     </div>
                     <Badge
                       variant="outline"
-                      className={statusTone(automation.last_run_status)}
+                      className={cn(
+                        'shrink-0 self-start',
+                        statusTone(automation.last_run_status)
+                      )}
                     >
                       {automation.status === 'paused'
                         ? 'Paused'

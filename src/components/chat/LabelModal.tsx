@@ -9,7 +9,6 @@ import {
 import { Input } from '@/components/ui/input'
 import { Tag, Check, Pencil } from 'lucide-react'
 import { useChatStore } from '@/store/chat-store'
-import { toast } from 'sonner'
 import type { LabelData } from '@/types/chat'
 import { getLabelTextColor } from '@/lib/label-colors'
 
@@ -125,7 +124,6 @@ export function LabelModal({
       }
       if (!sessionId) return
       useChatStore.getState().setSessionLabel(sessionId, labelData)
-      toast.success(labelData ? `Labeled: ${labelData.name}` : 'Label removed')
       onClose()
     },
     [sessionId, onClose, onApply]
@@ -147,7 +145,6 @@ export function LabelModal({
     updateAllSessionsWithLabel(editingLabelName, selectedColor)
     onColorChange?.(editingLabelName, selectedColor)
     setColorOverrides(prev => ({ ...prev, [editingLabelName]: selectedColor }))
-    toast.success(`Color updated for "${editingLabelName}"`)
     setEditingLabelName(null)
   }, [
     editingLabelName,

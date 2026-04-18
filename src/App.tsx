@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
+  connectTransport,
+  ingestBootstrapEvents,
   invoke,
   useWsConnectionStatus,
   useWsDataReady,
@@ -8,7 +10,6 @@ import {
   useWsAuthError,
   preloadInitialData,
   refetchInitialData,
-  consumeReconnectData,
   setAppDataDir,
   hasPreloadedData,
   type InitialData,
@@ -114,6 +115,7 @@ function App() {
   // Track preloading state for web view
   const [isPreloading, setIsPreloading] = useState(!isNativeApp())
   const queryClient = useQueryClient()
+  const hasStartedTransportRef = useRef(false)
 
   // Holds the update object so the title bar indicator can trigger install later
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -269,10 +271,32 @@ function App() {
             ...worktreePaths,
           }
         }
+        // Clear stale waiting/reviewing state for sessions actively running a turn.
+        // The server persists these flags from the previous turn's completion;
+        // if a new turn is in-flight they're stale and would show approve buttons.
+        if (data.runningSessions?.length) {
+          const runningSessionIds = new Set(data.runningSessions)
+          for (const sessionId of data.runningSessions) {
+            runningSessionIds.add(sessionId)
+          }
+          const filteredReviewingUpdates = Object.fromEntries(
+            Object.entries(reviewingUpdates).filter(
+              ([sessionId]) => !runningSessionIds.has(sessionId)
+            )
+          )
+          const filteredWaitingUpdates = Object.fromEntries(
+            Object.entries(waitingUpdates).filter(
+              ([sessionId]) => !runningSessionIds.has(sessionId)
+            )
+          )
+          storeUpdates.reviewingSessions = filteredReviewingUpdates
+          storeUpdates.waitingForInputSessionIds = filteredWaitingUpdates
+        } else {
+          storeUpdates.reviewingSessions = reviewingUpdates
+          storeUpdates.waitingForInputSessionIds = waitingUpdates
+        }
         // Replace (not merge) reviewing/waiting state — server is source of truth.
         // Merging would keep stale entries from sessions that changed while disconnected.
-        storeUpdates.reviewingSessions = reviewingUpdates
-        storeUpdates.waitingForInputSessionIds = waitingUpdates
         if (Object.keys(storeUpdates).length > 0) {
           beginSessionStateHydration()
           try {
@@ -311,23 +335,51 @@ function App() {
       // This clears sessions that finished while disconnected and restores
       // sessions that are still running — server is source of truth.
       const runningSendingIds: Record<string, boolean> = {}
+      const runningSendStartedAt: Record<string, number> = {}
       if (data.runningSessions?.length) {
         for (const sessionId of data.runningSessions) {
           runningSendingIds[sessionId] = true
+          const startedAt = data.sessionsByWorktree
+            ? Object.values(data.sessionsByWorktree)
+                .flatMap(ws => (ws as WorktreeSessions).sessions)
+                .find(session => session.id === sessionId)?.last_run_started_at
+            : undefined
+          if (startedAt) {
+            runningSendStartedAt[sessionId] = startedAt * 1000
+          }
         }
       }
       useChatStore.setState(state => {
         const current = state.sendingSessionIds
+        const currentSendStartedAt = state.sendStartedAt
         // Check if anything actually changed to avoid unnecessary re-renders
         const currentKeys = Object.keys(current)
         const newKeys = Object.keys(runningSendingIds)
+        const currentStartKeys = Object.keys(currentSendStartedAt).filter(
+          key => runningSendingIds[key]
+        )
+        const newStartKeys = Object.keys(runningSendStartedAt)
         if (
           currentKeys.length === newKeys.length &&
-          newKeys.every(k => current[k])
+          newKeys.every(k => current[k]) &&
+          currentStartKeys.length === newStartKeys.length &&
+          newStartKeys.every(
+            k => currentSendStartedAt[k] === runningSendStartedAt[k]
+          )
         ) {
           return state
         }
-        return { sendingSessionIds: runningSendingIds }
+        return {
+          sendingSessionIds: runningSendingIds,
+          sendStartedAt: {
+            ...Object.fromEntries(
+              Object.entries(currentSendStartedAt).filter(
+                ([sessionId]) => !runningSendingIds[sessionId]
+              )
+            ),
+            ...runningSendStartedAt,
+          },
+        }
       })
       // Note: Git status is included in worktree cached_* fields, no separate cache needed
       // Seed preferences into cache
@@ -357,6 +409,7 @@ function App() {
             projects: Array.isArray(data.projects) ? data.projects.length : 0,
           })
           seedCache(data)
+          ingestBootstrapEvents(data.replayEvents ?? [])
           setWsDataReady(true)
         }
       })
@@ -383,6 +436,14 @@ function App() {
   // Global streaming event listeners - must be at App level so they stay active
   // even when ChatWindow is unmounted (e.g., when viewing a different worktree)
   useStreamingEvents({ queryClient })
+
+  // Browser mode: only open WebSocket after preload + listener registration.
+  // This lets us replay buffered server events before live events start arriving.
+  useEffect(() => {
+    if (isNativeApp() || isPreloading || hasStartedTransportRef.current) return
+    hasStartedTransportRef.current = true
+    connectTransport()
+  }, [isPreloading])
 
   // Global queue processor - must be at App level so queued messages execute
   // even when the worktree is not focused (ChatWindow unmounted)
@@ -417,15 +478,13 @@ function App() {
       // so the server loads the correct sessions even when ui_state.json
       // on disk is stale (debounced save hasn't flushed yet).
       const activeSessionIds = useChatStore.getState().activeSessionIds
-      const prefetch = consumeReconnectData()
-      const dataPromise = prefetch ?? refetchInitialData(activeSessionIds)
-      logger.info('WebSocket reconnected, re-fetching initial data via HTTP', {
-        prefetched: !!prefetch,
-      })
+      const dataPromise = refetchInitialData(activeSessionIds)
+      logger.info('WebSocket reconnected, re-fetching initial data via HTTP')
       dataPromise
         .then(data => {
           if (data) {
             seedCache(data)
+            ingestBootstrapEvents(data.replayEvents ?? [])
             logger.info('Reconnect: re-seeded cache from HTTP')
             setWsDataReady(true)
             // Invalidate non-preloaded queries after a frame so the seeded

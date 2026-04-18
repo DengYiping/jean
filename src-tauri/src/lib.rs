@@ -13,10 +13,12 @@ mod background_tasks;
 mod chat;
 mod claude_cli;
 mod codex_cli;
+mod cursor_cli;
 mod gh_cli;
 pub mod http_server;
 mod opencode_cli;
 mod opencode_server;
+mod opinionated;
 mod platform;
 mod projects;
 mod terminal;
@@ -196,7 +198,7 @@ pub struct AppPreferences {
     #[serde(default = "default_execution_mode")]
     pub default_execution_mode: String, // Default execution mode: "plan", "build", or "yolo"
     #[serde(default = "default_backend")]
-    pub default_backend: String, // Default CLI backend: "claude", "codex", or "opencode"
+    pub default_backend: String, // Default CLI backend: "claude", "codex", "opencode", or "cursor"
     #[serde(default = "default_codex_model")]
     pub selected_codex_model: String, // Default Codex model
     #[serde(default = "default_opencode_model")]
@@ -285,7 +287,7 @@ fn default_auto_branch_naming() -> bool {
 }
 
 fn default_branch_naming_model() -> String {
-    "haiku".to_string() // Use Haiku by default for fast, cheap branch name generation
+    "sonnet".to_string()
 }
 
 fn default_auto_session_naming() -> bool {
@@ -293,7 +295,7 @@ fn default_auto_session_naming() -> bool {
 }
 
 fn default_session_naming_model() -> String {
-    "haiku".to_string() // Use Haiku by default for fast, cheap session name generation
+    "sonnet".to_string()
 }
 
 fn default_font_size() -> u32 {
@@ -309,7 +311,7 @@ fn default_chat_font() -> String {
 }
 
 fn default_model() -> String {
-    "opus".to_string()
+    "claude-opus-4-7".to_string()
 }
 
 fn default_thinking_level() -> String {
@@ -424,6 +426,10 @@ fn default_opencode_model() -> String {
     "opencode/gpt-5.3-codex".to_string()
 }
 
+fn default_cursor_model() -> String {
+    "cursor/auto".to_string()
+}
+
 fn default_codex_reasoning_effort() -> String {
     "high".to_string()
 }
@@ -503,7 +509,7 @@ fn default_removal_behavior() -> String {
 }
 
 fn default_auto_save_context() -> bool {
-    true // Enabled by default
+    false // Disabled by default
 }
 
 fn default_auto_pull_base_branch() -> bool {
@@ -648,6 +654,14 @@ fn default_pr_content_prompt() -> String {
 <target_branch>{target_branch}</target_branch>
 <commit_count>{commit_count}</commit_count>
 </context>
+
+<related_context>
+{context}
+</related_context>
+
+<related_pull_requests>
+{related_pull_requests}
+</related_pull_requests>
 
 <commits>
 {commits}
@@ -913,6 +927,154 @@ Investigate the loaded Linear {linearWord} ({linearRefs})
         .to_string()
 }
 
+fn default_release_notes_prompt() -> String {
+    r#"Generate release notes for changes since the `{tag}` release ({previous_release_name}).
+
+## Commits since {tag}
+
+{commits}
+
+## Instructions
+
+- Write a concise release title
+- Group changes into categories: Features, Fixes, Improvements, Breaking Changes (only include categories that have entries)
+- Use bullet points with brief descriptions
+- Reference PR numbers if visible in commit messages
+- Skip merge commits and trivial changes (typos, formatting)
+- Write in past tense ("Added", "Fixed", "Improved")
+- Keep it concise and user-facing (skip internal implementation details)"#
+        .to_string()
+}
+
+fn default_session_naming_prompt() -> String {
+    r#"<task>Generate a short, human-friendly name for this chat session based on the user's request.</task>
+
+<rules>
+- Maximum 4-5 words total
+- Use sentence case (only capitalize first word)
+- Be descriptive but concise
+- Focus on the main topic or goal
+- No special characters or punctuation
+- No generic names like "Chat session" or "New task"
+- Do NOT use commit-style prefixes like "Add", "Fix", "Update", "Refactor"
+</rules>
+
+<user_request>
+{message}
+</user_request>
+
+<output_format>
+Respond with ONLY the raw JSON object, no markdown, no code fences, no explanation:
+{"session_name": "Your session name here"}
+</output_format>"#
+        .to_string()
+}
+
+fn default_global_system_prompt() -> String {
+    r#"### 1. Plan Mode Default
+- Enter plan mode for ANY non-trivial task (3+ steps or architectural decisions)
+- If something goes sideways, STOP and re-plan immediately - don't keep pushing
+- Use plan mode for verification steps, not just building
+- Write detailed specs upfront to reduce ambiguity
+- Make the plan extremely concise. Sacrifice grammar for the sake of concision.
+- At the end of each plan, give me a list of unresolved questions to answer, if any.
+
+### 2. Subagent Strategy to keep main context window clean
+- Offload research, exploration, and parallel analysis to subagents
+- For complex problems, throw more compute at it via subagents
+- One task per subagent for focused execution
+
+### 3. Self-Improvement Loop
+- After ANY correction from the user: update '.ai/lessons.md' with the pattern
+- Write rules for yourself that prevent the same mistake
+- Ruthlessly iterate on these lessons until mistake rate drops
+- Review lessons at session start for relevant project
+
+### 4. Verification Before Done
+- Never mark a task complete without proving it works
+- Diff behavior between main and your changes when relevant
+- Ask yourself: "Would a staff engineer approve this?"
+- Run tests, check logs, demonstrate correctness
+
+### 5. Demand Elegance (Balanced)
+- For non-trivial changes: pause and ask "is there a more elegant way?"
+- If a fix feels hacky: "Knowing everything I know now, implement the elegant solution"
+- Skip this for simple, obvious fixes - don't over-engineer
+- Challenge your own work before presenting it
+
+### 6. Autonomous Bug Fixing
+- When given a bug report: just fix it. Don't ask for hand-holding
+- Point at logs, errors, failing tests -> then resolve them
+- Zero context switching required from the user
+- Go fix failing CI tests without being told how
+
+## Task Management
+1. **Plan First**: Write plan to '.ai/todo.md' with checkable items
+2. **Verify Plan**: Check in before starting implementation
+3. **Track Progress**: Mark items complete as you go
+4. **Explain Changes**: High-level summary at each step
+5. **Document Results**: Add review to '.ai/todo.md'
+6. **Capture Lessons**: Update '.ai/lessons.md' after corrections
+
+## Core Principles
+- **Simplicity First**: Make every change as simple as possible. Impact minimal code.
+- **No Laziness**: Find root causes. No temporary fixes. Senior developer standards.
+- **Minimal Impact**: Changes should only touch what's necessary. Avoid introducing bugs.
+
+## Important!
+
+- After each finished task, please write a few bullet points on how to test the changes."#
+        .to_string()
+}
+
+fn default_session_recap_prompt() -> String {
+    r#"You are a summarization assistant. Your ONLY job is to summarize the following conversation transcript. Do NOT continue the conversation or take any actions. Just summarize.
+
+CONVERSATION TRANSCRIPT:
+{conversation}
+
+END OF TRANSCRIPT.
+
+Now provide a brief summary with exactly two fields:
+- chat_summary: One sentence (max 100 chars) describing the overall goal and current status
+- last_action: One sentence (max 200 chars) describing what was just completed in the last exchange"#
+        .to_string()
+}
+
+fn default_review_comments_prompt() -> String {
+    r#"<task>
+
+Address the following review comments from PR #{prNumber}
+
+</task>
+
+
+<review_comments>
+{reviewComments}
+</review_comments>
+
+
+<instructions>
+
+1. Read each review comment carefully, noting the file path, line numbers, and diff context
+2. Understand what the reviewer is asking for in each comment
+3. Make the requested changes to address each comment
+4. If a comment is unclear or you disagree with it, explain your reasoning
+5. After making changes, briefly summarize what you changed for each comment
+
+</instructions>
+
+
+<guidelines>
+
+- Be thorough but focused — address exactly what was requested
+- If a comment requires a larger refactor, explain the scope before proceeding
+- Run tests after making changes to ensure nothing is broken
+
+</guidelines>"#
+        .to_string()
+}
+
 fn default_parallel_execution_prompt() -> String {
     r#"In plan mode, structure plans so subagents can work simultaneously. In build/execute mode, use subagents in parallel for faster implementation.
 
@@ -947,9 +1109,9 @@ pub struct MagicPromptModels {
     pub investigate_pr_model: String,
     #[serde(default = "default_model")]
     pub investigate_workflow_run_model: String,
-    #[serde(default = "default_haiku_model")]
+    #[serde(default = "default_sonnet_model")]
     pub pr_content_model: String,
-    #[serde(default = "default_haiku_model")]
+    #[serde(default = "default_sonnet_model")]
     pub commit_message_model: String,
     #[serde(default = "default_model")]
     pub code_review_model: String,
@@ -957,11 +1119,11 @@ pub struct MagicPromptModels {
     pub context_summary_model: String,
     #[serde(default = "default_model")]
     pub resolve_conflicts_model: String,
-    #[serde(default = "default_haiku_model")]
+    #[serde(default = "default_sonnet_model")]
     pub release_notes_model: String,
-    #[serde(default = "default_haiku_model")]
+    #[serde(default = "default_sonnet_model")]
     pub session_naming_model: String,
-    #[serde(default = "default_haiku_model")]
+    #[serde(default = "default_sonnet_model")]
     pub session_recap_model: String,
     #[serde(default = "default_model")]
     pub investigate_security_alert_model: String,
@@ -973,8 +1135,8 @@ pub struct MagicPromptModels {
     pub review_comments_model: String,
 }
 
-fn default_haiku_model() -> String {
-    "haiku".to_string()
+fn default_sonnet_model() -> String {
+    "sonnet".to_string()
 }
 
 impl Default for MagicPromptModels {
@@ -983,14 +1145,14 @@ impl Default for MagicPromptModels {
             investigate_issue_model: default_model(),
             investigate_pr_model: default_model(),
             investigate_workflow_run_model: default_model(),
-            pr_content_model: default_haiku_model(),
-            commit_message_model: default_haiku_model(),
+            pr_content_model: default_sonnet_model(),
+            commit_message_model: default_sonnet_model(),
             code_review_model: default_model(),
             context_summary_model: default_model(),
             resolve_conflicts_model: default_model(),
-            release_notes_model: default_haiku_model(),
-            session_naming_model: default_haiku_model(),
-            session_recap_model: default_haiku_model(),
+            release_notes_model: default_sonnet_model(),
+            session_naming_model: default_sonnet_model(),
+            session_recap_model: default_sonnet_model(),
             investigate_security_alert_model: default_model(),
             investigate_advisory_model: default_model(),
             investigate_linear_issue_model: default_model(),
@@ -1005,10 +1167,18 @@ pub fn is_opencode_model(model: &str) -> bool {
     model.starts_with("opencode/")
 }
 
+/// Returns true if the given model string identifies a Cursor model.
+/// Cursor model IDs are prefixed with "cursor/" (e.g. "cursor/auto").
+pub fn is_cursor_model(model: &str) -> bool {
+    model.starts_with("cursor/")
+}
+
 /// Returns true if the given model string identifies a Codex model.
 /// Codex model IDs contain "codex" or start with "gpt-", but NOT OpenCode models.
 pub fn is_codex_model(model: &str) -> bool {
-    !is_opencode_model(model) && (model.contains("codex") || model.starts_with("gpt-"))
+    !is_opencode_model(model)
+        && !is_cursor_model(model)
+        && (model.contains("codex") || model.starts_with("gpt-"))
 }
 
 /// Per-prompt provider overrides for magic prompts (None = use global default_provider)
@@ -1139,10 +1309,14 @@ impl MagicPrompts {
                 default_investigate_workflow_run_prompt,
                 &mut self.investigate_workflow_run,
             ),
+            (default_release_notes_prompt, &mut self.release_notes),
+            (default_session_naming_prompt, &mut self.session_naming),
             (
                 default_parallel_execution_prompt,
                 &mut self.parallel_execution,
             ),
+            (default_global_system_prompt, &mut self.global_system_prompt),
+            (default_session_recap_prompt, &mut self.session_recap),
             (
                 default_investigate_security_alert_prompt,
                 &mut self.investigate_security_alert,
@@ -1342,9 +1516,21 @@ pub struct UIState {
     #[serde(default)]
     pub modal_terminal_open: std::collections::HashMap<String, bool>,
 
-    /// Modal terminal drawer width in pixels
+    /// Modal terminal dock mode
+    #[serde(default)]
+    pub modal_terminal_dock_mode: Option<String>,
+
+    /// Legacy pinned state; maps to right dock when true
+    #[serde(default)]
+    pub modal_terminal_pinned: Option<bool>,
+
+    /// Modal terminal width in pixels for left/right dock
     #[serde(default)]
     pub modal_terminal_width: Option<f64>,
+
+    /// Modal terminal height in pixels for bottom dock
+    #[serde(default)]
+    pub modal_terminal_height: Option<f64>,
 
     /// Last-accessed timestamps per project for recency sorting (projectId → unix ms)
     #[serde(default)]
@@ -1398,7 +1584,10 @@ impl Default for UIState {
             review_sidebar_visible: None,
             pending_digest_session_ids: Vec::new(),
             modal_terminal_open: std::collections::HashMap::new(),
+            modal_terminal_dock_mode: None,
+            modal_terminal_pinned: None,
             modal_terminal_width: None,
+            modal_terminal_height: None,
             project_access_timestamps: std::collections::HashMap::new(),
             dashboard_worktree_collapse_overrides: std::collections::HashMap::new(),
             project_canvas_settings: std::collections::HashMap::new(),
@@ -2850,6 +3039,7 @@ pub fn run() {
             projects::get_review_prompt,
             projects::save_worktree_pr,
             projects::detect_and_link_pr,
+            projects::detect_open_pr_for_branch,
             projects::clear_worktree_pr,
             projects::update_worktree_cached_status,
             projects::rebase_worktree,
@@ -2870,12 +3060,14 @@ pub fn run() {
             projects::reorder_projects,
             projects::reorder_worktrees,
             projects::fetch_worktrees_status,
-            // Claude CLI skills & commands
+            // CLI skills & commands
             projects::list_claude_skills,
             projects::list_codex_skills,
             projects::set_codex_skill_enabled,
             projects::list_claude_commands,
             projects::resolve_claude_command,
+            projects::list_codex_skills,
+            projects::list_plugin_skills,
             // GitHub issues commands
             projects::list_github_issues,
             projects::search_github_issues,
@@ -2955,6 +3147,7 @@ pub fn run() {
             chat::get_sessions,
             chat::list_all_sessions,
             chat::get_session,
+            chat::load_older_session_messages,
             chat::create_session,
             chat::rename_session,
             chat::regenerate_session_name,
@@ -2993,6 +3186,7 @@ pub fn run() {
             chat::remove_queued_message,
             chat::reorder_queued_messages,
             chat::clear_message_queue,
+            chat::answer_opencode_question,
             // Chat commands - Image handling
             chat::read_clipboard_image,
             chat::save_pasted_image,
@@ -3044,6 +3238,12 @@ pub fn run() {
             codex_cli::get_codex_usage,
             codex_cli::get_available_codex_versions,
             codex_cli::install_codex_cli,
+            // Cursor CLI management commands
+            cursor_cli::check_cursor_cli_installed,
+            cursor_cli::detect_cursor_in_path,
+            cursor_cli::check_cursor_cli_auth,
+            cursor_cli::list_cursor_models,
+            cursor_cli::get_cursor_install_command,
             // OpenCode CLI management commands
             opencode_cli::check_opencode_cli_installed,
             opencode_cli::detect_opencode_in_path,
@@ -3084,6 +3284,9 @@ pub fn run() {
             list_http_bind_host_options,
             validate_http_bind_host,
             regenerate_http_token,
+            // Opinionated plugin commands
+            opinionated::check_opinionated_plugin_status,
+            opinionated::install_opinionated_plugin,
             // OpenCode server commands
             opencode_server::start_opencode_server,
             opencode_server::stop_opencode_server,

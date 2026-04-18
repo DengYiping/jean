@@ -15,8 +15,6 @@ describe('StreamingMessage', () => {
     contentBlocks: [],
     toolCalls: [],
     streamingContent: '',
-    selectedThinkingLevel: 'think' as const,
-    approveShortcut: 'Cmd+Enter',
     onQuestionAnswer: noopQuestionAnswer,
     onQuestionSkip: vi.fn(),
     onFileClick: vi.fn(),
@@ -24,14 +22,13 @@ describe('StreamingMessage', () => {
     isQuestionAnswered: vi.fn(() => false),
     getSubmittedAnswers: vi.fn(() => undefined),
     areQuestionsSkipped: vi.fn(() => false),
-    isStreamingPlanApproved: vi.fn(() => false),
-    onStreamingPlanApproval: vi.fn(),
   }
 
-  it('shows a response placeholder before the first streaming chunk arrives', () => {
+  it('renders no text before the first streaming chunk arrives', () => {
     render(<StreamingMessage {...baseProps} />)
 
-    expect(screen.getByTestId('streaming-response-placeholder')).toBeVisible()
+    expect(screen.queryByText('Plan')).not.toBeInTheDocument()
+    expect(screen.queryByText('Working on it...')).not.toBeInTheDocument()
   })
 
   it('hides the placeholder once streaming text is available', () => {

@@ -342,7 +342,7 @@ export function GeneralPane({
             <Input
               value={displayedName}
               onChange={e => setLocalName(e.target.value)}
-              className="flex-1 text-sm"
+              className="flex-1 text-base md:text-sm"
             />
             <Button
               size="sm"
@@ -527,17 +527,10 @@ export function GeneralPane({
             <SelectContent>
               <SelectItem value="global-default">Use global default</SelectItem>
               <SelectItem value="claude">Claude</SelectItem>
-              <SelectItem value="codex">
-                Codex{' '}
-                <span className="ml-1 rounded bg-primary/15 px-1 py-px text-[9px] font-semibold uppercase text-primary">
-                  BETA
-                </span>
-              </SelectItem>
-              <SelectItem value="opencode">
-                OpenCode{' '}
-                <span className="ml-1 rounded bg-primary/15 px-1 py-px text-[9px] font-semibold uppercase text-primary">
-                  BETA
-                </span>
+              <SelectItem value="codex">Codex</SelectItem>
+              <SelectItem value="opencode">OpenCode</SelectItem>
+              <SelectItem value="cursor">
+                <BackendLabel backend="cursor" />
               </SelectItem>
             </SelectContent>
           </Select>
@@ -589,7 +582,7 @@ export function GeneralPane({
               placeholder="~/jean (default)"
               value={displayedWorktreesDir}
               onChange={e => setLocalWorktreesDir(e.target.value)}
-              className="flex-1 text-sm"
+              className="flex-1 text-base md:text-sm"
             />
             <Button
               variant="outline"
@@ -661,7 +654,7 @@ export function GeneralPane({
               placeholder="lin_api_..."
               value={displayedLinearApiKey}
               onChange={e => setLocalLinearApiKey(e.target.value)}
-              className="flex-1 text-sm font-mono"
+              className="flex-1 text-base md:text-sm font-mono"
             />
             <Button
               variant="outline"
@@ -748,7 +741,7 @@ export function GeneralPane({
             value={displayedSystemPrompt}
             onChange={e => setLocalSystemPrompt(e.target.value)}
             rows={4}
-            className="resize-y text-sm"
+            className="resize-y text-base md:text-sm"
           />
           <Button
             size="sm"

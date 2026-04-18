@@ -133,6 +133,7 @@ describe('preferences service', () => {
         removal_behavior: 'archive',
         auto_archive_on_pr_merged: true,
         debug_mode_enabled: false,
+
         default_effort_level: 'high',
         default_enabled_mcp_servers: [],
         known_mcp_servers: [],
@@ -143,7 +144,7 @@ describe('preferences service', () => {
         custom_cli_profiles: [],
         default_provider: null,
 
-        auto_save_context: true,
+        auto_save_context: false,
         auto_pull_base_branch: true,
         show_create_page_issue_sources: true,
         confirm_session_close: true,
@@ -260,6 +261,7 @@ describe('preferences service', () => {
         removal_behavior: 'archive',
         auto_archive_on_pr_merged: true,
         debug_mode_enabled: false,
+
         default_effort_level: 'high',
         default_enabled_mcp_servers: [],
         known_mcp_servers: [],
@@ -270,7 +272,7 @@ describe('preferences service', () => {
         custom_cli_profiles: [],
         default_provider: null,
 
-        auto_save_context: true,
+        auto_save_context: false,
         auto_pull_base_branch: true,
         show_create_page_issue_sources: true,
         confirm_session_close: true,
@@ -359,6 +361,7 @@ describe('preferences service', () => {
         removal_behavior: 'archive',
         auto_archive_on_pr_merged: true,
         debug_mode_enabled: false,
+
         default_effort_level: 'high',
         default_enabled_mcp_servers: [],
         known_mcp_servers: [],
@@ -369,7 +372,7 @@ describe('preferences service', () => {
         custom_cli_profiles: [],
         default_provider: null,
 
-        auto_save_context: true,
+        auto_save_context: false,
         auto_pull_base_branch: true,
         show_create_page_issue_sources: true,
         confirm_session_close: true,
@@ -538,6 +541,7 @@ describe('preferences service', () => {
         removal_behavior: 'archive',
         auto_archive_on_pr_merged: true,
         debug_mode_enabled: false,
+
         default_effort_level: 'high',
         default_enabled_mcp_servers: [],
         known_mcp_servers: [],
@@ -548,7 +552,7 @@ describe('preferences service', () => {
         custom_cli_profiles: [],
         default_provider: null,
 
-        auto_save_context: true,
+        auto_save_context: false,
         auto_pull_base_branch: true,
         show_create_page_issue_sources: true,
         confirm_session_close: true,
@@ -640,6 +644,7 @@ describe('preferences service', () => {
         removal_behavior: 'archive',
         auto_archive_on_pr_merged: true,
         debug_mode_enabled: false,
+
         default_effort_level: 'high',
         default_enabled_mcp_servers: [],
         known_mcp_servers: [],
@@ -650,7 +655,7 @@ describe('preferences service', () => {
         custom_cli_profiles: [],
         default_provider: null,
 
-        auto_save_context: true,
+        auto_save_context: false,
         auto_pull_base_branch: true,
         show_create_page_issue_sources: true,
         confirm_session_close: true,
@@ -742,6 +747,7 @@ describe('preferences service', () => {
         removal_behavior: 'archive',
         auto_archive_on_pr_merged: true,
         debug_mode_enabled: false,
+
         default_effort_level: 'high',
         default_enabled_mcp_servers: [],
         known_mcp_servers: [],
@@ -752,7 +758,7 @@ describe('preferences service', () => {
         custom_cli_profiles: [],
         default_provider: null,
 
-        auto_save_context: true,
+        auto_save_context: false,
         auto_pull_base_branch: true,
         show_create_page_issue_sources: true,
         confirm_session_close: true,
@@ -842,6 +848,7 @@ describe('preferences service', () => {
         removal_behavior: 'archive',
         auto_archive_on_pr_merged: true,
         debug_mode_enabled: false,
+
         default_effort_level: 'high',
         default_enabled_mcp_servers: [],
         known_mcp_servers: [],
@@ -852,7 +859,7 @@ describe('preferences service', () => {
         custom_cli_profiles: [],
         default_provider: null,
 
-        auto_save_context: true,
+        auto_save_context: false,
         auto_pull_base_branch: true,
         show_create_page_issue_sources: true,
         confirm_session_close: true,

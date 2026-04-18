@@ -13,12 +13,19 @@ export type PreferencePane =
   | 'integrations'
   | 'experimental'
   | 'web-access'
+  | 'opinionated'
 
 export type OnboardingStartStep = 'claude' | 'gh' | null
 
 export type CliUpdateModalType = 'claude' | 'gh' | 'codex' | 'opencode' | null
 
-export type CliLoginModalType = 'claude' | 'gh' | 'codex' | 'opencode' | null
+export type CliLoginModalType =
+  | 'claude'
+  | 'gh'
+  | 'codex'
+  | 'opencode'
+  | 'cursor'
+  | null
 
 interface UIState {
   leftSidebarVisible: boolean
@@ -53,7 +60,7 @@ interface UIState {
   cliLoginModalType: CliLoginModalType
   cliLoginModalCommand: string | null
   cliLoginModalCommandArgs: string[] | null
-  cliLoginModalAction: 'login' | 'update'
+  cliLoginModalAction: 'login' | 'update' | 'install'
   /** Worktree IDs that should auto-trigger investigate-issue when created */
   autoInvestigateWorktreeIds: Set<string>
   /** Worktree IDs that should auto-trigger investigate-pr when created */
@@ -128,10 +135,10 @@ interface UIState {
   openCliUpdateModal: (type: 'claude' | 'gh' | 'codex' | 'opencode') => void
   closeCliUpdateModal: () => void
   openCliLoginModal: (
-    type: 'claude' | 'gh' | 'codex' | 'opencode',
+    type: 'claude' | 'gh' | 'codex' | 'opencode' | 'cursor',
     command: string,
     commandArgs?: string[],
-    action?: 'login' | 'update'
+    action?: 'login' | 'update' | 'install'
   ) => void
   closeCliLoginModal: () => void
   incrementPendingBackgroundCreations: () => void
@@ -163,6 +170,8 @@ interface UIState {
   setUIStateInitialized: (initialized: boolean) => void
   setPendingUpdateVersion: (version: string | null) => void
   setUpdateModalVersion: (version: string | null) => void
+  chatSearchOpen: boolean
+  setChatSearchOpen: (open: boolean) => void
   githubDashboardOpen: boolean
   setGitHubDashboardOpen: (open: boolean) => void
 }
@@ -228,6 +237,7 @@ export const useUIStore = create<UIState>()(
       uiStateInitialized: false,
       pendingUpdateVersion: null,
       updateModalVersion: null,
+      chatSearchOpen: false,
       githubDashboardOpen: false,
       toggleLeftSidebar: () =>
         set(
@@ -712,6 +722,16 @@ export const useUIStore = create<UIState>()(
           { updateModalVersion: version },
           undefined,
           'setUpdateModalVersion'
+        ),
+
+      setChatSearchOpen: (open: boolean) =>
+        set(
+          state => {
+            if (state.chatSearchOpen === open) return state
+            return { chatSearchOpen: open }
+          },
+          undefined,
+          'setChatSearchOpen'
         ),
 
       setGitHubDashboardOpen: (open: boolean) =>

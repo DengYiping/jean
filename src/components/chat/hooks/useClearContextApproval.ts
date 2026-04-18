@@ -52,6 +52,7 @@ function mapCodexReasoningToEffort(
     case 'high':
       return 'high'
     case 'xhigh':
+      return 'xhigh'
     case 'max':
       return 'max'
     default:
@@ -60,12 +61,13 @@ function mapCodexReasoningToEffort(
 }
 
 function getDefaultModelForBackend(
-  backend: 'claude' | 'codex' | 'opencode' | undefined,
+  backend: 'claude' | 'codex' | 'opencode' | 'cursor' | undefined,
   preferences:
     | {
         selected_model?: string | null
         selected_codex_model?: string | null
         selected_opencode_model?: string | null
+        selected_cursor_model?: string | null
       }
     | undefined
 ): string {
@@ -74,6 +76,9 @@ function getDefaultModelForBackend(
   }
   if (backend === 'opencode') {
     return preferences?.selected_opencode_model ?? 'opencode/gpt-5.3-codex'
+  }
+  if (backend === 'cursor') {
+    return preferences?.selected_cursor_model ?? 'cursor/auto'
   }
   return preferences?.selected_model ?? 'opus'
 }
@@ -295,7 +300,7 @@ export function useClearContextApproval({
       if (backend) {
         store.setSelectedBackend(
           newSession.id,
-          backend as 'claude' | 'codex' | 'opencode'
+          backend as 'claude' | 'codex' | 'opencode' | 'cursor'
         )
       }
       // Optimistically update TanStack Query cache so UI shows correct backend/model

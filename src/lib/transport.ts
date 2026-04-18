@@ -140,6 +140,7 @@ export interface InitialData {
   sessionsByWorktree: Record<string, unknown> // worktreeId -> WorktreeSessions
   activeSessions?: Record<string, unknown> // sessionId -> Session (with messages)
   runningSessions?: string[] // sessionIds with active CLI processes
+  replayEvents?: BootstrapEvent[]
   preferences: unknown
   uiState: unknown
   appDataDir?: string
@@ -258,6 +259,15 @@ interface WsMessage {
   error?: string
   event?: string
   payload?: unknown
+  /** Monotonic sequence number for event replay on reconnect. */
+  seq?: number
+}
+
+export interface BootstrapEvent {
+  type: 'event'
+  event: string
+  payload: unknown
+  seq?: number
 }
 
 class WsTransport {
@@ -285,8 +295,12 @@ class WsTransport {
   private _dataReady = false
   private _tokenValidated = false
   private _lastConnectTime = 0
-  private _reconnectPrefetch: Promise<InitialData | null> | null = null
   private _subscribers = new Set<() => void>()
+  private _connectEnabled = false
+  /** Track last seen seq per session for replay on reconnect. */
+  private _lastSeqBySession = new Map<string, number>()
+  /** Sessions that were actively streaming when we disconnected. */
+  private _activeStreamingSessions = new Set<string>()
 
   get connected(): boolean {
     return this._connected
@@ -332,17 +346,6 @@ class WsTransport {
     return () => this._subscribers.delete(callback)
   }
 
-  /**
-   * Consume the reconnect prefetch (if available).
-   * Returns the in-flight /api/init promise that was started during the
-   * backoff wait, or null if no prefetch is pending.
-   */
-  consumeReconnectData(): Promise<InitialData | null> | null {
-    const prefetch = this._reconnectPrefetch
-    this._reconnectPrefetch = null
-    return prefetch
-  }
-
   /** Get current connection snapshot for useSyncExternalStore. */
   getSnapshot(): boolean {
     return this._connected
@@ -360,6 +363,7 @@ class WsTransport {
 
   /** Connect to the WebSocket server (validates token first). */
   connect(): void {
+    if (!this._connectEnabled) return
     if (
       this._connecting ||
       this.ws?.readyState === WebSocket.OPEN ||
@@ -396,6 +400,12 @@ class WsTransport {
         this._connecting = false
       })
     }
+  }
+
+  enableConnect(): void {
+    if (this._connectEnabled) return
+    this._connectEnabled = true
+    this.connect()
   }
 
   private async validateAndConnect(token: string): Promise<void> {
@@ -456,6 +466,20 @@ class WsTransport {
       this.setConnected(true)
       this.reconnectAttempt = 0
 
+      // Replay missed events for sessions that were actively streaming
+      for (const sessionId of this._activeStreamingSessions) {
+        const lastSeq = this._lastSeqBySession.get(sessionId)
+        if (lastSeq != null) {
+          this.ws?.send(
+            JSON.stringify({
+              type: 'replay',
+              session_id: sessionId,
+              last_seq: lastSeq,
+            })
+          )
+        }
+      }
+
       // Flush queued messages
       for (const item of this.queue) {
         this.ws?.send(item.data)
@@ -501,16 +525,6 @@ class WsTransport {
       // Clear queued-but-unsent messages to prevent reconnect from
       // flushing stale commands that spawn duplicate CLI processes.
       this.queue = []
-
-      // Start prefetching /api/init during the backoff wait so data is
-      // ready by the time the WebSocket reconnects. Uses a short delay
-      // to debounce rapid disconnects.
-      this._reconnectPrefetch = null
-      setTimeout(() => {
-        if (!this._connected) {
-          this._reconnectPrefetch = refetchInitialData()
-        }
-      }, 50)
 
       this.scheduleReconnect()
     }
@@ -626,8 +640,10 @@ class WsTransport {
       }
     }
 
-    // Ensure connected
-    this.connect()
+    // Ensure connected once bootstrap explicitly enables it
+    if (this._connectEnabled) {
+      this.connect()
+    }
 
     return () => {
       this.listeners.get(event)?.delete(typedHandler)
@@ -653,6 +669,29 @@ class WsTransport {
         pending.reject(new Error(msg.error || 'Unknown error'))
       }
     } else if (msg.type === 'event' && msg.event) {
+      // Track seq per session for replay dedup + reconnect
+      if (msg.seq != null && msg.payload) {
+        const payload = msg.payload as Record<string, unknown>
+        const sessionId = payload.session_id as string | undefined
+        if (sessionId) {
+          const lastSeen = this._lastSeqBySession.get(sessionId)
+          if (lastSeen != null && msg.seq <= lastSeen) {
+            return // Already processed — skip duplicate from replay
+          }
+          this._lastSeqBySession.set(sessionId, msg.seq)
+          // Track actively streaming sessions
+          if (msg.event === 'chat:chunk' || msg.event === 'chat:thinking') {
+            this._activeStreamingSessions.add(sessionId)
+          } else if (
+            msg.event === 'chat:done' ||
+            msg.event === 'chat:cancelled'
+          ) {
+            this._activeStreamingSessions.delete(sessionId)
+            this._lastSeqBySession.delete(sessionId)
+          }
+        }
+      }
+
       const handlers = this.listeners.get(msg.event)
       if (handlers && handlers.size > 0) {
         for (const handler of handlers) {
@@ -711,20 +750,20 @@ class WsTransport {
     }
     this.scheduleReconnect()
   }
+
+  ingestBootstrapEvents(events: BootstrapEvent[]): void {
+    const sorted = [...events].sort(
+      (a, b) =>
+        (a.seq ?? Number.MAX_SAFE_INTEGER) - (b.seq ?? Number.MAX_SAFE_INTEGER)
+    )
+    for (const event of sorted) {
+      this.handleMessage(event)
+    }
+  }
 }
 
 // Singleton instance
 const wsTransport = new WsTransport()
-
-// Auto-connect in browser mode (skip when E2E mocks are active)
-if (
-  !isNativeApp() &&
-  typeof window !== 'undefined' &&
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  !(window as any).__JEAN_E2E_MOCK__
-) {
-  wsTransport.connect()
-}
 
 // ---------------------------------------------------------------------------
 // React hooks for connection status (browser mode only)
@@ -770,12 +809,16 @@ export function setWsDataReady(value: boolean): void {
   wsTransport.setDataReady(value)
 }
 
-/**
- * Consume the reconnect prefetch started during the backoff wait.
- * Returns the in-flight /api/init promise, or null if none pending.
- */
-export function consumeReconnectData(): Promise<InitialData | null> | null {
-  return wsTransport.consumeReconnectData()
+/** Start browser WebSocket transport after preload/bootstrap is complete. */
+export function connectTransport(): void {
+  if (isNativeApp() || isE2eMocked) return
+  wsTransport.enableConnect()
+}
+
+/** Feed replayed server events through the normal event pipeline before connect. */
+export function ingestBootstrapEvents(events: BootstrapEvent[]): void {
+  if (events.length === 0) return
+  wsTransport.ingestBootstrapEvents(events)
 }
 
 /**

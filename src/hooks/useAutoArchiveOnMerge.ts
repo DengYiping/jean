@@ -52,9 +52,9 @@ export function useAutoArchiveOnMerge() {
       try {
         // Check if worktree is already archived by looking at cached data
         // We need to find the project ID first
-        const projectsData = queryClient.getQueryData<{ id: string }[]>(
-          projectsQueryKeys.list()
-        )
+        const projectsData = queryClient.getQueryData<
+          { id: string; path: string }[]
+        >(projectsQueryKeys.list())
 
         if (!projectsData) {
           return
@@ -73,6 +73,18 @@ export function useAutoArchiveOnMerge() {
               logger.debug('Worktree already archived, skipping auto-archive', {
                 worktreeId: status.worktree_id,
               })
+              return
+            }
+
+            // Safety: never auto-archive/delete when worktree path matches project path
+            if (worktree.path === project.path) {
+              logger.debug(
+                'Worktree path matches project path, skipping auto-archive',
+                {
+                  worktreeId: status.worktree_id,
+                  worktreePath: worktree.path,
+                }
+              )
               return
             }
 

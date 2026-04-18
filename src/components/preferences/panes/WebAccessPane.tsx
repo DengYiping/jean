@@ -501,7 +501,7 @@ export const WebAccessPane: React.FC = () => {
               <div className="flex items-center gap-2">
                 <Input
                   type={tokenVisible ? 'text' : 'password'}
-                  className="w-64 font-mono text-xs"
+                  className="w-64 font-mono text-base md:text-xs"
                   value={
                     serverStatus?.token ?? preferences?.http_server_token ?? ''
                   }

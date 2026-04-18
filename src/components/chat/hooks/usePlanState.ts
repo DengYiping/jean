@@ -6,6 +6,8 @@ import { findPlanFilePath, findPlanContent } from '../tool-call-utils'
 interface UsePlanStateParams {
   session: Session | null | undefined
   currentToolCalls: ToolCall[]
+  currentStreamingContent: string
+  currentStreamingContentBlocks: ContentBlock[]
   isSending: boolean
   activeSessionId: string | null | undefined
   isStreamingPlanApproved: (sessionId: string) => boolean
@@ -18,6 +20,8 @@ interface UsePlanStateParams {
 export function usePlanState({
   session,
   currentToolCalls,
+  currentStreamingContent,
+  currentStreamingContentBlocks,
   isSending,
   activeSessionId,
   isStreamingPlanApproved,
@@ -129,22 +133,28 @@ export function usePlanState({
     isQuestionAnswered,
   ])
 
-  // Check if there's a streaming plan awaiting approval
-  const hasStreamingPlan = useMemo(() => {
-    if (!isSending || !activeSessionId) return false
-    const hasExitPlanModeTool = currentToolCalls.some(isExitPlanMode)
-    return hasExitPlanModeTool && !isStreamingPlanApproved(activeSessionId)
-  }, [isSending, activeSessionId, currentToolCalls, isStreamingPlanApproved])
+  const hasPendingPlanApproval = useMemo(
+    () => !!pendingPlanMessage && !isSending,
+    [pendingPlanMessage, isSending]
+  )
 
   // Find latest plan content from ExitPlanMode tool calls (primary source)
   const latestPlanContent = useMemo(() => {
-    const streamingPlan = findPlanContent(currentToolCalls)
+    const streamingPlan = resolvePlanContent({
+      toolCalls: currentToolCalls,
+      messageContent: currentStreamingContent,
+      contentBlocks: currentStreamingContentBlocks,
+    }).content
     if (streamingPlan) return streamingPlan
     const msgs = session?.messages ?? []
     for (let i = msgs.length - 1; i >= 0; i--) {
       const m = msgs[i]
       if (m?.tool_calls) {
-        const content = findPlanContent(m.tool_calls)
+        const content = resolvePlanContent({
+          toolCalls: m.tool_calls,
+          messageContent: m.content,
+          contentBlocks: m.content_blocks,
+        }).content
         if (content) return content
       }
     }
@@ -166,7 +176,7 @@ export function usePlanState({
 
   return {
     pendingPlanMessage,
-    hasStreamingPlan,
+    hasPendingPlanApproval,
     latestPlanContent,
     latestPlanFilePath,
   }

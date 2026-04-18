@@ -10,7 +10,11 @@ import { isTauri, saveWorktreePr, projectsQueryKeys } from '@/services/projects'
 import { preferencesQueryKeys } from '@/services/preferences'
 import type { AppPreferences, NotificationSound } from '@/types/preferences'
 import { triggerImmediateGitPoll } from '@/services/git-status'
-import { isAskUserQuestion, isExitPlanMode } from '@/types/chat'
+import {
+  isAskUserQuestion,
+  isPlanToolCall,
+  normalizeCodexQuestions,
+} from '@/types/chat'
 import { playNotificationSound } from '@/lib/sounds'
 import { findPlanFilePath } from '@/components/chat/tool-call-utils'
 import { lookupSessionLabel } from '@/components/chat/hooks/session-label-utils'
@@ -26,6 +30,11 @@ import type {
   ThinkingEvent,
   PermissionDenial,
   PermissionDeniedEvent,
+  CodexCommandApprovalRequestEvent,
+  CodexPermissionRequestEvent,
+  CodexUserInputRequestEvent,
+  CodexMcpElicitationRequestEvent,
+  CodexDynamicToolCallRequestEvent,
   CompactingEvent,
   CompactedEvent,
   ThreadTokenUsageEvent,
@@ -291,6 +300,16 @@ export default function useStreamingEvents({
 
     const unlistenChunk = listen<ChunkEvent>('chat:chunk', event => {
       const { session_id, content } = event.payload
+      // Guard: drop stale chunks for sessions already cancelled/completed.
+      // Without this, late events re-add the session to sendingSessionIds
+      // after cancelSession() cleared it, causing the response to "still arrive".
+      const currentState = useChatStore.getState()
+      if (
+        currentState.reviewingSessions[session_id] &&
+        !currentState.sendingSessionIds[session_id]
+      ) {
+        return
+      }
       // Ensure session is marked as sending (recovers state after reconnect/refresh)
       addSendingSession(session_id)
       // Accumulate into buffer
@@ -470,6 +489,10 @@ export default function useStreamingEvents({
         const toolCalls = activeToolCalls[session_id] ?? []
         const toolCall = toolCalls.find(tc => tc.id === tool_use_id)
 
+        // For question tools, don't overwrite — we store JSON-encoded answer data
+        // in the output at answer time (see useMessageHandlers handleQuestionAnswer)
+        if (toolCall?.name === 'question' && toolCall?.output) return
+
         // For Read tools, store empty placeholder instead of full content (can be large)
         updateToolCallOutput(
           session_id,
@@ -639,6 +662,162 @@ export default function useStreamingEvents({
       }
     )
 
+    const persistCodexPendingState = (
+      sessionId: string,
+      worktreeId: string,
+      updates: Record<string, unknown>
+    ) => {
+      const worktreePath = useChatStore.getState().worktreePaths[worktreeId]
+      if (!worktreePath) return
+      invoke('update_session_state', {
+        worktreeId,
+        worktreePath,
+        sessionId,
+        waitingForInput: true,
+        ...updates,
+      }).catch(err => {
+        console.error(
+          '[useStreamingEvents] Failed to persist Codex pending request:',
+          err
+        )
+      })
+    }
+
+    const enqueueCodexMcpElicitation = (
+      sessionId: string,
+      worktreeId: string,
+      request: CodexMcpElicitationRequestEvent['request']
+    ) => {
+      const { setPendingCodexMcpElicitationRequests, setWaitingForInput } =
+        useChatStore.getState()
+      const current =
+        useChatStore.getState().pendingCodexMcpElicitationRequests[sessionId] ??
+        []
+      const next = [...current, request]
+      setPendingCodexMcpElicitationRequests(sessionId, next)
+      setWaitingForInput(sessionId, true)
+      persistCodexPendingState(sessionId, worktreeId, {
+        pendingCodexMcpElicitationRequests: next,
+      })
+    }
+
+    const unlistenCodexPermissionRequest = listen<CodexPermissionRequestEvent>(
+      'chat:codex_permission_request',
+      event => {
+        const { session_id, worktree_id, request } = event.payload
+        const { setPendingCodexPermissionRequests, setWaitingForInput } =
+          useChatStore.getState()
+        const current =
+          useChatStore.getState().pendingCodexPermissionRequests[session_id] ??
+          []
+        const next = [...current, request]
+        setPendingCodexPermissionRequests(session_id, next)
+        setWaitingForInput(session_id, true)
+        persistCodexPendingState(session_id, worktree_id, {
+          pendingCodexPermissionRequests: next,
+        })
+      }
+    )
+
+    const unlistenCodexCommandApprovalRequest =
+      listen<CodexCommandApprovalRequestEvent>(
+        'chat:codex_command_approval_request',
+        event => {
+          const { session_id, worktree_id, request } = event.payload
+          const { setPendingCodexCommandApprovalRequests, setWaitingForInput } =
+            useChatStore.getState()
+          const current =
+            useChatStore.getState().pendingCodexCommandApprovalRequests[
+              session_id
+            ] ?? []
+          const next = [...current, request]
+          setPendingCodexCommandApprovalRequests(session_id, next)
+          setWaitingForInput(session_id, true)
+          persistCodexPendingState(session_id, worktree_id, {
+            pendingCodexCommandApprovalRequests: next,
+          })
+        }
+      )
+
+    const unlistenCodexUserInputRequest = listen<CodexUserInputRequestEvent>(
+      'chat:codex_user_input_request',
+      event => {
+        const { session_id, worktree_id, request } = event.payload
+        const {
+          setPendingCodexUserInputRequests,
+          setWaitingForInput,
+          addToolCall,
+          addToolBlock,
+        } = useChatStore.getState()
+        const current =
+          useChatStore.getState().pendingCodexUserInputRequests[session_id] ??
+          []
+        const next = [...current, request]
+        setPendingCodexUserInputRequests(session_id, next)
+        setWaitingForInput(session_id, true)
+
+        const questions = normalizeCodexQuestions(request.questions)
+
+        const toolCall = {
+          id: request.item_id || `codex-user-input-${request.rpc_id}`,
+          name: 'AskUserQuestion',
+          input: { questions },
+        }
+        addToolCall(session_id, toolCall)
+        addToolBlock(session_id, toolCall.id)
+
+        persistCodexPendingState(session_id, worktree_id, {
+          pendingCodexUserInputRequests: next,
+        })
+      }
+    )
+
+    const unlistenCodexMcpElicitation = listen<CodexMcpElicitationRequestEvent>(
+      'chat:codex_mcp_elicitation_request',
+      event => {
+        const { session_id, worktree_id, request } = event.payload
+        const enabledMcpServers =
+          useChatStore.getState().enabledMcpServers[session_id] ?? []
+
+        if (enabledMcpServers.includes(request.server_name)) {
+          invoke('respond_codex_mcp_elicitation', {
+            sessionId: session_id,
+            rpcId: request.rpc_id,
+            action: 'accept',
+          }).catch(err => {
+            console.error(
+              '[useStreamingEvents] Failed to auto-accept Codex MCP elicitation:',
+              err
+            )
+            enqueueCodexMcpElicitation(session_id, worktree_id, request)
+          })
+          return
+        }
+
+        enqueueCodexMcpElicitation(session_id, worktree_id, request)
+      }
+    )
+
+    const unlistenCodexDynamicToolCall =
+      listen<CodexDynamicToolCallRequestEvent>(
+        'chat:codex_dynamic_tool_call_request',
+        event => {
+          const { session_id, worktree_id, request } = event.payload
+          const { setPendingCodexDynamicToolCallRequests, setWaitingForInput } =
+            useChatStore.getState()
+          const current =
+            useChatStore.getState().pendingCodexDynamicToolCallRequests[
+              session_id
+            ] ?? []
+          const next = [...current, request]
+          setPendingCodexDynamicToolCallRequests(session_id, next)
+          setWaitingForInput(session_id, true)
+          persistCodexPendingState(session_id, worktree_id, {
+            pendingCodexDynamicToolCallRequests: next,
+          })
+        }
+      )
+
     const unlistenDone = listen<DoneEvent>('chat:done', event => {
       const sessionId = event.payload.session_id
       const worktreeId = event.payload.worktree_id
@@ -723,19 +902,28 @@ export default function useStreamingEvents({
 
       // Capture streaming state to local variables BEFORE clearing
       // This ensures we have the data for the optimistic message
-      const content = streamingContents[sessionId]
+      const rawContent = streamingContents[sessionId]
       const toolCalls = activeToolCalls[sessionId]
       const contentBlocks = streamingContentBlocks[sessionId]
+      const content = rawContent || getTextContentFromBlocks(contentBlocks)
+      const hasMeaningfulPayload = hasMeaningfulAssistantPayload(
+        content ?? '',
+        contentBlocks ?? [],
+        toolCalls ?? []
+      )
+      const needsBackendHydration = shouldHydrateCompletedSessionFromBackend(
+        content ?? '',
+        contentBlocks ?? [],
+        toolCalls ?? []
+      )
 
-      if (!content && !toolCalls?.length) {
+      if (needsBackendHydration) {
         console.warn(
           `[chat:done] No streaming content for session=${sessionId}. ` +
             `Optimistic message will be empty; messages will load from JSONL on refetch.`
         )
       }
 
-      // Codex has no native plan approval flow — skip synthetic ExitPlanMode injection.
-      // Codex plan completions fall through to the "no blocking tools" path → status = "review".
       const effectiveToolCalls = toolCalls
       const effectiveContentBlocks = contentBlocks
 
@@ -743,7 +931,9 @@ export default function useStreamingEvents({
       // This determines whether to show "waiting" status in the UI
       const hasUnansweredBlockingTool = effectiveToolCalls?.some(
         tc =>
-          (isAskUserQuestion(tc) || isExitPlanMode(tc)) &&
+          (isAskUserQuestion(tc) ||
+            isPlanToolCall(tc) ||
+            tc.name === 'question') &&
           !isQuestionAnswered(sessionId, tc.id)
       )
       const persistedPermissionDenials =
@@ -770,18 +960,20 @@ export default function useStreamingEvents({
         // Check if there are queued messages AND only ExitPlanMode is blocking (not AskUserQuestion)
         const { messageQueues } = useChatStore.getState()
         const hasQueuedMessages = (messageQueues[sessionId]?.length ?? 0) > 0
-        const isOnlyExitPlanMode =
+        const isOnlyPlanApproval =
           effectiveToolCalls?.every(
-            tc => !isAskUserQuestion(tc) || isQuestionAnswered(sessionId, tc.id)
+            tc =>
+              (!isAskUserQuestion(tc) && tc.name !== 'question') ||
+              isQuestionAnswered(sessionId, tc.id)
           ) &&
           effectiveToolCalls?.some(
-            tc => isExitPlanMode(tc) && !isQuestionAnswered(sessionId, tc.id)
+            tc => isPlanToolCall(tc) && !isQuestionAnswered(sessionId, tc.id)
           )
 
         // Add optimistic assistant message BEFORE clearing streaming state.
         // This ensures the plan/question is visible in MessageList
         // before StreamingMessage unmounts (isSending becomes false).
-        if (content || (effectiveToolCalls && effectiveToolCalls.length > 0)) {
+        if (hasMeaningfulPayload) {
           const pendingIdKey = `__pendingMessageId_${sessionId}`
           const preGeneratedId = (window as unknown as Record<string, string>)[
             pendingIdKey
@@ -815,16 +1007,15 @@ export default function useStreamingEvents({
           )
         }
 
-        if (hasQueuedMessages && isOnlyExitPlanMode) {
+        if (hasQueuedMessages && isOnlyPlanApproval) {
           // Queued message takes priority over plan approval
           // Clear tool calls so approval UI doesn't show, let queue processor handle the queued message
           // Don't set waitingForInput(true) - this allows queue processor to send the queued message
           // Use completeSession to batch-clear (reviewing=true is fine, queue processor will override)
           completeSession(sessionId)
         } else {
-          // Original behavior: show blocking tool UI and wait for user input
-          // Keep tool calls and content blocks so UI shows question/plan
-          // Batch-clear text content, executing mode, sending — set waiting state
+          // Always stop on blocking tools, including in yolo mode.
+          // Preserve question/plan UI and wait for explicit user action.
           pauseSession(sessionId)
 
           // Determine waiting type: question or plan
@@ -849,7 +1040,7 @@ export default function useStreamingEvents({
               useChatStore.getState().setPlanFilePath(sessionId, planPath)
             }
 
-            // Check if there's an ExitPlanMode tool call - if so, use the message ID
+            // Check if there's a plan tool call - if so, use the message ID
             // from the optimistic message (already added above) and persist it
             const hasExitPlanModeCall = effectiveToolCalls.some(tc =>
               isExitPlanMode(tc)
@@ -1035,11 +1226,10 @@ export default function useStreamingEvents({
       } else if (event.payload.waiting_for_plan && !isCurrentlyViewing) {
         // Codex/Opencode plan-mode run completed with content — enter plan-waiting state.
         // The backend signals this via the waiting_for_plan field in chat:done.
-        // Skip if user is currently viewing this session — go straight to review instead.
 
         // 1. Add optimistic assistant message to cache
         let planMessageId: string | undefined
-        if (content || (effectiveToolCalls && effectiveToolCalls.length > 0)) {
+        if (hasMeaningfulPayload) {
           const pendingIdKey = `__pendingMessageId_${sessionId}`
           const preGeneratedId = (window as unknown as Record<string, string>)[
             pendingIdKey
@@ -1121,6 +1311,13 @@ export default function useStreamingEvents({
 
         // 3. Transition to waiting state in Zustand
         pauseSession(sessionId)
+        if (needsBackendHydration) {
+          void hydrateCompletedSessionFromBackend(
+            queryClient,
+            sessionId,
+            worktreeId
+          )
+        }
         if (planMessageId) {
           useChatStore
             .getState()
@@ -1158,7 +1355,7 @@ export default function useStreamingEvents({
         // so MessageList already has the message when StreamingMessage unmounts.
 
         // 1. Add optimistic assistant message to cache
-        if (content || (effectiveToolCalls && effectiveToolCalls.length > 0)) {
+        if (hasMeaningfulPayload) {
           const pendingIdKey = `__pendingMessageId_${sessionId}`
           const preGeneratedId = (window as unknown as Record<string, string>)[
             pendingIdKey
@@ -1370,7 +1567,7 @@ export default function useStreamingEvents({
       }
     })
 
-    // Handle errors from Claude CLI
+    // Handle errors from any CLI backend (Claude, Codex, OpenCode, Cursor)
     const unlistenError = listen<ErrorEvent>('chat:error', event => {
       const { session_id, error } = event.payload
 
@@ -1553,6 +1750,7 @@ export default function useStreamingEvents({
         const {
           sendStartedAt,
           streamingContents,
+          streamingThinkingContent,
           activeToolCalls,
           streamingContentBlocks,
           activeWorktreeId,
@@ -1658,7 +1856,10 @@ export default function useStreamingEvents({
         // when there are no tool calls — short filler like "Planning." isn't worth preserving
         const hasToolCalls = toolCalls && toolCalls.length > 0
         const hasSubstantialText = !!content && content.trim().length > 50
-        const hasContent = hasToolCalls || hasSubstantialText
+        const hasThinking = !!streamingThinkingContent[session_id]
+        const hasContentBlocks = !!contentBlocks && contentBlocks.length > 0
+        const hasContent =
+          hasToolCalls || hasSubstantialText || hasThinking || hasContentBlocks
         const hasQueuedMessages =
           (useChatStore.getState().messageQueues[session_id] ?? []).length > 0
         const shouldRestoreMessage =
@@ -1709,7 +1910,6 @@ export default function useStreamingEvents({
               useChatStore.getState().restoreAttachments(session_id)
               toast.info('Message restored to input')
             } else {
-              toast.info('Request cancelled')
               useChatStore.getState().clearLastSentAttachments(session_id)
             }
             clearLastSentMessage(session_id)
@@ -1729,7 +1929,6 @@ export default function useStreamingEvents({
               }
             )
           } else {
-            toast.info('Request cancelled')
             useChatStore.getState().clearLastSentAttachments(session_id)
           }
         } else {
@@ -1771,7 +1970,6 @@ export default function useStreamingEvents({
               err
             )
           )
-          toast.info('Request cancelled')
         }
 
         // NOW batch-clear all streaming state in a single Zustand set()
@@ -1942,6 +2140,11 @@ export default function useStreamingEvents({
       unlistenThinking.then(f => f())
       unlistenToolResult.then(f => f())
       unlistenPermissionDenied.then(f => f())
+      unlistenCodexPermissionRequest.then(f => f())
+      unlistenCodexCommandApprovalRequest.then(f => f())
+      unlistenCodexUserInputRequest.then(f => f())
+      unlistenCodexMcpElicitation.then(f => f())
+      unlistenCodexDynamicToolCall.then(f => f())
       unlistenDone.then(f => f())
       unlistenError.then(f => f())
       unlistenCancelled.then(f => f())

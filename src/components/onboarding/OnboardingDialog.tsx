@@ -1040,38 +1040,22 @@ function OnboardingDialogContent() {
             ) : step === 'claude-auth-login' ? (
               <AuthLoginState
                 cliName="Claude CLI"
-                terminalId={claudeLoginTerminalId}
-                command={claudeLoginCommand}
-                commandArgs={claudeLoginArgs}
-                onComplete={handleClaudeLoginComplete}
-                onRetry={handleClaudeLoginRetry}
+                progress={cliData.progress}
               />
             ) : step === 'codex-auth-login' ? (
               <AuthLoginState
                 cliName="Codex CLI"
-                terminalId={codexLoginTerminalId}
-                command={codexLoginCommand}
-                commandArgs={codexLoginArgs}
-                onComplete={handleCodexLoginComplete}
-                onRetry={handleCodexLoginRetry}
+                progress={cliData.progress}
               />
             ) : step === 'opencode-auth-login' ? (
               <AuthLoginState
                 cliName="OpenCode CLI"
-                terminalId={opencodeLoginTerminalId}
-                command={opencodeLoginCommand}
-                commandArgs={opencodeLoginArgs}
-                onComplete={handleOpencodeLoginComplete}
-                onRetry={handleOpencodeLoginRetry}
+                progress={cliData.progress}
               />
             ) : step === 'gh-auth-login' ? (
               <AuthLoginState
                 cliName="GitHub CLI"
-                terminalId={ghLoginTerminalId}
-                command={ghLoginCommand}
-                commandArgs={ghLoginArgs}
-                onComplete={handleGhLoginComplete}
-                onRetry={handleGhLoginRetry}
+                progress={cliData.progress}
               />
             ) : step === 'claude-setup' ? (
               <HostInstallState

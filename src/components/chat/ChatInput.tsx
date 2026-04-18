@@ -18,6 +18,7 @@ import type {
   ReadTextResponse,
   ExecutionMode,
 } from '@/types/chat'
+import type { CliBackend } from '@/types/preferences'
 import {
   FileMentionPopover,
   type FileMentionPopoverHandle,
@@ -56,6 +57,7 @@ interface ChatInputProps {
   backend: Backend
   formRef: React.RefObject<HTMLFormElement | null>
   inputRef: React.RefObject<HTMLTextAreaElement | null>
+  installedBackends?: CliBackend[]
 }
 
 export const ChatInput = memo(function ChatInput({
@@ -74,8 +76,10 @@ export const ChatInput = memo(function ChatInput({
   backend,
   formRef,
   inputRef,
+  installedBackends,
 }: ChatInputProps) {
   const isMobile = useIsMobile()
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   // PERFORMANCE: Use uncontrolled input pattern - track value in ref, not state
   // This avoids React re-renders on every keystroke
@@ -204,6 +208,15 @@ export const ChatInput = memo(function ChatInput({
     onRegisterClearHandler?.(clearInputState)
     return () => onRegisterClearHandler?.(null)
   }, [clearInputState, onRegisterClearHandler])
+
+  const handleAttachClick = useCallback(() => {
+    fileInputRef.current?.click()
+  }, [])
+
+  useEffect(() => {
+    onRegisterAttachHandler?.(handleAttachClick)
+    return () => onRegisterAttachHandler?.(null)
+  }, [handleAttachClick, onRegisterAttachHandler])
 
   // Handle textarea value changes
   const handleChange = useCallback(
@@ -841,6 +854,23 @@ export const ChatInput = memo(function ChatInput({
     [activeSessionId, activeWorktreePath, inputRef]
   )
 
+  const handleFileInputChange = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (!activeSessionId) return
+
+      const files = e.target.files
+      if (!files || files.length === 0) return
+
+      for (const file of Array.from(files)) {
+        await processAttachmentFile(file, activeSessionId)
+      }
+
+      e.target.value = ''
+      inputRef.current?.focus()
+    },
+    [activeSessionId, inputRef]
+  )
+
   // Handle file selection from @ mention popover
   const handleFileSelect = useCallback(
     (file: PendingFile) => {
@@ -956,7 +986,16 @@ export const ChatInput = memo(function ChatInput({
   )
 
   return (
-    <div className="relative">
+    <div className="relative min-w-0">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept={IMAGE_ATTACHMENT_ACCEPT}
+        multiple
+        tabIndex={-1}
+        className="sr-only"
+        onChange={handleFileInputChange}
+      />
       <Textarea
         ref={inputRef}
         placeholder={
@@ -979,7 +1018,7 @@ export const ChatInput = memo(function ChatInput({
         onKeyDown={handleKeyDown}
         onPaste={handlePaste}
         disabled={false}
-        className="custom-scrollbar min-h-[40px] max-h-[240px] w-full resize-none overflow-y-auto border-0 bg-transparent dark:bg-transparent p-0 font-mono text-sm shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+        className="custom-scrollbar min-h-[40px] max-h-[240px] w-full resize-none overflow-x-hidden overflow-y-auto border-0 dark:bg-transparent p-0 font-mono text-base shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 md:text-sm"
         rows={1}
         autoFocus={!isMobile}
       />
@@ -1015,6 +1054,7 @@ export const ChatInput = memo(function ChatInput({
         backend={backend}
         worktreePath={activeWorktreePath ?? null}
         handleRef={slashPopoverHandleRef}
+        installedBackends={installedBackends}
       />
     </div>
   )

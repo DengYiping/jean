@@ -12,6 +12,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { formatShortcutDisplay, DEFAULT_KEYBINDINGS } from '@/types/keybindings'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { ChatSearchBar } from './ChatSearchBar'
 import { Button } from '@/components/ui/button'
 import {
   AlertDialog,
@@ -35,6 +36,7 @@ import {
   useSetSessionBackend,
   useSetSessionProvider,
   useCreateSession,
+  useLoadOlderMessages,
   markPlanApproved as markPlanApprovedService,
   chatQueryKeys,
   useUpdateSessionState,
@@ -70,6 +72,11 @@ import type {
   PendingImage,
   PendingTextFile,
   PendingSkill,
+  CodexCommandApprovalRequest,
+  CodexPermissionRequest,
+  CodexUserInputRequest,
+  CodexMcpElicitationRequest,
+  CodexDynamicToolCallRequest,
   PermissionDenial,
   PendingFile,
 } from '@/types/chat'
@@ -82,6 +89,11 @@ import {
 import { resolveParallelExecutionPromptForSession } from '@/lib/parallel-execution-prompt'
 import { cn } from '@/lib/utils'
 import { PermissionApproval } from './PermissionApproval'
+import { AskUserQuestion } from './AskUserQuestion'
+import { CodexCommandApprovalRequestCard } from './CodexCommandApprovalRequest'
+import { CodexPermissionsRequest } from './CodexPermissionsRequest'
+import { CodexMcpElicitationRequest as CodexMcpElicitationRequestCard } from './CodexMcpElicitationRequest'
+import { CodexDynamicToolCallRequest as CodexDynamicToolCallRequestCard } from './CodexDynamicToolCallRequest'
 import { SetupScriptOutput } from './SetupScriptOutput'
 import { TodoWidget } from './TodoWidget'
 import { AgentWidget } from './AgentWidget'
@@ -166,6 +178,7 @@ import { useChatWindowEvents } from './hooks/useChatWindowEvents'
 import { useInvestigateHandlers } from './hooks/useInvestigateHandlers'
 import { useMcpServerResolution } from './hooks/useMcpServerResolution'
 import { useInstalledBackends } from '@/hooks/useInstalledBackends'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { useToolbarHandlers } from './hooks/useToolbarHandlers'
 import { useMessageSending } from './hooks/useMessageSending'
 import { usePlanState } from './hooks/usePlanState'
@@ -187,6 +200,11 @@ const EMPTY_PENDING_FILES: PendingFile[] = []
 const EMPTY_PENDING_SKILLS: PendingSkill[] = []
 const EMPTY_QUEUED_MESSAGES: QueuedMessage[] = []
 const EMPTY_PERMISSION_DENIALS: PermissionDenial[] = []
+const EMPTY_CODEX_PERMISSION_REQUESTS: CodexPermissionRequest[] = []
+const EMPTY_CODEX_COMMAND_APPROVAL_REQUESTS: CodexCommandApprovalRequest[] = []
+const EMPTY_CODEX_USER_INPUT_REQUESTS: CodexUserInputRequest[] = []
+const EMPTY_CODEX_MCP_ELICITATION_REQUESTS: CodexMcpElicitationRequest[] = []
+const EMPTY_CODEX_DYNAMIC_TOOL_CALL_REQUESTS: CodexDynamicToolCallRequest[] = []
 
 interface PendingInputSnapshot {
   sourceSessionId: string
@@ -211,6 +229,7 @@ export function ChatWindow({
   worktreeId: propWorktreeId,
   worktreePath: propWorktreePath,
 }: ChatWindowProps = {}) {
+  const isMobile = useIsMobile()
   // PERFORMANCE: Use focused selectors instead of whole-store destructuring
   // This prevents re-renders when other sessions' state changes (e.g., streaming chunks)
 
@@ -284,9 +303,6 @@ export function ChatWindow({
     activeSessionId
       ? (state.reviewingSessions[activeSessionId] ?? false)
       : false
-  )
-  const isStreamingPlanApproved = useChatStore(
-    state => state.isStreamingPlanApproved
   )
   // Terminal panel visibility (per-worktree)
   const terminalVisible = useTerminalStore(state => state.terminalVisible)
@@ -405,6 +421,25 @@ export function ChatWindow({
   const automationBadge = session?.automation_owned
     ? (session.automation_name ?? 'Automation')
     : null
+
+  const loadOlderMessages = useLoadOlderMessages()
+  const loadedRunStartIndex = session?.loaded_run_start_index ?? 0
+  const totalRuns = session?.total_runs ?? 0
+  const hasOlderOnDisk = loadedRunStartIndex > 0 && totalRuns > 0
+  const handleLoadOlderRuns = useCallback(() => {
+    if (!deferredSessionId || !hasOlderOnDisk || loadOlderMessages.isPending) {
+      return
+    }
+    loadOlderMessages.mutate({
+      sessionId: deferredSessionId,
+      beforeRunIndex: loadedRunStartIndex,
+    })
+  }, [
+    deferredSessionId,
+    hasOlderOnDisk,
+    loadedRunStartIndex,
+    loadOlderMessages,
+  ])
 
   const { data: preferences } = usePreferences()
   const patchPreferences = usePatchPreferences()
@@ -547,13 +582,16 @@ export function ChatWindow({
       : resolvedBackend)
   const isCodexBackend = selectedBackend === 'codex'
   const isOpencodeBackend = selectedBackend === 'opencode'
+  const isCursorBackend = selectedBackend === 'cursor'
 
   // Per-session model selection, falls back to preferences default (backend-aware)
   const defaultModel: string = isCodexBackend
     ? (preferences?.selected_codex_model ?? 'gpt-5.4')
     : isOpencodeBackend
       ? (preferences?.selected_opencode_model ?? 'opencode/gpt-5.3-codex')
-      : ((preferences?.selected_model as ClaudeModel) ?? DEFAULT_MODEL)
+      : isCursorBackend
+        ? (preferences?.selected_cursor_model ?? 'cursor/auto')
+        : ((preferences?.selected_model as ClaudeModel) ?? DEFAULT_MODEL)
   const selectedModel: string = session?.selected_model ?? defaultModel
 
   // Per-session thinking level, falls back to preferences default
@@ -575,7 +613,7 @@ export function ChatWindow({
           low: 'low',
           medium: 'medium',
           high: 'high',
-          xhigh: 'max',
+          xhigh: 'xhigh',
         } as Record<string, EffortLevel>
       )[preferences?.default_codex_reasoning_effort ?? 'high'] ?? 'high')
     : ((preferences?.default_effort_level as EffortLevel) ?? 'high')
@@ -614,7 +652,7 @@ export function ChatWindow({
     activeProfile?.supports_thinking ??
     PREDEFINED_CLI_PROFILES.find(p => p.name === selectedProvider)
       ?.supports_thinking
-  const hideThinkingLevel = activeSupportsThinking === false
+  const hideThinkingLevel = activeSupportsThinking === false || isCursorBackend
 
   const isSending = isSendingForSession
 
@@ -719,6 +757,36 @@ export function ChatWindow({
       ? (state.pendingPermissionDenials[deferredSessionId] ??
         EMPTY_PERMISSION_DENIALS)
       : EMPTY_PERMISSION_DENIALS
+  )
+  const pendingCodexPermissionRequests = useChatStore(state =>
+    deferredSessionId
+      ? (state.pendingCodexPermissionRequests[deferredSessionId] ??
+        EMPTY_CODEX_PERMISSION_REQUESTS)
+      : EMPTY_CODEX_PERMISSION_REQUESTS
+  )
+  const pendingCodexCommandApprovalRequests = useChatStore(state =>
+    deferredSessionId
+      ? (state.pendingCodexCommandApprovalRequests[deferredSessionId] ??
+        EMPTY_CODEX_COMMAND_APPROVAL_REQUESTS)
+      : EMPTY_CODEX_COMMAND_APPROVAL_REQUESTS
+  )
+  const pendingCodexUserInputRequests = useChatStore(state =>
+    deferredSessionId
+      ? (state.pendingCodexUserInputRequests[deferredSessionId] ??
+        EMPTY_CODEX_USER_INPUT_REQUESTS)
+      : EMPTY_CODEX_USER_INPUT_REQUESTS
+  )
+  const pendingCodexMcpElicitationRequests = useChatStore(state =>
+    deferredSessionId
+      ? (state.pendingCodexMcpElicitationRequests[deferredSessionId] ??
+        EMPTY_CODEX_MCP_ELICITATION_REQUESTS)
+      : EMPTY_CODEX_MCP_ELICITATION_REQUESTS
+  )
+  const pendingCodexDynamicToolCallRequests = useChatStore(state =>
+    deferredSessionId
+      ? (state.pendingCodexDynamicToolCallRequests[deferredSessionId] ??
+        EMPTY_CODEX_DYNAMIC_TOOL_CALL_REQUESTS)
+      : EMPTY_CODEX_DYNAMIC_TOOL_CALL_REQUESTS
   )
   const showPermissionApproval = shouldShowPermissionApproval({
     pendingDenialsCount: pendingDenials.length,
@@ -920,15 +988,17 @@ export function ChatWindow({
     lastAssistantMessage,
   })
 
-  // Plan state: pending plan message, streaming plan, content, file path
+  // Plan state: finished pending plan, content, file path
   const {
     pendingPlanMessage,
-    hasStreamingPlan,
+    hasPendingPlanApproval,
     latestPlanContent,
     latestPlanFilePath,
   } = usePlanState({
     session,
     currentToolCalls,
+    currentStreamingContent: streamingContent,
+    currentStreamingContentBlocks,
     isSending,
     activeSessionId,
     isStreamingPlanApproved,
@@ -1102,7 +1172,7 @@ export function ChatWindow({
       if (yoloBackend) {
         store.setSelectedBackend(
           newSession.id,
-          yoloBackend as 'claude' | 'codex' | 'opencode'
+          yoloBackend as 'claude' | 'codex' | 'opencode' | 'cursor'
         )
       }
       // Optimistically update TanStack Query cache so UI shows correct backend/model immediately.
@@ -1259,7 +1329,7 @@ export function ChatWindow({
       if (buildBackend) {
         store.setSelectedBackend(
           newSession.id,
-          buildBackend as 'claude' | 'codex' | 'opencode'
+          buildBackend as 'claude' | 'codex' | 'opencode' | 'cursor'
         )
       }
       // Optimistically update TanStack Query cache so UI shows correct backend/model immediately.
@@ -1499,7 +1569,7 @@ export function ChatWindow({
       if (modeBackend) {
         store.setSelectedBackend(
           newSession.id,
-          modeBackend as 'claude' | 'codex' | 'opencode'
+          modeBackend as 'claude' | 'codex' | 'opencode' | 'cursor'
         )
       }
       queryClient.setQueryData<Session>(
@@ -2227,6 +2297,9 @@ export function ChatWindow({
     queryClient,
     inputRef,
     preferences,
+    setSessionModel,
+    setSessionBackend,
+    setSessionProvider,
   })
 
   // Wrap push/pull/commit-and-push with remote picker for multi-remote repos
@@ -2303,7 +2376,7 @@ export function ChatWindow({
   // PERFORMANCE: Stable callbacks for ChatToolbar to prevent re-renders
   const {
     handleToolbarModelChange,
-    handleToolbarBackendChange,
+    handleToolbarBackendModelChange,
     handleTabBackendSwitch,
     handleToolbarProviderChange,
     handleToolbarThinkingLevelChange,
@@ -2424,19 +2497,21 @@ export function ChatWindow({
     handleSkipQuestion,
     handlePlanApproval,
     handlePlanApprovalYolo,
-    handleStreamingPlanApproval,
-    handleStreamingPlanApprovalYolo,
     handleClearContextApproval,
-    handleStreamingClearContextApproval,
     handleClearContextApprovalBuild,
-    handleStreamingClearContextApprovalBuild,
     handleWorktreeBuildApproval,
-    handleStreamingWorktreeBuildApproval,
     handleWorktreeYoloApproval,
-    handleStreamingWorktreeYoloApproval,
     handlePermissionApproval,
     handlePermissionApprovalYolo,
     handlePermissionDeny,
+    handleCodexCommandApproval,
+    handleCodexPermissionRequest,
+    handleCodexPermissionRequestDecline,
+    handleCodexUserInputAnswer,
+    handleCodexMcpElicitationAccept,
+    handleCodexMcpElicitationDecline,
+    handleCodexMcpElicitationCancel,
+    handleCodexDynamicToolCallUnsupported,
     handleFixFinding,
     handleFixAllFindings,
   } = useMessageHandlers({
@@ -2545,14 +2620,15 @@ export function ChatWindow({
     handleSaveContext,
     handleLoadContext,
     runScripts,
-    hasStreamingPlan,
+    hasPendingPlanApproval,
     pendingPlanMessage,
-    handleStreamingPlanApproval,
-    handleStreamingPlanApprovalYolo,
-    handlePlanApproval,
-    handlePlanApprovalYolo,
+    handlePlanApproval: isCursorBackend
+      ? handleClearContextApprovalBuild
+      : handlePlanApproval,
+    handlePlanApprovalYolo: isCursorBackend
+      ? handleClearContextApproval
+      : handlePlanApprovalYolo,
     handleClearContextApproval,
-    handleStreamingClearContextApproval,
     handleClearContextApprovalBuild,
     handleStreamingClearContextApprovalBuild,
     handleWorktreeBuildApproval,
@@ -2570,6 +2646,7 @@ export function ChatWindow({
   })
 
   // Combined floating-button approval callbacks (dispatch to streaming or pending variant)
+  // Cursor can't switch modes on a resumed session, so always use clear-context (new session)
   const floatingApprove = useCallback(() => {
     if (hasStreamingPlan) handleStreamingPlanApproval()
     else if (pendingPlanMessage) handlePlanApproval(pendingPlanMessage.id)
@@ -3344,6 +3421,7 @@ export function ChatWindow({
                 setPlanDialogMode('default')
               }}
               editable={true}
+              disabled={isSending}
               approvalContext={
                 activeWorktreeId && activeWorktreePath && activeSessionId
                   ? {
@@ -3384,6 +3462,7 @@ export function ChatWindow({
                 setPlanDialogMode('default')
               }}
               editable={true}
+              disabled={isSending}
               approvalContext={
                 activeWorktreeId && activeWorktreePath && activeSessionId
                   ? {

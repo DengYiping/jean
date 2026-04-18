@@ -1,4 +1,4 @@
-import { useEffect, useRef, type RefObject } from 'react'
+import { useCallback, useEffect, useRef, type RefObject } from 'react'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { invoke } from '@/lib/transport'
 import { toast } from 'sonner'
@@ -80,14 +80,11 @@ interface UseChatWindowEventsParams {
   // Run scripts
   runScripts: string[]
   // Plan approval (keyboard shortcuts)
-  hasStreamingPlan: boolean
+  hasPendingPlanApproval: boolean
   pendingPlanMessage: { id: string } | null | undefined
-  handleStreamingPlanApproval: () => void
-  handleStreamingPlanApprovalYolo: () => void
   handlePlanApproval: (messageId: string) => void
   handlePlanApprovalYolo: (messageId: string) => void
   handleClearContextApproval: (messageId: string) => void
-  handleStreamingClearContextApproval: () => void
   handleClearContextApprovalBuild: (messageId: string) => void
   handleStreamingClearContextApprovalBuild: () => void
   handleWorktreeBuildApproval: (messageId: string) => void
@@ -142,14 +139,11 @@ export function useChatWindowEvents({
   handleSaveContext,
   handleLoadContext,
   runScripts,
-  hasStreamingPlan,
+  hasPendingPlanApproval,
   pendingPlanMessage,
-  handleStreamingPlanApproval,
-  handleStreamingPlanApprovalYolo,
   handlePlanApproval,
   handlePlanApprovalYolo,
   handleClearContextApproval,
-  handleStreamingClearContextApproval,
   handleClearContextApprovalBuild,
   handleStreamingClearContextApprovalBuild,
   handleWorktreeBuildApproval,
@@ -166,13 +160,47 @@ export function useChatWindowEvents({
   endKeyboardScroll,
 }: UseChatWindowEventsParams) {
   const isMobile = useIsMobile()
+  const focusChatInput = useCallback(() => {
+    inputRef.current?.focus()
+  }, [inputRef])
 
   // Focus input on mount, session change, or worktree change (skip on mobile to avoid keyboard popup)
   useEffect(() => {
     if (!isMobile) {
-      inputRef.current?.focus()
+      focusChatInput()
     }
-  }, [activeSessionId, activeWorktreeId, inputRef, isMobile])
+  }, [activeSessionId, activeWorktreeId, focusChatInput, isMobile])
+
+  // When opening a worktree with a visible terminal, xterm can asynchronously
+  // steal focus after the chat input focused. Re-assert focus for a short
+  // window, but only if focus is still on the body or inside the terminal.
+  useEffect(() => {
+    if (isMobile || !activeWorktreeId) return
+
+    const shouldReassertFocus = () => {
+      const activeElement = document.activeElement as HTMLElement | null
+      return (
+        !activeElement ||
+        activeElement === document.body ||
+        activeElement.tagName === 'BODY' ||
+        !!activeElement.closest('.xterm')
+      )
+    }
+
+    const timeouts = [0, 75, 200].map(delay =>
+      window.setTimeout(() => {
+        if (shouldReassertFocus()) {
+          focusChatInput()
+        }
+      }, delay)
+    )
+
+    return () => {
+      for (const timeout of timeouts) {
+        window.clearTimeout(timeout)
+      }
+    }
+  }, [activeWorktreeId, focusChatInput, isMobile])
 
   // Scroll to bottom on worktree switch
   useEffect(() => {
@@ -197,10 +225,10 @@ export function useChatWindowEvents({
 
   // CMD+L / toolbar selection: Focus chat input
   useEffect(() => {
-    const handler = () => inputRef.current?.focus()
+    const handler = () => focusChatInput()
     window.addEventListener('focus-chat-input', handler)
     return () => window.removeEventListener('focus-chat-input', handler)
-  }, [inputRef])
+  }, [focusChatInput])
 
   // P key: Open plan dialog
   useEffect(() => {
@@ -499,11 +527,7 @@ export function useChatWindowEvents({
   useEffect(() => {
     const handler = () => {
       if (!isModal && useUIStore.getState().sessionChatModalOpen) return
-      if (hasStreamingPlan) {
-        handleStreamingPlanApproval()
-        return
-      }
-      if (pendingPlanMessage) {
+      if (hasPendingPlanApproval && pendingPlanMessage) {
         handlePlanApproval(pendingPlanMessage.id)
       }
     }
@@ -570,11 +594,7 @@ export function useChatWindowEvents({
   useEffect(() => {
     const handler = () => {
       if (!isModal && useUIStore.getState().sessionChatModalOpen) return
-      if (hasStreamingPlan) {
-        handleStreamingPlanApprovalYolo()
-        return
-      }
-      if (pendingPlanMessage) {
+      if (hasPendingPlanApproval && pendingPlanMessage) {
         handlePlanApprovalYolo(pendingPlanMessage.id)
         return
       }
@@ -586,7 +606,6 @@ export function useChatWindowEvents({
     isModal,
     hasStreamingPlan,
     pendingPlanMessage,
-    handleStreamingPlanApprovalYolo,
     handlePlanApprovalYolo,
     handleInputNewSessionYolo,
   ])
@@ -595,11 +614,7 @@ export function useChatWindowEvents({
   useEffect(() => {
     const handler = () => {
       if (!isModal && useUIStore.getState().sessionChatModalOpen) return
-      if (hasStreamingPlan) {
-        handleStreamingClearContextApproval()
-        return
-      }
-      if (pendingPlanMessage) {
+      if (hasPendingPlanApproval && pendingPlanMessage) {
         handleClearContextApproval(pendingPlanMessage.id)
         return
       }
@@ -612,7 +627,6 @@ export function useChatWindowEvents({
     isModal,
     hasStreamingPlan,
     pendingPlanMessage,
-    handleStreamingClearContextApproval,
     handleClearContextApproval,
     handleInputNewSessionYolo,
   ])
@@ -621,11 +635,7 @@ export function useChatWindowEvents({
   useEffect(() => {
     const handler = () => {
       if (!isModal && useUIStore.getState().sessionChatModalOpen) return
-      if (hasStreamingPlan) {
-        handleStreamingClearContextApprovalBuild()
-        return
-      }
-      if (pendingPlanMessage) {
+      if (hasPendingPlanApproval && pendingPlanMessage) {
         handleClearContextApprovalBuild(pendingPlanMessage.id)
         return
       }
@@ -638,7 +648,6 @@ export function useChatWindowEvents({
     isModal,
     hasStreamingPlan,
     pendingPlanMessage,
-    handleStreamingClearContextApprovalBuild,
     handleClearContextApprovalBuild,
     handleInputNewSessionBuild,
   ])
@@ -689,5 +698,41 @@ export function useChatWindowEvents({
     handleStreamingWorktreeYoloApproval,
     handleWorktreeYoloApproval,
     handleInputNewWorktreeYolo,
+  ])
+
+  // Worktree build keyboard shortcut
+  useEffect(() => {
+    const handler = () => {
+      if (!isModal && useUIStore.getState().sessionChatModalOpen) return
+      if (hasPendingPlanApproval && pendingPlanMessage) {
+        handleWorktreeBuildApproval(pendingPlanMessage.id)
+      }
+    }
+    window.addEventListener('approve-plan-worktree-build', handler)
+    return () =>
+      window.removeEventListener('approve-plan-worktree-build', handler)
+  }, [
+    isModal,
+    hasPendingPlanApproval,
+    pendingPlanMessage,
+    handleWorktreeBuildApproval,
+  ])
+
+  // Worktree yolo keyboard shortcut
+  useEffect(() => {
+    const handler = () => {
+      if (!isModal && useUIStore.getState().sessionChatModalOpen) return
+      if (hasPendingPlanApproval && pendingPlanMessage) {
+        handleWorktreeYoloApproval(pendingPlanMessage.id)
+      }
+    }
+    window.addEventListener('approve-plan-worktree-yolo', handler)
+    return () =>
+      window.removeEventListener('approve-plan-worktree-yolo', handler)
+  }, [
+    isModal,
+    hasPendingPlanApproval,
+    pendingPlanMessage,
+    handleWorktreeYoloApproval,
   ])
 }

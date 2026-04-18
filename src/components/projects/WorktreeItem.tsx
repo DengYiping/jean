@@ -12,10 +12,11 @@ import { useProjectsStore } from '@/store/projects-store'
 import { useChatStore } from '@/store/chat-store'
 import { useUIStore } from '@/store/ui-store'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { TerminalStatusIndicator } from '@/hooks/useWorktreeTerminalStatus'
 import { WorktreeContextMenu } from './WorktreeContextMenu'
 import { useRenameWorktree } from '@/services/projects'
 import { useSessions } from '@/services/chat'
-import { isAskUserQuestion, isExitPlanMode } from '@/types/chat'
+import { isAskUserQuestion, isPlanToolCall } from '@/types/chat'
 import {
   computeSessionCardData,
   groupCardsByStatus,
@@ -120,8 +121,9 @@ export function WorktreeItem({
     for (const [sessionId, toolCalls] of Object.entries(activeToolCalls)) {
       if (sessionWorktreeMap[sessionId] === worktree.id) {
         if (
+          !(sendingSessionIds[sessionId] ?? false) &&
           toolCalls.some(
-            tc => isExitPlanMode(tc) && !isQuestionAnswered(sessionId, tc.id)
+            tc => isPlanToolCall(tc) && !isQuestionAnswered(sessionId, tc.id)
           )
         ) {
           return true
@@ -129,7 +131,13 @@ export function WorktreeItem({
       }
     }
     return false
-  }, [activeToolCalls, sessionWorktreeMap, worktree.id, isQuestionAnswered])
+  }, [
+    activeToolCalls,
+    sessionWorktreeMap,
+    worktree.id,
+    sendingSessionIds,
+    isQuestionAnswered,
+  ])
 
   // Check if any session has unanswered AskUserQuestion in persisted messages (blinks)
   const hasPendingQuestion = useMemo(() => {
@@ -172,7 +180,7 @@ export function WorktreeItem({
         const msg = session.messages[i]
         if (msg?.role === 'assistant') {
           if (
-            msg.tool_calls?.some(isExitPlanMode) &&
+            msg.tool_calls?.some(isPlanToolCall) &&
             !msg.plan_approved &&
             !approvedPlanIds.has(msg.id)
           ) {
@@ -276,6 +284,11 @@ export function WorktreeItem({
     loadingOperation,
     isReviewing,
   ])
+
+  // Active session for this worktree (reactive subscription)
+  const activeSessionId = useChatStore(
+    state => state.activeSessionIds[worktree.id]
+  )
 
   // Worktree expansion state for sidebar session list
   const isExpanded = expandedWorktreeIds.has(worktree.id)
@@ -523,12 +536,15 @@ export function WorktreeItem({
           onClick={handleClick}
           onDoubleClick={handleDoubleClick}
         >
-          {/* Status indicator */}
+          {/* Chat status indicator (spinner/dot) */}
           <StatusIndicator
             status={indicatorStatus}
             variant={indicatorVariant}
             className="h-2 w-2"
           />
+
+          {/* Terminal running/failed indicator */}
+          <TerminalStatusIndicator worktreeId={worktree.id} />
 
           {/* Workspace name - editable on double-click */}
           {isEditing ? (
@@ -540,7 +556,7 @@ export function WorktreeItem({
               onKeyDown={handleKeyDown}
               onBlur={handleBlur}
               onClick={e => e.stopPropagation()}
-              className="flex-1 bg-transparent text-sm outline-none ring-1 ring-ring rounded px-1"
+              className="flex-1 bg-transparent text-base outline-none ring-1 ring-ring rounded px-1 md:text-sm"
             />
           ) : (
             <span
@@ -649,7 +665,14 @@ export function WorktreeItem({
                 return (
                   <div
                     key={card.session.id}
-                    className="flex items-center gap-1.5 pl-5 py-1 cursor-pointer text-sm text-muted-foreground hover:text-foreground hover:bg-accent/50 truncate"
+                    className={cn(
+                      'flex items-center gap-1.5 pl-5 py-1 cursor-pointer text-sm truncate',
+                      activeSessionId === card.session.id && isSelected
+                        ? 'text-foreground bg-primary/10 font-medium'
+                        : activeSessionId === card.session.id
+                          ? 'text-foreground/80 hover:text-foreground hover:bg-accent/50'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                    )}
                     onClick={e => {
                       e.stopPropagation()
                       handleSessionSelect(card.session.id)

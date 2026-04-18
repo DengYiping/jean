@@ -13,6 +13,7 @@ import type {
   ArchivedSessionEntry,
   ChatMessage,
   ChatHistory,
+  LoadedMessages,
   Session,
   WorktreeSessions,
   Question,
@@ -20,6 +21,7 @@ import type {
   ThinkingLevel,
   EffortLevel,
   ExecutionMode,
+  EffortLevel,
   LabelData,
   QueuedMessage,
 } from '@/types/chat'
@@ -167,6 +169,11 @@ export async function prefetchSessions(
     const parallelExecutionPromptUpdates: Record<string, boolean> = {}
     const labelUpdates: Record<string, LabelData> = {}
     const reviewResultsUpdates: Record<string, ReviewResponse> = {}
+    const answeredQuestionsUpdates: Record<string, Set<string>> = {}
+    const submittedAnswersUpdates: Record<
+      string,
+      Record<string, QuestionAnswer[]>
+    > = {}
     const fixedFindingsUpdates: Record<string, Set<string>> = {}
     for (const session of sessions.sessions) {
       if (session.is_reviewing) {
@@ -197,6 +204,17 @@ export async function prefetchSessions(
       }
       if (session.review_results) {
         reviewResultsUpdates[session.id] = session.review_results
+      }
+      if (session.answered_questions && session.answered_questions.length > 0) {
+        answeredQuestionsUpdates[session.id] = new Set(
+          session.answered_questions
+        )
+      }
+      if (
+        session.submitted_answers &&
+        Object.keys(session.submitted_answers).length > 0
+      ) {
+        submittedAnswersUpdates[session.id] = session.submitted_answers
       }
       if (session.fixed_findings && session.fixed_findings.length > 0) {
         fixedFindingsUpdates[session.id] = new Set(session.fixed_findings)
@@ -259,6 +277,18 @@ export async function prefetchSessions(
       storeUpdates.reviewResults = {
         ...currentState.reviewResults,
         ...reviewResultsUpdates,
+      }
+    }
+    if (Object.keys(answeredQuestionsUpdates).length > 0) {
+      storeUpdates.answeredQuestions = {
+        ...currentState.answeredQuestions,
+        ...answeredQuestionsUpdates,
+      }
+    }
+    if (Object.keys(submittedAnswersUpdates).length > 0) {
+      storeUpdates.submittedAnswers = {
+        ...currentState.submittedAnswers,
+        ...submittedAnswersUpdates,
       }
     }
     if (Object.keys(fixedFindingsUpdates).length > 0) {
@@ -334,10 +364,13 @@ export function useSession(
           worktreeId,
           worktreePath,
           sessionId,
+          limit: INITIAL_RUN_LIMIT,
         })
         logger.info('[useSession] loaded', {
           sessionId,
           messageCount: session.messages.length,
+          totalRuns: session.total_runs,
+          loadedFromRun: session.loaded_run_start_index,
           backend: session.backend,
         })
 
@@ -371,6 +404,79 @@ export function useSession(
     // Respects staleTime; cross-client sync handled by cache:invalidate broadcast
     // from Rust after send_chat_message completes (JSONL fully written).
     refetchOnMount: true,
+  })
+}
+
+/**
+ * Hook to load an older window of messages for an already-cached session.
+ * Prepends the fetched messages into the existing `useSession` cache and
+ * advances `loaded_run_start_index` so subsequent calls walk backward.
+ */
+export function useLoadOlderMessages() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    retry: false,
+    mutationFn: async ({
+      sessionId,
+      beforeRunIndex,
+      limit = OLDER_RUN_BATCH,
+    }: {
+      sessionId: string
+      beforeRunIndex: number
+      limit?: number
+    }): Promise<LoadedMessages> => {
+      if (!isTauri()) {
+        throw new Error('Not in Tauri context')
+      }
+      logger.debug('[useLoadOlderMessages] fetching', {
+        sessionId,
+        beforeRunIndex,
+        limit,
+      })
+      const result = await invoke<LoadedMessages>(
+        'load_older_session_messages',
+        {
+          sessionId,
+          beforeRunIndex,
+          limit,
+        }
+      )
+      logger.info('[useLoadOlderMessages] loaded', {
+        sessionId,
+        added: result.messages.length,
+        newStart: result.loaded_run_start_index,
+      })
+      return result
+    },
+    onSuccess: (loaded, { sessionId }) => {
+      queryClient.setQueryData<Session>(
+        chatQueryKeys.session(sessionId),
+        old => {
+          if (!old) return old
+          // Guard: if backend returned empty (race) keep cache untouched.
+          if (loaded.messages.length === 0) {
+            return {
+              ...old,
+              total_runs: loaded.total_runs,
+              loaded_run_start_index: loaded.loaded_run_start_index,
+            }
+          }
+          return {
+            ...old,
+            messages: [...loaded.messages, ...old.messages],
+            total_runs: loaded.total_runs,
+            loaded_run_start_index: loaded.loaded_run_start_index,
+          }
+        }
+      )
+    },
+    onError: error => {
+      if (isWsDisconnectError(error)) return
+      const message = error instanceof Error ? error.message : String(error)
+      logger.error('Failed to load older messages', { error })
+      toast.error('Failed to load older messages', { description: message })
+    },
   })
 }
 
@@ -500,6 +606,11 @@ export function useUpdateSessionState() {
       submittedAnswers,
       fixedFindings,
       pendingPermissionDenials,
+      pendingCodexCommandApprovalRequests,
+      pendingCodexPermissionRequests,
+      pendingCodexUserInputRequests,
+      pendingCodexMcpElicitationRequests,
+      pendingCodexDynamicToolCallRequests,
       deniedMessageContext,
       isReviewing,
       waitingForInput,
@@ -520,6 +631,48 @@ export function useUpdateSessionState() {
         tool_name: string
         tool_use_id: string
         tool_input: unknown
+        rpc_id?: number
+      }[]
+      pendingCodexCommandApprovalRequests?: {
+        rpc_id: number
+        item_id: string
+        thread_id: string
+        turn_id: string
+        approval_id?: string | null
+        command?: string | null
+        command_actions?: unknown
+        cwd?: string | null
+        reason?: string | null
+        network_approval_context?: unknown
+        proposed_execpolicy_amendment?: string[] | null
+        proposed_network_policy_amendments?: unknown
+      }[]
+      pendingCodexPermissionRequests?: {
+        rpc_id: number
+        item_id: string
+        permissions: unknown
+        reason?: string | null
+      }[]
+      pendingCodexUserInputRequests?: {
+        rpc_id: number
+        item_id: string
+        questions: unknown
+      }[]
+      pendingCodexMcpElicitationRequests?: {
+        rpc_id: number
+        server_name: string
+        message: string
+        mode: string
+        requested_schema?: unknown
+        url?: string
+        elicitation_id?: string | null
+        meta?: unknown
+      }[]
+      pendingCodexDynamicToolCallRequests?: {
+        rpc_id: number
+        call_id: string
+        tool: string
+        arguments: unknown
       }[]
       deniedMessageContext?: {
         message: string
@@ -547,6 +700,11 @@ export function useUpdateSessionState() {
         submittedAnswers,
         fixedFindings,
         pendingPermissionDenials,
+        pendingCodexCommandApprovalRequests,
+        pendingCodexPermissionRequests,
+        pendingCodexUserInputRequests,
+        pendingCodexMcpElicitationRequests,
+        pendingCodexDynamicToolCallRequests,
         deniedMessageContext,
         isReviewing,
         waitingForInput,
@@ -617,9 +775,14 @@ export function useCloseSession() {
       // Clear all session-scoped state
       useChatStore.getState().clearSessionState(sessionId)
 
-      // Switch to the new active session so the UI doesn't show a blank screen
+      // Switch to the new active session — but only if the caller hasn't already
+      // picked a neighbor (e.g. SessionChatModal sets it based on visual tab order)
       if (newActiveId) {
-        useChatStore.getState().setActiveSession(worktreeId, newActiveId)
+        const currentActive =
+          useChatStore.getState().activeSessionIds[worktreeId]
+        if (!currentActive || currentActive === sessionId) {
+          useChatStore.getState().setActiveSession(worktreeId, newActiveId)
+        }
       }
     },
     onError: error => {
@@ -677,9 +840,14 @@ export function useArchiveSession() {
       // Clear all session-scoped state
       useChatStore.getState().clearSessionState(sessionId)
 
-      // Switch to the new active session so the UI doesn't show a blank screen
+      // Switch to the new active session — but only if the caller hasn't already
+      // picked a neighbor (e.g. SessionChatModal sets it based on visual tab order)
       if (newActiveId) {
-        useChatStore.getState().setActiveSession(worktreeId, newActiveId)
+        const currentActive =
+          useChatStore.getState().activeSessionIds[worktreeId]
+        if (!currentActive || currentActive === sessionId) {
+          useChatStore.getState().setActiveSession(worktreeId, newActiveId)
+        }
       }
     },
     onError: error => {
@@ -1201,7 +1369,7 @@ export function useSendMessage() {
       model?: string
       executionMode?: ExecutionMode
       thinkingLevel?: ThinkingLevel
-      effortLevel?: string
+      effortLevel?: EffortLevel
       parallelExecutionPrompt?: string
       aiLanguage?: string
       allowedTools?: string[]
@@ -1254,6 +1422,8 @@ export function useSendMessage() {
       model,
       executionMode,
       thinkingLevel,
+      effortLevel,
+      backend,
     }) => {
       // Cancel in-flight queries to avoid overwriting optimistic update
       await queryClient.cancelQueries({
@@ -1275,7 +1445,13 @@ export function useSendMessage() {
         tool_calls: [],
         model,
         execution_mode: executionMode,
-        thinking_level: thinkingLevel,
+        thinking_level:
+          backend === 'cursor'
+            ? undefined
+            : effortLevel
+              ? undefined
+              : thinkingLevel,
+        effort_level: backend === 'cursor' ? undefined : effortLevel,
       }
 
       // Batch the optimistic user message AND sending state together so React

@@ -300,6 +300,12 @@ pub async fn dispatch_command(
             }
             to_value(result)
         }
+        "detect_open_pr_for_branch" => {
+            let worktree_path: String = field(&args, "worktreePath", "worktree_path")?;
+            let result =
+                crate::projects::detect_open_pr_for_branch(app.clone(), worktree_path).await?;
+            to_value(result)
+        }
         "clear_worktree_pr" => {
             let worktree_id: String = field(&args, "worktreeId", "worktree_id")?;
             crate::projects::clear_worktree_pr(app.clone(), worktree_id).await?;
@@ -816,9 +822,28 @@ pub async fn dispatch_command(
             let worktree_id: String = field(&args, "worktreeId", "worktree_id")?;
             let worktree_path: String = field(&args, "worktreePath", "worktree_path")?;
             let session_id: String = field(&args, "sessionId", "session_id")?;
-            let result =
-                crate::chat::get_session(app.clone(), worktree_id, worktree_path, session_id)
-                    .await?;
+            let limit: Option<usize> = from_field_opt(&args, "limit")?;
+            let result = crate::chat::get_session(
+                app.clone(),
+                worktree_id,
+                worktree_path,
+                session_id,
+                limit,
+            )
+            .await?;
+            to_value(result)
+        }
+        "load_older_session_messages" => {
+            let session_id: String = field(&args, "sessionId", "session_id")?;
+            let before_run_index: usize = field(&args, "beforeRunIndex", "before_run_index")?;
+            let limit: usize = from_field(&args, "limit")?;
+            let result = crate::chat::load_older_session_messages(
+                app.clone(),
+                session_id,
+                before_run_index,
+                limit,
+            )
+            .await?;
             to_value(result)
         }
         "create_session" => {
@@ -925,7 +950,13 @@ pub async fn dispatch_command(
                     }
                     Some(crate::chat::types::ThinkingLevel::Off)
                 }
-                Some("max" | "xhigh") => {
+                Some("xhigh") => {
+                    if effort_level.is_none() {
+                        effort_level = Some(crate::chat::types::EffortLevel::Xhigh);
+                    }
+                    Some(crate::chat::types::ThinkingLevel::Off)
+                }
+                Some("max") => {
                     if effort_level.is_none() {
                         effort_level = Some(crate::chat::types::EffortLevel::Max);
                     }
@@ -1485,6 +1516,14 @@ pub async fn dispatch_command(
             let result = crate::projects::list_claude_commands(worktree_path).await?;
             to_value(result)
         }
+        "list_codex_skills" => {
+            let result = crate::projects::list_codex_skills().await?;
+            to_value(result)
+        }
+        "list_plugin_skills" => {
+            let result = crate::projects::list_plugin_skills().await?;
+            to_value(result)
+        }
         "search_github_issues" => {
             let project_path: String = field(&args, "projectPath", "project_path")?;
             let query: String = from_field(&args, "query")?;
@@ -1616,6 +1655,41 @@ pub async fn dispatch_command(
                     "pendingPermissionDenials",
                     "pending_permission_denials",
                 )?;
+            let pending_codex_permission_requests: Option<
+                Vec<crate::chat::types::CodexPermissionRequest>,
+            > = field_opt(
+                &args,
+                "pendingCodexPermissionRequests",
+                "pending_codex_permission_requests",
+            )?;
+            let pending_codex_command_approval_requests: Option<
+                Vec<crate::chat::types::CodexCommandApprovalRequest>,
+            > = field_opt(
+                &args,
+                "pendingCodexCommandApprovalRequests",
+                "pending_codex_command_approval_requests",
+            )?;
+            let pending_codex_user_input_requests: Option<
+                Vec<crate::chat::types::CodexUserInputRequest>,
+            > = field_opt(
+                &args,
+                "pendingCodexUserInputRequests",
+                "pending_codex_user_input_requests",
+            )?;
+            let pending_codex_mcp_elicitation_requests: Option<
+                Vec<crate::chat::types::CodexMcpElicitationRequest>,
+            > = field_opt(
+                &args,
+                "pendingCodexMcpElicitationRequests",
+                "pending_codex_mcp_elicitation_requests",
+            )?;
+            let pending_codex_dynamic_tool_call_requests: Option<
+                Vec<crate::chat::types::CodexDynamicToolCallRequest>,
+            > = field_opt(
+                &args,
+                "pendingCodexDynamicToolCallRequests",
+                "pending_codex_dynamic_tool_call_requests",
+            )?;
             let denied_message_context: Option<Option<crate::chat::types::DeniedMessageContext>> =
                 field_opt(&args, "deniedMessageContext", "denied_message_context")?;
             let is_reviewing: Option<bool> = field_opt(&args, "isReviewing", "is_reviewing")?;
@@ -1661,6 +1735,11 @@ pub async fn dispatch_command(
                 submitted_answers,
                 fixed_findings,
                 pending_permission_denials,
+                pending_codex_permission_requests,
+                pending_codex_command_approval_requests,
+                pending_codex_user_input_requests,
+                pending_codex_mcp_elicitation_requests,
+                pending_codex_dynamic_tool_call_requests,
                 denied_message_context,
                 is_reviewing,
                 waiting_for_input,
@@ -1878,6 +1957,26 @@ pub async fn dispatch_command(
             crate::claude_cli::install_claude_cli(app.clone(), version).await?;
             Ok(Value::Null)
         }
+        "check_cursor_cli_installed" => {
+            let result = crate::cursor_cli::check_cursor_cli_installed(app.clone()).await?;
+            to_value(result)
+        }
+        "detect_cursor_in_path" => {
+            let result = crate::cursor_cli::detect_cursor_in_path(app.clone()).await?;
+            to_value(result)
+        }
+        "check_cursor_cli_auth" => {
+            let result = crate::cursor_cli::check_cursor_cli_auth(app.clone()).await?;
+            to_value(result)
+        }
+        "list_cursor_models" => {
+            let result = crate::cursor_cli::list_cursor_models(app.clone()).await?;
+            to_value(result)
+        }
+        "get_cursor_install_command" => {
+            let result = crate::cursor_cli::get_cursor_install_command(app.clone()).await?;
+            to_value(result)
+        }
         "check_opencode_cli_installed" => {
             let result = crate::opencode_cli::check_opencode_cli_installed(app.clone()).await?;
             to_value(result)
@@ -2072,13 +2171,27 @@ pub async fn dispatch_command(
                 .await?;
             Ok(Value::Null)
         }
+        "answer_opencode_question" => {
+            let worktree_path: String = field(&args, "worktreePath", "worktree_path")?;
+            let tool_call_id: String = field(&args, "toolCallId", "tool_call_id")?;
+            let answers: Vec<Vec<String>> = from_field(&args, "answers")?;
+            crate::chat::answer_opencode_question(
+                app.clone(),
+                worktree_path,
+                tool_call_id,
+                answers,
+            )
+            .await?;
+            Ok(Value::Null)
+        }
 
         // =====================================================================
         // Chat (additional)
         // =====================================================================
         "check_mcp_health" => {
             let backend: Option<String> = from_field_opt(&args, "backend")?;
-            let result = crate::chat::check_mcp_health(app.clone(), backend).await?;
+            let worktree_path: Option<String> = field_opt(&args, "worktreePath", "worktree_path")?;
+            let result = crate::chat::check_mcp_health(app.clone(), backend, worktree_path).await?;
             to_value(result)
         }
         "get_mcp_servers" => {
@@ -2149,8 +2262,9 @@ pub async fn dispatch_command(
         }
         "set_session_last_opened" => {
             let session_id: String = field(&args, "sessionId", "session_id")?;
-            crate::chat::set_session_last_opened(app.clone(), session_id).await?;
-            Ok(Value::Null)
+            let transitioned =
+                crate::chat::set_session_last_opened(app.clone(), session_id).await?;
+            to_value(transitioned)
         }
         "set_sessions_last_opened_bulk" => {
             let session_ids: Vec<String> = field(&args, "sessionIds", "session_ids")?;
@@ -2225,6 +2339,7 @@ pub async fn dispatch_command(
         }
         "generate_pr_update_content" => {
             let worktree_path: String = field(&args, "worktreePath", "worktree_path")?;
+            let pr_number: Option<u32> = field_opt(&args, "prNumber", "pr_number")?;
             let session_id: Option<String> = field_opt(&args, "sessionId", "session_id")?;
             let custom_prompt: Option<String> = field_opt(&args, "customPrompt", "custom_prompt")?;
             let model: Option<String> = from_field_opt(&args, "model")?;
@@ -2235,6 +2350,7 @@ pub async fn dispatch_command(
             let result = crate::projects::generate_pr_update_content(
                 app.clone(),
                 worktree_path,
+                pr_number,
                 session_id,
                 custom_prompt,
                 model,
@@ -2564,6 +2680,21 @@ pub async fn dispatch_command(
             let state = app.state::<crate::automations::AutomationManager>();
             let result =
                 crate::automations::commands::resume_automation(app.clone(), state, id).await?;
+            to_value(result)
+        }
+
+        // =====================================================================
+        // Opinionated plugin commands
+        // =====================================================================
+        "check_opinionated_plugin_status" => {
+            let plugin_name: String = from_field(&args, "pluginName")?;
+            let result = crate::opinionated::check_opinionated_plugin_status(plugin_name).await?;
+            to_value(result)
+        }
+        "install_opinionated_plugin" => {
+            let plugin_name: String = from_field(&args, "pluginName")?;
+            let result =
+                crate::opinionated::install_opinionated_plugin(app.clone(), plugin_name).await?;
             to_value(result)
         }
 

@@ -199,6 +199,7 @@ export function useActiveTodosAndAgents({
       return { todos: [], sourceMessageId: null, isFromStreaming: false }
 
     if (isSending && currentToolCalls.length > 0) {
+      // Prefer TodoWrite tool calls
       for (let i = currentToolCalls.length - 1; i >= 0; i--) {
         const tc = currentToolCalls[i]
         const todos = tc ? getTodosFromToolCall(tc) : null
@@ -210,9 +211,19 @@ export function useActiveTodosAndAgents({
           }
         }
       }
+      // Fall back to plan steps (Codex plans surface steps as todos)
+      const planTodos = extractPlanTodos(currentToolCalls)
+      if (planTodos.length > 0) {
+        return {
+          todos: planTodos,
+          sourceMessageId: null,
+          isFromStreaming: true,
+        }
+      }
     }
 
     if (lastAssistantMessage?.tool_calls) {
+      // Prefer TodoWrite tool calls
       for (let i = lastAssistantMessage.tool_calls.length - 1; i >= 0; i--) {
         const tc = lastAssistantMessage.tool_calls[i]
         const todos = tc ? getTodosFromToolCall(tc) : null
@@ -222,6 +233,15 @@ export function useActiveTodosAndAgents({
             sourceMessageId: lastAssistantMessage.id,
             isFromStreaming: false,
           }
+        }
+      }
+      // Fall back to plan steps
+      const planTodos = extractPlanTodos(lastAssistantMessage.tool_calls)
+      if (planTodos.length > 0) {
+        return {
+          todos: planTodos,
+          sourceMessageId: lastAssistantMessage.id,
+          isFromStreaming: false,
         }
       }
     }

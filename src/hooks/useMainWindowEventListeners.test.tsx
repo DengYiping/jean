@@ -10,6 +10,7 @@ import {
   addTerminalTabForShortcut,
   closeActiveTerminalTabForShortcut,
   getTerminalShortcutWorktreeId,
+  shouldLetPlanDialogHandleAction,
   switchActiveTerminalTabByIndexForShortcut,
   useMainWindowEventListeners,
 } from './useMainWindowEventListeners'
@@ -122,11 +123,14 @@ describe('useMainWindowEventListeners terminal shortcuts', () => {
       terminals: {},
       activeTerminalIds: {},
       runningTerminals: new Set(),
+      failedTerminals: new Set(),
       terminalVisible: false,
       terminalPanelOpen: {},
       terminalHeight: 30,
       modalTerminalOpen: {},
+      modalTerminalDockMode: 'floating',
       modalTerminalWidth: 400,
+      modalTerminalHeight: 280,
     })
 
     useUIStore.setState({
@@ -188,6 +192,21 @@ describe('useMainWindowEventListeners terminal shortcuts', () => {
     })
     useTerminalStore.setState({
       modalTerminalOpen: { 'modal-worktree': true },
+    })
+
+    expect(getTerminalShortcutWorktreeId()).toBe('modal-worktree')
+  })
+
+  it('resolves terminal shortcuts when the modal terminal is docked', () => {
+    focusTerminal()
+
+    useUIStore.setState({
+      sessionChatModalOpen: true,
+      sessionChatModalWorktreeId: 'modal-worktree',
+    })
+    useTerminalStore.setState({
+      modalTerminalOpen: { 'modal-worktree': true },
+      modalTerminalDockMode: 'bottom',
     })
 
     expect(getTerminalShortcutWorktreeId()).toBe('modal-worktree')

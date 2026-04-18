@@ -2447,6 +2447,17 @@ pub async fn dispatch_command(
             crate::delete_cli_profile(name).await?;
             Ok(Value::Null)
         }
+        "check_opinionated_plugin_status" => {
+            let plugin_name: String = field(&args, "pluginName", "plugin_name")?;
+            let result = crate::opinionated::check_opinionated_plugin_status(plugin_name).await?;
+            to_value(result)
+        }
+        "install_opinionated_plugin" => {
+            let plugin_name: String = field(&args, "pluginName", "plugin_name")?;
+            let result =
+                crate::opinionated::install_opinionated_plugin(app.clone(), plugin_name).await?;
+            to_value(result)
+        }
 
         // =====================================================================
         // Background Tasks (additional)

@@ -7,6 +7,46 @@ use tauri::AppHandle;
 
 use super::types::{JeanConfig, MergeType};
 
+/// Resolve the git metadata directories for a working directory.
+///
+/// Returns `(git_dir, git_common_dir)` as absolute, canonicalized paths.
+/// - `git_dir`: worktree-specific metadata (e.g., `/repo/.git/worktrees/feat-x`)
+/// - `git_common_dir`: shared metadata (e.g., `/repo/.git`)
+///
+/// For non-worktree repos, both point to the same `.git` directory.
+/// Returns `None` if the path is not a git repo or the command fails.
+#[allow(dead_code)]
+pub fn resolve_git_dirs(working_dir: &Path) -> Option<(String, String)> {
+    let output = silent_command("git")
+        .args(["rev-parse", "--git-dir", "--git-common-dir"])
+        .current_dir(working_dir)
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut lines = stdout.lines();
+    let git_dir_raw = lines.next()?.trim();
+    let git_common_dir_raw = lines.next()?.trim();
+
+    let resolve = |p: &str| -> Option<String> {
+        let path = Path::new(p);
+        let abs = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            working_dir.join(path)
+        };
+        std::fs::canonicalize(&abs)
+            .ok()
+            .map(|p| p.to_string_lossy().into_owned())
+    };
+
+    Some((resolve(git_dir_raw)?, resolve(git_common_dir_raw)?))
+}
+
 /// Repository identifier extracted from GitHub remote URL
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RepoIdentifier {
@@ -726,9 +766,11 @@ pub fn git_stash(repo_path: &str) -> Result<String, String> {
         log::trace!("Stash result: {stdout}");
         Ok(stdout)
     } else {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        log::error!("Failed to stash: {stderr}");
-        Err(stderr)
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let combined = format!("{stdout}\n{stderr}").trim().to_string();
+        log::error!("Failed to stash: {combined}");
+        Err(combined)
     }
 }
 
@@ -747,9 +789,11 @@ pub fn git_stash_pop(repo_path: &str) -> Result<String, String> {
         log::trace!("Stash pop result: {stdout}");
         Ok(stdout)
     } else {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        log::error!("Failed to pop stash: {stderr}");
-        Err(stderr)
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let combined = format!("{stdout}\n{stderr}").trim().to_string();
+        log::error!("Failed to pop stash: {combined}");
+        Err(combined)
     }
 }
 
@@ -1325,6 +1369,13 @@ pub fn gh_pr_checkout(
 pub fn remove_worktree(repo_path: &str, worktree_path: &str) -> Result<(), String> {
     log::trace!("Removing worktree at {worktree_path}");
 
+    // SAFETY: Never remove the main working tree — this would delete the entire repo
+    if is_main_worktree(repo_path, worktree_path) {
+        return Err(format!(
+            "Refusing to remove main working tree at {worktree_path}"
+        ));
+    }
+
     // Prune stale worktree entries (folders deleted outside the app)
     let _ = silent_command("git")
         .args(["worktree", "prune"])
@@ -1366,7 +1417,17 @@ pub fn remove_worktree(repo_path: &str, worktree_path: &str) -> Result<(), Strin
                 .output();
         } else {
             // git worktree remove failed (e.g. file locks on Windows)
-            // Try manual directory removal as fallback
+            // Try manual directory removal as fallback, but NEVER on the repo root
+            let is_repo_root = {
+                let wt = Path::new(worktree_path).canonicalize().ok();
+                let rp = Path::new(repo_path).canonicalize().ok();
+                wt.is_some() && wt == rp
+            };
+            if is_repo_root {
+                return Err(format!(
+                    "Refusing to remove directory: path matches repository root ({repo_path})"
+                ));
+            }
             if Path::new(worktree_path).exists() {
                 log::warn!(
                     "git worktree remove failed ({stderr}), attempting manual directory removal"
@@ -1489,6 +1550,36 @@ pub fn cleanup_stale_branch(repo_path: &str, branch: &str) {
         log::trace!("Deleting stale branch '{branch}'");
         let _ = delete_branch(repo_path, branch);
     }
+}
+
+/// Check if a path is the main working tree (not a linked worktree).
+/// Uses `git worktree list --porcelain` — the first entry is always the main worktree.
+pub fn is_main_worktree(repo_path: &str, worktree_path: &str) -> bool {
+    let output = silent_command("git")
+        .args(["worktree", "list", "--porcelain"])
+        .current_dir(repo_path)
+        .output()
+        .ok();
+
+    let Some(output) = output else { return false };
+    if !output.status.success() {
+        return false;
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // First "worktree <path>" line is always the main worktree
+    for line in stdout.lines() {
+        if let Some(path) = line.strip_prefix("worktree ") {
+            // Canonicalize both paths for reliable comparison (handles symlinks, trailing slashes, ..)
+            let main = Path::new(path).canonicalize().ok();
+            let target = Path::new(worktree_path).canonicalize().ok();
+            return match (main, target) {
+                (Some(m), Some(t)) => m == t,
+                _ => path == worktree_path,
+            };
+        }
+    }
+    false
 }
 
 /// List existing worktrees for a repository

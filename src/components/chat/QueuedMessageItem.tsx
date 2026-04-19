@@ -17,21 +17,12 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import {
-  Brain,
-  ClipboardList,
   GripVertical,
-  Hammer,
   Trash2,
   WandSparkles,
-  Zap,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import {
-  EFFORT_LEVEL_OPTIONS,
-  MODEL_OPTIONS,
-  THINKING_LEVEL_OPTIONS,
-} from '@/components/chat/toolbar/toolbar-options'
-import { formatOpencodeModelLabel } from '@/components/chat/toolbar/toolbar-utils'
+import { MessageSettingsBadges } from '@/components/chat/MessageSettingsBadges'
 import type { QueuedMessage } from '@/types/chat'
 
 interface SortableQueuedMessageItemProps {
@@ -76,23 +67,6 @@ const SortableQueuedMessageItem = memo(function SortableQueuedMessageItem({
     onSteer(sessionId, message.id)
   }, [message.id, onSteer, sessionId])
 
-  const modelLabel =
-    MODEL_OPTIONS.find(o => o.value === message.model)?.label ??
-    (message.model.includes('/')
-      ? formatOpencodeModelLabel(message.model)
-      : message.model)
-
-  const effortLabel = message.effortLevel
-    ? (EFFORT_LEVEL_OPTIONS.find(o => o.value === message.effortLevel)?.label ??
-      message.effortLevel)
-    : null
-
-  const thinkingLabel =
-    message.thinkingLevel !== 'off'
-      ? (THINKING_LEVEL_OPTIONS.find(o => o.value === message.thinkingLevel)
-          ?.label ?? message.thinkingLevel)
-      : null
-
   return (
     <div ref={setNodeRef} style={style}>
       <div
@@ -111,45 +85,6 @@ const SortableQueuedMessageItem = memo(function SortableQueuedMessageItem({
           >
             <GripVertical className="h-3.5 w-3.5" />
           </button>
-
-          <span
-            className={cn(
-              'inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[10px]',
-              message.executionMode === 'plan' &&
-                'bg-yellow-500/20 text-yellow-700 dark:text-yellow-300',
-              message.executionMode === 'build' &&
-                'bg-muted/80 text-muted-foreground',
-              message.executionMode === 'yolo' &&
-                'bg-red-500/20 text-red-700 dark:text-red-300'
-            )}
-          >
-            {message.executionMode === 'plan' && (
-              <ClipboardList className="h-2.5 w-2.5" />
-            )}
-            {message.executionMode === 'build' && (
-              <Hammer className="h-2.5 w-2.5" />
-            )}
-            {message.executionMode === 'yolo' && (
-              <Zap className="h-2.5 w-2.5" />
-            )}
-            <span className="capitalize">{message.executionMode}</span>
-          </span>
-
-          <span className="shrink-0 rounded bg-muted/80 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-            {modelLabel}
-          </span>
-
-          {effortLabel ? (
-            <span className="shrink-0 inline-flex items-center gap-1 rounded bg-muted/80 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-              <Brain className="h-2.5 w-2.5" />
-              {effortLabel}
-            </span>
-          ) : thinkingLabel ? (
-            <span className="shrink-0 inline-flex items-center gap-1 rounded bg-muted/80 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-              <Brain className="h-2.5 w-2.5" />
-              {thinkingLabel}
-            </span>
-          ) : null}
 
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
@@ -175,6 +110,16 @@ const SortableQueuedMessageItem = memo(function SortableQueuedMessageItem({
                   file(s)
                 </span>
               )}
+            </div>
+
+            <div className="mt-1">
+              <MessageSettingsBadges
+                model={message.model}
+                executionMode={message.executionMode}
+                thinkingLevel={message.thinkingLevel}
+                effortLevel={message.effortLevel}
+                isCursor={message.backend === 'cursor'}
+              />
             </div>
           </div>
 

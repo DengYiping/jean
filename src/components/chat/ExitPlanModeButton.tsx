@@ -17,6 +17,7 @@ import {
 import { formatShortcutDisplay, DEFAULT_KEYBINDINGS } from '@/types/keybindings'
 
 interface ExitPlanModeButtonProps {
+  sessionId?: string
   toolCalls: ToolCall[] | undefined
   isApproved: boolean
   isLatestPlanRequest?: boolean
@@ -38,6 +39,7 @@ interface ExitPlanModeButtonProps {
 }
 
 export function ExitPlanModeButton({
+  sessionId,
   toolCalls,
   isApproved,
   isLatestPlanRequest = true,

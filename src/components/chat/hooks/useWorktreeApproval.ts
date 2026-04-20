@@ -33,6 +33,7 @@ import {
 } from '../message-content-utils'
 import { navigateToApprovedWorktree } from '../worktree-approval-navigation'
 import { applyOptimisticPlanApproval } from './optimistic-plan-approval'
+import { markWorktreeSilentReady } from '@/services/worktree-silent-ready'
 
 const THINKING_LEVEL_VALUES = new Set<ThinkingLevel>([
   'off',
@@ -122,7 +123,6 @@ export function useWorktreeApproval({
 
       const sessionId = card.session.id
       const messageId = card.pendingPlanMessageId
-      const toastId = toast.loading('Creating worktree...')
 
       // Step 1: Mark plan approved on original session
       if (messageId) {
@@ -166,12 +166,12 @@ export function useWorktreeApproval({
         try {
           planContent = await readPlanFile(card.planFilePath)
         } catch (err) {
-          toast.error(`Failed to read plan file: ${err}`, { id: toastId })
+          toast.error(`Failed to read plan file: ${err}`)
           return
         }
       }
       if (!planContent) {
-        toast.error('No plan content available', { id: toastId })
+        toast.error('No plan content available')
         return
       }
 
@@ -182,9 +182,10 @@ export function useWorktreeApproval({
           projectId,
         })
       } catch (err) {
-        toast.error(`Failed to create worktree: ${err}`, { id: toastId })
+        toast.error(`Failed to create worktree: ${err}`)
         return
       }
+      markWorktreeSilentReady(pendingWorktree.id)
 
       // Step 4: Wait for worktree to be ready
       let readyWorktree: Worktree
@@ -221,11 +222,9 @@ export function useWorktreeApproval({
           )
         })
       } catch (err) {
-        toast.error(`Worktree creation failed: ${err}`, { id: toastId })
+        toast.error(`Worktree creation failed: ${err}`)
         return
       }
-
-      toast.loading('Sending plan...', { id: toastId })
 
       // Step 5: Use the default session auto-created by the backend, or create one if none exists
       let newSession: Session
@@ -243,7 +242,7 @@ export function useWorktreeApproval({
           })
         }
       } catch (err) {
-        toast.error(`Failed to get session: ${err}`, { id: toastId })
+        toast.error(`Failed to get session: ${err}`)
         return
       }
 
@@ -311,6 +310,9 @@ export function useWorktreeApproval({
       const modeThinkingPref = isYolo
         ? preferences?.yolo_thinking_level
         : preferences?.build_thinking_level
+      const modeEffortPref = isYolo
+        ? preferences?.yolo_effort_level
+        : preferences?.build_effort_level
       const modeBackendOverride = modeBackendPref as
         | 'claude'
         | 'codex'
@@ -331,7 +333,6 @@ export function useWorktreeApproval({
         modeModelPref || modeBackendOverride
           ? [backend, model].filter(Boolean).join(' / ')
           : ''
-      if (modeOverride) toast.info(`${modeLabel}: ${modeOverride}`)
       let thinkingLevel: ThinkingLevel = 'off'
       let effortLevel: EffortLevel | undefined
       if (backend === 'codex') {
@@ -340,7 +341,7 @@ export function useWorktreeApproval({
             preferences?.default_codex_reasoning_effort
           ) ?? 'high'
         effortLevel =
-          mapCodexReasoningToEffort(modeThinkingPref) ?? defaultCodexEffort
+          mapCodexReasoningToEffort(modeEffortPref) ?? defaultCodexEffort
       } else {
         const fallbackThinking = isThinkingLevel(preferences?.thinking_level)
           ? preferences.thinking_level
@@ -348,6 +349,7 @@ export function useWorktreeApproval({
         thinkingLevel = isThinkingLevel(modeThinkingPref)
           ? modeThinkingPref
           : fallbackThinking
+        effortLevel = mapCodexReasoningToEffort(modeEffortPref)
       }
       const resolvedPlanFilePath =
         card.planFilePath || store.getPlanFilePath(sessionId)
@@ -434,8 +436,6 @@ export function useWorktreeApproval({
         customProfileName: card.session.selected_provider ?? undefined,
         backend,
       })
-
-      toast.success(`Plan sent to new worktree (${modeLabel})`, { id: toastId })
 
       // Optionally close the original session
       if (preferences?.close_original_on_clear_context) {

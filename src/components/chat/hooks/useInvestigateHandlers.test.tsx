@@ -95,7 +95,7 @@ describe('useInvestigateHandlers', () => {
       ...defaultPreferences,
       magic_prompt_models: {
         ...defaultPreferences.magic_prompt_models,
-        review_comments_model: 'sonnet',
+        review_comments_model: 'claude-opus-4-7',
       },
       magic_prompt_efforts: {
         ...defaultPreferences.magic_prompt_efforts,
@@ -139,7 +139,7 @@ describe('useInvestigateHandlers', () => {
       expect.objectContaining({
         sessionId: 'session-2',
         message: 'review prompt',
-        model: 'sonnet',
+        model: 'claude-opus-4-7',
         effortLevel: 'medium',
         backend: 'claude',
       }),

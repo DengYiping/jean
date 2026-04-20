@@ -804,11 +804,17 @@ export function ChatWindow({
   const buildThinkingLevelRef = useRef<string | null>(
     preferences?.build_thinking_level ?? null
   )
+  const buildEffortLevelRef = useRef<string | null>(
+    preferences?.build_effort_level ?? null
+  )
   const yoloBackendRef = useRef<string | null>(
     preferences?.yolo_backend ?? null
   )
   const yoloThinkingLevelRef = useRef<string | null>(
     preferences?.yolo_thinking_level ?? null
+  )
+  const yoloEffortLevelRef = useRef<string | null>(
+    preferences?.yolo_effort_level ?? null
   )
   const selectedProviderRef = useRef(selectedProvider)
   const selectedThinkingLevelRef = useRef(selectedThinkingLevel)
@@ -830,8 +836,10 @@ export function ChatWindow({
   yoloModelRef.current = preferences?.yolo_model ?? null
   buildBackendRef.current = preferences?.build_backend ?? null
   buildThinkingLevelRef.current = preferences?.build_thinking_level ?? null
+  buildEffortLevelRef.current = preferences?.build_effort_level ?? null
   yoloBackendRef.current = preferences?.yolo_backend ?? null
   yoloThinkingLevelRef.current = preferences?.yolo_thinking_level ?? null
+  yoloEffortLevelRef.current = preferences?.yolo_effort_level ?? null
   selectedProviderRef.current = selectedProvider
   selectedThinkingLevelRef.current = selectedThinkingLevel
   selectedEffortLevelRef.current = selectedEffortLevel
@@ -1010,8 +1018,12 @@ export function ChatWindow({
     selectedModelRef,
     buildModelRef,
     buildBackendRef,
+    buildThinkingLevelRef,
+    buildEffortLevelRef,
     yoloModelRef,
     yoloBackendRef,
+    yoloThinkingLevelRef,
+    yoloEffortLevelRef,
     selectedProviderRef,
     selectedThinkingLevelRef,
     selectedEffortLevelRef,
@@ -2447,9 +2459,11 @@ export function ChatWindow({
     buildModelRef,
     buildBackendRef,
     buildThinkingLevelRef,
+    buildEffortLevelRef,
     yoloModelRef,
     yoloBackendRef,
     yoloThinkingLevelRef,
+    yoloEffortLevelRef,
     getCustomProfileName: () => {
       return selectedProviderRef.current ?? undefined
     },

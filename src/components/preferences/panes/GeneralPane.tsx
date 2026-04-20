@@ -8,13 +8,7 @@ import React, {
 import { invoke } from '@/lib/transport'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import {
-  Loader2,
-  ChevronDown,
-  Check,
-  ChevronsUpDown,
-  Play,
-} from 'lucide-react'
+import { Loader2, ChevronDown, Check, ChevronsUpDown, Play } from 'lucide-react'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
@@ -274,6 +268,7 @@ export const GeneralPane: React.FC = () => {
         // Reset model and thinking/effort when backend changes
         build_model: null,
         build_thinking_level: null,
+        build_effort_level: null,
       })
     }
   }
@@ -293,6 +288,7 @@ export const GeneralPane: React.FC = () => {
         // Reset model and thinking/effort when backend changes
         yolo_model: null,
         yolo_thinking_level: null,
+        yolo_effort_level: null,
       })
     }
   }
@@ -309,6 +305,22 @@ export const GeneralPane: React.FC = () => {
     if (preferences) {
       patchPreferences.mutate({
         yolo_thinking_level: value === 'default' ? null : value,
+      })
+    }
+  }
+
+  const handleBuildEffortLevelChange = (value: string) => {
+    if (preferences) {
+      patchPreferences.mutate({
+        build_effort_level: value === 'default' ? null : value,
+      })
+    }
+  }
+
+  const handleYoloEffortLevelChange = (value: string) => {
+    if (preferences) {
+      patchPreferences.mutate({
+        yolo_effort_level: value === 'default' ? null : value,
       })
     }
   }
@@ -1130,9 +1142,9 @@ export const GeneralPane: React.FC = () => {
 
           <InlineField
             label="Build execution"
-            description="Backend, model, and thinking/effort override when approving plans"
+            description="Backend, model, thinking, and effort override when approving plans"
           >
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-4 gap-2">
               <div>
                 <Select
                   value={preferences?.build_backend ?? 'default'}
@@ -1257,27 +1269,30 @@ export const GeneralPane: React.FC = () => {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {preferences?.build_backend === 'codex' ? (
-                      <>
-                        <SelectItem value="default">Default effort</SelectItem>
-                        {codexReasoningOptions.map(option => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </>
-                    ) : (
-                      <>
-                        <SelectItem value="default">
-                          Default thinking
-                        </SelectItem>
-                        {thinkingLevelOptions.map(option => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </>
-                    )}
+                    <SelectItem value="default">Default thinking</SelectItem>
+                    {thinkingLevelOptions.map(option => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Select
+                  value={preferences?.build_effort_level ?? 'default'}
+                  onValueChange={handleBuildEffortLevelChange}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="default">Default effort</SelectItem>
+                    {effortLevelOptions.map(option => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -1286,9 +1301,9 @@ export const GeneralPane: React.FC = () => {
 
           <InlineField
             label="Yolo execution"
-            description="Backend, model, and thinking/effort override when yolo-approving plans"
+            description="Backend, model, thinking, and effort override when yolo-approving plans"
           >
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-4 gap-2">
               <div>
                 <Select
                   value={preferences?.yolo_backend ?? 'default'}
@@ -1413,27 +1428,30 @@ export const GeneralPane: React.FC = () => {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {preferences?.yolo_backend === 'codex' ? (
-                      <>
-                        <SelectItem value="default">Default effort</SelectItem>
-                        {codexReasoningOptions.map(option => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </>
-                    ) : (
-                      <>
-                        <SelectItem value="default">
-                          Default thinking
-                        </SelectItem>
-                        {thinkingLevelOptions.map(option => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </>
-                    )}
+                    <SelectItem value="default">Default thinking</SelectItem>
+                    {thinkingLevelOptions.map(option => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Select
+                  value={preferences?.yolo_effort_level ?? 'default'}
+                  onValueChange={handleYoloEffortLevelChange}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="default">Default effort</SelectItem>
+                    {effortLevelOptions.map(option => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

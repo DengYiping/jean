@@ -51,7 +51,7 @@ export function resolveApprovalLabel(
         ? (preferences.selected_opencode_model ?? 'opencode/gpt-5.3-codex')
         : resolvedBackend === 'cursor'
           ? (preferences.selected_cursor_model ?? 'cursor/auto')
-        : (preferences.selected_model ?? null)
+          : (preferences.selected_model ?? null)
   const resolvedModel = model ?? backendDefaultModel
   if (!resolvedModel && !resolvedBackend) return null
   const modelLabel = resolvedModel

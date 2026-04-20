@@ -1660,6 +1660,8 @@ pub async fn dispatch_command(
                 "parallelExecutionPromptEnabled",
                 "parallel_execution_prompt_enabled",
             )?;
+            let table_checked_rows: Option<std::collections::HashMap<String, Vec<u32>>> =
+                field_opt(&args, "tableCheckedRows", "table_checked_rows")?;
             crate::chat::update_session_state(
                 app.clone(),
                 worktree_id,
@@ -1681,6 +1683,7 @@ pub async fn dispatch_command(
                 enabled_mcp_servers,
                 selected_execution_mode,
                 parallel_execution_prompt_enabled,
+                table_checked_rows,
             )
             .await?;
             emit_cache_invalidation(app, &["sessions"]);

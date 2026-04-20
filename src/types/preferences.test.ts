@@ -75,7 +75,9 @@ describe('magic prompt model compatibility', () => {
 
 describe('magic prompt review comments defaults', () => {
   it('includes review comments overrides in the shared defaults', () => {
-    expect(DEFAULT_MAGIC_PROMPT_MODELS.review_comments_model).toBe('opus')
+    expect(DEFAULT_MAGIC_PROMPT_MODELS.review_comments_model).toBe(
+      'claude-opus-4-7'
+    )
     expect(DEFAULT_MAGIC_PROMPT_PROVIDERS.review_comments_provider).toBeNull()
     expect(DEFAULT_MAGIC_PROMPT_EFFORTS.review_comments_effort).toBeNull()
   })

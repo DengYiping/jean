@@ -45,9 +45,11 @@ interface UsePlanDialogApprovalParams {
   buildModelRef: RefObject<string | null>
   buildBackendRef: RefObject<string | null>
   buildThinkingLevelRef: RefObject<string | null>
+  buildEffortLevelRef: RefObject<string | null>
   yoloModelRef: RefObject<string | null>
   yoloBackendRef: RefObject<string | null>
   yoloThinkingLevelRef: RefObject<string | null>
+  yoloEffortLevelRef: RefObject<string | null>
   selectedProviderRef: RefObject<string | null>
   selectedThinkingLevelRef: RefObject<ThinkingLevel>
   selectedEffortLevelRef: RefObject<EffortLevel>
@@ -72,9 +74,11 @@ export function usePlanDialogApproval({
   buildModelRef,
   buildBackendRef,
   buildThinkingLevelRef,
+  buildEffortLevelRef,
   yoloModelRef,
   yoloBackendRef,
   yoloThinkingLevelRef,
+  yoloEffortLevelRef,
   selectedProviderRef,
   selectedThinkingLevelRef,
   selectedEffortLevelRef,
@@ -238,6 +242,17 @@ export function usePlanDialogApproval({
           .setThinkingLevel(activeSessionId, resolvedThinkingLevel)
       }
 
+      const effortOverride = overridesApply
+        ? mode === 'yolo'
+          ? yoloEffortLevelRef.current
+          : buildEffortLevelRef.current
+        : null
+      const resolvedEffortLevel: EffortLevel | undefined =
+        useAdaptiveThinkingRef.current || isCodexBackendRef.current
+          ? ((effortOverride as EffortLevel | null) ??
+            selectedEffortLevelRef.current)
+          : undefined
+
       const model = modelOverride ?? selectedModelRef.current
       setExecutionMode(activeSessionId, mode)
       const modeLabel = mode === 'yolo' ? 'Yolo' : 'Build'
@@ -261,10 +276,7 @@ export function usePlanDialogApproval({
         provider: selectedProviderRef.current,
         executionMode: mode,
         thinkingLevel: resolvedThinkingLevel,
-        effortLevel:
-          useAdaptiveThinkingRef.current || isCodexBackendRef.current
-            ? selectedEffortLevelRef.current
-            : undefined,
+        effortLevel: resolvedEffortLevel,
         mcpConfig: buildMcpConfigJson(
           mcpServersDataRef.current ?? [],
           enabledMcpServersRef.current,
@@ -291,9 +303,11 @@ export function usePlanDialogApproval({
       buildModelRef,
       buildBackendRef,
       buildThinkingLevelRef,
+      buildEffortLevelRef,
       yoloModelRef,
       yoloBackendRef,
       yoloThinkingLevelRef,
+      yoloEffortLevelRef,
       selectedProviderRef,
       selectedThinkingLevelRef,
       selectedEffortLevelRef,

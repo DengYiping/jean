@@ -31,6 +31,7 @@ import type { AppPreferences } from '@/types/preferences'
 import type { AdvisoryContext } from '@/types/github'
 import { hasBackend } from '@/lib/environment'
 import { openExternal, preOpenWindow } from '@/lib/platform'
+import { consumeWorktreeSilentReady } from '@/services/worktree-silent-ready'
 
 // Check if a backend is available (Tauri IPC or WebSocket)
 // Kept as `isTauri` for backward compatibility across the codebase
@@ -986,36 +987,40 @@ export function useWorktreeEvents() {
         handleWorktreeReady(worktree, queryClient)
         clearPendingTimeout(worktree.id)
 
-        if (!worktree.automation_owned) {
-          const openWorktreeAction = {
-            label: 'Open',
-            onClick: () => {
-              const { selectWorktree, selectProject } =
-                useProjectsStore.getState()
-              selectProject(worktree.project_id)
-              selectWorktree(worktree.id)
-              // Clear active worktree so we land on ProjectCanvasView (not bare
-              // ChatWindow), then open the session modal with the full header.
-              const { clearActiveWorktree } = useChatStore.getState()
-              clearActiveWorktree()
-              // Use both mechanisms: markWorktreeForAutoOpenSession for when the
-              // canvas is mounting (lazy-loaded), and a deferred event dispatch
-              // for when it's already mounted. The auto-open effect consumes the
-              // mark, so only one will take effect.
-              useUIStore.getState().markWorktreeForAutoOpenSession(worktree.id)
-              setTimeout(() => {
-                window.dispatchEvent(
-                  new CustomEvent('open-worktree-modal', {
-                    detail: {
-                      worktreeId: worktree.id,
-                      worktreePath: worktree.path,
-                    },
-                  })
-                )
-              }, 0)
-            },
-          }
+        if (consumeWorktreeSilentReady(worktree.id)) {
+          return
+        }
 
+        const openWorktreeAction = {
+          label: 'Open',
+          onClick: () => {
+            const { selectWorktree, selectProject } =
+              useProjectsStore.getState()
+            selectProject(worktree.project_id)
+            selectWorktree(worktree.id)
+            // Clear active worktree so we land on ProjectCanvasView (not bare
+            // ChatWindow), then open the session modal with the full header.
+            const { clearActiveWorktree } = useChatStore.getState()
+            clearActiveWorktree()
+            // Use both mechanisms: markWorktreeForAutoOpenSession for when the
+            // canvas is mounting (lazy-loaded), and a deferred event dispatch
+            // for when it's already mounted. The auto-open effect consumes the
+            // mark, so only one will take effect.
+            useUIStore.getState().markWorktreeForAutoOpenSession(worktree.id)
+            setTimeout(() => {
+              window.dispatchEvent(
+                new CustomEvent('open-worktree-modal', {
+                  detail: {
+                    worktreeId: worktree.id,
+                    worktreePath: worktree.path,
+                  },
+                })
+              )
+            }, 0)
+          },
+        }
+
+        if (!worktree.automation_owned) {
           toast.success(`Worktree ready: ${worktree.name}`, {
             id: `worktree-creating-${worktree.id}`,
             duration: 5000,

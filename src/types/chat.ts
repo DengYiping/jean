@@ -195,6 +195,8 @@ export interface Session {
   parallel_execution_prompt_enabled?: boolean
   /** Persisted session digest (recap summary) */
   digest?: SessionDigest
+  /** Per-table checklist state: tableKey -> checked row indices */
+  table_checked_rows?: Record<string, number[]>
   /** Unix timestamp when session was last opened/viewed by the user */
   last_opened_at?: number
   /** Automation owner ID for automation-created sessions. */

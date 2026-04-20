@@ -664,21 +664,21 @@ export interface MagicPromptReasoningEfforts {
 
 /** Default models for each magic prompt */
 export const DEFAULT_MAGIC_PROMPT_MODELS: MagicPromptModels = {
-  investigate_issue_model: 'opus',
-  investigate_pr_model: 'opus',
-  investigate_workflow_run_model: 'opus',
-  pr_content_model: 'haiku',
-  commit_message_model: 'haiku',
-  code_review_model: 'opus',
-  context_summary_model: 'opus',
-  resolve_conflicts_model: 'opus',
-  release_notes_model: 'haiku',
-  session_naming_model: 'haiku',
-  session_recap_model: 'haiku',
-  investigate_security_alert_model: 'opus',
-  investigate_advisory_model: 'opus',
-  investigate_linear_issue_model: 'opus',
-  review_comments_model: 'opus',
+  investigate_issue_model: 'claude-opus-4-7',
+  investigate_pr_model: 'claude-opus-4-7',
+  investigate_workflow_run_model: 'claude-opus-4-7',
+  pr_content_model: 'sonnet',
+  commit_message_model: 'sonnet',
+  code_review_model: 'claude-opus-4-7',
+  context_summary_model: 'claude-opus-4-7',
+  resolve_conflicts_model: 'claude-opus-4-7',
+  release_notes_model: 'sonnet',
+  session_naming_model: 'sonnet',
+  session_recap_model: 'sonnet',
+  investigate_security_alert_model: 'claude-opus-4-7',
+  investigate_advisory_model: 'claude-opus-4-7',
+  investigate_linear_issue_model: 'claude-opus-4-7',
+  review_comments_model: 'claude-opus-4-7',
 }
 
 /** Codex preset: heavy tasks use top model, light tasks use mini */
@@ -984,6 +984,8 @@ export interface AppPreferences {
   yolo_backend: string | null // Backend override for yolo plan approval, null = use session backend
   build_thinking_level: string | null // Thinking level override for build mode, null = use session thinking level
   yolo_thinking_level: string | null // Thinking level override for yolo mode, null = use session thinking level
+  build_effort_level: string | null // Effort level override for build mode (Claude adaptive / Codex), null = use session effort
+  yolo_effort_level: string | null // Effort level override for yolo mode (Claude adaptive / Codex), null = use session effort
   linear_api_key: string | null // Global Linear personal API key (inherited by all projects)
   magic_models_auto_initialized: boolean // Whether magic prompt models were auto-set based on installed backends
   claude_cli_source: 'jean' | 'path' // Claude CLI source: 'jean' (managed) or 'path' (system PATH)
@@ -1081,18 +1083,24 @@ export const fileEditModeOptions: { value: FileEditMode; label: string }[] = [
 ]
 
 export type ClaudeModel =
-  | 'opus'
+  | 'claude-opus-4-7'
+  | 'claude-opus-4-6'
+  | 'claude-opus-4-5-20251101'
   | 'claude-opus-4-6[1m]'
-  | 'opus-fast'
+  | 'claude-opus-4-6-fast'
   | 'claude-opus-4-6[1m]-fast'
+  | 'opus' // Legacy/provider-alias: resolved by CLI via ANTHROPIC_DEFAULT_OPUS_MODEL env
+  | 'opus-fast' // Legacy/provider-alias: resolved by CLI via ANTHROPIC_DEFAULT_OPUS_MODEL env
   | 'sonnet'
   | 'claude-sonnet-4-6[1m]'
   | 'haiku'
 
 export const modelOptions: { value: ClaudeModel; label: string }[] = [
-  { value: 'opus', label: 'Claude Opus 4.7' },
+  { value: 'claude-opus-4-7', label: 'Claude Opus 4.7' },
+  { value: 'claude-opus-4-6', label: 'Claude Opus 4.6' },
+  { value: 'claude-opus-4-5-20251101', label: 'Claude Opus 4.5' },
   { value: 'claude-opus-4-6[1m]', label: 'Claude Opus 4.6 (1M)' },
-  { value: 'opus-fast', label: 'Claude Opus 4.6 Fast' },
+  { value: 'claude-opus-4-6-fast', label: 'Claude Opus 4.6 Fast' },
   { value: 'claude-opus-4-6[1m]-fast', label: 'Claude Opus 4.6 (1M) Fast' },
   { value: 'sonnet', label: 'Claude Sonnet 4.6' },
   { value: 'claude-sonnet-4-6[1m]', label: 'Claude Sonnet 4.6 (1M)' },
@@ -1568,16 +1576,16 @@ export function getEditorLabel(editor: EditorApp | undefined): string {
 
 export const defaultPreferences: AppPreferences = {
   theme: 'system',
-  selected_model: 'opus',
+  selected_model: 'claude-opus-4-7',
   thinking_level: 'ultrathink',
   default_effort_level: 'high',
   terminal: isWindows ? 'powershell' : 'terminal',
   editor: 'zed',
   open_in: 'editor',
   auto_branch_naming: true,
-  branch_naming_model: 'haiku',
+  branch_naming_model: 'sonnet',
   auto_session_naming: true,
-  session_naming_model: 'haiku',
+  session_naming_model: 'sonnet',
   ui_font_size: FONT_SIZE_DEFAULT,
   chat_font_size: FONT_SIZE_DEFAULT,
   ui_font: 'geist',
@@ -1643,6 +1651,8 @@ export const defaultPreferences: AppPreferences = {
   yolo_backend: null, // Default: use session backend
   build_thinking_level: null, // Default: use session thinking level
   yolo_thinking_level: null, // Default: use session thinking level
+  build_effort_level: null, // Default: use session effort level
+  yolo_effort_level: null, // Default: use session effort level
   linear_api_key: null, // Default: no global Linear API key
   magic_models_auto_initialized: false, // Default: not yet auto-set
   claude_cli_source: 'jean', // Default: Jean-managed

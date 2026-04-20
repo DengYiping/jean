@@ -1,6 +1,7 @@
 import type { ToolCall } from '@/types/chat'
 import { isAskUserQuestion, isExitPlanMode } from '@/types/chat'
 import { usePreferences } from '@/services/preferences'
+import { useChatStore } from '@/store/chat-store'
 import { resolveApprovalLabel } from './approval-label-utils'
 import { SplitButton } from '@/components/ui/split-button'
 import { Button } from '@/components/ui/button'
@@ -16,6 +17,7 @@ import {
 import { formatShortcutDisplay, DEFAULT_KEYBINDINGS } from '@/types/keybindings'
 
 interface ExitPlanModeButtonProps {
+  sessionId?: string
   toolCalls: ToolCall[] | undefined
   isApproved: boolean
   isLatestPlanRequest?: boolean
@@ -37,6 +39,7 @@ interface ExitPlanModeButtonProps {
 }
 
 export function ExitPlanModeButton({
+  sessionId,
   toolCalls,
   isApproved,
   isLatestPlanRequest = true,
@@ -55,8 +58,11 @@ export function ExitPlanModeButton({
   hideApproveButtons,
 }: ExitPlanModeButtonProps) {
   const { data: preferences } = usePreferences()
-  const buildLabel = resolveApprovalLabel('build', preferences)
-  const yoloLabel = resolveApprovalLabel('yolo', preferences)
+  const sessionBackend = useChatStore(state =>
+    sessionId ? (state.selectedBackends[sessionId] ?? null) : null
+  )
+  const buildLabel = resolveApprovalLabel('build', preferences, sessionBackend)
+  const yoloLabel = resolveApprovalLabel('yolo', preferences, sessionBackend)
 
   if (!toolCalls) return null
 

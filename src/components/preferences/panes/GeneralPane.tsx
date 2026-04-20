@@ -8,7 +8,7 @@ import React, {
 import { invoke } from '@/lib/transport'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Loader2, ChevronDown, Check, ChevronsUpDown } from 'lucide-react'
+import { Loader2, ChevronDown, Check, ChevronsUpDown, Play } from 'lucide-react'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
@@ -268,6 +268,7 @@ export const GeneralPane: React.FC = () => {
         // Reset model and thinking/effort when backend changes
         build_model: null,
         build_thinking_level: null,
+        build_effort_level: null,
       })
     }
   }
@@ -287,6 +288,7 @@ export const GeneralPane: React.FC = () => {
         // Reset model and thinking/effort when backend changes
         yolo_model: null,
         yolo_thinking_level: null,
+        yolo_effort_level: null,
       })
     }
   }
@@ -303,6 +305,22 @@ export const GeneralPane: React.FC = () => {
     if (preferences) {
       patchPreferences.mutate({
         yolo_thinking_level: value === 'default' ? null : value,
+      })
+    }
+  }
+
+  const handleBuildEffortLevelChange = (value: string) => {
+    if (preferences) {
+      patchPreferences.mutate({
+        build_effort_level: value === 'default' ? null : value,
+      })
+    }
+  }
+
+  const handleYoloEffortLevelChange = (value: string) => {
+    if (preferences) {
+      patchPreferences.mutate({
+        yolo_effort_level: value === 'default' ? null : value,
       })
     }
   }
@@ -1124,9 +1142,9 @@ export const GeneralPane: React.FC = () => {
 
           <InlineField
             label="Build execution"
-            description="Backend, model, and thinking/effort override when approving plans"
+            description="Backend, model, thinking, and effort override when approving plans"
           >
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-4 gap-2">
               <div>
                 <Select
                   value={preferences?.build_backend ?? 'default'}
@@ -1251,27 +1269,30 @@ export const GeneralPane: React.FC = () => {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {preferences?.build_backend === 'codex' ? (
-                      <>
-                        <SelectItem value="default">Default effort</SelectItem>
-                        {codexReasoningOptions.map(option => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </>
-                    ) : (
-                      <>
-                        <SelectItem value="default">
-                          Default thinking
-                        </SelectItem>
-                        {thinkingLevelOptions.map(option => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </>
-                    )}
+                    <SelectItem value="default">Default thinking</SelectItem>
+                    {thinkingLevelOptions.map(option => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Select
+                  value={preferences?.build_effort_level ?? 'default'}
+                  onValueChange={handleBuildEffortLevelChange}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="default">Default effort</SelectItem>
+                    {effortLevelOptions.map(option => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -1280,9 +1301,9 @@ export const GeneralPane: React.FC = () => {
 
           <InlineField
             label="Yolo execution"
-            description="Backend, model, and thinking/effort override when yolo-approving plans"
+            description="Backend, model, thinking, and effort override when yolo-approving plans"
           >
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-4 gap-2">
               <div>
                 <Select
                   value={preferences?.yolo_backend ?? 'default'}
@@ -1407,27 +1428,30 @@ export const GeneralPane: React.FC = () => {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {preferences?.yolo_backend === 'codex' ? (
-                      <>
-                        <SelectItem value="default">Default effort</SelectItem>
-                        {codexReasoningOptions.map(option => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </>
-                    ) : (
-                      <>
-                        <SelectItem value="default">
-                          Default thinking
-                        </SelectItem>
-                        {thinkingLevelOptions.map(option => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </>
-                    )}
+                    <SelectItem value="default">Default thinking</SelectItem>
+                    {thinkingLevelOptions.map(option => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Select
+                  value={preferences?.yolo_effort_level ?? 'default'}
+                  onValueChange={handleYoloEffortLevelChange}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="default">Default effort</SelectItem>
+                    {effortLevelOptions.map(option => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -1446,7 +1470,7 @@ export const GeneralPane: React.FC = () => {
             description="Claude model for AI assistance"
           >
             <Select
-              value={preferences?.selected_model ?? 'opus'}
+              value={preferences?.selected_model ?? 'claude-opus-4-7'}
               onValueChange={handleModelChange}
             >
               <SelectTrigger>
@@ -1844,42 +1868,72 @@ export const GeneralPane: React.FC = () => {
             label="Waiting sound"
             description="Play when session needs your input"
           >
-            <Select
-              value={preferences?.waiting_sound ?? 'none'}
-              onValueChange={handleWaitingSoundChange}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {notificationSoundOptions.map(option => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex items-center gap-2">
+              <Select
+                value={preferences?.waiting_sound ?? 'none'}
+                onValueChange={handleWaitingSoundChange}
+              >
+                <SelectTrigger className="w-full sm:min-w-96">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {notificationSoundOptions.map(option => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                variant="outline"
+                size="icon"
+                disabled={
+                  !preferences?.waiting_sound ||
+                  preferences.waiting_sound === 'none'
+                }
+                onClick={() =>
+                  playNotificationSound(preferences?.waiting_sound ?? 'none')
+                }
+              >
+                <Play className="h-4 w-4" />
+              </Button>
+            </div>
           </InlineField>
 
           <InlineField
             label="Review sound"
             description="Play when session finishes"
           >
-            <Select
-              value={preferences?.review_sound ?? 'none'}
-              onValueChange={handleReviewSoundChange}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {notificationSoundOptions.map(option => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex items-center gap-2">
+              <Select
+                value={preferences?.review_sound ?? 'none'}
+                onValueChange={handleReviewSoundChange}
+              >
+                <SelectTrigger className="w-full sm:min-w-96">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {notificationSoundOptions.map(option => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                variant="outline"
+                size="icon"
+                disabled={
+                  !preferences?.review_sound ||
+                  preferences.review_sound === 'none'
+                }
+                onClick={() =>
+                  playNotificationSound(preferences?.review_sound ?? 'none')
+                }
+              >
+                <Play className="h-4 w-4" />
+              </Button>
+            </div>
           </InlineField>
         </div>
       </SettingsSection>

@@ -383,6 +383,10 @@ export function useSession(
         // Preserve optimistic messages from sendMessage.onMutate that the
         // backend hasn't persisted yet (race: refetchOnMount fires before
         // the send_chat_message invoke writes the user message to disk).
+        // Also preserve messages the user loaded via scroll-up pagination:
+        // fresh fetch uses INITIAL_RUN_LIMIT so its loaded_run_start_index
+        // reflects only the last N runs — using it would wrongly re-show
+        // the "load older" button for runs the cache already contains.
         const cached = queryClient.getQueryData<Session>(
           chatQueryKeys.session(sessionId)
         )
@@ -395,7 +399,10 @@ export function useSession(
               diskCount: session.messages.length,
             }
           )
-          return { ...session, messages: cached.messages }
+          return {
+            ...session,
+            messages: cached.messages,
+          }
         }
 
         return session
@@ -548,6 +555,7 @@ export function useUpdateSessionState() {
       enabledMcpServers,
       selectedExecutionMode,
       parallelExecutionPromptEnabled,
+      tableCheckedRows,
     }: {
       worktreeId: string
       worktreePath: string
@@ -573,6 +581,7 @@ export function useUpdateSessionState() {
       enabledMcpServers?: string[] | null
       selectedExecutionMode?: ExecutionMode | null
       parallelExecutionPromptEnabled?: boolean | null
+      tableCheckedRows?: Record<string, number[]>
     }): Promise<void> => {
       if (!isTauri()) {
         throw new Error('Not in Tauri context')
@@ -595,6 +604,7 @@ export function useUpdateSessionState() {
         enabledMcpServers,
         selectedExecutionMode,
         parallelExecutionPromptEnabled,
+        tableCheckedRows,
       })
       logger.debug('Session state updated')
     },

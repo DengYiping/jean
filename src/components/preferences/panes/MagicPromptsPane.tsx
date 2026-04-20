@@ -121,7 +121,7 @@ const PROMPT_SECTIONS: PromptSection[] = [
           },
         ],
         defaultValue: DEFAULT_INVESTIGATE_ISSUE_PROMPT,
-        defaultModel: 'opus',
+        defaultModel: 'claude-opus-4-7',
       },
       {
         key: 'investigate_pr',
@@ -143,7 +143,7 @@ const PROMPT_SECTIONS: PromptSection[] = [
           },
         ],
         defaultValue: DEFAULT_INVESTIGATE_PR_PROMPT,
-        defaultModel: 'opus',
+        defaultModel: 'claude-opus-4-7',
       },
       {
         key: 'investigate_workflow_run',
@@ -171,7 +171,7 @@ const PROMPT_SECTIONS: PromptSection[] = [
           },
         ],
         defaultValue: DEFAULT_INVESTIGATE_WORKFLOW_RUN_PROMPT,
-        defaultModel: 'opus',
+        defaultModel: 'claude-opus-4-7',
       },
       {
         key: 'investigate_security_alert',
@@ -194,7 +194,7 @@ const PROMPT_SECTIONS: PromptSection[] = [
           },
         ],
         defaultValue: DEFAULT_INVESTIGATE_SECURITY_ALERT_PROMPT,
-        defaultModel: 'opus',
+        defaultModel: 'claude-opus-4-7',
       },
       {
         key: 'investigate_advisory',
@@ -215,7 +215,7 @@ const PROMPT_SECTIONS: PromptSection[] = [
           },
         ],
         defaultValue: DEFAULT_INVESTIGATE_ADVISORY_PROMPT,
-        defaultModel: 'opus',
+        defaultModel: 'claude-opus-4-7',
       },
       {
         key: 'investigate_linear_issue',
@@ -241,7 +241,7 @@ const PROMPT_SECTIONS: PromptSection[] = [
           },
         ],
         defaultValue: DEFAULT_INVESTIGATE_LINEAR_ISSUE_PROMPT,
-        defaultModel: 'opus',
+        defaultModel: 'claude-opus-4-7',
       },
     ],
   },
@@ -269,7 +269,7 @@ const PROMPT_SECTIONS: PromptSection[] = [
           },
         ],
         defaultValue: DEFAULT_CODE_REVIEW_PROMPT,
-        defaultModel: 'opus',
+        defaultModel: 'claude-opus-4-7',
       },
       {
         key: 'review_comments',
@@ -292,7 +292,7 @@ const PROMPT_SECTIONS: PromptSection[] = [
           },
         ],
         defaultValue: DEFAULT_REVIEW_COMMENTS_PROMPT,
-        defaultModel: 'opus',
+        defaultModel: 'claude-opus-4-7',
       },
       {
         key: 'commit_message',
@@ -356,7 +356,7 @@ const PROMPT_SECTIONS: PromptSection[] = [
         description: 'Instructions appended to conflict resolution prompts.',
         variables: [],
         defaultValue: DEFAULT_RESOLVE_CONFLICTS_PROMPT,
-        defaultModel: 'opus',
+        defaultModel: 'claude-opus-4-7',
       },
       {
         key: 'release_notes',
@@ -501,7 +501,8 @@ const PROMPT_SECTIONS: PromptSection[] = [
 const PROMPT_CONFIGS = PROMPT_SECTIONS.flatMap(s => s.configs)
 
 const CLAUDE_MODEL_OPTIONS: { value: MagicPromptModel; label: string }[] = [
-  { value: 'opus', label: 'Opus 4.7' },
+  { value: 'claude-opus-4-7', label: 'Opus 4.7' },
+  { value: 'claude-opus-4-6', label: 'Opus 4.6' },
   { value: 'sonnet', label: 'Sonnet 4.6' },
   { value: 'haiku', label: 'Haiku' },
 ]
@@ -629,7 +630,7 @@ export const MagicPromptsPane: React.FC = () => {
       const suffix = (m?: string) => (m ? ` (${m})` : '')
       return [
         {
-          value: 'opus' as const,
+          value: 'claude-opus-4-7' as const,
           label: `Opus${suffix(env.ANTHROPIC_DEFAULT_OPUS_MODEL || env.ANTHROPIC_MODEL)}`,
         },
         {

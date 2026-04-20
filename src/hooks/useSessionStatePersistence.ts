@@ -67,6 +67,7 @@ interface SessionState {
   enabledMcpServers: string[] | null
   selectedExecutionMode: ExecutionMode | null
   parallelExecutionPromptEnabled: boolean | null
+  tableCheckedRows: Record<string, number[]>
 }
 
 export function resolveSessionPersistenceContext(params: {
@@ -173,6 +174,7 @@ export function useSessionStatePersistence() {
         enabledMcpServers,
         executionModes,
         parallelExecutionPromptEnabledBySession,
+        tableCheckedRows,
       } = useChatStore.getState()
 
       const ctx = deniedMessageContext[sessionId]
@@ -202,6 +204,11 @@ export function useSessionStatePersistence() {
         selectedExecutionMode: executionModes[sessionId] ?? null,
         parallelExecutionPromptEnabled:
           parallelExecutionPromptEnabledBySession[sessionId] ?? null,
+        tableCheckedRows: Object.fromEntries(
+          Object.entries(tableCheckedRows[sessionId] ?? {}).map(
+            ([key, set]) => [key, Array.from(set).sort((a, b) => a - b)]
+          )
+        ),
       }
     },
     []
@@ -243,6 +250,7 @@ export function useSessionStatePersistence() {
         enabledMcpServers: state.enabledMcpServers,
         selectedExecutionMode: state.selectedExecutionMode,
         parallelExecutionPromptEnabled: state.parallelExecutionPromptEnabled,
+        tableCheckedRows: state.tableCheckedRows,
       })
     }, 500)
 
@@ -435,6 +443,22 @@ export function useSessionStatePersistence() {
       }
     }
 
+    if (
+      session.table_checked_rows &&
+      Object.keys(session.table_checked_rows).length > 0
+    ) {
+      const hydrated: Record<string, Set<number>> = {}
+      for (const [tableKey, rows] of Object.entries(
+        session.table_checked_rows
+      )) {
+        hydrated[tableKey] = new Set(rows)
+      }
+      updates.tableCheckedRows = {
+        ...currentState.tableCheckedRows,
+        [activeSessionId]: hydrated,
+      }
+    }
+
     // NOTE: Do NOT load queued_messages from session data into Zustand here.
     // Queue state is synced in real-time via the queue:updated Tauri event
     // (useMainWindowEventListeners). Loading from TanStack cache is redundant
@@ -485,6 +509,8 @@ export function useSessionStatePersistence() {
     let prevExecutionMode = useChatStore.getState().executionModes[sessionId]
     let prevParallelExecutionPromptEnabled =
       useChatStore.getState().parallelExecutionPromptEnabledBySession[sessionId]
+    let prevTableCheckedRows =
+      useChatStore.getState().tableCheckedRows[sessionId]
 
     const unsubscribe = useChatStore.subscribe(state => {
       if (isLoadingRef.current) return
@@ -502,6 +528,7 @@ export function useSessionStatePersistence() {
       const currentExecutionMode = state.executionModes[sessionId]
       const currentParallelExecutionPromptEnabled =
         state.parallelExecutionPromptEnabledBySession[sessionId]
+      const currentTableCheckedRows = state.tableCheckedRows[sessionId]
 
       const hasChanges =
         currentAnswered !== prevAnsweredQuestions ||
@@ -516,7 +543,8 @@ export function useSessionStatePersistence() {
         currentEnabledMcpServers !== prevEnabledMcpServers ||
         currentExecutionMode !== prevExecutionMode ||
         currentParallelExecutionPromptEnabled !==
-          prevParallelExecutionPromptEnabled
+          prevParallelExecutionPromptEnabled ||
+        currentTableCheckedRows !== prevTableCheckedRows
 
       if (hasChanges) {
         prevAnsweredQuestions = currentAnswered
@@ -532,6 +560,7 @@ export function useSessionStatePersistence() {
         prevExecutionMode = currentExecutionMode
         prevParallelExecutionPromptEnabled =
           currentParallelExecutionPromptEnabled
+        prevTableCheckedRows = currentTableCheckedRows
 
         const currentState = getCurrentSessionState(sessionId)
         debouncedSaveRef.current?.(currentState)

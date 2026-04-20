@@ -559,6 +559,7 @@ pub async fn update_session_state(
     enabled_mcp_servers: Option<Option<Vec<String>>>,
     selected_execution_mode: Option<Option<String>>,
     parallel_execution_prompt_enabled: Option<Option<bool>>,
+    table_checked_rows: Option<std::collections::HashMap<String, Vec<u32>>>,
 ) -> Result<(), String> {
     log::trace!("Updating session state for: {session_id}");
 
@@ -616,6 +617,9 @@ pub async fn update_session_state(
             }
             if let Some(v) = parallel_execution_prompt_enabled {
                 session.parallel_execution_prompt_enabled = v;
+            }
+            if let Some(v) = table_checked_rows {
+                session.table_checked_rows = v;
             }
             let has_pending_permission_denials = !session.pending_permission_denials.is_empty();
             if !had_pending_permission_denials && has_pending_permission_denials {
@@ -4236,7 +4240,7 @@ fn execute_summarization_claude(
     magic_backend: Option<&str>,
     reasoning_effort: Option<&str>,
 ) -> Result<ContextSummaryResponse, String> {
-    let model_str = model.unwrap_or("opus");
+    let model_str = model.unwrap_or("claude-opus-4-7");
 
     // Per-operation backend > project/global default_backend
     let backend = resolve_magic_prompt_backend(app, magic_backend, worktree_id);

@@ -25,14 +25,15 @@ export function resolveBackend(model: string): 'claude' | 'codex' | 'opencode' {
  * adaptive thinking (effort parameter) instead of traditional thinking levels.
  *
  * Returns true when:
- * - Model is a Claude adaptive-thinking model ('opus' or 'sonnet')
+ * - Model is a Claude Opus variant ('claude-opus-*') or the legacy 'opus' alias
  * - CLI version is >= 2.1.32
  */
 export function supportsAdaptiveThinking(
   model: string,
   cliVersion: string | null | undefined
 ): boolean {
-  if (model !== 'opus' && model !== 'sonnet') return false
+  const isOpusModel = model === 'opus' || model.startsWith('claude-opus-')
+  if (!isOpusModel) return false
   if (!cliVersion) return false
   return compareVersions(cliVersion, ADAPTIVE_THINKING_MIN_CLI_VERSION) >= 0
 }

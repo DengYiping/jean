@@ -61,7 +61,7 @@ interface ChecklistInjectionContextValue {
 const ChecklistInjectionContext = createContext<ChecklistInjectionContextValue>(
   {
     checkedRows: null,
-    onToggle: () => {},
+    onToggle: () => undefined,
   }
 )
 

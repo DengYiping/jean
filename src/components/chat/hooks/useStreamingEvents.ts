@@ -73,6 +73,44 @@ export function shouldPlayPermissionApprovalSound(
   return newDenials.length > 0 && (currentDenials?.length ?? 0) === 0
 }
 
+function shouldPlayCodexMcpElicitationSound(
+  currentElicitations: CodexMcpElicitation[] | undefined,
+  newElicitations: CodexMcpElicitation[]
+): boolean {
+  return newElicitations.length > 0 && (currentElicitations?.length ?? 0) === 0
+}
+
+function shouldPlayWaitingStateTransitionSound(options: {
+  wasWaitingForInput?: boolean
+  previousPermissionDenialCount?: number
+  nextPermissionDenialCount?: number
+  previousCodexMcpElicitationCount?: number
+  nextCodexMcpElicitationCount?: number
+}): boolean {
+  const previousPermissionDenialCount =
+    options.previousPermissionDenialCount ?? 0
+  const nextPermissionDenialCount = options.nextPermissionDenialCount ?? 0
+  const previousCodexMcpElicitationCount =
+    options.previousCodexMcpElicitationCount ?? 0
+  const nextCodexMcpElicitationCount = options.nextCodexMcpElicitationCount ?? 0
+
+  if (nextPermissionDenialCount > 0) {
+    return (
+      previousPermissionDenialCount === 0 &&
+      previousCodexMcpElicitationCount === 0
+    )
+  }
+
+  if (nextCodexMcpElicitationCount > 0) {
+    return (
+      previousPermissionDenialCount === 0 &&
+      previousCodexMcpElicitationCount === 0
+    )
+  }
+
+  return !options.wasWaitingForInput
+}
+
 function isSessionCurrentlyViewing(
   sessionId: string,
   worktreeId: string
@@ -480,7 +518,11 @@ export default function useStreamingEvents({
             )
           })
 
-        if (!isCurrentlyViewing && !wasAlreadyWaiting) {
+        if (
+          shouldPlayWaitingStateTransitionSound({
+            wasWaitingForInput: wasAlreadyWaiting,
+          })
+        ) {
           playNotificationSound(getWaitingSoundPreference(queryClient))
         }
       }
@@ -582,7 +624,16 @@ export default function useStreamingEvents({
         // Store the denials for the approval UI
         setPendingDenials(session_id, mergedDenials)
 
-        if (shouldPlayPermissionApprovalSound(currentDenials, denials)) {
+        if (
+          shouldPlayPermissionApprovalSound(currentDenials, denials) &&
+          shouldPlayWaitingStateTransitionSound({
+            previousPermissionDenialCount: currentDenials?.length ?? 0,
+            nextPermissionDenialCount: mergedDenials.length,
+            previousCodexMcpElicitationCount:
+              useChatStore.getState().pendingCodexMcpElicitations[session_id]
+                ?.length ?? 0,
+          })
+        ) {
           playNotificationSound(getWaitingSoundPreference(queryClient))
         }
 
@@ -711,10 +762,17 @@ export default function useStreamingEvents({
           pendingCodexMcpElicitations[session_id],
           [elicitation]
         )
+        const currentElicitations = pendingCodexMcpElicitations[session_id]
 
         setPendingCodexMcpElicitations(session_id, mergedElicitations)
         removeSendingSession(session_id)
         setWaitingForInput(session_id, true)
+
+        if (
+          shouldPlayCodexMcpElicitationSound(currentElicitations, [elicitation])
+        ) {
+          playNotificationSound(getWaitingSoundPreference(queryClient))
+        }
 
         let attentionUpdatedAt: number | undefined
         let lastOpenedAt: number | undefined
@@ -824,6 +882,7 @@ export default function useStreamingEvents({
         streamingContentBlocks,
         pendingPermissionDenials,
         pendingCodexMcpElicitations,
+        waitingForInputSessionIds,
         setError,
         clearLastSentMessage,
         isQuestionAnswered,
@@ -923,6 +982,7 @@ export default function useStreamingEvents({
         pendingCodexMcpElicitations[sessionId] ?? []
       const hasPendingCodexMcpElicitations =
         persistedCodexMcpElicitations.length > 0
+      const wasAlreadyWaiting = waitingForInputSessionIds[sessionId] ?? false
 
       // Clear compacting state (safety net in case chat:compacted was missed)
       useChatStore.getState().setCompacting(sessionId, false)
@@ -1135,8 +1195,11 @@ export default function useStreamingEvents({
               : session
           )
 
-          // Play waiting sound if not currently viewing this session
-          if (!isCurrentlyViewing) {
+          if (
+            shouldPlayWaitingStateTransitionSound({
+              wasWaitingForInput: wasAlreadyWaiting,
+            })
+          ) {
             playNotificationSound(getWaitingSoundPreference(queryClient))
           }
         }
@@ -1206,6 +1269,17 @@ export default function useStreamingEvents({
             )
           )
         }
+        if (
+          shouldPlayWaitingStateTransitionSound({
+            wasWaitingForInput: wasAlreadyWaiting,
+            previousPermissionDenialCount: persistedPermissionDenials.length,
+            nextPermissionDenialCount: persistedPermissionDenials.length,
+            previousCodexMcpElicitationCount:
+              persistedCodexMcpElicitations.length,
+          })
+        ) {
+          playNotificationSound(getWaitingSoundPreference(queryClient))
+        }
       } else if (hasPendingCodexMcpElicitations) {
         pauseSession(sessionId)
 
@@ -1271,6 +1345,17 @@ export default function useStreamingEvents({
               err
             )
           )
+        }
+        if (
+          shouldPlayWaitingStateTransitionSound({
+            wasWaitingForInput: wasAlreadyWaiting,
+            previousPermissionDenialCount: persistedPermissionDenials.length,
+            previousCodexMcpElicitationCount:
+              persistedCodexMcpElicitations.length,
+            nextCodexMcpElicitationCount: persistedCodexMcpElicitations.length,
+          })
+        ) {
+          playNotificationSound(getWaitingSoundPreference(queryClient))
         }
       } else if (event.payload.waiting_for_plan && !isCurrentlyViewing) {
         // Codex/Opencode plan-mode run completed with content — enter plan-waiting state.
@@ -1387,8 +1472,11 @@ export default function useStreamingEvents({
           )
         }
 
-        // Play waiting sound if not currently viewing this session
-        if (!isCurrentlyViewing) {
+        if (
+          shouldPlayWaitingStateTransitionSound({
+            wasWaitingForInput: wasAlreadyWaiting,
+          })
+        ) {
           playNotificationSound(getWaitingSoundPreference(queryClient))
         }
       } else {
@@ -1508,10 +1596,7 @@ export default function useStreamingEvents({
           )
         }
 
-        // Play review sound if not currently viewing this session
-        if (!isCurrentlyViewing) {
-          playNotificationSound(getReviewSoundPreference(queryClient))
-        }
+        playNotificationSound(getReviewSoundPreference(queryClient))
       }
 
       // Update last_run_status + waiting state for sessions with blocking tools.
@@ -1761,6 +1846,8 @@ export default function useStreamingEvents({
 
       // Batch-clear all streaming state in a single Zustand set()
       useChatStore.getState().failSession(session_id)
+
+      playNotificationSound(getWaitingSoundPreference(queryClient))
 
       // Invalidate sessions list to update last_run_status in tab bar
       if (sessionWorktreeId) {
@@ -2019,6 +2106,8 @@ export default function useStreamingEvents({
         // NOW batch-clear all streaming state in a single Zustand set()
         // This happens AFTER optimistic messages are in the cache, preventing flicker
         useChatStore.getState().cancelSession(session_id)
+
+        playNotificationSound(getWaitingSoundPreference(queryClient))
 
         // For restore path: override reviewing state based on whether messages remain
         if (shouldRestoreMessage) {

@@ -200,6 +200,7 @@ function seedSessionCaches(queryClient: QueryClient) {
   queryClient.setQueryData(preferencesQueryKeys.preferences(), {
     ...defaultPreferences,
     waiting_sound: 'choochoo',
+    review_sound: 'choochoo',
   })
   queryClient.setQueryData(projectsQueryKeys.list(), [
     { id: 'project-1', name: 'Project Alpha' },
@@ -463,6 +464,7 @@ describe('useStreamingEvents question notifications', () => {
       })
     })
 
+    expect(mockPlayNotificationSound).toHaveBeenCalledWith('choochoo')
     expect(mockToastInfo).not.toHaveBeenCalled()
     expect(mockInvoke).toHaveBeenCalledWith('set_session_last_opened', {
       sessionId: 'session-1',
@@ -504,6 +506,7 @@ describe('useStreamingEvents question notifications', () => {
       })
     })
 
+    expect(mockPlayNotificationSound).toHaveBeenCalledWith('choochoo')
     expect(mockToastInfo).not.toHaveBeenCalled()
     expect(mockInvoke).toHaveBeenCalledWith('set_session_last_opened', {
       sessionId: 'session-1',
@@ -858,6 +861,7 @@ describe('useStreamingEvents question notifications', () => {
       })
     })
 
+    expect(mockPlayNotificationSound).toHaveBeenCalledWith('choochoo')
     expect(
       queryClient.getQueryData(chatQueryKeys.session('session-1'))
     ).toMatchObject({
@@ -904,6 +908,95 @@ describe('useStreamingEvents question notifications', () => {
     expect(
       useChatStore.getState().pendingCodexMcpElicitations['session-1']
     ).toEqual([elicitation])
+    unmount()
+  })
+
+  it('plays the review sound for successful completion', async () => {
+    useChatStore.setState({
+      worktreePaths: { 'worktree-1': '/tmp/worktree-1' },
+      streamingContents: {
+        'session-1': 'Finished successfully',
+      },
+    })
+
+    const { handlers, queryClient, unmount } = await setupHook()
+
+    await act(async () => {
+      handlers.get('chat:done')?.({
+        payload: {
+          session_id: 'session-1',
+          worktree_id: 'worktree-1',
+        },
+      })
+    })
+
+    expect(mockPlayNotificationSound).toHaveBeenCalledWith('choochoo')
+    expect(
+      queryClient.getQueryData(chatQueryKeys.session('session-1'))
+    ).toMatchObject({
+      last_run_status: 'completed',
+      waiting_for_input: false,
+      is_reviewing: true,
+    })
+    unmount()
+  })
+
+  it('plays the waiting sound for failed runs', async () => {
+    useChatStore.setState({
+      sessionWorktreeMap: { 'session-1': 'worktree-1' },
+      lastSentMessages: { 'session-1': 'please run this' },
+    })
+
+    const { handlers, queryClient, unmount } = await setupHook()
+
+    await act(async () => {
+      handlers.get('chat:error')?.({
+        payload: {
+          session_id: 'session-1',
+          worktree_id: 'worktree-1',
+          error: 'boom',
+        },
+      })
+      await Promise.resolve()
+    })
+
+    expect(mockPlayNotificationSound).toHaveBeenCalledWith('choochoo')
+    expect(
+      queryClient.getQueryData(chatQueryKeys.session('session-1'))
+    ).toMatchObject({
+      last_run_status: 'crashed',
+    })
+    unmount()
+  })
+
+  it('plays the waiting sound for cancelled runs', async () => {
+    useChatStore.setState({
+      sessionWorktreeMap: { 'session-1': 'worktree-1' },
+      worktreePaths: { 'worktree-1': '/tmp/worktree-1' },
+      sendStartedAt: { 'session-1': 1 },
+      lastSentMessages: { 'session-1': 'please run this' },
+    })
+
+    const { handlers, queryClient, unmount } = await setupHook()
+
+    await act(async () => {
+      handlers.get('chat:cancelled')?.({
+        payload: {
+          session_id: 'session-1',
+          worktree_id: 'worktree-1',
+          undo_send: true,
+          emitted_at_ms: Date.now(),
+        },
+      })
+      await Promise.resolve()
+    })
+
+    expect(mockPlayNotificationSound).toHaveBeenCalledWith('choochoo')
+    expect(
+      queryClient.getQueryData(chatQueryKeys.session('session-1'))
+    ).toMatchObject({
+      last_run_status: 'cancelled',
+    })
     unmount()
   })
 })

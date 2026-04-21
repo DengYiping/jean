@@ -21,6 +21,9 @@ export function useCanvasStoreState(): ChatStoreState {
   const pendingPermissionDenials = useChatStore(
     state => state.pendingPermissionDenials
   )
+  const pendingCodexMcpElicitations = useChatStore(
+    state => state.pendingCodexMcpElicitations
+  )
   const sessionDigests = useChatStore(state => state.sessionDigests)
   const sessionLabels = useChatStore(state => state.sessionLabels)
 
@@ -34,6 +37,7 @@ export function useCanvasStoreState(): ChatStoreState {
       waitingForInputSessionIds,
       reviewingSessions,
       pendingPermissionDenials,
+      pendingCodexMcpElicitations,
       sessionDigests,
       sessionLabels,
     }),
@@ -46,6 +50,7 @@ export function useCanvasStoreState(): ChatStoreState {
       waitingForInputSessionIds,
       reviewingSessions,
       pendingPermissionDenials,
+      pendingCodexMcpElicitations,
       sessionDigests,
       sessionLabels,
     ]

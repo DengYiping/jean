@@ -547,6 +547,7 @@ pub async fn update_session_state(
     submitted_answers: Option<std::collections::HashMap<String, serde_json::Value>>,
     fixed_findings: Option<Vec<String>>,
     pending_permission_denials: Option<Vec<super::types::PermissionDenial>>,
+    pending_codex_mcp_elicitations: Option<Vec<super::types::PendingCodexMcpElicitation>>,
     denied_message_context: Option<Option<super::types::DeniedMessageContext>>,
     is_reviewing: Option<bool>,
     waiting_for_input: Option<bool>,
@@ -566,7 +567,8 @@ pub async fn update_session_state(
     with_sessions_mut(&app, &worktree_path, &worktree_id, |sessions| {
         if let Some(session) = sessions.find_session_mut(&session_id) {
             let clear_waiting_metadata = matches!(waiting_for_input, Some(false));
-            let had_pending_permission_denials = !session.pending_permission_denials.is_empty();
+            let had_pending_permission_denials = !session.pending_permission_denials.is_empty()
+                || !session.pending_codex_mcp_elicitations.is_empty();
             if let Some(v) = answered_questions {
                 session.answered_questions = v;
             }
@@ -578,6 +580,9 @@ pub async fn update_session_state(
             }
             if let Some(v) = pending_permission_denials {
                 session.pending_permission_denials = v;
+            }
+            if let Some(v) = pending_codex_mcp_elicitations {
+                session.pending_codex_mcp_elicitations = v;
             }
             if let Some(v) = denied_message_context {
                 session.denied_message_context = v;
@@ -621,7 +626,8 @@ pub async fn update_session_state(
             if let Some(v) = table_checked_rows {
                 session.table_checked_rows = v;
             }
-            let has_pending_permission_denials = !session.pending_permission_denials.is_empty();
+            let has_pending_permission_denials = !session.pending_permission_denials.is_empty()
+                || !session.pending_codex_mcp_elicitations.is_empty();
             if !had_pending_permission_denials && has_pending_permission_denials {
                 session.updated_at = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -5432,6 +5438,24 @@ pub fn approve_codex_command(
     decision: String,
 ) -> Result<(), String> {
     super::codex_server::send_response(rpc_id, serde_json::json!({"decision": decision}))
+}
+
+/// Answer a Codex MCP elicitation request.
+#[tauri::command]
+pub fn answer_codex_mcp_elicitation(
+    _session_id: String,
+    rpc_id: u64,
+    action: String,
+    content: Option<serde_json::Value>,
+) -> Result<(), String> {
+    super::codex_server::send_response(
+        rpc_id,
+        serde_json::json!({
+            "action": action,
+            "content": content.unwrap_or(serde_json::Value::Null),
+            "_meta": serde_json::Value::Null,
+        }),
+    )
 }
 
 /// Answer a Codex request_user_input server request.

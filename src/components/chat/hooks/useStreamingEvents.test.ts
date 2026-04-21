@@ -11,7 +11,7 @@ import { useUIStore } from '@/store/ui-store'
 import type * as ProjectsService from '@/services/projects'
 import { shouldPlayPermissionApprovalSound } from './useStreamingEvents'
 import useStreamingEvents from './useStreamingEvents'
-import type { PermissionDenial } from '@/types/chat'
+import type { CodexMcpElicitation, PermissionDenial } from '@/types/chat'
 
 const { mockInvoke, mockListen, mockToastInfo, mockPlayNotificationSound } =
   vi.hoisted(() => ({
@@ -58,6 +58,29 @@ function createCodexDenial(toolUseId: string, rpcId = 42): PermissionDenial {
   return {
     ...createDenial(toolUseId),
     rpc_id: rpcId,
+  }
+}
+
+function createCodexMcpElicitation(
+  rpcId = 42,
+  overrides: Partial<CodexMcpElicitation> = {}
+): CodexMcpElicitation {
+  return {
+    rpc_id: rpcId,
+    thread_id: 'thread-1',
+    turn_id: 'turn-1',
+    server_name: 'devex-mcp-server',
+    message:
+      'Allow the devex-mcp-server MCP server to run tool "list_ij_projects"?',
+    requested_schema: {
+      type: 'object',
+      properties: {},
+    },
+    metadata: {
+      codex_approval_kind: 'mcp_tool_call',
+      tool_description: 'List all IntelliJ IDEA projects',
+    },
+    ...overrides,
   }
 }
 
@@ -135,6 +158,7 @@ function resetStores() {
     executingModes: {},
     approvedTools: {},
     pendingPermissionDenials: {},
+    pendingCodexMcpElicitations: {},
     deniedMessageContext: {},
     lastCompaction: {},
     threadTokenUsage: {},
@@ -810,6 +834,76 @@ describe('useStreamingEvents question notifications', () => {
       waiting_for_input: true,
       waiting_for_input_type: null,
     })
+    unmount()
+  })
+
+  it('writes codex MCP elicitation waits into session, worktree, and unread caches immediately', async () => {
+    useChatStore.setState({
+      worktreePaths: { 'worktree-1': '/tmp/worktree-1' },
+      selectedModels: { 'session-1': 'gpt-5.4' },
+      executionModes: { 'session-1': 'build' },
+      thinkingLevels: { 'session-1': 'off' },
+    })
+
+    const { handlers, queryClient, unmount } = await setupHook()
+    const elicitation = createCodexMcpElicitation()
+
+    await act(async () => {
+      handlers.get('chat:codex_mcp_elicitation_request')?.({
+        payload: {
+          session_id: 'session-1',
+          worktree_id: 'worktree-1',
+          elicitation,
+        },
+      })
+    })
+
+    expect(
+      queryClient.getQueryData(chatQueryKeys.session('session-1'))
+    ).toMatchObject({
+      waiting_for_input: true,
+      waiting_for_input_type: null,
+      is_reviewing: false,
+      pending_codex_mcp_elicitations: [elicitation],
+    })
+    expect(
+      queryClient.getQueryData(chatQueryKeys.sessions('worktree-1'))
+    ).toMatchObject({
+      sessions: [
+        expect.objectContaining({
+          id: 'session-1',
+          waiting_for_input: true,
+          waiting_for_input_type: null,
+          pending_codex_mcp_elicitations: [elicitation],
+        }),
+      ],
+    })
+    expect(queryClient.getQueryData(['all-sessions'])).toMatchObject({
+      entries: [
+        expect.objectContaining({
+          sessions: [
+            expect.objectContaining({
+              id: 'session-1',
+              waiting_for_input: true,
+              waiting_for_input_type: null,
+              pending_codex_mcp_elicitations: [elicitation],
+            }),
+          ],
+        }),
+      ],
+    })
+    expect(mockInvoke).toHaveBeenCalledWith('update_session_state', {
+      worktreeId: 'worktree-1',
+      worktreePath: '/tmp/worktree-1',
+      sessionId: 'session-1',
+      pendingCodexMcpElicitations: [elicitation],
+      waitingForInput: true,
+      waitingForInputType: null,
+      isReviewing: false,
+    })
+    expect(
+      useChatStore.getState().pendingCodexMcpElicitations['session-1']
+    ).toEqual([elicitation])
     unmount()
   })
 })

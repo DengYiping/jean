@@ -47,6 +47,7 @@ describe('ChatStore', () => {
       executingModes: {},
       approvedTools: {},
       pendingPermissionDenials: {},
+      pendingCodexMcpElicitations: {},
       deniedMessageContext: {},
       lastCompaction: {},
       compactingSessions: {},

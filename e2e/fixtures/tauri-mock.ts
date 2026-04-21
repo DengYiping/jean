@@ -68,11 +68,13 @@ export const test = base.extend<TauriMockFixtures>({
             (session.selected_execution_mode as string | undefined) ??
             null
           let status = 'idle'
-          const permissionCount = Array.isArray(
-            session.pending_permission_denials
-          )
-            ? session.pending_permission_denials.length
-            : 0
+          const permissionCount =
+            (Array.isArray(session.pending_permission_denials)
+              ? session.pending_permission_denials.length
+              : 0) +
+            (Array.isArray(session.pending_codex_mcp_elicitations)
+              ? session.pending_codex_mcp_elicitations.length
+              : 0)
 
           if (permissionCount > 0) status = 'permission'
           else if (waitingForInput) status = 'waiting'
@@ -218,6 +220,30 @@ export const test = base.extend<TauriMockFixtures>({
               }
               if (args?.selectedExecutionMode !== undefined) {
                 session.selected_execution_mode = args.selectedExecutionMode
+              }
+              if (args?.pendingCodexMcpElicitations !== undefined) {
+                session.pending_codex_mcp_elicitations = structuredClone(
+                  args.pendingCodexMcpElicitations as unknown
+                )
+              }
+              if (args?.pendingPermissionDenials !== undefined) {
+                session.pending_permission_denials = structuredClone(
+                  args.pendingPermissionDenials as unknown
+                )
+              }
+              if (args?.deniedMessageContext !== undefined) {
+                session.denied_message_context = structuredClone(
+                  args.deniedMessageContext as unknown
+                )
+              }
+              if (args?.waitingForInput !== undefined) {
+                session.waiting_for_input = args.waitingForInput
+              }
+              if (args?.waitingForInputType !== undefined) {
+                session.waiting_for_input_type = args.waitingForInputType
+              }
+              if (args?.isReviewing !== undefined) {
+                session.is_reviewing = args.isReviewing
               }
               if (args?.parallelExecutionPromptEnabled !== undefined) {
                 session.parallel_execution_prompt_enabled =

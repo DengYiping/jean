@@ -15,6 +15,7 @@ import {
   type ContentBlock,
   type Todo,
   type QueuedMessage,
+  type CodexMcpElicitation,
   type PermissionDenial,
   type ExecutionMode,
   type SessionDigest,
@@ -199,6 +200,9 @@ interface ChatUIState {
 
   // Pending permission denials per session (waiting for user approval)
   pendingPermissionDenials: Record<string, PermissionDenial[]>
+
+  // Pending Codex MCP elicitations per session (waiting for user approval/input)
+  pendingCodexMcpElicitations: Record<string, CodexMcpElicitation[]>
 
   // The original message context that triggered the denial (for re-send)
   deniedMessageContext: Record<
@@ -512,6 +516,14 @@ interface ChatUIState {
   clearPendingDenials: (sessionId: string) => void
   getPendingDenials: (sessionId: string) => PermissionDenial[]
 
+  // Actions - Pending Codex MCP elicitations
+  setPendingCodexMcpElicitations: (
+    sessionId: string,
+    elicitations: CodexMcpElicitation[]
+  ) => void
+  clearPendingCodexMcpElicitations: (sessionId: string) => void
+  getPendingCodexMcpElicitations: (sessionId: string) => CodexMcpElicitation[]
+
   // Actions - Denied message context (for re-send)
   setDeniedMessageContext: (
     sessionId: string,
@@ -630,6 +642,7 @@ export const useChatStore = create<ChatUIState>()(
       executingModes: {},
       approvedTools: {},
       pendingPermissionDenials: {},
+      pendingCodexMcpElicitations: {},
       deniedMessageContext: {},
       lastCompaction: {},
       threadTokenUsage: {},
@@ -2280,6 +2293,36 @@ export const useChatStore = create<ChatUIState>()(
       getPendingDenials: sessionId =>
         get().pendingPermissionDenials[sessionId] ?? [],
 
+      setPendingCodexMcpElicitations: (sessionId, elicitations) =>
+        set(
+          state => {
+            const current = state.pendingCodexMcpElicitations[sessionId]
+            if (!current && elicitations.length === 0) return state
+            return {
+              pendingCodexMcpElicitations: {
+                ...state.pendingCodexMcpElicitations,
+                [sessionId]: elicitations,
+              },
+            }
+          },
+          undefined,
+          'setPendingCodexMcpElicitations'
+        ),
+
+      clearPendingCodexMcpElicitations: sessionId =>
+        set(
+          state => {
+            const { [sessionId]: _, ...rest } =
+              state.pendingCodexMcpElicitations
+            return { pendingCodexMcpElicitations: rest }
+          },
+          undefined,
+          'clearPendingCodexMcpElicitations'
+        ),
+
+      getPendingCodexMcpElicitations: sessionId =>
+        get().pendingCodexMcpElicitations[sessionId] ?? [],
+
       // Denied message context (for re-send)
       setDeniedMessageContext: (sessionId, context) =>
         set(
@@ -2384,6 +2427,8 @@ export const useChatStore = create<ChatUIState>()(
             const { [sessionId]: _em, ...executingModes } = state.executingModes
             const { [sessionId]: _pd, ...pendingPermissionDenials } =
               state.pendingPermissionDenials
+            const { [sessionId]: _pm, ...pendingCodexMcpElicitations } =
+              state.pendingCodexMcpElicitations
             const { [sessionId]: _dc, ...deniedMessageContext } =
               state.deniedMessageContext
             const { [sessionId]: _sa, ...sendStartedAtRest } =
@@ -2397,6 +2442,7 @@ export const useChatStore = create<ChatUIState>()(
               streamingPlanApprovals,
               executingModes,
               pendingPermissionDenials,
+              pendingCodexMcpElicitations,
               deniedMessageContext,
               sendStartedAt: sendStartedAtRest,
               completedDurations:
@@ -2497,6 +2543,8 @@ export const useChatStore = create<ChatUIState>()(
               state.approvedTools
             const { [sessionId]: _denials, ...restDenials } =
               state.pendingPermissionDenials
+            const { [sessionId]: _mcpElicitations, ...restMcpElicitations } =
+              state.pendingCodexMcpElicitations
             const { [sessionId]: _denied, ...restDenied } =
               state.deniedMessageContext
             const { [sessionId]: _reviewing, ...restReviewing } =
@@ -2519,6 +2567,7 @@ export const useChatStore = create<ChatUIState>()(
             return {
               approvedTools: restApproved,
               pendingPermissionDenials: restDenials,
+              pendingCodexMcpElicitations: restMcpElicitations,
               deniedMessageContext: restDenied,
               reviewingSessions: restReviewing,
               waitingForInputSessionIds: restWaiting,

@@ -546,6 +546,7 @@ export function useUpdateSessionState() {
       submittedAnswers,
       fixedFindings,
       pendingPermissionDenials,
+      pendingCodexMcpElicitations,
       deniedMessageContext,
       isReviewing,
       waitingForInput,
@@ -567,6 +568,17 @@ export function useUpdateSessionState() {
         tool_name: string
         tool_use_id: string
         tool_input: unknown
+      }[]
+      pendingCodexMcpElicitations?: {
+        rpc_id: number
+        thread_id: string
+        turn_id?: string | null
+        server_name: string
+        message: string
+        requested_schema: unknown
+        metadata?: unknown
+        url?: string | null
+        elicitation_id?: string | null
       }[]
       deniedMessageContext?: {
         message: string
@@ -595,6 +607,7 @@ export function useUpdateSessionState() {
         submittedAnswers,
         fixedFindings,
         pendingPermissionDenials,
+        pendingCodexMcpElicitations,
         deniedMessageContext,
         isReviewing,
         waitingForInput,

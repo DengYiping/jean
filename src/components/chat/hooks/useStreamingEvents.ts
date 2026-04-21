@@ -17,6 +17,8 @@ import { lookupSessionLabel } from '@/components/chat/hooks/session-label-utils'
 import { generateId } from '@/lib/uuid'
 import type {
   ChunkEvent,
+  CodexMcpElicitation,
+  CodexMcpElicitationEvent,
   ToolUseEvent,
   ToolBlockEvent,
   ToolResultEvent,
@@ -156,6 +158,27 @@ function applyPermissionWaitingState(
   }
 }
 
+function applyCodexMcpElicitationWaitingState(
+  session: Session,
+  elicitations: CodexMcpElicitation[],
+  options?: {
+    updatedAt?: number
+    lastOpenedAt?: number
+  }
+): Session {
+  return {
+    ...session,
+    ...(options?.updatedAt ? { updated_at: options.updatedAt } : {}),
+    ...(options?.lastOpenedAt !== undefined
+      ? { last_opened_at: options.lastOpenedAt }
+      : {}),
+    waiting_for_input: true,
+    waiting_for_input_type: null,
+    pending_codex_mcp_elicitations: elicitations,
+    is_reviewing: false,
+  }
+}
+
 function mergePermissionDenials(
   currentDenials: PermissionDenial[] | undefined,
   newDenials: PermissionDenial[]
@@ -172,6 +195,27 @@ function mergePermissionDenials(
       merged.push(denial)
     } else {
       merged[existingIndex] = denial
+    }
+  }
+  return merged
+}
+
+function mergeCodexMcpElicitations(
+  currentElicitations: CodexMcpElicitation[] | undefined,
+  newElicitations: CodexMcpElicitation[]
+): CodexMcpElicitation[] {
+  if ((currentElicitations?.length ?? 0) === 0) return newElicitations
+  if (newElicitations.length === 0) return currentElicitations ?? []
+
+  const merged = [...(currentElicitations ?? [])]
+  for (const elicitation of newElicitations) {
+    const existingIndex = merged.findIndex(
+      current => current.rpc_id === elicitation.rpc_id
+    )
+    if (existingIndex === -1) {
+      merged.push(elicitation)
+    } else {
+      merged[existingIndex] = elicitation
     }
   }
   return merged
@@ -648,6 +692,122 @@ export default function useStreamingEvents({
       }
     )
 
+    const unlistenCodexMcpElicitation = listen<CodexMcpElicitationEvent>(
+      'chat:codex_mcp_elicitation_request',
+      event => {
+        const { session_id, worktree_id, elicitation } = event.payload
+        const isCurrentlyViewing = isSessionCurrentlyViewing(
+          session_id,
+          worktree_id
+        )
+        const {
+          pendingCodexMcpElicitations,
+          setPendingCodexMcpElicitations,
+          removeSendingSession,
+          setWaitingForInput,
+        } = useChatStore.getState()
+
+        const mergedElicitations = mergeCodexMcpElicitations(
+          pendingCodexMcpElicitations[session_id],
+          [elicitation]
+        )
+
+        setPendingCodexMcpElicitations(session_id, mergedElicitations)
+        removeSendingSession(session_id)
+        setWaitingForInput(session_id, true)
+
+        let attentionUpdatedAt: number | undefined
+        let lastOpenedAt: number | undefined
+        queryClient.setQueryData<Session>(
+          chatQueryKeys.session(session_id),
+          old => {
+            if (!old) return old
+            attentionUpdatedAt = getOptimisticAttentionTimestamp(old.updated_at)
+            if (isCurrentlyViewing) {
+              lastOpenedAt = attentionUpdatedAt
+            }
+            return applyCodexMcpElicitationWaitingState(
+              old,
+              mergedElicitations,
+              {
+                updatedAt: attentionUpdatedAt,
+                lastOpenedAt,
+              }
+            )
+          }
+        )
+        queryClient.setQueryData<WorktreeSessions>(
+          chatQueryKeys.sessions(worktree_id),
+          old => {
+            if (!old) return old
+            return {
+              ...old,
+              sessions: old.sessions.map(session =>
+                session.id === session_id
+                  ? applyCodexMcpElicitationWaitingState(
+                      session,
+                      mergedElicitations,
+                      {
+                        updatedAt:
+                          attentionUpdatedAt ??
+                          getOptimisticAttentionTimestamp(session.updated_at),
+                        lastOpenedAt: isCurrentlyViewing
+                          ? (attentionUpdatedAt ??
+                            getOptimisticAttentionTimestamp(session.updated_at))
+                          : undefined,
+                      }
+                    )
+                  : session
+              ),
+            }
+          }
+        )
+        updateAllSessionsCache(queryClient, worktree_id, session =>
+          session.id === session_id
+            ? applyCodexMcpElicitationWaitingState(
+                session,
+                mergedElicitations,
+                {
+                  updatedAt:
+                    attentionUpdatedAt ??
+                    getOptimisticAttentionTimestamp(session.updated_at),
+                  lastOpenedAt: isCurrentlyViewing
+                    ? (attentionUpdatedAt ??
+                      getOptimisticAttentionTimestamp(session.updated_at))
+                    : undefined,
+                }
+              )
+            : session
+        )
+
+        if (isCurrentlyViewing) {
+          invoke('set_session_last_opened', { sessionId: session_id })
+            .then(() => window.dispatchEvent(new CustomEvent('session-opened')))
+            .catch(() => undefined)
+        }
+
+        resolveWorktreePath(worktree_id)
+          .then(worktreePath => {
+            if (!worktreePath) return
+            return invoke('update_session_state', {
+              worktreeId: worktree_id,
+              worktreePath,
+              sessionId: session_id,
+              pendingCodexMcpElicitations: mergedElicitations,
+              waitingForInput: true,
+              waitingForInputType: null,
+              isReviewing: false,
+            })
+          })
+          .catch(err => {
+            logger.error(
+              '[useStreamingEvents] Failed to persist Codex MCP elicitation state:',
+              err
+            )
+          })
+      }
+    )
+
     const unlistenDone = listen<DoneEvent>('chat:done', event => {
       const sessionId = event.payload.session_id
       const worktreeId = event.payload.worktree_id
@@ -663,6 +823,7 @@ export default function useStreamingEvents({
         activeToolCalls,
         streamingContentBlocks,
         pendingPermissionDenials,
+        pendingCodexMcpElicitations,
         setError,
         clearLastSentMessage,
         isQuestionAnswered,
@@ -758,6 +919,10 @@ export default function useStreamingEvents({
       const persistedPermissionDenials =
         pendingPermissionDenials[sessionId] ?? []
       const hasPendingPermissionDenials = persistedPermissionDenials.length > 0
+      const persistedCodexMcpElicitations =
+        pendingCodexMcpElicitations[sessionId] ?? []
+      const hasPendingCodexMcpElicitations =
+        persistedCodexMcpElicitations.length > 0
 
       // Clear compacting state (safety net in case chat:compacted was missed)
       useChatStore.getState().setCompacting(sessionId, false)
@@ -1037,6 +1202,72 @@ export default function useStreamingEvents({
           }).catch(err =>
             logger.error(
               '[useStreamingEvents] Failed to persist permission waiting state:',
+              err
+            )
+          )
+        }
+      } else if (hasPendingCodexMcpElicitations) {
+        pauseSession(sessionId)
+
+        queryClient.setQueryData<Session>(
+          chatQueryKeys.session(sessionId),
+          old =>
+            old
+              ? {
+                  ...applyCodexMcpElicitationWaitingState(
+                    old,
+                    persistedCodexMcpElicitations
+                  ),
+                  last_run_status: 'resumable',
+                }
+              : old
+        )
+        queryClient.setQueryData<WorktreeSessions>(
+          chatQueryKeys.sessions(worktreeId),
+          old => {
+            if (!old) return old
+            return {
+              ...old,
+              sessions: old.sessions.map(session =>
+                session.id === sessionId
+                  ? {
+                      ...applyCodexMcpElicitationWaitingState(
+                        session,
+                        persistedCodexMcpElicitations
+                      ),
+                      last_run_status: 'resumable' as const,
+                    }
+                  : session
+              ),
+            }
+          }
+        )
+        updateAllSessionsCache(queryClient, worktreeId, session =>
+          session.id === sessionId
+            ? {
+                ...applyCodexMcpElicitationWaitingState(
+                  session,
+                  persistedCodexMcpElicitations
+                ),
+                last_run_status: 'resumable' as const,
+              }
+            : session
+        )
+
+        const { worktreePaths } = useChatStore.getState()
+        const wtPath = worktreePaths[worktreeId]
+        if (wtPath) {
+          persistencePromise = invoke('update_session_state', {
+            worktreeId,
+            worktreePath: wtPath,
+            sessionId,
+            pendingCodexMcpElicitations: persistedCodexMcpElicitations,
+            waitingForInput: true,
+            waitingForInputType: null,
+            isReviewing: false,
+          }).catch(err =>
+            logger.error(
+              '[useStreamingEvents] Failed to persist Codex MCP elicitation waiting state:',
               err
             )
           )
@@ -1955,6 +2186,7 @@ export default function useStreamingEvents({
       unlistenThinking.then(f => f())
       unlistenToolResult.then(f => f())
       unlistenPermissionDenied.then(f => f())
+      unlistenCodexMcpElicitation.then(f => f())
       unlistenDone.then(f => f())
       unlistenError.then(f => f())
       unlistenCancelled.then(f => f())

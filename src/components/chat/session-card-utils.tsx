@@ -9,6 +9,7 @@ import {
   type SessionDigest,
   type ExecutionMode,
   type ToolCall,
+  type CodexMcpElicitation,
   type PermissionDenial,
   type LabelData,
 } from '@/types/chat'
@@ -121,6 +122,7 @@ export interface ChatStoreState {
   waitingForInputSessionIds: Record<string, boolean>
   reviewingSessions: Record<string, boolean>
   pendingPermissionDenials: Record<string, PermissionDenial[]>
+  pendingCodexMcpElicitations: Record<string, CodexMcpElicitation[]>
   sessionDigests: Record<string, SessionDigest>
   sessionLabels: Record<string, LabelData>
 }
@@ -138,6 +140,7 @@ export function computeSessionCardData(
     waitingForInputSessionIds,
     reviewingSessions,
     pendingPermissionDenials,
+    pendingCodexMcpElicitations,
     sessionDigests,
     sessionLabels,
   } = storeState
@@ -262,14 +265,19 @@ export function computeSessionCardData(
 
   // Check for pending permission denials
   const sessionDenials = pendingPermissionDenials[session.id] ?? []
+  const sessionMcpElicitations = pendingCodexMcpElicitations[session.id] ?? []
   const persistedDenials = session.pending_permission_denials ?? []
+  const persistedMcpElicitations = session.pending_codex_mcp_elicitations ?? []
   const hasPermissionDenials =
     sessionDenials.length > 0 ||
-    (derived?.permission_denial_count ?? persistedDenials.length) > 0
+    sessionMcpElicitations.length > 0 ||
+    (derived?.permission_denial_count ??
+      persistedDenials.length + persistedMcpElicitations.length) > 0
   const permissionDenialCount =
-    sessionDenials.length > 0
-      ? sessionDenials.length
-      : (derived?.permission_denial_count ?? persistedDenials.length)
+    sessionDenials.length > 0 || sessionMcpElicitations.length > 0
+      ? sessionDenials.length + sessionMcpElicitations.length
+      : (derived?.permission_denial_count ??
+        persistedDenials.length + persistedMcpElicitations.length)
 
   // Execution mode
   const executionMode = sessionSending

@@ -3040,6 +3040,7 @@ pub fn run() {
             chat::save_cancelled_message,
             chat::mark_plan_approved,
             chat::approve_codex_command,
+            chat::answer_codex_mcp_elicitation,
             chat::answer_codex_user_input,
             chat::steer_codex_turn,
             // Chat commands - Queue management (cross-client sync)

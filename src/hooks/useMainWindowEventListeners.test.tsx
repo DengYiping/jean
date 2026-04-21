@@ -109,6 +109,7 @@ describe('useMainWindowEventListeners terminal shortcuts', () => {
       executingModes: {},
       approvedTools: {},
       pendingPermissionDenials: {},
+      pendingCodexMcpElicitations: {},
       deniedMessageContext: {},
       lastCompaction: {},
       compactingSessions: {},

@@ -239,6 +239,9 @@ export function SessionChatModal({
   const pendingPermissionDenials = useChatStore(
     state => state.pendingPermissionDenials
   )
+  const pendingCodexMcpElicitations = useChatStore(
+    state => state.pendingCodexMcpElicitations
+  )
   const planFilePaths = useChatStore(state => state.planFilePaths)
   const sessionDigests = useChatStore(state => state.sessionDigests)
   const sessionLabels = useChatStore(state => state.sessionLabels)
@@ -252,6 +255,7 @@ export function SessionChatModal({
       waitingForInputSessionIds,
       reviewingSessions,
       pendingPermissionDenials,
+      pendingCodexMcpElicitations,
       sessionDigests,
       sessionLabels,
     }),
@@ -264,6 +268,7 @@ export function SessionChatModal({
       waitingForInputSessionIds,
       reviewingSessions,
       pendingPermissionDenials,
+      pendingCodexMcpElicitations,
       sessionDigests,
       sessionLabels,
     ]

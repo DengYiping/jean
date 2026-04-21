@@ -173,6 +173,8 @@ export interface Session {
   fixed_findings?: string[]
   /** Pending permission denials awaiting user approval */
   pending_permission_denials?: PermissionDenial[]
+  /** Pending Codex MCP elicitations awaiting user approval/input */
+  pending_codex_mcp_elicitations?: CodexMcpElicitation[]
   /** Original message context for re-send after permission approval */
   denied_message_context?: DeniedMessageContext
   /** AI code review results for this session */
@@ -457,6 +459,27 @@ export interface PermissionDenial {
   rpc_id?: number
 }
 
+export interface CodexMcpElicitation {
+  /** JSON-RPC request ID for responding to the app-server */
+  rpc_id: number
+  /** Codex thread that originated the elicitation */
+  thread_id: string
+  /** Active turn when the elicitation was observed, if available */
+  turn_id?: string | null
+  /** MCP server name */
+  server_name: string
+  /** Prompt shown to the user */
+  message: string
+  /** Form schema for mode="form" elicitations */
+  requested_schema: unknown
+  /** Optional metadata provided by Codex/app-server */
+  metadata?: unknown
+  /** URL for mode="url" elicitations */
+  url?: string | null
+  /** Elicitation identifier for mode="url" requests */
+  elicitation_id?: string | null
+}
+
 /**
  * Event payload for permission denied from Rust
  * Sent when Claude CLI returns permission_denials (tools that require approval)
@@ -465,6 +488,12 @@ export interface PermissionDeniedEvent {
   session_id: string
   worktree_id: string // Kept for backward compatibility
   denials: PermissionDenial[]
+}
+
+export interface CodexMcpElicitationEvent {
+  session_id: string
+  worktree_id: string
+  elicitation: CodexMcpElicitation
 }
 
 // ============================================================================

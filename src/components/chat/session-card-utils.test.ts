@@ -29,6 +29,7 @@ function createStoreState(
     waitingForInputSessionIds: {},
     reviewingSessions: {},
     pendingPermissionDenials: {},
+    pendingCodexMcpElicitations: {},
     sessionDigests: {},
     sessionLabels: {},
     ...overrides,

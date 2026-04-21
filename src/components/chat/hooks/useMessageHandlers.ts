@@ -146,6 +146,12 @@ interface MessageHandlers {
     approvedPatterns: string[]
   ) => void
   handlePermissionDeny: (sessionId: string) => void
+  handleCodexMcpElicitationRespond: (
+    sessionId: string,
+    rpcId: number,
+    action: 'accept' | 'decline' | 'cancel',
+    content: Record<string, unknown> | null
+  ) => void
   handleFixFinding: (
     finding: ReviewFinding,
     customSuggestion?: string
@@ -269,6 +275,7 @@ export function useMessageHandlers({
                 ...(clearPermissionState
                   ? {
                       pending_permission_denials: [],
+                      pending_codex_mcp_elicitations: [],
                       denied_message_context: undefined,
                     }
                   : {}),
@@ -294,6 +301,7 @@ export function useMessageHandlers({
                     ...(clearPermissionState
                       ? {
                           pending_permission_denials: [],
+                          pending_codex_mcp_elicitations: [],
                           denied_message_context: undefined,
                         }
                       : {}),
@@ -325,6 +333,7 @@ export function useMessageHandlers({
                           ...(clearPermissionState
                             ? {
                                 pending_permission_denials: [],
+                                pending_codex_mcp_elicitations: [],
                                 denied_message_context: undefined,
                               }
                             : {}),
@@ -357,6 +366,7 @@ export function useMessageHandlers({
         ...(clearPermissionState
           ? {
               pendingPermissionDenials: [],
+              pendingCodexMcpElicitations: [],
               deniedMessageContext: null,
             }
           : {}),
@@ -2721,6 +2731,170 @@ export function useMessageHandlers({
     [activeWorktreeIdRef, activeWorktreePathRef, clearCachedWaitingState]
   )
 
+  const handleCodexMcpElicitationRespond = useCallback(
+    (
+      sessionId: string,
+      rpcId: number,
+      action: 'accept' | 'decline' | 'cancel',
+      content: Record<string, unknown> | null
+    ) => {
+      const worktreeId = activeWorktreeIdRef.current
+      const worktreePath = activeWorktreePathRef.current
+      if (!worktreeId || !worktreePath) return
+
+      const {
+        addSendingSession,
+        getPendingDenials,
+        getPendingCodexMcpElicitations,
+        setPendingCodexMcpElicitations,
+        clearPendingCodexMcpElicitations,
+        clearDeniedMessageContext,
+        setWaitingForInput,
+      } = useChatStore.getState()
+
+      const remainingDenials = getPendingDenials(sessionId)
+      const remainingElicitations = getPendingCodexMcpElicitations(
+        sessionId
+      ).filter(elicitation => elicitation.rpc_id !== rpcId)
+      const shouldKeepWaiting =
+        remainingDenials.length > 0 || remainingElicitations.length > 0
+
+      if (remainingElicitations.length > 0) {
+        setPendingCodexMcpElicitations(sessionId, remainingElicitations)
+      } else {
+        clearPendingCodexMcpElicitations(sessionId)
+      }
+
+      if (remainingDenials.length === 0) {
+        clearDeniedMessageContext(sessionId)
+      }
+
+      if (shouldKeepWaiting) {
+        setWaitingForInput(sessionId, true)
+        queryClient.setQueryData<Session>(
+          chatQueryKeys.session(sessionId),
+          old =>
+            old
+              ? {
+                  ...old,
+                  waiting_for_input: true,
+                  waiting_for_input_type: null,
+                  pending_codex_mcp_elicitations: remainingElicitations,
+                  ...(remainingDenials.length === 0
+                    ? { denied_message_context: undefined }
+                    : {}),
+                }
+              : old
+        )
+        queryClient.setQueryData<WorktreeSessions>(
+          chatQueryKeys.sessions(worktreeId),
+          old => {
+            if (!old) return old
+            return {
+              ...old,
+              sessions: old.sessions.map(session =>
+                session.id === sessionId
+                  ? {
+                      ...session,
+                      waiting_for_input: true,
+                      waiting_for_input_type: null,
+                      pending_codex_mcp_elicitations: remainingElicitations,
+                      ...(remainingDenials.length === 0
+                        ? { denied_message_context: undefined }
+                        : {}),
+                    }
+                  : session
+              ),
+            }
+          }
+        )
+        queryClient.setQueryData<AllSessionsResponse>(['all-sessions'], old => {
+          if (!old) return old
+          return {
+            ...old,
+            entries: old.entries.map(entry =>
+              entry.worktree_id === worktreeId
+                ? {
+                    ...entry,
+                    sessions: entry.sessions.map(session =>
+                      session.id === sessionId
+                        ? {
+                            ...session,
+                            waiting_for_input: true,
+                            waiting_for_input_type: null,
+                            pending_codex_mcp_elicitations:
+                              remainingElicitations,
+                            ...(remainingDenials.length === 0
+                              ? { denied_message_context: undefined }
+                              : {}),
+                          }
+                        : session
+                    ),
+                  }
+                : entry
+            ),
+          }
+        })
+        invoke('update_session_state', {
+          worktreeId,
+          worktreePath,
+          sessionId,
+          pendingCodexMcpElicitations: remainingElicitations,
+          ...(remainingDenials.length === 0
+            ? { deniedMessageContext: null }
+            : {}),
+          waitingForInput: true,
+          waitingForInputType: null,
+        }).catch(err => {
+          logger.error(
+            '[useMessageHandlers] Failed to persist remaining MCP elicitation state:',
+            err
+          )
+        })
+      } else {
+        setWaitingForInput(sessionId, false)
+        clearCachedWaitingState(
+          sessionId,
+          worktreeId,
+          worktreePath,
+          undefined,
+          true
+        )
+      }
+
+      if (action === 'accept') {
+        addSendingSession(sessionId)
+        requestAnimationFrame(() => {
+          scrollToBottom(true)
+        })
+      } else {
+        toast.info(
+          action === 'decline' ? 'Request declined' : 'Request cancelled'
+        )
+      }
+
+      invoke('answer_codex_mcp_elicitation', {
+        sessionId,
+        rpcId,
+        action,
+        content,
+      }).catch(err => {
+        logger.error(
+          '[useMessageHandlers] Failed to answer Codex MCP elicitation:',
+          err
+        )
+        toast.error(`Failed to answer MCP request: ${err}`)
+      })
+    },
+    [
+      activeWorktreeIdRef,
+      activeWorktreePathRef,
+      clearCachedWaitingState,
+      queryClient,
+      scrollToBottom,
+    ]
+  )
+
   // Handle fixing a review finding
   // PERFORMANCE: Uses refs for session/worktree IDs to keep callback stable across session switches
   const handleFixFinding = useCallback(
@@ -3014,6 +3188,7 @@ Please apply all these fixes to the respective files.`
     handlePermissionApproval,
     handlePermissionApprovalYolo,
     handlePermissionDeny,
+    handleCodexMcpElicitationRespond,
     handleFixFinding,
     handleFixAllFindings,
   }

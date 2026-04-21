@@ -203,6 +203,7 @@ export const defaultResponses: Record<string, unknown> = {
   set_session_effort_level: null,
   set_session_provider: null,
   update_session_state: null,
+  answer_codex_mcp_elicitation: null,
   broadcast_session_setting: null,
   rename_session: null,
   send_chat_message: null,

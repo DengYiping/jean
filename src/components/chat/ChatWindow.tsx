@@ -70,6 +70,7 @@ import type {
   PendingImage,
   PendingTextFile,
   PendingSkill,
+  CodexMcpElicitation as CodexMcpElicitationType,
   PermissionDenial,
   PendingFile,
 } from '@/types/chat'
@@ -82,6 +83,7 @@ import {
 import { resolveParallelExecutionPromptForSession } from '@/lib/parallel-execution-prompt'
 import { cn } from '@/lib/utils'
 import { PermissionApproval } from './PermissionApproval'
+import { CodexMcpElicitation } from './CodexMcpElicitation'
 import { SetupScriptOutput } from './SetupScriptOutput'
 import { TodoWidget } from './TodoWidget'
 import { AgentWidget } from './AgentWidget'
@@ -187,6 +189,7 @@ const EMPTY_PENDING_FILES: PendingFile[] = []
 const EMPTY_PENDING_SKILLS: PendingSkill[] = []
 const EMPTY_QUEUED_MESSAGES: QueuedMessage[] = []
 const EMPTY_PERMISSION_DENIALS: PermissionDenial[] = []
+const EMPTY_CODEX_MCP_ELICITATIONS: CodexMcpElicitationType[] = []
 
 interface PendingInputSnapshot {
   sourceSessionId: string
@@ -719,6 +722,12 @@ export function ChatWindow({
       ? (state.pendingPermissionDenials[deferredSessionId] ??
         EMPTY_PERMISSION_DENIALS)
       : EMPTY_PERMISSION_DENIALS
+  )
+  const pendingCodexMcpElicitations = useChatStore(state =>
+    deferredSessionId
+      ? (state.pendingCodexMcpElicitations[deferredSessionId] ??
+        EMPTY_CODEX_MCP_ELICITATIONS)
+      : EMPTY_CODEX_MCP_ELICITATIONS
   )
   const showPermissionApproval = shouldShowPermissionApproval({
     pendingDenialsCount: pendingDenials.length,
@@ -2449,6 +2458,7 @@ export function ChatWindow({
     handlePermissionApproval,
     handlePermissionApprovalYolo,
     handlePermissionDeny,
+    handleCodexMcpElicitationRespond,
     handleFixFinding,
     handleFixAllFindings,
   } = useMessageHandlers({
@@ -2938,6 +2948,16 @@ export function ChatWindow({
                               onDeny={handlePermissionDeny}
                             />
                           )}
+
+                          {activeSessionId &&
+                            pendingCodexMcpElicitations.map(elicitation => (
+                              <CodexMcpElicitation
+                                key={elicitation.rpc_id}
+                                sessionId={activeSessionId}
+                                elicitation={elicitation}
+                                onRespond={handleCodexMcpElicitationRespond}
+                              />
+                            ))}
                         </div>
                       </div>
                     </ScrollArea>

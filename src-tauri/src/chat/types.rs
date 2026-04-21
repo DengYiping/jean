@@ -303,12 +303,46 @@ pub struct PermissionDenial {
     pub rpc_id: Option<u64>,
 }
 
+/// A pending Codex MCP elicitation request awaiting user action
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PendingCodexMcpElicitation {
+    /// JSON-RPC request ID used to respond to the app-server
+    pub rpc_id: u64,
+    /// Codex thread that originated the elicitation
+    pub thread_id: String,
+    /// Active Codex turn when observed, if available
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn_id: Option<String>,
+    /// MCP server name
+    pub server_name: String,
+    /// Prompt shown to the user
+    pub message: String,
+    /// Structured form schema for mode="form" requests
+    pub requested_schema: serde_json::Value,
+    /// Optional metadata from Codex/app-server
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<serde_json::Value>,
+    /// URL for mode="url" requests
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    /// Elicitation identifier for mode="url" requests
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub elicitation_id: Option<String>,
+}
+
 /// Payload for permission denied events sent to frontend
 #[derive(Debug, Clone, Serialize)]
 pub struct PermissionDeniedEvent {
     pub session_id: String,
     pub worktree_id: String,
     pub denials: Vec<PermissionDenial>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CodexMcpElicitationEvent {
+    pub session_id: String,
+    pub worktree_id: String,
+    pub elicitation: PendingCodexMcpElicitation,
 }
 
 /// Context for a denied message that can be re-sent after permission approval
@@ -544,6 +578,9 @@ pub struct Session {
     /// Pending permission denials awaiting user approval
     #[serde(default)]
     pub pending_permission_denials: Vec<PermissionDenial>,
+    /// Pending Codex MCP elicitations awaiting user approval/input
+    #[serde(default)]
+    pub pending_codex_mcp_elicitations: Vec<PendingCodexMcpElicitation>,
     /// Original message context for re-send after permission approval
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub denied_message_context: Option<DeniedMessageContext>,
@@ -648,6 +685,7 @@ impl Session {
             fixed_findings: vec![],
             review_results: None,
             pending_permission_denials: vec![],
+            pending_codex_mcp_elicitations: vec![],
             denied_message_context: None,
             is_reviewing: false,
             waiting_for_input: false,
@@ -712,7 +750,8 @@ impl Session {
         let is_actionable = has_finished_run
             || self.waiting_for_input
             || self.is_reviewing
-            || !self.pending_permission_denials.is_empty();
+            || !self.pending_permission_denials.is_empty()
+            || !self.pending_codex_mcp_elicitations.is_empty();
 
         if !is_actionable {
             return false;
@@ -727,7 +766,9 @@ impl Session {
     pub fn derive_state(&self) -> SessionDerivedState {
         let waiting_type = self.waiting_type();
         let is_waiting = self.waiting_for_input;
-        let permission_denial_count = self.pending_permission_denials.len() as u32;
+        let permission_denial_count = (self.pending_permission_denials.len()
+            + self.pending_codex_mcp_elicitations.len())
+            as u32;
         let effective_execution_mode = self
             .last_run_execution_mode
             .clone()
@@ -949,6 +990,7 @@ impl SessionMetadata {
             fixed_findings: self.fixed_findings.clone(),
             review_results: self.review_results.clone(),
             pending_permission_denials: self.pending_permission_denials.clone(),
+            pending_codex_mcp_elicitations: self.pending_codex_mcp_elicitations.clone(),
             denied_message_context: self.denied_message_context.clone(),
             is_reviewing: self.is_reviewing,
             waiting_for_input: self.waiting_for_input,
@@ -996,6 +1038,7 @@ impl SessionMetadata {
         self.fixed_findings = session.fixed_findings.clone();
         self.review_results = session.review_results.clone();
         self.pending_permission_denials = session.pending_permission_denials.clone();
+        self.pending_codex_mcp_elicitations = session.pending_codex_mcp_elicitations.clone();
         self.denied_message_context = session.denied_message_context.clone();
         self.is_reviewing = session.is_reviewing;
         self.waiting_for_input = session.waiting_for_input;
@@ -1317,6 +1360,9 @@ pub struct SessionMetadata {
     /// Pending permission denials awaiting user approval
     #[serde(default)]
     pub pending_permission_denials: Vec<PermissionDenial>,
+    /// Pending Codex MCP elicitations awaiting user approval/input
+    #[serde(default)]
+    pub pending_codex_mcp_elicitations: Vec<PendingCodexMcpElicitation>,
     /// Original message context for re-send after permission approval
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub denied_message_context: Option<DeniedMessageContext>,
@@ -1465,6 +1511,7 @@ impl SessionMetadata {
             fixed_findings: vec![],
             review_results: None,
             pending_permission_denials: vec![],
+            pending_codex_mcp_elicitations: vec![],
             denied_message_context: None,
             is_reviewing: false,
             waiting_for_input: false,

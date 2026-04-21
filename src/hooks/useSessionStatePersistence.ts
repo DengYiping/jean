@@ -4,6 +4,7 @@ import { useUIStore } from '@/store/ui-store'
 import { useUpdateSessionState, useSessions } from '@/services/chat'
 import { logger } from '@/lib/logger'
 import type {
+  CodexMcpElicitation,
   QuestionAnswer,
   PermissionDenial,
   ExecutionMode,
@@ -55,6 +56,7 @@ interface SessionState {
   submittedAnswers: Record<string, QuestionAnswer[]>
   fixedFindings: string[]
   pendingPermissionDenials: PermissionDenial[]
+  pendingCodexMcpElicitations: CodexMcpElicitation[]
   deniedMessageContext: {
     message: string
     model: string
@@ -166,6 +168,7 @@ export function useSessionStatePersistence() {
         submittedAnswers,
         fixedFindings,
         pendingPermissionDenials,
+        pendingCodexMcpElicitations,
         deniedMessageContext,
         reviewingSessions,
         waitingForInputSessionIds,
@@ -186,6 +189,8 @@ export function useSessionStatePersistence() {
         submittedAnswers: submittedAnswers[sessionId] ?? {},
         fixedFindings: Array.from(fixedFindings[sessionId] ?? new Set()),
         pendingPermissionDenials: pendingPermissionDenials[sessionId] ?? [],
+        pendingCodexMcpElicitations:
+          pendingCodexMcpElicitations[sessionId] ?? [],
         deniedMessageContext: ctx
           ? {
               message: ctx.message,
@@ -235,6 +240,7 @@ export function useSessionStatePersistence() {
         submittedAnswers: state.submittedAnswers,
         fixedFindings: state.fixedFindings,
         pendingPermissionDenials: state.pendingPermissionDenials,
+        pendingCodexMcpElicitations: state.pendingCodexMcpElicitations,
         deniedMessageContext: state.deniedMessageContext,
         isReviewing: state.isReviewing,
         // Only persist waitingForInput when clearing it (user approval action).
@@ -338,6 +344,16 @@ export function useSessionStatePersistence() {
       updates.pendingPermissionDenials = {
         ...currentState.pendingPermissionDenials,
         [activeSessionId]: session.pending_permission_denials,
+      }
+    }
+
+    if (
+      session.pending_codex_mcp_elicitations &&
+      session.pending_codex_mcp_elicitations.length > 0
+    ) {
+      updates.pendingCodexMcpElicitations = {
+        ...currentState.pendingCodexMcpElicitations,
+        [activeSessionId]: session.pending_codex_mcp_elicitations,
       }
     }
 
@@ -496,6 +512,8 @@ export function useSessionStatePersistence() {
     let prevFixedFindings = useChatStore.getState().fixedFindings[sessionId]
     let prevPendingDenials =
       useChatStore.getState().pendingPermissionDenials[sessionId]
+    let prevPendingMcpElicitations =
+      useChatStore.getState().pendingCodexMcpElicitations[sessionId]
     let prevDeniedContext =
       useChatStore.getState().deniedMessageContext[sessionId]
     let prevReviewing = useChatStore.getState().reviewingSessions[sessionId]
@@ -519,6 +537,8 @@ export function useSessionStatePersistence() {
       const currentSubmitted = state.submittedAnswers[sessionId]
       const currentFixed = state.fixedFindings[sessionId]
       const currentDenials = state.pendingPermissionDenials[sessionId]
+      const currentMcpElicitations =
+        state.pendingCodexMcpElicitations[sessionId]
       const currentDeniedCtx = state.deniedMessageContext[sessionId]
       const currentReviewing = state.reviewingSessions[sessionId]
       const currentWaiting = state.waitingForInputSessionIds[sessionId]
@@ -535,6 +555,7 @@ export function useSessionStatePersistence() {
         currentSubmitted !== prevSubmittedAnswers ||
         currentFixed !== prevFixedFindings ||
         currentDenials !== prevPendingDenials ||
+        currentMcpElicitations !== prevPendingMcpElicitations ||
         currentDeniedCtx !== prevDeniedContext ||
         currentReviewing !== prevReviewing ||
         currentWaiting !== prevWaiting ||
@@ -551,6 +572,7 @@ export function useSessionStatePersistence() {
         prevSubmittedAnswers = currentSubmitted
         prevFixedFindings = currentFixed
         prevPendingDenials = currentDenials
+        prevPendingMcpElicitations = currentMcpElicitations
         prevDeniedContext = currentDeniedCtx
         prevReviewing = currentReviewing
         prevWaiting = currentWaiting

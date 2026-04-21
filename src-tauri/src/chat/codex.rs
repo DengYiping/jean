@@ -9,8 +9,8 @@
 
 use super::claude::CancelledEvent;
 use super::types::{
-    ContentBlock, DeniedMessageContext, PermissionDenial, PermissionDeniedEvent, SessionMetadata,
-    ThinkingLevel, ToolCall, UsageData,
+    CodexMcpElicitationEvent, ContentBlock, DeniedMessageContext, PendingCodexMcpElicitation,
+    PermissionDenial, PermissionDeniedEvent, SessionMetadata, ThinkingLevel, ToolCall, UsageData,
 };
 use crate::http_server::EmitExt;
 
@@ -1647,6 +1647,29 @@ fn persist_pending_codex_command_approval(
     }
 }
 
+fn persist_pending_codex_mcp_elicitation(
+    metadata: &mut SessionMetadata,
+    elicitation: &PendingCodexMcpElicitation,
+    attention_updated_at: u64,
+) {
+    metadata
+        .pending_codex_mcp_elicitations
+        .retain(|existing| existing.rpc_id != elicitation.rpc_id);
+    metadata
+        .pending_codex_mcp_elicitations
+        .push(elicitation.clone());
+    metadata.waiting_for_input = true;
+    metadata.waiting_for_input_type = None;
+    metadata.is_reviewing = false;
+    metadata.attention_updated_at = Some(
+        metadata
+            .attention_updated_at
+            .map_or(attention_updated_at, |current| {
+                current.max(attention_updated_at)
+            }),
+    );
+}
+
 /// Handle an approval request from the app-server.
 #[allow(clippy::too_many_arguments)]
 fn handle_approval_request(
@@ -1787,6 +1810,97 @@ fn handle_approval_request(
                     name: "AskUserQuestion".to_string(),
                     input,
                     parent_tool_use_id: None,
+                },
+            );
+        }
+        "mcpServer/elicitation/request" => {
+            let mode = params.get("mode").and_then(|v| v.as_str()).unwrap_or("");
+            if mode == "url" {
+                let _ = super::codex_server::send_response(
+                    rpc_id,
+                    serde_json::json!({
+                        "action": "cancel",
+                        "content": serde_json::Value::Null,
+                        "_meta": serde_json::Value::Null,
+                    }),
+                );
+                let _ = app.emit_all(
+                    "chat:error",
+                    &ErrorEvent {
+                        session_id: session_id.to_string(),
+                        worktree_id: worktree_id.to_string(),
+                        error: "Codex MCP URL-based elicitation is not supported yet.".to_string(),
+                    },
+                );
+                return;
+            }
+
+            let elicitation = PendingCodexMcpElicitation {
+                rpc_id,
+                thread_id: params
+                    .get("threadId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                turn_id: params
+                    .get("turnId")
+                    .and_then(|v| v.as_str())
+                    .map(ToString::to_string),
+                server_name: params
+                    .get("serverName")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string(),
+                message: params
+                    .get("message")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("MCP server requested approval.")
+                    .to_string(),
+                requested_schema: params
+                    .get("requestedSchema")
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!({"type": "object", "properties": {}})),
+                metadata: params.get("_meta").cloned(),
+                url: params
+                    .get("url")
+                    .and_then(|v| v.as_str())
+                    .map(ToString::to_string),
+                elicitation_id: params
+                    .get("elicitationId")
+                    .and_then(|v| v.as_str())
+                    .map(ToString::to_string),
+            };
+
+            let attention_updated_at = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            if let Err(err) =
+                super::storage::with_existing_metadata_mut(app, session_id, |metadata| {
+                    persist_pending_codex_mcp_elicitation(
+                        metadata,
+                        &elicitation,
+                        attention_updated_at,
+                    );
+                })
+            {
+                log::warn!(
+                    "Failed to persist pending Codex MCP elicitation for session {session_id}: {err}"
+                );
+            } else if let Err(err) = app.emit_all(
+                "cache:invalidate",
+                &serde_json::json!({ "keys": ["sessions"] }),
+            ) {
+                log::warn!(
+                    "Failed to emit cache invalidation for pending Codex MCP elicitation in session {session_id}: {err}"
+                );
+            }
+            let _ = app.emit_all(
+                "chat:codex_mcp_elicitation_request",
+                &CodexMcpElicitationEvent {
+                    session_id: session_id.to_string(),
+                    worktree_id: worktree_id.to_string(),
+                    elicitation,
                 },
             );
         }
@@ -3951,6 +4065,128 @@ mod tests {
                 .find(|denial| denial.tool_use_id == "tool-2")
                 .and_then(|denial| denial.rpc_id),
             Some(2)
+        );
+    }
+
+    #[test]
+    fn persist_pending_codex_mcp_elicitation_updates_waiting_state() {
+        let mut metadata = SessionMetadata::new(
+            "session-1".to_string(),
+            "worktree-1".to_string(),
+            "Session 1".to_string(),
+            0,
+        );
+        metadata.is_reviewing = true;
+        metadata.attention_updated_at = Some(10);
+
+        persist_pending_codex_mcp_elicitation(
+            &mut metadata,
+            &PendingCodexMcpElicitation {
+                rpc_id: 42,
+                thread_id: "thread-1".to_string(),
+                turn_id: Some("turn-1".to_string()),
+                server_name: "devex-mcp-server".to_string(),
+                message: "Allow the devex-mcp-server MCP server to run tool \"list_ij_projects\"?"
+                    .to_string(),
+                requested_schema: serde_json::json!({
+                    "type": "object",
+                    "properties": {},
+                }),
+                metadata: Some(serde_json::json!({
+                    "codex_approval_kind": "mcp_tool_call",
+                })),
+                url: None,
+                elicitation_id: None,
+            },
+            25,
+        );
+
+        assert!(metadata.waiting_for_input);
+        assert_eq!(metadata.waiting_for_input_type.as_deref(), None);
+        assert!(!metadata.is_reviewing);
+        assert_eq!(metadata.pending_codex_mcp_elicitations.len(), 1);
+        assert_eq!(metadata.pending_codex_mcp_elicitations[0].rpc_id, 42);
+        assert_eq!(metadata.attention_updated_at, Some(25));
+    }
+
+    #[test]
+    fn persist_pending_codex_mcp_elicitation_replaces_duplicate_rpc_entry() {
+        let mut metadata = SessionMetadata::new(
+            "session-1".to_string(),
+            "worktree-1".to_string(),
+            "Session 1".to_string(),
+            0,
+        );
+        metadata.pending_codex_mcp_elicitations = vec![
+            PendingCodexMcpElicitation {
+                rpc_id: 42,
+                thread_id: "thread-1".to_string(),
+                turn_id: None,
+                server_name: "devex-mcp-server".to_string(),
+                message: "old".to_string(),
+                requested_schema: serde_json::json!({
+                    "type": "object",
+                    "properties": {},
+                }),
+                metadata: None,
+                url: None,
+                elicitation_id: None,
+            },
+            PendingCodexMcpElicitation {
+                rpc_id: 99,
+                thread_id: "thread-1".to_string(),
+                turn_id: None,
+                server_name: "devex-mcp-server".to_string(),
+                message: "keep".to_string(),
+                requested_schema: serde_json::json!({
+                    "type": "object",
+                    "properties": {},
+                }),
+                metadata: None,
+                url: None,
+                elicitation_id: None,
+            },
+        ];
+
+        persist_pending_codex_mcp_elicitation(
+            &mut metadata,
+            &PendingCodexMcpElicitation {
+                rpc_id: 42,
+                thread_id: "thread-1".to_string(),
+                turn_id: Some("turn-2".to_string()),
+                server_name: "devex-mcp-server".to_string(),
+                message: "new".to_string(),
+                requested_schema: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "answer": { "type": "string" },
+                    },
+                }),
+                metadata: Some(serde_json::json!({
+                    "tool_description": "List IntelliJ projects",
+                })),
+                url: None,
+                elicitation_id: None,
+            },
+            30,
+        );
+
+        assert_eq!(metadata.pending_codex_mcp_elicitations.len(), 2);
+        assert_eq!(
+            metadata
+                .pending_codex_mcp_elicitations
+                .iter()
+                .find(|elicitation| elicitation.rpc_id == 42)
+                .map(|elicitation| elicitation.message.as_str()),
+            Some("new")
+        );
+        assert_eq!(
+            metadata
+                .pending_codex_mcp_elicitations
+                .iter()
+                .find(|elicitation| elicitation.rpc_id == 99)
+                .map(|elicitation| elicitation.message.as_str()),
+            Some("keep")
         );
     }
 }

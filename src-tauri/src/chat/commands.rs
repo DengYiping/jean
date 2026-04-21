@@ -1949,6 +1949,28 @@ pub async fn send_chat_message(
                     }
                 }
 
+                // Collect linked project paths once for both add_dirs and system prompt
+                let linked_project_paths: Vec<String> =
+                    crate::projects::storage::load_projects_data(&thread_app)
+                        .ok()
+                        .and_then(|data| {
+                            let worktree = data.find_worktree(&thread_worktree_id)?;
+                            let project = data.find_project(&worktree.project_id)?;
+                            Some(
+                                project
+                                    .linked_project_ids
+                                    .iter()
+                                    .filter_map(|id| data.find_project(id))
+                                    .filter(|p| !p.path.trim().is_empty())
+                                    .map(|p| p.path.clone())
+                                    .collect(),
+                            )
+                        })
+                        .unwrap_or_default();
+                for dir in &linked_project_paths {
+                    codex_add_dirs.push(dir.clone());
+                }
+
                 // Build combined developer instructions for Codex app-server.
                 // The older `experimental_instructions_file` config path is deprecated
                 // and ignored by current Codex, so prompt injection must flow through
@@ -2006,7 +2028,7 @@ pub async fn send_chat_message(
                         }
                     }
 
-                    // Per-project custom system prompt
+                    // Per-project custom system prompt + linked project instructions
                     if let Ok(data) = load_projects_data(&thread_app) {
                         if let Some(worktree) = data.find_worktree(&thread_worktree_id) {
                             if let Some(project) = data.find_project(&worktree.project_id) {
@@ -2015,6 +2037,20 @@ pub async fn send_chat_message(
                                     if !prompt.is_empty() {
                                         system_prompt_parts.push(prompt.to_string());
                                     }
+                                }
+
+                                // Linked projects: inject instruction to check their directories
+                                if !linked_project_paths.is_empty() {
+                                    let dirs_list = linked_project_paths
+                                        .iter()
+                                        .map(|p| format!("- {p}"))
+                                        .collect::<Vec<_>>()
+                                        .join("\n");
+                                    system_prompt_parts.push(format!(
+                                        "This project is linked to other projects for cross-project context. \
+                                         Check the following directories for additional instructions and documentation \
+                                         (e.g., CLAUDE.md, AGENTS.md, docs/):\n{dirs_list}"
+                                    ));
                                 }
                             }
                         }
@@ -2212,6 +2248,26 @@ pub async fn send_chat_message(
             }
             Backend::Opencode => {
                 log::trace!("About to call execute_opencode...");
+
+                // Collect linked project paths for system prompt injection
+                let opencode_linked_project_paths: Vec<String> =
+                    crate::projects::storage::load_projects_data(&thread_app)
+                        .ok()
+                        .and_then(|data| {
+                            let worktree = data.find_worktree(&thread_worktree_id)?;
+                            let project = data.find_project(&worktree.project_id)?;
+                            Some(
+                                project
+                                    .linked_project_ids
+                                    .iter()
+                                    .filter_map(|id| data.find_project(id))
+                                    .filter(|p| !p.path.trim().is_empty())
+                                    .map(|p| p.path.clone())
+                                    .collect(),
+                            )
+                        })
+                        .unwrap_or_default();
+
                 let opencode_reasoning_effort: Option<String> =
                     thread_effort_level.as_ref().and_then(|e| match e {
                         super::types::EffortLevel::Low => Some("low".to_string()),
@@ -2264,7 +2320,7 @@ pub async fn send_chat_message(
                         }
                     }
 
-                    // Per-project custom system prompt
+                    // Per-project custom system prompt + linked project instructions
                     if let Ok(data) = load_projects_data(&thread_app) {
                         if let Some(worktree) = data.find_worktree(&thread_worktree_id) {
                             if let Some(project) = data.find_project(&worktree.project_id) {
@@ -2273,6 +2329,20 @@ pub async fn send_chat_message(
                                     if !prompt.is_empty() {
                                         system_prompt_parts.push(prompt.to_string());
                                     }
+                                }
+
+                                // Linked projects: inject instruction to check their directories
+                                if !opencode_linked_project_paths.is_empty() {
+                                    let dirs_list = opencode_linked_project_paths
+                                        .iter()
+                                        .map(|p| format!("- {p}"))
+                                        .collect::<Vec<_>>()
+                                        .join("\n");
+                                    system_prompt_parts.push(format!(
+                                        "This project is linked to other projects for cross-project context. \
+                                         Check the following directories for additional instructions and documentation \
+                                         (e.g., CLAUDE.md, AGENTS.md, docs/):\n{dirs_list}"
+                                    ));
                                 }
                             }
                         }

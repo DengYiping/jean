@@ -17,6 +17,22 @@ use crate::http_server::EmitExt;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
+const DEFAULT_CODEX_SYSTEM_PROMPT: &str = "\
+## Plan Mode\n\
+\n\
+- Make the plan extremely concise. Sacrifice grammar for the sake of concision.\n\
+- At the end of each plan, give me a list of unresolved questions to answer, if any.\n\
+\n\
+## Not Plan Mode\n\
+\n\
+- After each finished task, please write a few bullet points on how to test the changes.\n\
+- When multiple independent operations are needed, batch them into parallel tool calls. Launch independent Task subagents simultaneously rather than sequentially.\n\
+- When specifying subagent_type for Task tool calls, always use the fully qualified name exactly as listed in the system prompt (e.g., \"code-simplifier:code-simplifier\", not just \"code-simplifier\"). If the agent type contains a colon, include the full namespace:name string.";
+
+pub fn default_codex_system_prompt() -> &'static str {
+    DEFAULT_CODEX_SYSTEM_PROMPT
+}
+
 // =============================================================================
 // Response type (same shape as ClaudeResponse)
 // =============================================================================

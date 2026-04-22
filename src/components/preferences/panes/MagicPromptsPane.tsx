@@ -44,7 +44,9 @@ import {
   DEFAULT_SESSION_NAMING_PROMPT,
   DEFAULT_SESSION_RECAP_PROMPT,
   DEFAULT_PARALLEL_EXECUTION_PROMPT,
-  DEFAULT_GLOBAL_SYSTEM_PROMPT,
+  DEFAULT_CLAUDE_SYSTEM_PROMPT,
+  DEFAULT_CODEX_SYSTEM_PROMPT,
+  DEFAULT_OPENCODE_SYSTEM_PROMPT,
   DEFAULT_PLAN_APPROVAL_BUILD_PROMPT,
   DEFAULT_PLAN_APPROVAL_YOLO_PROMPT,
   DEFAULT_PLAN_APPROVAL_CODEX_PROMPT,
@@ -454,12 +456,28 @@ const PROMPT_SECTIONS: PromptSection[] = [
     label: 'System Prompts',
     configs: [
       {
-        key: 'global_system_prompt',
-        label: 'Global System Prompt',
+        key: 'claude_system_prompt',
+        label: 'Claude System Prompt',
         description:
-          'Appended to every chat session. Works like ~/.claude/CLAUDE.md but managed in settings.',
+          'Appended to Claude sessions. Works like ~/.claude/CLAUDE.md but managed in settings.',
         variables: [],
-        defaultValue: DEFAULT_GLOBAL_SYSTEM_PROMPT,
+        defaultValue: DEFAULT_CLAUDE_SYSTEM_PROMPT,
+      },
+      {
+        key: 'codex_system_prompt',
+        label: 'Codex System Prompt',
+        description:
+          'Appended to Codex sessions. Uses the same built-in default instructions unless customized.',
+        variables: [],
+        defaultValue: DEFAULT_CODEX_SYSTEM_PROMPT,
+      },
+      {
+        key: 'opencode_system_prompt',
+        label: 'OpenCode System Prompt',
+        description:
+          'Appended to OpenCode sessions only. Leave empty to send no global system prompt.',
+        variables: [],
+        defaultValue: DEFAULT_OPENCODE_SYSTEM_PROMPT,
       },
       {
         key: 'parallel_execution',

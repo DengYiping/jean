@@ -1959,18 +1959,6 @@ pub async fn send_chat_message(
                     };
                     use crate::projects::storage::load_projects_data;
 
-                    const DEFAULT_GLOBAL_SYSTEM_PROMPT: &str = "\
-## Plan Mode\n\
-\n\
-- Make the plan extremely concise. Sacrifice grammar for the sake of concision.\n\
-- At the end of each plan, give me a list of unresolved questions to answer, if any.\n\
-\n\
-## Not Plan Mode\n\
-\n\
-- After each finished task, please write a few bullet points on how to test the changes.\n\
-- When multiple independent operations are needed, batch them into parallel tool calls. Launch independent Task subagents simultaneously rather than sequentially.\n\
-- When specifying subagent_type for Task tool calls, always use the fully qualified name exactly as listed in the system prompt (e.g., \"code-simplifier:code-simplifier\", not just \"code-simplifier\"). If the agent type contains a colon, include the full namespace:name string.";
-
                     let mut system_prompt_parts: Vec<String> = Vec::new();
 
                     // Codex plan mode: inject planning-only instructions
@@ -2000,11 +1988,11 @@ pub async fn send_chat_message(
                             {
                                 let prompt = prefs
                                     .magic_prompts
-                                    .global_system_prompt
+                                    .codex_system_prompt
                                     .as_deref()
                                     .map(|s| s.trim())
                                     .filter(|s| !s.is_empty())
-                                    .unwrap_or(DEFAULT_GLOBAL_SYSTEM_PROMPT);
+                                    .unwrap_or(super::codex::default_codex_system_prompt());
                                 system_prompt_parts.push(prompt.to_string());
                             }
                         }
@@ -2257,7 +2245,7 @@ pub async fn send_chat_message(
                             {
                                 if let Some(prompt) = prefs
                                     .magic_prompts
-                                    .global_system_prompt
+                                    .opencode_system_prompt
                                     .as_deref()
                                     .map(|s| s.trim())
                                     .filter(|s| !s.is_empty())

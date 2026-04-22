@@ -52,8 +52,12 @@ export interface MagicPrompts {
   session_naming: string | null
   /** System prompt for parallel execution (appended to every chat session when enabled) */
   parallel_execution: string | null
-  /** Global system prompt appended to every chat session (like ~/.claude/CLAUDE.md) */
-  global_system_prompt: string | null
+  /** Global system prompt appended to Claude sessions (like ~/.claude/CLAUDE.md) */
+  claude_system_prompt: string | null
+  /** Global system prompt appended to Codex sessions */
+  codex_system_prompt: string | null
+  /** Global system prompt appended to OpenCode sessions */
+  opencode_system_prompt: string | null
   /** Prompt for generating session recaps (digests) when returning to unfocused sessions */
   session_recap: string | null
   /** Prompt for investigating Dependabot vulnerability alerts */
@@ -485,7 +489,7 @@ Respond with ONLY the raw JSON object, no markdown, no code fences, no explanati
 {"session_name": "Your session name here"}
 </output_format>`
 
-export const DEFAULT_GLOBAL_SYSTEM_PROMPT = `### 1. Plan Mode Default
+export const DEFAULT_CLAUDE_SYSTEM_PROMPT = `### 1. Plan Mode Default
 - Enter plan mode for ANY non-trivial task (3+ steps or architectural decisions)
 - If something goes sideways, STOP and re-plan immediately - don't keep pushing
 - Use plan mode for verification steps, not just building
@@ -538,6 +542,10 @@ export const DEFAULT_GLOBAL_SYSTEM_PROMPT = `### 1. Plan Mode Default
 ## Important!
 
 - After each finished task, please write a few bullet points on how to test the changes.`
+
+export const DEFAULT_CODEX_SYSTEM_PROMPT = DEFAULT_CLAUDE_SYSTEM_PROMPT
+
+export const DEFAULT_OPENCODE_SYSTEM_PROMPT = ''
 
 export const DEFAULT_PARALLEL_EXECUTION_PROMPT = `In plan mode, structure plans so subagents can work simultaneously. In build/execute mode, use subagents in parallel for faster implementation.
 
@@ -608,7 +616,9 @@ export const DEFAULT_MAGIC_PROMPTS: MagicPrompts = {
   release_notes: null,
   session_naming: null,
   parallel_execution: null,
-  global_system_prompt: null,
+  claude_system_prompt: null,
+  codex_system_prompt: null,
+  opencode_system_prompt: null,
   session_recap: null,
   investigate_security_alert: null,
   investigate_advisory: null,

@@ -349,6 +349,23 @@ export interface DetectPrResponse {
 }
 
 // =============================================================================
+// CLI Import
+// =============================================================================
+
+export interface PendingCliImportRequest {
+  id: string
+  path: string
+  created_at: number
+}
+
+export interface CliImportedProjectResult {
+  project: Project
+  worktree: Worktree
+  session_id: string
+  created: boolean
+}
+
+// =============================================================================
 // GitHub PR Merge
 // =============================================================================
 

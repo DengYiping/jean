@@ -482,7 +482,9 @@ fn resolve_http_server_bind_host(prefs: &AppPreferences) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{resolve_http_server_bind_host, AppPreferences};
+    use super::{
+        resolve_http_server_bind_host, try_parse_cli_args, AppPreferences, CliArgs, CliCommand,
+    };
 
     #[test]
     fn resolve_http_server_bind_host_prefers_explicit_host() {
@@ -502,6 +504,50 @@ mod tests {
 
         prefs.http_server_localhost_only = false;
         assert_eq!(resolve_http_server_bind_host(&prefs), "0.0.0.0");
+    }
+
+    #[test]
+    fn parse_cli_args_supports_import_subcommand() {
+        let args = vec!["jean".to_string(), "import".to_string(), ".".to_string()];
+
+        let parsed = try_parse_cli_args(&args).unwrap();
+
+        assert_eq!(
+            parsed,
+            CliArgs {
+                headless: false,
+                host: None,
+                port: None,
+                token: None,
+                no_token: false,
+                command: Some(CliCommand::Import {
+                    path: ".".to_string(),
+                }),
+            }
+        );
+    }
+
+    #[test]
+    fn parse_cli_args_rejects_import_without_path() {
+        let args = vec!["jean".to_string(), "import".to_string()];
+
+        let error = try_parse_cli_args(&args).unwrap_err();
+
+        assert!(error.contains("requires a path"));
+    }
+
+    #[test]
+    fn parse_cli_args_rejects_headless_import_combination() {
+        let args = vec![
+            "jean".to_string(),
+            "--headless".to_string(),
+            "import".to_string(),
+            ".".to_string(),
+        ];
+
+        let error = try_parse_cli_args(&args).unwrap_err();
+
+        assert!(error.contains("mutually exclusive"));
     }
 }
 
@@ -2322,12 +2368,19 @@ pub fn fix_macos_path() {
 }
 
 /// Parsed CLI arguments for headless server mode.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum CliCommand {
+    Import { path: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct CliArgs {
     headless: bool,
     host: Option<String>,
     port: Option<u16>,
     token: Option<String>,
     no_token: bool,
+    command: Option<CliCommand>,
 }
 
 /// CLI overrides for HTTP server configuration.
@@ -2344,6 +2397,7 @@ fn print_cli_help() {
     println!("Jean {version}");
     println!();
     println!("Usage: jean [OPTIONS]");
+    println!("       jean import <path>");
     println!();
     println!("Options:");
     println!("  --headless          Run without GUI (HTTP server only)");
@@ -2355,6 +2409,85 @@ fn print_cli_help() {
     println!("  --no-token          Disable token authentication");
     println!("  --help              Show this help message");
     println!("  --version           Show version");
+}
+
+fn try_parse_cli_args(args: &[String]) -> Result<CliArgs, String> {
+    let mut headless = false;
+    let mut no_token = false;
+    let mut host = None;
+    let mut port = None;
+    let mut token = None;
+    let mut command = None;
+
+    let mut iter = args.iter().skip(1);
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--headless" => {
+                headless = true;
+            }
+            "--no-token" => {
+                no_token = true;
+            }
+            "--host" => {
+                host = iter.next().cloned();
+                if host.is_none() {
+                    return Err("--host requires an address argument".to_string());
+                }
+            }
+            "--port" => {
+                if let Some(val) = iter.next() {
+                    match val.parse::<u16>() {
+                        Ok(p) => port = Some(p),
+                        Err(_) => {
+                            return Err("--port requires a valid port number (1-65535)".to_string())
+                        }
+                    }
+                } else {
+                    return Err("--port requires a port number argument".to_string());
+                }
+            }
+            "--token" => {
+                token = iter.next().cloned();
+                if token.is_none() {
+                    return Err("--token requires a token argument".to_string());
+                }
+            }
+            "import" => {
+                if command.is_some() {
+                    return Err("Only one CLI command can be used at a time".to_string());
+                }
+                let path = iter
+                    .next()
+                    .cloned()
+                    .ok_or_else(|| "import requires a path argument".to_string())?;
+                command = Some(CliCommand::Import { path });
+            }
+            _ => {} // ignore unknown flags (Tauri/OS may pass their own)
+        }
+    }
+
+    if token.is_some() && no_token {
+        return Err("--token and --no-token are mutually exclusive".to_string());
+    }
+
+    if command.is_some() && headless {
+        return Err("headless mode and import are mutually exclusive".to_string());
+    }
+
+    if !headless && (host.is_some() || port.is_some() || token.is_some() || no_token) {
+        eprintln!(
+            "Warning: --host, --port, --token, --no-token are only effective with --headless"
+        );
+    }
+
+    Ok(CliArgs {
+        headless,
+        host,
+        port,
+        token,
+        no_token,
+        command,
+    })
 }
 
 fn parse_cli_args() -> CliArgs {
@@ -2369,71 +2502,72 @@ fn parse_cli_args() -> CliArgs {
         std::process::exit(0);
     }
 
-    let headless = args.iter().any(|a| a == "--headless");
-    let no_token = args.iter().any(|a| a == "--no-token");
-
-    let mut host = None;
-    let mut port = None;
-    let mut token = None;
-
-    let mut iter = args.iter().skip(1);
-    while let Some(arg) = iter.next() {
-        match arg.as_str() {
-            "--host" => {
-                host = iter.next().cloned();
-                if host.is_none() {
-                    eprintln!("Error: --host requires an address argument");
-                    std::process::exit(1);
-                }
-            }
-            "--port" => {
-                if let Some(val) = iter.next() {
-                    match val.parse::<u16>() {
-                        Ok(p) => port = Some(p),
-                        Err(_) => {
-                            eprintln!("Error: --port requires a valid port number (1-65535)");
-                            std::process::exit(1);
-                        }
-                    }
-                } else {
-                    eprintln!("Error: --port requires a port number argument");
-                    std::process::exit(1);
-                }
-            }
-            "--token" => {
-                token = iter.next().cloned();
-                if token.is_none() {
-                    eprintln!("Error: --token requires a token argument");
-                    std::process::exit(1);
-                }
-            }
-            _ => {} // ignore unknown flags (Tauri/OS may pass their own)
+    match try_parse_cli_args(&args) {
+        Ok(parsed) => parsed,
+        Err(error) => {
+            eprintln!("Error: {error}");
+            std::process::exit(1);
         }
     }
+}
 
-    if token.is_some() && no_token {
-        eprintln!("Error: --token and --no-token are mutually exclusive");
-        std::process::exit(1);
+#[cfg(target_os = "macos")]
+fn find_macos_app_bundle_path(exe_path: &std::path::Path) -> Option<std::path::PathBuf> {
+    exe_path
+        .ancestors()
+        .find(|path| path.extension() == Some(std::ffi::OsStr::new("app")))
+        .map(std::path::Path::to_path_buf)
+}
+
+#[cfg(target_os = "macos")]
+fn open_macos_app_bundle() -> Result<(), String> {
+    let current_exe = std::env::current_exe()
+        .map_err(|e| format!("Failed to resolve current executable: {e}"))?;
+    let app_bundle = find_macos_app_bundle_path(&current_exe)
+        .unwrap_or_else(|| std::path::PathBuf::from("/Applications/Jean.app"));
+
+    let status = std::process::Command::new("open")
+        .arg("-a")
+        .arg(&app_bundle)
+        .status()
+        .map_err(|e| format!("Failed to launch Jean.app: {e}"))?;
+
+    if !status.success() {
+        return Err(format!(
+            "Failed to launch Jean.app from {}",
+            app_bundle.display()
+        ));
     }
 
-    if !headless && (host.is_some() || port.is_some() || token.is_some() || no_token) {
-        eprintln!(
-            "Warning: --host, --port, --token, --no-token are only effective with --headless"
-        );
-    }
+    Ok(())
+}
 
-    CliArgs {
-        headless,
-        host,
-        port,
-        token,
-        no_token,
+#[cfg(not(target_os = "macos"))]
+fn open_macos_app_bundle() -> Result<(), String> {
+    Err("CLI import is currently only supported on macOS".to_string())
+}
+
+fn handle_cli_command(command: CliCommand) -> Result<(), String> {
+    match command {
+        CliCommand::Import { path } => {
+            let request = crate::projects::enqueue_cli_import_request(&path)?;
+            open_macos_app_bundle()?;
+            println!("Opening Jean to import {}", request.path);
+            Ok(())
+        }
     }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let cli_args = parse_cli_args();
+    if let Some(command) = cli_args.command.clone() {
+        if let Err(error) = handle_cli_command(command) {
+            eprintln!("Error: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
     let headless = cli_args.headless;
 
     // macOS PATH fix is handled lazily on first silent_command() call via
@@ -2842,6 +2976,8 @@ pub fn run() {
             // Project management commands
             projects::check_git_identity,
             projects::set_git_identity,
+            projects::consume_pending_cli_import_requests,
+            projects::import_project_from_cli_path,
             projects::list_projects,
             projects::add_project,
             projects::init_git_in_folder,

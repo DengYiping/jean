@@ -768,10 +768,13 @@ export function ChatWindow({
     sessionParallelExecutionPromptEnabled ??
     preferences?.parallel_execution_prompt_enabled ??
     false
+  const isParallelExecutionPromptToggleDisabled =
+    session?.backend === 'codex' && Boolean(session?.codex_thread_id)
 
   const handleParallelExecutionPromptToggle = useCallback(
     (checked: boolean) => {
       if (!activeSessionId || !activeWorktreeId || !activeWorktreePath) return
+      if (isParallelExecutionPromptToggleDisabled) return
 
       useChatStore
         .getState()
@@ -784,7 +787,13 @@ export function ChatWindow({
         parallelExecutionPromptEnabled: checked,
       })
     },
-    [activeSessionId, activeWorktreeId, activeWorktreePath, updateSessionState]
+    [
+      activeSessionId,
+      activeWorktreeId,
+      activeWorktreePath,
+      isParallelExecutionPromptToggleDisabled,
+      updateSessionState,
+    ]
   )
 
   const handleToggleParallelExecutionPrompting = useCallback(() => {
@@ -3216,6 +3225,9 @@ export function ChatWindow({
                             onSetExecutionMode={handleToolbarSetExecutionMode}
                             parallelExecutionPromptEnabled={
                               effectiveParallelExecutionPromptEnabled
+                            }
+                            parallelExecutionPromptToggleDisabled={
+                              isParallelExecutionPromptToggleDisabled
                             }
                             onParallelExecutionPromptChange={
                               handleParallelExecutionPromptToggle

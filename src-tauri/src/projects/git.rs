@@ -1073,39 +1073,6 @@ pub fn git_push_to_pr(
     }
 }
 
-/// Set upstream tracking for a local branch to a remote branch.
-/// Uses git config directly (more robust than --set-upstream-to when the
-/// remote-tracking ref may not exist after fetch_pr_to_branch).
-pub fn set_upstream_tracking(
-    repo_path: &str,
-    local_branch: &str,
-    remote_branch: &str,
-) -> Result<(), String> {
-    log::trace!("Setting upstream for {local_branch} to origin/{remote_branch} in {repo_path}");
-
-    let _ = silent_command("git")
-        .args(["config", &format!("branch.{local_branch}.remote"), "origin"])
-        .current_dir(repo_path)
-        .output();
-
-    let merge_ref = format!("refs/heads/{remote_branch}");
-    let output = silent_command("git")
-        .args([
-            "config",
-            &format!("branch.{local_branch}.merge"),
-            &merge_ref,
-        ])
-        .current_dir(repo_path)
-        .output()
-        .map_err(|e| format!("Failed to set upstream config: {e}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        log::warn!("Failed to set upstream config for {local_branch}: {stderr}");
-    }
-    Ok(())
-}
-
 /// Fetch from remote origin (best effort, ignores errors if no remote)
 pub fn fetch_origin(repo_path: &str) -> Result<(), String> {
     log::trace!("Fetching from origin in {repo_path}");
@@ -1262,36 +1229,6 @@ pub fn create_worktree_from_existing_branch(
     log::trace!(
         "Successfully created worktree at {worktree_path} using existing branch {existing_branch}"
     );
-    Ok(())
-}
-
-/// Checkout a PR using gh CLI in the specified directory
-///
-/// Uses `gh pr checkout <number>` which properly handles:
-/// - Fetching the PR branch from forks
-/// - Setting up proper tracking
-/// - Checking out the actual PR branch
-///
-/// Fetch a PR ref into a local branch name, bypassing gh cli.
-/// Used when the PR's head branch name collides with a locally checked-out branch.
-pub fn fetch_pr_to_branch(
-    repo_path: &str,
-    pr_number: u32,
-    local_branch: &str,
-) -> Result<(), String> {
-    let refspec = format!("pull/{pr_number}/head:{local_branch}");
-    let output = silent_command("git")
-        .args(["fetch", "origin", &refspec])
-        .current_dir(repo_path)
-        .output()
-        .map_err(|e| format!("Failed to fetch PR #{pr_number}: {e}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!(
-            "Failed to fetch PR #{pr_number} into {local_branch}: {stderr}"
-        ));
-    }
     Ok(())
 }
 

@@ -556,14 +556,12 @@ export function useCreateWorktree() {
         projectsQueryKeys.worktrees(projectId)
       )
       const existingEntry = existing?.find(w => w.id === worktree.id)
-      if (existingEntry?.status === 'ready') {
-        logger.info('Worktree already ready (unarchived), skipping pending', {
+      if (existingEntry && existingEntry.status !== 'pending') {
+        logger.info('Worktree already exists, skipping pending creation flow', {
           id: worktree.id,
           name: worktree.name,
         })
-        const { expandProject, selectWorktree } = useProjectsStore.getState()
-        expandProject(projectId)
-        if (!isBackground) selectWorktree(worktree.id)
+        handleWorktreeReady(worktree, queryClient)
         return
       }
 

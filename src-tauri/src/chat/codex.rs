@@ -219,7 +219,7 @@ pub fn build_thread_start_params(
     model: Option<&str>,
     execution_mode: Option<&str>,
     search_enabled: bool,
-    instructions_file: Option<&std::path::Path>,
+    developer_instructions: Option<&str>,
     multi_agent_enabled: bool,
     max_agent_threads: Option<u32>,
 ) -> serde_json::Value {
@@ -267,12 +267,11 @@ pub fn build_thread_start_params(
         serde_json::json!(if search_enabled { "live" } else { "disabled" }),
     );
 
-    // Custom instructions file
-    if let Some(path) = instructions_file {
-        config.insert(
-            "experimental_instructions_file".to_string(),
-            serde_json::json!(path.to_string_lossy()),
-        );
+    if let Some(instructions) = developer_instructions
+        .map(str::trim)
+        .filter(|instructions| !instructions.is_empty())
+    {
+        params["developerInstructions"] = serde_json::json!(instructions);
     }
 
     // Multi-agent
@@ -397,7 +396,7 @@ pub fn execute_codex_via_server(
     search_enabled: bool,
     add_dirs: &[String],
     prompt: &str,
-    instructions_file: Option<&std::path::Path>,
+    developer_instructions: Option<&str>,
     multi_agent_enabled: bool,
     max_agent_threads: Option<u32>,
 ) -> Result<CodexResponse, String> {
@@ -424,7 +423,7 @@ pub fn execute_codex_via_server(
             model,
             execution_mode,
             search_enabled,
-            instructions_file,
+            developer_instructions,
             multi_agent_enabled,
             max_agent_threads,
         );
@@ -438,6 +437,7 @@ pub fn execute_codex_via_server(
             "sandbox",
             "config",
             "serviceTier",
+            "developerInstructions",
         ] {
             if let Some(v) = resume_params.get(key) {
                 full_params[key] = v.clone();
@@ -452,7 +452,7 @@ pub fn execute_codex_via_server(
                     model,
                     execution_mode,
                     search_enabled,
-                    instructions_file,
+                    developer_instructions,
                     multi_agent_enabled,
                     max_agent_threads,
                 )
@@ -464,7 +464,7 @@ pub fn execute_codex_via_server(
             model,
             execution_mode,
             search_enabled,
-            instructions_file,
+            developer_instructions,
             multi_agent_enabled,
             max_agent_threads,
         )
@@ -548,7 +548,7 @@ fn start_new_thread(
     model: Option<&str>,
     execution_mode: Option<&str>,
     search_enabled: bool,
-    instructions_file: Option<&std::path::Path>,
+    developer_instructions: Option<&str>,
     multi_agent_enabled: bool,
     max_agent_threads: Option<u32>,
 ) -> Result<String, String> {
@@ -559,7 +559,7 @@ fn start_new_thread(
         model,
         execution_mode,
         search_enabled,
-        instructions_file,
+        developer_instructions,
         multi_agent_enabled,
         max_agent_threads,
     );
@@ -3411,6 +3411,25 @@ mod tests {
         );
         assert_eq!(params["model"], "gpt-5.3");
         assert!(params.get("serviceTier").is_none());
+    }
+
+    #[test]
+    fn thread_start_uses_developer_instructions_field() {
+        let params = build_thread_start_params(
+            std::path::Path::new("/tmp"),
+            Some("gpt-5.4"),
+            Some("plan"),
+            false,
+            Some("  Follow repo guidance.  "),
+            false,
+            None,
+        );
+
+        assert_eq!(params["developerInstructions"], "Follow repo guidance.");
+        assert!(params
+            .get("config")
+            .and_then(|config| config.get("experimental_instructions_file"))
+            .is_none());
     }
 
     #[test]

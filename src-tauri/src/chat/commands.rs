@@ -1949,8 +1949,11 @@ pub async fn send_chat_message(
                     }
                 }
 
-                // Build combined instructions file (system prompt equivalent for Codex)
-                let codex_instructions_file = {
+                // Build combined developer instructions for Codex app-server.
+                // The older `experimental_instructions_file` config path is deprecated
+                // and ignored by current Codex, so prompt injection must flow through
+                // thread-level `developerInstructions`.
+                let codex_developer_prompt = {
                     use crate::projects::github_issues::{
                         get_github_contexts_dir, get_session_issue_refs, get_session_pr_refs,
                     };
@@ -2131,54 +2134,52 @@ pub async fn send_chat_message(
                         }
                     }
 
-                    // Write combined instructions file if we have anything
+                    // Build combined developer instructions if we have anything
                     if !system_prompt_parts.is_empty() || !all_context_paths.is_empty() {
-                        if let Ok(app_data_dir) = thread_app.path().app_data_dir() {
-                            let combined_dir = app_data_dir.join("combined-contexts");
-                            let _ = std::fs::create_dir_all(&combined_dir);
-                            let combined_file = combined_dir
-                                .join(format!("{}-codex-combined.md", thread_session_id));
+                        let mut content = String::new();
 
-                            let mut content = String::new();
+                        if !system_prompt_parts.is_empty() {
+                            content.push_str("# Instructions\n\n");
+                            for part in &system_prompt_parts {
+                                content.push_str(part);
+                                content.push('\n');
+                            }
+                        }
 
-                            if !system_prompt_parts.is_empty() {
-                                content.push_str("# Instructions\n\n");
-                                for part in &system_prompt_parts {
-                                    content.push_str(part);
-                                    content.push('\n');
-                                }
+                        if !all_context_paths.is_empty() {
+                            if !content.is_empty() {
                                 content.push_str("\n---\n\n");
                             }
-
-                            if !all_context_paths.is_empty() {
-                                content.push_str("# Loaded Context\n\n");
-                                content.push_str(
-                                    "The following context has been loaded. \
-                                     You should be aware of this when working on this task.\n\n---\n\n",
-                                );
-                                for path in &all_context_paths {
-                                    if let Ok(file_content) = std::fs::read_to_string(path) {
+                            content.push_str("# Loaded Context\n\n");
+                            content.push_str(
+                                "The following context has been loaded. \
+                                 You should be aware of this when working on this task.\n\n---\n\n",
+                            );
+                            for path in &all_context_paths {
+                                match std::fs::read_to_string(path) {
+                                    Ok(file_content) => {
                                         content.push_str(&file_content);
                                         content.push_str("\n\n---\n\n");
                                     }
+                                    Err(e) => {
+                                        log::warn!(
+                                            "Failed to read Codex context file {}: {e}",
+                                            path.display()
+                                        );
+                                    }
                                 }
                             }
+                        }
 
-                            match std::fs::write(&combined_file, &content) {
-                                Ok(_) => {
-                                    log::debug!(
-                                        "Created Codex instructions file: {:?}",
-                                        combined_file
-                                    );
-                                    Some(combined_file)
-                                }
-                                Err(e) => {
-                                    log::error!("Failed to write Codex instructions file: {e}");
-                                    None
-                                }
-                            }
-                        } else {
+                        let content = content.trim().to_string();
+                        if content.is_empty() {
                             None
+                        } else {
+                            log::debug!(
+                                "Built Codex developer instructions ({} bytes)",
+                                content.len()
+                            );
+                            Some(content)
                         }
                     } else {
                         None
@@ -2198,7 +2199,7 @@ pub async fn send_chat_message(
                     thread_codex_search,
                     &codex_add_dirs,
                     &thread_message,
-                    codex_instructions_file.as_deref(),
+                    codex_developer_prompt.as_deref(),
                     thread_codex_multi_agent,
                     thread_codex_max_threads,
                 ) {

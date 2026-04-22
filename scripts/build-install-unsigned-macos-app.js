@@ -5,6 +5,8 @@ import path from 'path'
 import { spawnSync } from 'child_process'
 import { fileURLToPath } from 'url'
 
+import { installCliSymlink } from './build-install-unsigned-macos-app-lib.js'
+
 function fail(message) {
   console.error(`ERROR: ${message}`)
   process.exit(1)
@@ -82,14 +84,12 @@ const applicationsDir = '/Applications'
 const installedAppPath = path.join(applicationsDir, `${productName}.app`)
 const stagedAppPath = path.join(applicationsDir, `.${productName}.app.new`)
 const backupAppPath = path.join(applicationsDir, `.${productName}.app.old`)
-const cliBinDir = '/usr/local/bin'
 const installedCliBinaryPath = path.join(
   installedAppPath,
   'Contents',
   'MacOS',
   'jean'
 )
-const cliSymlinkPath = path.join(cliBinDir, 'jean')
 
 console.log('==> Building unsigned macOS app bundle...')
 run('bun', ['run', 'tauri:build', '--', '--no-sign', '--bundles', 'app'], {
@@ -149,9 +149,25 @@ if (!fs.existsSync(installedCliBinaryPath)) {
   fail(`CLI binary not found at ${installedCliBinaryPath}`)
 }
 
-console.log(`==> Linking CLI into ${cliSymlinkPath}...`)
-fs.mkdirSync(cliBinDir, { recursive: true })
-removePath(cliSymlinkPath)
-fs.symlinkSync(installedCliBinaryPath, cliSymlinkPath)
+console.log('==> Linking CLI into a writable bin directory...')
+const cliLinkResult = installCliSymlink({
+  installedCliBinaryPath,
+})
 
-console.log(`==> Installed CLI symlink ${cliSymlinkPath}`)
+if (cliLinkResult.linked) {
+  console.log(`==> Installed CLI symlink ${cliLinkResult.cliSymlinkPath}`)
+
+  if (!cliLinkResult.isOnPath) {
+    console.log(
+      `==> NOTE: ${cliLinkResult.cliBinDir} is not currently on PATH. Add it to PATH to run 'jean' directly.`
+    )
+  }
+} else {
+  console.warn(
+    `WARN: ${productName}.app was installed, but the CLI symlink could not be created automatically.`
+  )
+  for (const failure of cliLinkResult.failures) {
+    console.warn(`  - ${failure.cliBinDir}: ${failure.message}`)
+  }
+  console.warn(`  Run the app directly from ${installedCliBinaryPath}`)
+}

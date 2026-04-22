@@ -215,6 +215,7 @@ function App() {
       if (data.sessionsByWorktree) {
         const reviewingUpdates: Record<string, boolean> = {}
         const waitingUpdates: Record<string, boolean> = {}
+        const parallelExecutionPromptUpdates: Record<string, boolean> = {}
         const sessionMappings: Record<string, string> = {}
         const worktreePaths: Record<string, string> = {}
 
@@ -242,6 +243,10 @@ function App() {
             }
             if (session.waiting_for_input) {
               waitingUpdates[session.id] = true
+            }
+            if (session.parallel_execution_prompt_enabled !== undefined) {
+              parallelExecutionPromptUpdates[session.id] =
+                session.parallel_execution_prompt_enabled
             }
           }
         }
@@ -278,6 +283,12 @@ function App() {
         // Merging would keep stale entries from sessions that changed while disconnected.
         storeUpdates.reviewingSessions = reviewingUpdates
         storeUpdates.waitingForInputSessionIds = waitingUpdates
+        if (Object.keys(parallelExecutionPromptUpdates).length > 0) {
+          storeUpdates.parallelExecutionPromptEnabledBySession = {
+            ...currentState.parallelExecutionPromptEnabledBySession,
+            ...parallelExecutionPromptUpdates,
+          }
+        }
         if (Object.keys(storeUpdates).length > 0) {
           beginSessionStateHydration()
           try {

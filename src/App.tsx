@@ -49,11 +49,16 @@ import { useAutoArchiveOnMerge } from './hooks/useAutoArchiveOnMerge'
 import { useMagicPromptAutoDefaults } from './hooks/useMagicPromptAutoDefaults'
 import useStreamingEvents from './components/chat/hooks/useStreamingEvents'
 import { preloadAllSounds } from './lib/sounds'
+import { applyCliImportNavigation } from './lib/cli-import'
 import {
   beginSessionStateHydration,
   endSessionStateHydration,
 } from './lib/session-state-hydration'
 import { scheduleIdleWork } from './lib/idle'
+import type {
+  CliImportedProjectResult,
+  PendingCliImportRequest,
+} from './types/projects'
 
 /** Loading screen shown while preloading initial data (browser mode only). */
 function WebLoadingScreen() {
@@ -487,6 +492,62 @@ function App() {
       document.body.classList.add('native-app')
     }
   }, [])
+
+  useEffect(() => {
+    if (!isNativeApp()) return
+
+    let cancelled = false
+    let inflight = false
+
+    const processPendingImports = async () => {
+      if (cancelled || inflight) return
+      inflight = true
+
+      try {
+        const pendingRequests = await invoke<PendingCliImportRequest[]>(
+          'consume_pending_cli_import_requests'
+        )
+        if (cancelled || pendingRequests.length === 0) return
+
+        for (const request of pendingRequests) {
+          const result = await invoke<CliImportedProjectResult>(
+            'import_project_from_cli_path',
+            {
+              path: request.path,
+            }
+          )
+          if (cancelled) return
+
+          applyCliImportNavigation(queryClient, result)
+          toast.success(
+            result.created
+              ? `Imported project: ${result.project.name}`
+              : `Opened project: ${result.project.name}`
+          )
+        }
+      } catch (error) {
+        if (!cancelled) {
+          const message = error instanceof Error ? error.message : String(error)
+          logger.error('Failed to process CLI import request', { error })
+          toast.error('Failed to import project from CLI', {
+            description: message,
+          })
+        }
+      } finally {
+        inflight = false
+      }
+    }
+
+    void processPendingImports()
+    const intervalId = window.setInterval(() => {
+      void processPendingImports()
+    }, 750)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(intervalId)
+    }
+  }, [queryClient])
 
   const [cliCheckReady, setCliCheckReady] = useState(false)
   useEffect(() => {

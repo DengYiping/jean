@@ -82,6 +82,14 @@ const applicationsDir = '/Applications'
 const installedAppPath = path.join(applicationsDir, `${productName}.app`)
 const stagedAppPath = path.join(applicationsDir, `.${productName}.app.new`)
 const backupAppPath = path.join(applicationsDir, `.${productName}.app.old`)
+const cliBinDir = '/usr/local/bin'
+const installedCliBinaryPath = path.join(
+  installedAppPath,
+  'Contents',
+  'MacOS',
+  'jean'
+)
+const cliSymlinkPath = path.join(cliBinDir, 'jean')
 
 console.log('==> Building unsigned macOS app bundle...')
 run('bun', ['run', 'tauri:build', '--', '--no-sign', '--bundles', 'app'], {
@@ -136,3 +144,14 @@ try {
 }
 
 console.log(`==> Installed ${installedAppPath}`)
+
+if (!fs.existsSync(installedCliBinaryPath)) {
+  fail(`CLI binary not found at ${installedCliBinaryPath}`)
+}
+
+console.log(`==> Linking CLI into ${cliSymlinkPath}...`)
+fs.mkdirSync(cliBinDir, { recursive: true })
+removePath(cliSymlinkPath)
+fs.symlinkSync(installedCliBinaryPath, cliSymlinkPath)
+
+console.log(`==> Installed CLI symlink ${cliSymlinkPath}`)

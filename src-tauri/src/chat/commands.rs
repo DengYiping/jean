@@ -1015,6 +1015,7 @@ pub async fn restore_session_with_base(
         name: project.default_branch.clone(),
         path: project.path.clone(),
         branch: project.default_branch.clone(),
+        base_branch: None,
         created_at: now(),
         setup_output: None,
         setup_script: None,

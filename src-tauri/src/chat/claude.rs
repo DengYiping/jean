@@ -15,8 +15,8 @@ use crate::projects::storage::load_projects_data;
 // Constants
 // =============================================================================
 
-/// Default global system prompt (must match DEFAULT_GLOBAL_SYSTEM_PROMPT in preferences.ts)
-const DEFAULT_GLOBAL_SYSTEM_PROMPT: &str = "\
+/// Default Claude system prompt (must match DEFAULT_CLAUDE_SYSTEM_PROMPT in preferences.ts)
+const DEFAULT_CLAUDE_SYSTEM_PROMPT: &str = "\
 ### 1. Plan Mode Default\n\
 - Enter plan mode for ANY non-trivial task (3+ steps or architectural decisions)\n\
 - If something goes sideways, STOP and re-plan immediately - don't keep pushing\n\
@@ -70,6 +70,10 @@ const DEFAULT_GLOBAL_SYSTEM_PROMPT: &str = "\
 ## Important!\n\
 \n\
 - After each finished task, please write a few bullet points on how to test the changes.";
+
+pub fn default_claude_system_prompt() -> &'static str {
+    DEFAULT_CLAUDE_SYSTEM_PROMPT
+}
 
 fn execution_mode_instruction(execution_mode: Option<&str>) -> Option<&'static str> {
     match execution_mode.unwrap_or("plan") {
@@ -437,18 +441,18 @@ fn build_claude_args(
         }
     }
 
-    // Global system prompt from preferences (like ~/.claude/CLAUDE.md)
-    // Falls back to DEFAULT_GLOBAL_SYSTEM_PROMPT when not set (null = use default)
+    // Global Claude system prompt from preferences (like ~/.claude/CLAUDE.md)
+    // Falls back to DEFAULT_CLAUDE_SYSTEM_PROMPT when not set (null = use default)
     if let Ok(prefs_path) = crate::get_preferences_path(app) {
         if let Ok(contents) = std::fs::read_to_string(&prefs_path) {
             if let Ok(prefs) = serde_json::from_str::<crate::AppPreferences>(&contents) {
                 let prompt = prefs
                     .magic_prompts
-                    .global_system_prompt
+                    .claude_system_prompt
                     .as_deref()
                     .map(|s| s.trim())
                     .filter(|s| !s.is_empty())
-                    .unwrap_or(DEFAULT_GLOBAL_SYSTEM_PROMPT);
+                    .unwrap_or(DEFAULT_CLAUDE_SYSTEM_PROMPT);
                 system_prompt_parts.push(prompt.to_string());
             }
         }

@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
   CODEX_DEFAULT_MAGIC_PROMPT_EFFORTS,
+  DEFAULT_CLAUDE_SYSTEM_PROMPT,
+  DEFAULT_CODEX_SYSTEM_PROMPT,
   DEFAULT_MAGIC_PROMPT_EFFORTS,
+  DEFAULT_MAGIC_PROMPTS,
   DEFAULT_MAGIC_PROMPT_MODELS,
   DEFAULT_MAGIC_PROMPT_PROVIDERS,
+  DEFAULT_OPENCODE_SYSTEM_PROMPT,
   magicPromptReasoningOptions,
   isMagicPromptModelCompatibleWithBackend,
   OPENCODE_DEFAULT_MAGIC_PROMPT_EFFORTS,
@@ -89,6 +93,20 @@ describe('magic prompt review comments defaults', () => {
     expect(OPENCODE_DEFAULT_MAGIC_PROMPT_EFFORTS.review_comments_effort).toBe(
       'medium'
     )
+  })
+})
+
+describe('backend-specific system prompt defaults', () => {
+  it('keeps the new prompt fields in the shared defaults', () => {
+    expect(DEFAULT_MAGIC_PROMPTS.claude_system_prompt).toBeNull()
+    expect(DEFAULT_MAGIC_PROMPTS.codex_system_prompt).toBeNull()
+    expect(DEFAULT_MAGIC_PROMPTS.opencode_system_prompt).toBeNull()
+  })
+
+  it('uses built-in defaults for Claude and Codex only', () => {
+    expect(DEFAULT_CLAUDE_SYSTEM_PROMPT).not.toHaveLength(0)
+    expect(DEFAULT_CODEX_SYSTEM_PROMPT).toBe(DEFAULT_CLAUDE_SYSTEM_PROMPT)
+    expect(DEFAULT_OPENCODE_SYSTEM_PROMPT).toBe('')
   })
 })
 

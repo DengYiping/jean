@@ -483,7 +483,9 @@ fn resolve_http_server_bind_host(prefs: &AppPreferences) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
+        default_claude_system_prompt, default_codex_system_prompt, migrate_loaded_preferences,
         resolve_http_server_bind_host, try_parse_cli_args, AppPreferences, CliArgs, CliCommand,
+        MagicPrompts,
     };
 
     #[test]
@@ -549,6 +551,46 @@ mod tests {
 
         assert!(error.contains("mutually exclusive"));
     }
+
+    #[test]
+    fn migrate_loaded_preferences_copies_legacy_global_prompt_to_backend_fields() {
+        let mut prefs = AppPreferences::default();
+        prefs.magic_prompts = MagicPrompts {
+            legacy_global_system_prompt: Some("legacy prompt".to_string()),
+            ..MagicPrompts::default()
+        };
+
+        let needs_resave = migrate_loaded_preferences(&mut prefs);
+
+        assert!(needs_resave);
+        assert_eq!(
+            prefs.magic_prompts.claude_system_prompt.as_deref(),
+            Some("legacy prompt")
+        );
+        assert_eq!(
+            prefs.magic_prompts.codex_system_prompt.as_deref(),
+            Some("legacy prompt")
+        );
+        assert_eq!(
+            prefs.magic_prompts.opencode_system_prompt.as_deref(),
+            Some("legacy prompt")
+        );
+        assert!(prefs.magic_prompts.legacy_global_system_prompt.is_none());
+    }
+
+    #[test]
+    fn migrate_loaded_preferences_normalizes_default_backend_prompts() {
+        let mut prefs = AppPreferences::default();
+        prefs.branch_naming_model = super::default_branch_naming_model();
+        prefs.session_naming_model = super::default_session_naming_model();
+        prefs.magic_prompts.claude_system_prompt = Some(default_claude_system_prompt());
+        prefs.magic_prompts.codex_system_prompt = Some(default_codex_system_prompt());
+
+        migrate_loaded_preferences(&mut prefs);
+        assert!(prefs.magic_prompts.claude_system_prompt.is_none());
+        assert!(prefs.magic_prompts.codex_system_prompt.is_none());
+        assert!(prefs.magic_prompts.opencode_system_prompt.is_none());
+    }
 }
 
 fn default_removal_behavior() -> String {
@@ -603,7 +645,13 @@ pub struct MagicPrompts {
     #[serde(default)]
     pub parallel_execution: Option<String>,
     #[serde(default)]
-    pub global_system_prompt: Option<String>,
+    pub claude_system_prompt: Option<String>,
+    #[serde(default)]
+    pub codex_system_prompt: Option<String>,
+    #[serde(default)]
+    pub opencode_system_prompt: Option<String>,
+    #[serde(default, rename = "global_system_prompt", skip_serializing)]
+    pub legacy_global_system_prompt: Option<String>,
     #[serde(default)]
     pub session_recap: Option<String>,
     #[serde(default)]
@@ -991,6 +1039,14 @@ fn default_plan_approval_codex_prompt() -> String {
     "Execute the plan you created. Implement all changes described.".to_string()
 }
 
+fn default_claude_system_prompt() -> String {
+    crate::chat::claude::default_claude_system_prompt().to_string()
+}
+
+fn default_codex_system_prompt() -> String {
+    crate::chat::codex::default_codex_system_prompt().to_string()
+}
+
 /// Per-prompt model overrides for magic prompts
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MagicPromptModels {
@@ -1200,11 +1256,28 @@ pub struct MagicPromptReasoningEfforts {
 }
 
 impl MagicPrompts {
+    fn migrate_legacy_global_system_prompt(&mut self) -> bool {
+        let Some(legacy_prompt) = self.legacy_global_system_prompt.take() else {
+            return false;
+        };
+
+        if self.claude_system_prompt.is_none()
+            && self.codex_system_prompt.is_none()
+            && self.opencode_system_prompt.is_none()
+        {
+            self.claude_system_prompt = Some(legacy_prompt.clone());
+            self.codex_system_prompt = Some(legacy_prompt.clone());
+            self.opencode_system_prompt = Some(legacy_prompt);
+        }
+
+        true
+    }
+
     /// Migrate prompts that match the current default to None.
     /// This ensures users who never customized a prompt get auto-updated defaults.
     fn migrate_defaults(&mut self) {
         type DefaultEntry<'a> = (fn() -> String, &'a mut Option<String>);
-        let defaults: [DefaultEntry; 15] = [
+        let defaults: [DefaultEntry; 17] = [
             (
                 default_investigate_issue_prompt,
                 &mut self.investigate_issue,
@@ -1226,6 +1299,8 @@ impl MagicPrompts {
                 default_parallel_execution_prompt,
                 &mut self.parallel_execution,
             ),
+            (default_claude_system_prompt, &mut self.claude_system_prompt),
+            (default_codex_system_prompt, &mut self.codex_system_prompt),
             (
                 default_investigate_security_alert_prompt,
                 &mut self.investigate_security_alert,
@@ -1371,6 +1446,28 @@ fn normalize_preferences(preferences: &mut AppPreferences) {
     normalize_optional_path(&mut preferences.claude_update_command);
     normalize_optional_path(&mut preferences.codex_update_command);
     normalize_optional_path(&mut preferences.opencode_launch_command);
+}
+
+fn migrate_loaded_preferences(preferences: &mut AppPreferences) -> bool {
+    let mut needs_resave = preferences
+        .magic_prompts
+        .migrate_legacy_global_system_prompt();
+
+    // Migrate magic prompts: convert prompts matching current defaults to None
+    // so they auto-update when new defaults are shipped
+    preferences.magic_prompts.migrate_defaults();
+
+    needs_resave |= preferences.magic_prompt_models.migrate_legacy_defaults();
+    if preferences.branch_naming_model == "haiku" {
+        preferences.branch_naming_model = default_branch_naming_model();
+        needs_resave = true;
+    }
+    if preferences.session_naming_model == "haiku" {
+        preferences.session_naming_model = default_session_naming_model();
+        needs_resave = true;
+    }
+
+    needs_resave
 }
 
 // UI State data structure
@@ -1520,6 +1617,7 @@ pub fn load_preferences_sync(app: &AppHandle) -> Result<AppPreferences, String> 
     let mut preferences: AppPreferences =
         serde_json::from_str(&contents).map_err(|e| format!("Failed to parse preferences: {e}"))?;
     normalize_preferences(&mut preferences);
+    migrate_loaded_preferences(&mut preferences);
     crate::platform::set_git_binary_override(preferences.git_cli_path.as_deref());
     Ok(preferences)
 }
@@ -1546,22 +1644,7 @@ async fn load_preferences(app: AppHandle) -> Result<AppPreferences, String> {
     })?;
 
     normalize_preferences(&mut preferences);
-
-    // Migrate magic prompts: convert prompts matching current defaults to None
-    // so they auto-update when new defaults are shipped
-    preferences.magic_prompts.migrate_defaults();
-
-    // Migrate legacy magic-prompt model names ("opus" → "claude-opus-4-7")
-    // and legacy auto-naming models ("haiku" → "sonnet")
-    let mut needs_resave = preferences.magic_prompt_models.migrate_legacy_defaults();
-    if preferences.branch_naming_model == "haiku" {
-        preferences.branch_naming_model = default_branch_naming_model();
-        needs_resave = true;
-    }
-    if preferences.session_naming_model == "haiku" {
-        preferences.session_naming_model = default_session_naming_model();
-        needs_resave = true;
-    }
+    let mut needs_resave = migrate_loaded_preferences(&mut preferences);
 
     // Migrate CLI profiles: move settings_json from preferences.json to standalone files
     for profile in &mut preferences.custom_cli_profiles {

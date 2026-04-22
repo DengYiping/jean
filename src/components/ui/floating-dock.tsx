@@ -178,6 +178,7 @@ function snapshotLg() {
 const serverLg = () => true
 
 export function FloatingDock() {
+  const chatToolbarMounted = useUIStore(state => state.chatToolbarMounted)
   const isMobile = useIsMobile()
   const isLg = useSyncExternalStore(subscribeLg, snapshotLg, serverLg)
   const { data: preferences } = usePreferences()
@@ -428,6 +429,11 @@ export function FloatingDock() {
   const showConnectionIndicator = isWebAccess && !isMobile
   const showKeybindingHints = isNativeApp() && !isMobile
   const popoverSide = isLg ? 'top' : ('right' as const)
+
+  // When the chat toolbar is mounted, the DockBurgerButton there exposes the
+  // same menu — hide this corner dock to avoid duplicate UI and overlap with
+  // the chat textarea.
+  if (chatToolbarMounted) return null
 
   return (
     <div className="absolute bottom-4 right-4 z-10 flex flex-row items-center gap-0.5 rounded-full border border-border/30 bg-background/60 backdrop-blur-md px-1 py-0.5 sm:left-4 sm:right-auto sm:flex-col sm:rounded-2xl sm:px-0.5 sm:py-1 xl:flex-row xl:rounded-full xl:px-1 xl:py-0.5">

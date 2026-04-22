@@ -1,6 +1,7 @@
-import { memo, useCallback, useState } from 'react'
+import { memo, useCallback, useEffect, useState } from 'react'
 import { Workflow } from 'lucide-react'
 import { toast } from 'sonner'
+import { useUIStore } from '@/store/ui-store'
 import {
   gitPush,
   triggerImmediateGitPoll,
@@ -148,6 +149,12 @@ export const ChatToolbar = memo(function ChatToolbar({
     setModelDropdownOpen,
     setThinkingDropdownOpen,
   })
+
+  useEffect(() => {
+    const { setChatToolbarMounted } = useUIStore.getState()
+    setChatToolbarMounted(true)
+    return () => setChatToolbarMounted(false)
+  }, [])
 
   const { data: availableOpencodeModels } = useAvailableOpencodeModels({
     enabled: selectedBackend === 'opencode',

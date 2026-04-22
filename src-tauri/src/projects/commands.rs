@@ -72,6 +72,52 @@ fn generate_unique_suffix_name(
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum PrCheckoutStrategy {
+    ReuseExisting(String),
+    Unarchive(String),
+    CreateFromExistingBranch,
+    CreateNew,
+}
+
+fn choose_pr_checkout_strategy(
+    data: &super::types::ProjectsData,
+    project_id: &str,
+    pr_number: u32,
+    pr_head_ref: &str,
+    git_worktree_path: Option<&str>,
+    local_branch_exists: bool,
+) -> PrCheckoutStrategy {
+    let matches_target = |w: &Worktree| {
+        w.project_id == project_id
+            && (w.pr_number == Some(pr_number)
+                || w.branch == pr_head_ref
+                || git_worktree_path.is_some_and(|path| w.path == path))
+    };
+
+    if let Some(worktree) = data
+        .worktrees
+        .iter()
+        .find(|w| matches_target(w) && w.archived_at.is_none())
+    {
+        return PrCheckoutStrategy::ReuseExisting(worktree.id.clone());
+    }
+
+    if let Some(worktree) = data
+        .worktrees
+        .iter()
+        .find(|w| matches_target(w) && w.archived_at.is_some())
+    {
+        return PrCheckoutStrategy::Unarchive(worktree.id.clone());
+    }
+
+    if local_branch_exists {
+        return PrCheckoutStrategy::CreateFromExistingBranch;
+    }
+
+    PrCheckoutStrategy::CreateNew
+}
+
 /// Get current Unix timestamp
 fn now() -> u64 {
     SystemTime::now()
@@ -601,6 +647,63 @@ pub async fn create_worktree(
         false
     };
 
+    if let Some(ref ctx) = pr_context {
+        let existing_git_worktree_path =
+            git::find_worktree_for_branch(&project.path, &ctx.head_ref_name);
+        let local_branch_exists = git::branch_exists(&project.path, &ctx.head_ref_name);
+
+        match choose_pr_checkout_strategy(
+            &data,
+            &project_id,
+            ctx.number,
+            &ctx.head_ref_name,
+            existing_git_worktree_path.as_deref(),
+            local_branch_exists,
+        ) {
+            PrCheckoutStrategy::ReuseExisting(worktree_id) => {
+                let worktree = data
+                    .find_worktree(&worktree_id)
+                    .ok_or_else(|| format!("Worktree not found: {worktree_id}"))?
+                    .clone();
+                log::trace!(
+                    "Reusing existing worktree {} for PR #{} on branch {}",
+                    worktree.id,
+                    ctx.number,
+                    ctx.head_ref_name
+                );
+                return Ok(worktree);
+            }
+            PrCheckoutStrategy::Unarchive(worktree_id) => {
+                log::trace!(
+                    "Unarchiving existing worktree {} for PR #{} on branch {}",
+                    worktree_id,
+                    ctx.number,
+                    ctx.head_ref_name
+                );
+                return unarchive_worktree(app, worktree_id).await;
+            }
+            PrCheckoutStrategy::CreateFromExistingBranch => {
+                log::trace!(
+                    "Creating worktree from existing local branch {} for PR #{}",
+                    ctx.head_ref_name,
+                    ctx.number
+                );
+                return create_worktree_from_existing_branch(
+                    app,
+                    project_id,
+                    ctx.head_ref_name.clone(),
+                    issue_context,
+                    pr_context,
+                    security_context,
+                    advisory_context,
+                    linear_context,
+                )
+                .await;
+            }
+            PrCheckoutStrategy::CreateNew => {}
+        }
+    }
+
     // Generate workspace name - use custom name, PR-based name, issue-based name, or random name
     let name = if let Some(custom) = custom_name {
         // Use the provided custom name directly (already validated as unique by caller)
@@ -964,36 +1067,32 @@ pub async fn create_worktree(
                     ctx.number
                 );
 
-                // Check if PR head branch name collides with a locally checked-out branch
-                // (e.g. PR from fork with head "main" when local "main" is already checked out)
+                // If the branch already exists locally, reuse it directly instead of creating
+                // a divergent local branch name. If it's already checked out in another worktree,
+                // the earlier strategy selection should have reused that worktree already.
                 let branch_collision = git::branch_exists(&project_path, &ctx.head_ref_name);
-                let local_branch_name = if branch_collision {
-                    let alt = format!("pr-{}-{}", ctx.number, ctx.head_ref_name);
-                    log::trace!(
-                        "Branch '{}' already exists, using '{alt}' instead",
-                        ctx.head_ref_name
-                    );
-                    alt
-                } else {
-                    ctx.head_ref_name.clone()
-                };
+                let local_branch_name = ctx.head_ref_name.clone();
 
-                // Clean up stale branch from a previous checkout of this PR
-                git::cleanup_stale_branch(&project_path, &local_branch_name);
+                if !branch_collision {
+                    // Clean up stale branch from a previous checkout of this PR only when we
+                    // expect to create/fetch the branch fresh.
+                    git::cleanup_stale_branch(&project_path, &local_branch_name);
+                }
 
                 let checkout_result = if branch_collision {
-                    // Bypass gh pr checkout which internally fetches into the conflicting ref.
-                    // Manually fetch the PR into the alt branch name and switch to it.
                     log::trace!(
-                    "Background: Branch collision, manual fetch PR #{} into {local_branch_name}",
-                    ctx.number
-                );
-                    git::fetch_pr_to_branch(&project_path, ctx.number, &local_branch_name).and_then(
-                        |_| {
-                            git::checkout_branch(&worktree_path_clone, &local_branch_name)?;
-                            Ok(local_branch_name)
-                        },
-                    )
+                        "Background: Branch {} already exists locally, reusing it for PR #{}",
+                        local_branch_name,
+                        ctx.number
+                    );
+                    git::checkout_branch(&worktree_path_clone, &local_branch_name).map(|_| {
+                        if let Err(e) = git::git_pull_upstream(&worktree_path_clone) {
+                            log::warn!(
+                                "Background: Failed to update existing branch from upstream: {e}"
+                            );
+                        }
+                        local_branch_name.clone()
+                    })
                 } else {
                     git::gh_pr_checkout(
                         &app_clone,
@@ -1628,6 +1727,21 @@ pub async fn create_worktree_from_existing_branch(
 
             log::trace!("Background: Git worktree created successfully from existing branch");
 
+            if pr_context_clone.is_some() {
+                match git::git_pull_upstream(&worktree_path_clone) {
+                    Ok(output) => {
+                        log::trace!(
+                            "Background: Updated existing branch from upstream before PR reuse: {output}"
+                        );
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "Background: Failed to update existing branch from upstream: {e}"
+                        );
+                    }
+                }
+            }
+
             // Write issue context file if provided
             if let Some(ctx) = &issue_context_clone {
                 log::trace!(
@@ -1995,18 +2109,75 @@ pub async fn checkout_pr(
         .ok_or_else(|| format!("Project not found: {project_id}"))?
         .clone();
 
-    // Check if there's an archived worktree for this PR — restore it instead of creating a new one
-    if let Some(archived_wt) = data.worktrees.iter().find(|w| {
-        w.project_id == project_id && w.pr_number == Some(pr_number) && w.archived_at.is_some()
-    }) {
-        let worktree_id = archived_wt.id.clone();
-        log::info!("[checkout_pr] Found archived worktree {worktree_id} for PR #{pr_number}, attempting unarchive");
-        return unarchive_worktree(app, worktree_id).await;
-    }
-    log::info!("[checkout_pr] No archived worktree found for PR #{pr_number}, creating new");
-
     // Fetch PR details from GitHub (for context and worktree naming)
     let pr_detail = get_github_pr(app.clone(), project.path.clone(), pr_number).await?;
+
+    let existing_git_worktree_path =
+        git::find_worktree_for_branch(&project.path, &pr_detail.head_ref_name);
+    let local_branch_exists = git::branch_exists(&project.path, &pr_detail.head_ref_name);
+
+    match choose_pr_checkout_strategy(
+        &data,
+        &project_id,
+        pr_number,
+        &pr_detail.head_ref_name,
+        existing_git_worktree_path.as_deref(),
+        local_branch_exists,
+    ) {
+        PrCheckoutStrategy::ReuseExisting(worktree_id) => {
+            let worktree = data
+                .find_worktree(&worktree_id)
+                .ok_or_else(|| format!("Worktree not found: {worktree_id}"))?
+                .clone();
+            log::info!(
+                "[checkout_pr] Reusing existing worktree {} for PR #{} on branch {}",
+                worktree.id,
+                pr_number,
+                pr_detail.head_ref_name
+            );
+            return Ok(worktree);
+        }
+        PrCheckoutStrategy::Unarchive(worktree_id) => {
+            log::info!(
+                "[checkout_pr] Unarchiving worktree {} for PR #{} on branch {}",
+                worktree_id,
+                pr_number,
+                pr_detail.head_ref_name
+            );
+            return unarchive_worktree(app, worktree_id).await;
+        }
+        PrCheckoutStrategy::CreateFromExistingBranch => {
+            log::info!(
+                "[checkout_pr] Reusing existing local branch '{}' for PR #{}",
+                pr_detail.head_ref_name,
+                pr_number
+            );
+            let pr_context = PullRequestContext {
+                number: pr_detail.number,
+                title: pr_detail.title.clone(),
+                body: pr_detail.body.clone(),
+                head_ref_name: pr_detail.head_ref_name.clone(),
+                base_ref_name: pr_detail.base_ref_name.clone(),
+                comments: pr_detail.comments.clone(),
+                reviews: pr_detail.reviews.clone(),
+                diff: None,
+            };
+            return create_worktree_from_existing_branch(
+                app,
+                project_id,
+                pr_detail.head_ref_name.clone(),
+                None,
+                Some(pr_context),
+                None,
+                None,
+                None,
+            )
+            .await;
+        }
+        PrCheckoutStrategy::CreateNew => {
+            log::info!("[checkout_pr] No reusable worktree or branch found for PR #{pr_number}, creating new");
+        }
+    }
 
     // Get valid base branch for creating the worktree
     let base_branch = git::get_valid_base_branch(&project.path, &project.default_branch)?;
@@ -2232,47 +2403,36 @@ pub async fn checkout_pr(
 
             log::trace!("Background: Worktree created, now running gh pr checkout {pr_number}");
 
-            // Determine safe local branch name for gh pr checkout -b
-            // If pr_head_ref (e.g. "main") already exists locally, use an alternative
-            // to avoid "refusing to fetch into branch" errors when the branch is checked out
+            // If the branch already exists locally, reuse it directly instead of creating
+            // a divergent local branch name. If it's already checked out in another worktree,
+            // the earlier strategy selection should have reused that worktree already.
             let branch_collision = git::branch_exists(&project_path, &pr_head_ref);
-            let local_branch_name = if branch_collision {
-                let alt = format!("pr-{pr_number}-{pr_head_ref}");
-                log::trace!("Branch '{pr_head_ref}' already exists, using '{alt}' instead");
-                alt
-            } else {
-                pr_head_ref.clone()
-            };
+            let local_branch_name = pr_head_ref.clone();
 
-            // Clean up stale branch from a previous checkout of this PR
-            // Handles: archived worktree still has branch checked out, or
-            // permanently-deleted worktree whose background cleanup didn't finish
-            git::cleanup_stale_branch(&project_path, &local_branch_name);
+            if !branch_collision {
+                // Clean up stale branch from a previous checkout of this PR only when we
+                // expect to create/fetch the branch fresh.
+                // Handles: archived worktree still has branch checked out, or
+                // permanently-deleted worktree whose background cleanup didn't finish.
+                git::cleanup_stale_branch(&project_path, &local_branch_name);
+            }
 
             // Step 2: Checkout the PR branch into the worktree
-            // If branch name collides (e.g. PR head is "main" and "main" is checked out),
-            // bypass `gh pr checkout` which internally fetches into the conflicting ref.
-            // Instead, manually fetch the PR into the alt branch name and switch to it.
             let actual_branch = if branch_collision {
-                log::trace!("Background: Branch collision detected, using manual fetch for PR #{pr_number} into {local_branch_name}");
-                match git::fetch_pr_to_branch(&project_path, pr_number, &local_branch_name)
-                    .and_then(|_| {
-                        git::checkout_branch(&worktree_path_clone, &local_branch_name)?;
-                        Ok(local_branch_name.clone())
-                    }) {
-                    Ok(branch) => {
+                log::trace!(
+                    "Background: Branch {local_branch_name} already exists locally, reusing it for PR #{pr_number}"
+                );
+                match git::checkout_branch(&worktree_path_clone, &local_branch_name) {
+                    Ok(()) => {
                         log::trace!(
-                            "Background: Manual PR fetch+checkout succeeded, branch: {branch}"
+                            "Background: Existing branch checkout succeeded, branch: {local_branch_name}"
                         );
-                        // Set upstream tracking so terminal `git push` works correctly
-                        if let Err(e) = git::set_upstream_tracking(
-                            &project_path,
-                            &local_branch_name,
-                            &pr_head_ref,
-                        ) {
-                            log::warn!("Background: Failed to set upstream tracking: {e}");
+                        if let Err(e) = git::git_pull_upstream(&worktree_path_clone) {
+                            log::warn!(
+                                "Background: Failed to update existing branch from upstream: {e}"
+                            );
                         }
-                        branch
+                        local_branch_name.clone()
                     }
                     Err(e) => {
                         log::error!("Background: Failed to checkout PR: {e}");
@@ -9409,6 +9569,50 @@ pub async fn revert_last_local_commit(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::projects::types::{ProjectsData, Worktree};
+
+    fn test_worktree(id: &str, project_id: &str, branch: &str) -> Worktree {
+        Worktree {
+            id: id.to_string(),
+            project_id: project_id.to_string(),
+            name: branch.to_string(),
+            path: format!("/tmp/{id}"),
+            branch: branch.to_string(),
+            created_at: 0,
+            setup_output: None,
+            setup_script: None,
+            setup_success: None,
+            session_type: SessionType::Worktree,
+            pr_number: None,
+            pr_url: None,
+            issue_number: None,
+            linear_issue_identifier: None,
+            security_alert_number: None,
+            security_alert_url: None,
+            advisory_ghsa_id: None,
+            advisory_url: None,
+            cached_pr_status: None,
+            cached_check_status: None,
+            cached_behind_count: None,
+            cached_ahead_count: None,
+            cached_status_at: None,
+            cached_uncommitted_added: None,
+            cached_uncommitted_removed: None,
+            cached_branch_diff_added: None,
+            cached_branch_diff_removed: None,
+            cached_base_branch_ahead_count: None,
+            cached_base_branch_behind_count: None,
+            cached_worktree_ahead_count: None,
+            cached_unpushed_count: None,
+            order: 0,
+            label: None,
+            archived_at: None,
+            last_opened_at: None,
+            automation_id: None,
+            automation_name: None,
+            automation_owned: false,
+        }
+    }
 
     #[test]
     fn test_parse_command_content_with_allowed_tools_list() {
@@ -9535,5 +9739,56 @@ Body
 
         let result = extract_structured_output(output);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_choose_pr_checkout_strategy_reuses_active_worktree_by_branch() {
+        let mut data = ProjectsData::default();
+        data.worktrees
+            .push(test_worktree("wt-1", "project-1", "feature/pr"));
+
+        let strategy =
+            choose_pr_checkout_strategy(&data, "project-1", 42, "feature/pr", None, true);
+
+        assert_eq!(
+            strategy,
+            PrCheckoutStrategy::ReuseExisting("wt-1".to_string())
+        );
+    }
+
+    #[test]
+    fn test_choose_pr_checkout_strategy_unarchives_matching_worktree() {
+        let mut data = ProjectsData::default();
+        let mut archived = test_worktree("wt-archived", "project-1", "feature/pr");
+        archived.archived_at = Some(123);
+        data.worktrees.push(archived);
+
+        let strategy =
+            choose_pr_checkout_strategy(&data, "project-1", 42, "feature/pr", None, true);
+
+        assert_eq!(
+            strategy,
+            PrCheckoutStrategy::Unarchive("wt-archived".to_string())
+        );
+    }
+
+    #[test]
+    fn test_choose_pr_checkout_strategy_uses_existing_branch_without_worktree() {
+        let data = ProjectsData::default();
+
+        let strategy =
+            choose_pr_checkout_strategy(&data, "project-1", 42, "feature/pr", None, true);
+
+        assert_eq!(strategy, PrCheckoutStrategy::CreateFromExistingBranch);
+    }
+
+    #[test]
+    fn test_choose_pr_checkout_strategy_creates_new_when_no_reuse_exists() {
+        let data = ProjectsData::default();
+
+        let strategy =
+            choose_pr_checkout_strategy(&data, "project-1", 42, "feature/pr", None, false);
+
+        assert_eq!(strategy, PrCheckoutStrategy::CreateNew);
     }
 }

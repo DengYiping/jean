@@ -106,6 +106,7 @@ export const ChatToolbar = memo(function ChatToolbar({
   onEffortLevelChange,
   onSetExecutionMode,
   parallelExecutionPromptEnabled,
+  parallelExecutionPromptToggleDisabled = false,
   onParallelExecutionPromptChange,
   onCancel,
   queuedMessageCount,
@@ -432,7 +433,7 @@ export const ChatToolbar = memo(function ChatToolbar({
             <TooltipTrigger asChild>
               <button
                 type="button"
-                disabled={isSending}
+                disabled={isSending || parallelExecutionPromptToggleDisabled}
                 aria-label="Parallel execution prompting"
                 aria-pressed={parallelExecutionPromptEnabled}
                 onClick={() =>
@@ -451,7 +452,9 @@ export const ChatToolbar = memo(function ChatToolbar({
               </button>
             </TooltipTrigger>
             <TooltipContent>
-              Parallel execution prompting ({parallelPromptShortcut})
+              {parallelExecutionPromptToggleDisabled
+                ? 'Parallel execution prompting cannot be changed after a Codex thread starts'
+                : `Parallel execution prompting (${parallelPromptShortcut})`}
             </TooltipContent>
           </Tooltip>
         </div>

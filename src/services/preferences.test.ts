@@ -214,6 +214,25 @@ describe('preferences service', () => {
       expect(result.current.data?.theme).toBe('system')
     })
 
+    it('normalizes legacy and invalid notification sounds to none', async () => {
+      const { invoke } = await import('@/lib/transport')
+      const mockPreferences: AppPreferences = {
+        ...defaultPreferences,
+        waiting_sound: 'choochoo',
+        review_sound: 'missing-sound',
+      }
+      vi.mocked(invoke).mockResolvedValueOnce(mockPreferences)
+
+      const { result } = renderHook(() => usePreferences(), {
+        wrapper: createWrapper(queryClient),
+      })
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+      expect(result.current.data?.waiting_sound).toBe('none')
+      expect(result.current.data?.review_sound).toBe('none')
+    })
+
     it('migrates old keybindings to new defaults', async () => {
       const { invoke } = await import('@/lib/transport')
       const prefsWithOldBinding: AppPreferences = {

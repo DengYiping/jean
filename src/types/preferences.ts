@@ -6,15 +6,7 @@ import { isMacOS, isWindows } from '../lib/platform'
 // Notification Sounds
 // =============================================================================
 
-export type NotificationSound = 'none' | 'choochoo'
-
-export const notificationSoundOptions: {
-  value: NotificationSound
-  label: string
-}[] = [
-  { value: 'none', label: 'None' },
-  { value: 'choochoo', label: 'Choo-choo' },
-]
+export type NotificationSound = string
 
 // =============================================================================
 // Magic Prompts - Customizable prompts for AI-powered features

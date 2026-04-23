@@ -88,7 +88,6 @@ import {
   remotePollIntervalOptions,
   archiveRetentionOptions,
   removalBehaviorOptions,
-  notificationSoundOptions,
   type RemovalBehavior,
   type ClaudeModel,
   type CodexModel,
@@ -102,7 +101,11 @@ import {
 } from '@/types/preferences'
 import { OPENCODE_MODEL_OPTIONS } from '@/components/chat/toolbar/toolbar-options'
 import { formatOpencodeModelLabel } from '@/components/chat/toolbar/toolbar-utils'
-import { playNotificationSound } from '@/lib/sounds'
+import {
+  getNotificationSoundOptions,
+  normalizeNotificationSound,
+  playNotificationSound,
+} from '@/lib/sounds'
 import type { ThinkingLevel, EffortLevel } from '@/types/chat'
 import { isNativeApp } from '@/lib/environment'
 import { cn } from '@/lib/utils'
@@ -155,6 +158,9 @@ export const GeneralPane: React.FC = () => {
   const queryClient = useQueryClient()
   const { data: preferences } = usePreferences()
   const patchPreferences = usePatchPreferences()
+  const notificationSoundOptions = getNotificationSoundOptions()
+  const waitingSound = normalizeNotificationSound(preferences?.waiting_sound)
+  const reviewSound = normalizeNotificationSound(preferences?.review_sound)
   const [showDeleteAllDialog, setShowDeleteAllDialog] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
 
@@ -1870,7 +1876,7 @@ export const GeneralPane: React.FC = () => {
           >
             <div className="flex items-center gap-2">
               <Select
-                value={preferences?.waiting_sound ?? 'none'}
+                value={waitingSound}
                 onValueChange={handleWaitingSoundChange}
               >
                 <SelectTrigger className="w-full sm:min-w-96">
@@ -1887,13 +1893,8 @@ export const GeneralPane: React.FC = () => {
               <Button
                 variant="outline"
                 size="icon"
-                disabled={
-                  !preferences?.waiting_sound ||
-                  preferences.waiting_sound === 'none'
-                }
-                onClick={() =>
-                  playNotificationSound(preferences?.waiting_sound ?? 'none')
-                }
+                disabled={!waitingSound || waitingSound === 'none'}
+                onClick={() => playNotificationSound(waitingSound)}
               >
                 <Play className="h-4 w-4" />
               </Button>
@@ -1906,7 +1907,7 @@ export const GeneralPane: React.FC = () => {
           >
             <div className="flex items-center gap-2">
               <Select
-                value={preferences?.review_sound ?? 'none'}
+                value={reviewSound}
                 onValueChange={handleReviewSoundChange}
               >
                 <SelectTrigger className="w-full sm:min-w-96">
@@ -1923,13 +1924,8 @@ export const GeneralPane: React.FC = () => {
               <Button
                 variant="outline"
                 size="icon"
-                disabled={
-                  !preferences?.review_sound ||
-                  preferences.review_sound === 'none'
-                }
-                onClick={() =>
-                  playNotificationSound(preferences?.review_sound ?? 'none')
-                }
+                disabled={!reviewSound || reviewSound === 'none'}
+                onClick={() => playNotificationSound(reviewSound)}
               >
                 <Play className="h-4 w-4" />
               </Button>

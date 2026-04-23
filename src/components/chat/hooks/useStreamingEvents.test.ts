@@ -199,8 +199,8 @@ type RegisteredHandler = (event: { payload: unknown }) => void
 function seedSessionCaches(queryClient: QueryClient) {
   queryClient.setQueryData(preferencesQueryKeys.preferences(), {
     ...defaultPreferences,
-    waiting_sound: 'choochoo',
-    review_sound: 'choochoo',
+    waiting_sound: 'work-work',
+    review_sound: 'work-work',
   })
   queryClient.setQueryData(projectsQueryKeys.list(), [
     { id: 'project-1', name: 'Project Alpha' },
@@ -334,7 +334,7 @@ describe('useStreamingEvents question notifications', () => {
       await Promise.resolve()
     })
 
-    expect(mockPlayNotificationSound).toHaveBeenCalledWith('choochoo')
+    expect(mockPlayNotificationSound).toHaveBeenCalledWith('work-work')
     expect(
       queryClient.getQueryData(chatQueryKeys.session('session-1'))
     ).toMatchObject({
@@ -393,7 +393,7 @@ describe('useStreamingEvents question notifications', () => {
       })
     })
 
-    expect(mockPlayNotificationSound).toHaveBeenCalledWith('choochoo')
+    expect(mockPlayNotificationSound).toHaveBeenCalledWith('work-work')
     expect(mockToastInfo).not.toHaveBeenCalled()
     expect(
       queryClient.getQueryData(chatQueryKeys.session('session-1'))
@@ -464,7 +464,7 @@ describe('useStreamingEvents question notifications', () => {
       })
     })
 
-    expect(mockPlayNotificationSound).toHaveBeenCalledWith('choochoo')
+    expect(mockPlayNotificationSound).toHaveBeenCalledWith('work-work')
     expect(mockToastInfo).not.toHaveBeenCalled()
     expect(mockInvoke).toHaveBeenCalledWith('set_session_last_opened', {
       sessionId: 'session-1',
@@ -506,7 +506,7 @@ describe('useStreamingEvents question notifications', () => {
       })
     })
 
-    expect(mockPlayNotificationSound).toHaveBeenCalledWith('choochoo')
+    expect(mockPlayNotificationSound).toHaveBeenCalledWith('work-work')
     expect(mockToastInfo).not.toHaveBeenCalled()
     expect(mockInvoke).toHaveBeenCalledWith('set_session_last_opened', {
       sessionId: 'session-1',
@@ -568,7 +568,7 @@ describe('useStreamingEvents question notifications', () => {
       })
     })
 
-    expect(mockPlayNotificationSound).toHaveBeenCalledWith('choochoo')
+    expect(mockPlayNotificationSound).toHaveBeenCalledWith('work-work')
     expect(mockToastInfo).not.toHaveBeenCalled()
     unmount()
   })
@@ -861,7 +861,7 @@ describe('useStreamingEvents question notifications', () => {
       })
     })
 
-    expect(mockPlayNotificationSound).toHaveBeenCalledWith('choochoo')
+    expect(mockPlayNotificationSound).toHaveBeenCalledWith('work-work')
     expect(
       queryClient.getQueryData(chatQueryKeys.session('session-1'))
     ).toMatchObject({
@@ -930,7 +930,7 @@ describe('useStreamingEvents question notifications', () => {
       })
     })
 
-    expect(mockPlayNotificationSound).toHaveBeenCalledWith('choochoo')
+    expect(mockPlayNotificationSound).toHaveBeenCalledWith('work-work')
     expect(
       queryClient.getQueryData(chatQueryKeys.session('session-1'))
     ).toMatchObject({
@@ -960,7 +960,7 @@ describe('useStreamingEvents question notifications', () => {
       await Promise.resolve()
     })
 
-    expect(mockPlayNotificationSound).toHaveBeenCalledWith('choochoo')
+    expect(mockPlayNotificationSound).toHaveBeenCalledWith('work-work')
     expect(
       queryClient.getQueryData(chatQueryKeys.session('session-1'))
     ).toMatchObject({
@@ -991,7 +991,7 @@ describe('useStreamingEvents question notifications', () => {
       await Promise.resolve()
     })
 
-    expect(mockPlayNotificationSound).toHaveBeenCalledWith('choochoo')
+    expect(mockPlayNotificationSound).toHaveBeenCalledWith('work-work')
     expect(
       queryClient.getQueryData(chatQueryKeys.session('session-1'))
     ).toMatchObject({

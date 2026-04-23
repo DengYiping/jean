@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>bundleid</key>
+	<string>dev.jean.yolo</string>
+	<key>connections</key>
+	<dict>
+		<key>5A6A97A4-6C4E-4D29-A18B-9B77AFEEA4C0</key>
+		<array>
+			<dict>
+				<key>destinationuid</key>
+				<string>726398B0-C7AC-4F47-94B9-310D3A351935</string>
+				<key>modifiers</key>
+				<integer>0</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+		</array>
+	</dict>
+	<key>createdby</key>
+	<string>Codex</string>
+	<key>description</key>
+	<string>Run `jean yolo "{input}"` from Alfred.</string>
+	<key>disabled</key>
+	<false/>
+	<key>name</key>
+	<string>Jean Yolo</string>
+	<key>objects</key>
+	<array>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>argumenttype</key>
+				<integer>1</integer>
+				<key>keyword</key>
+				<string>yolo</string>
+				<key>subtext</key>
+				<string>Forward the prompt to Jean CLI yolo.</string>
+				<key>text</key>
+				<string>Jean Yolo</string>
+				<key>withspace</key>
+				<true/>
+			</dict>
+			<key>type</key>
+			<string>alfred.workflow.input.keyword</string>
+			<key>uid</key>
+			<string>5A6A97A4-6C4E-4D29-A18B-9B77AFEEA4C0</string>
+			<key>version</key>
+			<integer>1</integer>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>concurrently</key>
+				<false/>
+				<key>escaping</key>
+				<integer>102</integer>
+				<key>script</key>
+				<string>/bin/zsh -lc 'jean yolo "$@"' _ "$1"</string>
+				<key>scriptargtype</key>
+				<integer>1</integer>
+				<key>scriptfile</key>
+				<string></string>
+				<key>type</key>
+				<integer>0</integer>
+			</dict>
+			<key>type</key>
+			<string>alfred.workflow.action.script</string>
+			<key>uid</key>
+			<string>726398B0-C7AC-4F47-94B9-310D3A351935</string>
+			<key>version</key>
+			<integer>2</integer>
+		</dict>
+	</array>
+	<key>readme</key>
+	<string>Trigger with `yolo`, type a prompt, and Alfred will run `jean yolo "{input}"`.</string>
+	<key>uidata</key>
+	<dict>
+		<key>5A6A97A4-6C4E-4D29-A18B-9B77AFEEA4C0</key>
+		<dict>
+			<key>xpos</key>
+			<integer>120</integer>
+			<key>ypos</key>
+			<integer>140</integer>
+		</dict>
+		<key>726398B0-C7AC-4F47-94B9-310D3A351935</key>
+		<dict>
+			<key>xpos</key>
+			<integer>340</integer>
+			<key>ypos</key>
+			<integer>140</integer>
+		</dict>
+	</dict>
+	<key>userconfigurationconfig</key>
+	<array/>
+	<key>version</key>
+	<string>1.0</string>
+	<key>webaddress</key>
+	<string></string>
+</dict>
+</plist>

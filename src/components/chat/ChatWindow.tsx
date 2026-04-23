@@ -3294,9 +3294,8 @@ export function ChatWindow({
                 </div>
               </ResizablePanel>
 
-              {/* Terminal panel - only render when panel is open (native app only, not in modal) */}
+              {/* Terminal panel - only render when panel is open (not in modal) */}
               {!isModal &&
-                isNativeApp() &&
                 activeWorktreePath &&
                 terminalPanelOpen && (
                   <>

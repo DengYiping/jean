@@ -805,8 +805,7 @@ export function SessionChatModal({
             </div>
             <div className="flex items-center gap-1 shrink-0">
               {/* Desktop: inline action buttons */}
-              {isNativeApp() && (
-                <div className="hidden sm:flex items-center gap-1">
+              <div className="hidden sm:flex items-center gap-1">
                   <OpenInButton
                     worktreePath={worktreePath}
                     branch={worktree?.branch}
@@ -903,11 +902,9 @@ export function SessionChatModal({
                       <TooltipContent>Build</TooltipContent>
                     </Tooltip>
                   )}
-                </div>
-              )}
+              </div>
               {/* Mobile: overflow menu */}
-              {isNativeApp() && (
-                <DropdownMenu>
+              <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
                       variant="ghost"
@@ -918,42 +915,46 @@ export function SessionChatModal({
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem
-                      onSelect={() =>
-                        openInEditor.mutate({
-                          worktreePath,
-                          editor: undefined,
-                        })
-                      }
-                    >
-                      <Code className="h-4 w-4" />
-                      {getOpenInDefaultLabel(
-                        'editor',
-                        effectiveEditor,
-                        preferences?.terminal
-                      )}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onSelect={() =>
-                        openInTerminal.mutate({
-                          worktreePath,
-                          terminal: preferences?.terminal,
-                        })
-                      }
-                    >
-                      <Terminal className="h-4 w-4" />
-                      {getOpenInDefaultLabel(
-                        'terminal',
-                        effectiveEditor,
-                        preferences?.terminal
-                      )}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onSelect={() => openInFinder.mutate(worktreePath)}
-                    >
-                      <FolderOpen className="h-4 w-4" />
-                      Finder
-                    </DropdownMenuItem>
+                    {isNativeApp() && (
+                      <>
+                        <DropdownMenuItem
+                          onSelect={() =>
+                            openInEditor.mutate({
+                              worktreePath,
+                              editor: undefined,
+                            })
+                          }
+                        >
+                          <Code className="h-4 w-4" />
+                          {getOpenInDefaultLabel(
+                            'editor',
+                            effectiveEditor,
+                            preferences?.terminal
+                          )}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onSelect={() =>
+                            openInTerminal.mutate({
+                              worktreePath,
+                              terminal: preferences?.terminal,
+                            })
+                          }
+                        >
+                          <Terminal className="h-4 w-4" />
+                          {getOpenInDefaultLabel(
+                            'terminal',
+                            effectiveEditor,
+                            preferences?.terminal
+                          )}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onSelect={() => openInFinder.mutate(worktreePath)}
+                        >
+                          <FolderOpen className="h-4 w-4" />
+                          Finder
+                        </DropdownMenuItem>
+                      </>
+                    )}
                     {worktree?.branch && (
                       <DropdownMenuItem
                         onSelect={() =>
@@ -1063,7 +1064,6 @@ export function SessionChatModal({
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
-              )}
               <ModalCloseButton onClick={handleClose} />
             </div>
           </div>
@@ -1362,12 +1362,7 @@ export function SessionChatModal({
         </div>
 
         {/* Terminal side drawer */}
-        {isNativeApp() && (
-          <ModalTerminalDrawer
-            worktreeId={worktreeId}
-            worktreePath={worktreePath}
-          />
-        )}
+        <ModalTerminalDrawer worktreeId={worktreeId} worktreePath={worktreePath} />
         {diffRequest && (
           <Suspense fallback={null}>
             <GitDiffModal

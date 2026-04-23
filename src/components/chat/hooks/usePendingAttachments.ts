@@ -130,16 +130,22 @@ export function usePendingAttachments({
       if (!activeSessionId || !activeWorktreeId || !activeWorktreePath) return
 
       void (async () => {
-        const toastId = toast.loading(`Resolving /${command.name}...`)
+        const isBuiltinCompact =
+          command.source === 'builtin' && command.name === 'compact'
+        const toastId = isBuiltinCompact
+          ? toast.loading('Queueing /compact...')
+          : toast.loading(`Resolving /${command.name}...`)
 
         try {
-          const resolved = await invoke<ResolvedCommand>(
-            'resolve_claude_command',
-            {
-              commandPath: command.path,
-              workingDir: activeWorktreePath,
-            }
-          )
+          const resolved = isBuiltinCompact
+            ? ({
+                content: '/compact',
+                allowed_tools: [],
+              } satisfies ResolvedCommand)
+            : await invoke<ResolvedCommand>('resolve_claude_command', {
+                commandPath: command.path,
+                workingDir: activeWorktreePath,
+              })
 
           const queuedMessage: QueuedMessage = {
             id: generateId(),
@@ -184,7 +190,7 @@ export function usePendingAttachments({
           toast.dismiss(toastId)
         } catch (error) {
           toast.error(
-            `Failed to resolve /${command.name}: ${error instanceof Error ? error.message : String(error)}`,
+            `${isBuiltinCompact ? 'Failed to queue' : 'Failed to resolve'} /${command.name}: ${error instanceof Error ? error.message : String(error)}`,
             { id: toastId }
           )
         }

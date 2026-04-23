@@ -9,8 +9,9 @@
 
 use super::claude::CancelledEvent;
 use super::types::{
-    CodexMcpElicitationEvent, ContentBlock, DeniedMessageContext, PendingCodexMcpElicitation,
-    PermissionDenial, PermissionDeniedEvent, SessionMetadata, ThinkingLevel, ToolCall, UsageData,
+    CodexMcpElicitationEvent, CompactMetadata, ContentBlock, DeniedMessageContext,
+    PendingCodexMcpElicitation, PermissionDenial, PermissionDeniedEvent, SessionMetadata,
+    ThinkingLevel, ToolCall, UsageData,
 };
 use crate::http_server::EmitExt;
 
@@ -112,6 +113,19 @@ struct ErrorEvent {
     session_id: String,
     worktree_id: String,
     error: String,
+}
+
+#[derive(serde::Serialize, Clone)]
+struct CompactingEvent {
+    session_id: String,
+    worktree_id: String,
+}
+
+#[derive(serde::Serialize, Clone)]
+struct CompactedEvent {
+    session_id: String,
+    worktree_id: String,
+    metadata: CompactMetadata,
 }
 
 // =============================================================================
@@ -226,6 +240,10 @@ fn split_fast_model(model: &str) -> (&str, bool) {
         "gpt-5.4-fast" => ("gpt-5.4", true),
         other => (other.strip_suffix("-fast").unwrap_or(other), false),
     }
+}
+
+pub fn is_manual_compact_request(prompt: &str) -> bool {
+    prompt.trim() == "/compact"
 }
 
 /// Build JSON-RPC params for `thread/start`.
@@ -542,6 +560,7 @@ pub fn execute_codex_via_server(
         is_build_mode,
         &turn_start_rx,
         &event_rx,
+        None,
     );
     super::decrement_tailer_count();
 
@@ -556,6 +575,67 @@ pub fn execute_codex_via_server(
     }
 
     Ok(resp)
+}
+
+/// Trigger manual history compaction on an existing Codex thread.
+pub fn execute_codex_compact_via_server(
+    app: &tauri::AppHandle,
+    session_id: &str,
+    worktree_id: &str,
+    output_file: &std::path::Path,
+    existing_thread_id: &str,
+) -> Result<CodexResponse, String> {
+    use super::codex_server;
+
+    codex_server::ensure_running(app)?;
+
+    let (event_tx, event_rx) = std::sync::mpsc::channel();
+    let ctx = codex_server::SessionContext {
+        registration_id: 0,
+        session_id: session_id.to_string(),
+        worktree_id: worktree_id.to_string(),
+        event_tx,
+    };
+    let registration_id = codex_server::register_session(existing_thread_id, ctx);
+
+    super::registry::register_codex_turn(
+        session_id.to_string(),
+        existing_thread_id.to_string(),
+        String::new(),
+    );
+
+    let start_result = codex_server::send_request(
+        "thread/compact/start",
+        serde_json::json!({ "threadId": existing_thread_id }),
+    );
+    if let Err(error) = start_result {
+        codex_server::unregister_session(existing_thread_id, registration_id);
+        super::registry::unregister_codex_turn(session_id);
+        return Err(error);
+    }
+
+    let (request_tx, request_rx) = std::sync::mpsc::channel();
+    let _ = request_tx.send(Ok(serde_json::json!({})));
+
+    super::increment_tailer_count();
+    let response = process_turn_events(
+        app,
+        session_id,
+        worktree_id,
+        existing_thread_id,
+        output_file,
+        false,
+        false,
+        &request_rx,
+        &event_rx,
+        Some("manual"),
+    );
+    super::decrement_tailer_count();
+
+    codex_server::unregister_session(existing_thread_id, registration_id);
+    super::registry::unregister_codex_turn(session_id);
+
+    Ok(response)
 }
 
 /// Start a new Codex thread via app-server.
@@ -619,6 +699,7 @@ fn process_turn_events(
     is_build_mode: bool,
     turn_start_rx: &std::sync::mpsc::Receiver<Result<serde_json::Value, String>>,
     event_rx: &std::sync::mpsc::Receiver<super::codex_server::ServerEvent>,
+    compact_trigger: Option<&str>,
 ) -> CodexResponse {
     use super::codex_server::ServerEvent;
     use std::io::Write;
@@ -739,6 +820,7 @@ fn process_turn_events(
                     session_id,
                     worktree_id,
                     is_plan_mode,
+                    compact_trigger,
                     &method,
                     &params,
                     &mut full_content,
@@ -987,6 +1069,7 @@ fn process_server_notification(
     session_id: &str,
     worktree_id: &str,
     is_plan_mode: bool,
+    compact_trigger: Option<&str>,
     method: &str,
     params: &serde_json::Value,
     full_content: &mut String,
@@ -1180,6 +1263,20 @@ fn process_server_notification(
             }
             *completed = true;
             log::trace!("Codex turn completed for session: {session_id}");
+        }
+        "thread/compacted" => {
+            let trigger = compact_trigger.unwrap_or("auto");
+            let _ = app.emit_all(
+                "chat:compacted",
+                &CompactedEvent {
+                    session_id: session_id.to_string(),
+                    worktree_id: worktree_id.to_string(),
+                    metadata: CompactMetadata {
+                        trigger: trigger.to_string(),
+                        pre_tokens: 0,
+                    },
+                },
+            );
         }
         "thread/tokenUsage/updated" => {
             if let Some(token_usage) = params.get("tokenUsage") {
@@ -2344,6 +2441,15 @@ fn process_codex_event(
                     if !item_id.is_empty() {
                         pending_tool_ids.insert(item_id.to_string(), tool_id.clone());
                     }
+                    if item_type == "context_compaction" {
+                        let _ = app.emit_all(
+                            "chat:compacting",
+                            &CompactingEvent {
+                                session_id: session_id.to_string(),
+                                worktree_id: worktree_id.to_string(),
+                            },
+                        );
+                    }
                     let _ = app.emit_all(
                         "chat:tool_use",
                         &ToolUseEvent {
@@ -3427,6 +3533,14 @@ mod tests {
         );
         assert_eq!(params["model"], "gpt-5.3");
         assert!(params.get("serviceTier").is_none());
+    }
+
+    #[test]
+    fn identifies_manual_compact_requests() {
+        assert!(is_manual_compact_request("/compact"));
+        assert!(is_manual_compact_request("  /compact  "));
+        assert!(!is_manual_compact_request("/compact now"));
+        assert!(!is_manual_compact_request("compact"));
     }
 
     #[test]

@@ -327,7 +327,7 @@ export const ChatInput = memo(function ChatInput({
             charBeforeTrigger === '\n'
           const isSlashCommandTrigger =
             prevChar === '/' &&
-            backend === 'claude' &&
+            (backend === 'claude' || backend === 'codex') &&
             value.slice(0, cursorPos - 1).trim() === ''
 
           if (atBoundary && (prevChar === '$' || isSlashCommandTrigger)) {

@@ -69,7 +69,7 @@ describe('applyCliImportNavigation', () => {
       setupScriptResults: {},
       pendingImages: {},
       pendingFiles: {},
-      pendingSkills: {},
+      draftSkillBindings: {},
       pendingTextFiles: {},
       activeTodos: {},
       streamingPlanApprovals: {},

@@ -42,6 +42,8 @@ const SortableQueuedMessageItem = memo(function SortableQueuedMessageItem({
   onRemove,
   onSteer,
 }: SortableQueuedMessageItemProps) {
+  const skillCount =
+    message.skills?.length ?? message.pendingSkills?.length ?? 0
   const {
     attributes,
     listeners,
@@ -124,11 +126,11 @@ const SortableQueuedMessageItem = memo(function SortableQueuedMessageItem({
               )}
 
               {(message.pendingFiles.length > 0 ||
-                message.pendingSkills.length > 0 ||
+                skillCount > 0 ||
                 message.pendingTextFiles.length > 0) && (
                 <span className="shrink-0 text-[10px] text-muted-foreground">
                   {message.pendingFiles.length +
-                    message.pendingSkills.length +
+                    skillCount +
                     message.pendingTextFiles.length}{' '}
                   file(s)
                 </span>

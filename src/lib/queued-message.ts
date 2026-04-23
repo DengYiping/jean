@@ -5,10 +5,8 @@ import { appendSkillPromptContext } from '@/lib/skill-prompt'
  * Build the message text Jean sends for a queued item, including attachment refs.
  */
 export function buildQueuedMessageWithRefs(queuedMsg: QueuedMessage): string {
-  let message = appendSkillPromptContext(
-    queuedMsg.message,
-    queuedMsg.pendingSkills
-  )
+  const skills = queuedMsg.skills ?? queuedMsg.pendingSkills ?? []
+  let message = appendSkillPromptContext(queuedMsg.message, skills)
 
   if (queuedMsg.pendingFiles.length > 0) {
     const fileRefs = queuedMsg.pendingFiles

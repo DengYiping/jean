@@ -41,6 +41,8 @@ describe('useInvestigateHandlers', () => {
       sessionWorktreeMap: {},
       worktreePaths: {},
       lastSentMessages: {},
+      lastSentAttachments: {},
+      draftSkillBindings: {},
       errors: {},
       sendingSessionIds: {},
       selectedModels: {},

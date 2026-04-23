@@ -2,20 +2,22 @@ import { describe, expect, it } from 'vitest'
 import {
   appendSkillPromptContext,
   buildSkillReferenceLines,
+  getActiveSkillsFromText,
   injectSkillTokens,
+  removeInlineSkillMentions,
   stripLeadingInjectedSkillTokens,
 } from './skill-prompt'
 
 describe('skill-prompt', () => {
-  it('injects missing skill tokens before the message body', () => {
+  it('does not inject missing skill tokens into the message body', () => {
     expect(
       injectSkillTokens('Add tests', [
         { name: 'skill-creator', path: '/tmp/skill-creator/SKILL.md' },
       ])
-    ).toBe('$skill-creator Add tests')
+    ).toBe('Add tests')
   })
 
-  it('deduplicates skill paths and preserves existing tokens', () => {
+  it('preserves existing tokens without adding new ones', () => {
     expect(
       injectSkillTokens('$skill-creator Add tests', [
         { name: 'skill-creator', path: '/tmp/skill-creator/SKILL.md' },
@@ -36,7 +38,7 @@ describe('skill-prompt', () => {
 
   it('appends both visible skill tokens and hidden skill references', () => {
     expect(
-      appendSkillPromptContext('Add tests', [
+      appendSkillPromptContext('$skill-creator Add tests', [
         { name: 'skill-creator', path: '/tmp/skill-creator/SKILL.md' },
       ])
     ).toBe(
@@ -50,5 +52,26 @@ describe('skill-prompt', () => {
         { name: 'skill-creator', path: '/tmp/skill-creator/SKILL.md' },
       ])
     ).toBe('Add tests')
+  })
+
+  it('derives only bound skills still present in the inline draft text', () => {
+    expect(
+      getActiveSkillsFromText(
+        'Please use $skill-creator and then check Slack.',
+        [
+          { name: 'skill-creator', path: '/tmp/skill-creator/SKILL.md' },
+          { name: 'agent-slack', path: '/tmp/agent-slack/SKILL.md' },
+        ]
+      )
+    ).toEqual([{ name: 'skill-creator', path: '/tmp/skill-creator/SKILL.md' }])
+  })
+
+  it('removes inline skill mentions while keeping surrounding text readable', () => {
+    expect(
+      removeInlineSkillMentions(
+        'Please use $skill-creator to update this.',
+        'skill-creator'
+      )
+    ).toBe('Please use to update this.')
   })
 })

@@ -69,7 +69,7 @@ import type {
   ContentBlock,
   PendingImage,
   PendingTextFile,
-  PendingSkill,
+  SkillReference,
   CodexMcpElicitation as CodexMcpElicitationType,
   PermissionDenial,
   PendingFile,
@@ -78,6 +78,7 @@ import { isAskUserQuestion } from '@/types/chat'
 import { getSkillName } from '@/lib/path-utils'
 import {
   appendSkillPromptContext,
+  getActiveSkillsFromText,
   stripLeadingInjectedSkillTokens,
 } from '@/lib/skill-prompt'
 import { resolveParallelExecutionPromptForSession } from '@/lib/parallel-execution-prompt'
@@ -186,7 +187,8 @@ const EMPTY_CONTENT_BLOCKS: ContentBlock[] = []
 const EMPTY_PENDING_IMAGES: PendingImage[] = []
 const EMPTY_PENDING_TEXT_FILES: PendingTextFile[] = []
 const EMPTY_PENDING_FILES: PendingFile[] = []
-const EMPTY_PENDING_SKILLS: PendingSkill[] = []
+const EMPTY_PENDING_SKILLS: SkillReference[] = []
+const EMPTY_INPUT_DRAFT = ''
 const EMPTY_QUEUED_MESSAGES: QueuedMessage[] = []
 const EMPTY_PERMISSION_DENIALS: PermissionDenial[] = []
 const EMPTY_CODEX_MCP_ELICITATIONS: CodexMcpElicitationType[] = []
@@ -196,7 +198,7 @@ interface PendingInputSnapshot {
   message: string
   images: PendingImage[]
   files: PendingFile[]
-  skills: PendingSkill[]
+  skills: SkillReference[]
   textFiles: PendingTextFile[]
 }
 
@@ -690,26 +692,29 @@ export function ChatWindow({
       ? (state.pendingFiles[activeSessionId] ?? EMPTY_PENDING_FILES)
       : EMPTY_PENDING_FILES
   )
-  const currentPendingSkills = useChatStore(state =>
+  const currentDraftSkillBindings = useChatStore(state =>
     activeSessionId
-      ? (state.pendingSkills[activeSessionId] ?? EMPTY_PENDING_SKILLS)
+      ? (state.draftSkillBindings[activeSessionId] ?? EMPTY_PENDING_SKILLS)
       : EMPTY_PENDING_SKILLS
   )
-  // PERFORMANCE: Only subscribe to existence/count for toolbar button state
-  // This prevents toolbar re-renders when file contents change
-  const hasPendingAttachments = useChatStore(state => {
-    if (!activeSessionId) return false
-    const images = state.pendingImages[activeSessionId]
-    const textFiles = state.pendingTextFiles[activeSessionId]
-    const files = state.pendingFiles[activeSessionId]
-    const skills = state.pendingSkills[activeSessionId]
-    return (
-      (images?.length ?? 0) > 0 ||
-      (textFiles?.length ?? 0) > 0 ||
-      (files?.length ?? 0) > 0 ||
-      (skills?.length ?? 0) > 0
-    )
-  })
+  const currentDraftTextForSkills = useChatStore(state =>
+    activeSessionId
+      ? (state.inputDrafts[activeSessionId] ?? EMPTY_INPUT_DRAFT)
+      : EMPTY_INPUT_DRAFT
+  )
+  const currentPendingSkills = useMemo(
+    () =>
+      getActiveSkillsFromText(
+        currentDraftTextForSkills,
+        currentDraftSkillBindings
+      ),
+    [currentDraftTextForSkills, currentDraftSkillBindings]
+  )
+  const hasPendingAttachments =
+    currentPendingImages.length > 0 ||
+    currentPendingTextFiles.length > 0 ||
+    currentPendingFiles.length > 0 ||
+    currentPendingSkills.length > 0
   // Per-session message queue (uses deferredSessionId for content consistency)
   const currentQueuedMessages = useChatStore(state =>
     deferredSessionId
@@ -1764,7 +1769,9 @@ export function ChatWindow({
       ).trim()
       const images = [...store.getPendingImages(activeSessionId)]
       const files = [...store.getPendingFiles(activeSessionId)]
-      const skills = [...store.getPendingSkills(activeSessionId)]
+      const skills = [
+        ...store.getActiveDraftSkills(activeSessionId, textMessage),
+      ]
       const textFiles = [...store.getPendingTextFiles(activeSessionId)]
 
       if (
@@ -1794,7 +1801,7 @@ export function ChatWindow({
       clearInputDraft(snapshot.sourceSessionId)
       store.clearPendingImages(snapshot.sourceSessionId)
       store.clearPendingFiles(snapshot.sourceSessionId)
-      store.clearPendingSkills(snapshot.sourceSessionId)
+      store.clearDraftSkillBindings(snapshot.sourceSessionId)
       store.clearPendingTextFiles(snapshot.sourceSessionId)
       store.setSessionReviewing(snapshot.sourceSessionId, false)
 
@@ -2688,6 +2695,7 @@ export function ChatWindow({
     mcpServersDataRef,
     enabledMcpServersRef,
     selectedBackendRef,
+    inputRef,
     setInputDraft,
     sendMessageNow,
   })
@@ -3080,10 +3088,10 @@ export function ChatWindow({
                             <div className="px-4 md:px-6 pt-2 flex flex-wrap gap-2">
                               {currentPendingSkills.map(skill => (
                                 <SkillBadge
-                                  key={skill.id}
+                                  key={skill.path}
                                   skill={skill}
                                   onRemove={() =>
-                                    handleRemovePendingSkill(skill.id)
+                                    handleRemovePendingSkill(skill.name)
                                   }
                                 />
                               ))}

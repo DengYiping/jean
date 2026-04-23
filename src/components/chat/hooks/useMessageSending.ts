@@ -288,8 +288,8 @@ export function useMessageSending({
         clearPendingFiles,
         getPendingTextFiles,
         clearPendingTextFiles,
-        getPendingSkills,
-        clearPendingSkills,
+        getActiveDraftSkills,
+        clearDraftSkillBindings,
         enqueueMessage,
         isSending: checkIsSendingNow,
         setSessionReviewing,
@@ -302,7 +302,7 @@ export function useMessageSending({
       ).trim()
       const images = getPendingImages(activeSessionId ?? '')
       const files = getPendingFiles(activeSessionId ?? '')
-      const skills = getPendingSkills(activeSessionId ?? '')
+      const skills = getActiveDraftSkills(activeSessionId ?? '', textMessage)
       const textFiles = getPendingTextFiles(activeSessionId ?? '')
 
       if (
@@ -346,7 +346,7 @@ export function useMessageSending({
       clearInputDraft(activeSessionId)
       clearPendingImages(activeSessionId)
       clearPendingFiles(activeSessionId)
-      clearPendingSkills(activeSessionId)
+      clearDraftSkillBindings(activeSessionId)
       clearPendingTextFiles(activeSessionId)
       setSessionReviewing(activeSessionId, false)
       useChatStore.getState().clearPendingDigest(activeSessionId)
@@ -365,7 +365,7 @@ export function useMessageSending({
         message,
         pendingImages: images,
         pendingFiles: files,
-        pendingSkills: skills,
+        skills,
         pendingTextFiles: textFiles,
         model: selectedModelRef.current,
         provider: selectedProviderRef.current,

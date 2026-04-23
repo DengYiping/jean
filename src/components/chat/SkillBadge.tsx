@@ -10,7 +10,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Markdown } from '@/components/ui/markdown'
 import { cn } from '@/lib/utils'
-import type { PendingSkill } from '@/types/chat'
+import type { SkillReference } from '@/types/chat'
 import {
   Tooltip,
   TooltipTrigger,
@@ -18,8 +18,8 @@ import {
 } from '@/components/ui/tooltip'
 
 interface SkillBadgeProps {
-  /** The pending skill to display */
-  skill: PendingSkill
+  /** The skill reference to display */
+  skill: SkillReference
   /** Optional callback to remove this skill (shows X button if provided) */
   onRemove?: () => void
   /** Whether the badge is in a compact display mode */

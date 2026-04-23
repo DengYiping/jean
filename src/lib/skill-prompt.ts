@@ -1,6 +1,6 @@
 import { getSkillName } from '@/lib/path-utils'
 
-interface SkillPromptInput {
+export interface SkillPromptInput {
   name?: string
   path: string
 }
@@ -24,22 +24,9 @@ function normalizeSkills(skills: SkillPromptInput[]) {
 
 export function injectSkillTokens(
   message: string,
-  skills: SkillPromptInput[]
+  _skills: SkillPromptInput[]
 ): string {
-  const normalizedSkills = normalizeSkills(skills)
-  const missingTokens = normalizedSkills
-    .map(skill => `$${skill.name}`)
-    .filter(token => !message.includes(token))
-
-  if (missingTokens.length === 0) {
-    return message
-  }
-
-  if (!message) {
-    return missingTokens.join(' ')
-  }
-
-  return `${missingTokens.join(' ')} ${message}`
+  return message
 }
 
 export function buildSkillReferenceLines(skills: SkillPromptInput[]): string {
@@ -55,14 +42,13 @@ export function appendSkillPromptContext(
   message: string,
   skills: SkillPromptInput[]
 ): string {
-  const messageWithTokens = injectSkillTokens(message, skills)
   const skillRefs = buildSkillReferenceLines(skills)
 
   if (!skillRefs) {
-    return messageWithTokens
+    return message
   }
 
-  return messageWithTokens ? `${messageWithTokens}\n\n${skillRefs}` : skillRefs
+  return message ? `${message}\n\n${skillRefs}` : skillRefs
 }
 
 export function stripLeadingInjectedSkillTokens(
@@ -88,4 +74,49 @@ export function stripLeadingInjectedSkillTokens(
   }
 
   return remaining
+}
+
+function escapeRegex(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+export function buildSkillMentionRegex(name: string): RegExp {
+  return new RegExp(
+    `(^|[\\s([{])\\$${escapeRegex(name)}(?=$|[\\s.,!?;:)}\\]])`,
+    'm'
+  )
+}
+
+export function hasInlineSkillMention(
+  message: string,
+  skill: SkillPromptInput
+): boolean {
+  const normalizedName = skill.name?.trim() || getSkillName(skill.path)
+  if (!normalizedName) return false
+  return buildSkillMentionRegex(normalizedName).test(message)
+}
+
+export function getActiveSkillsFromText(
+  message: string,
+  skills: SkillPromptInput[]
+): { name: string; path: string }[] {
+  return normalizeSkills(skills).filter(skill =>
+    hasInlineSkillMention(message, skill)
+  )
+}
+
+export function removeInlineSkillMentions(
+  message: string,
+  skillName: string
+): string {
+  const regex = new RegExp(
+    `(^|[\\s([{])\\$${escapeRegex(skillName)}(?=$|[\\s.,!?;:)}\\]])`,
+    'gm'
+  )
+
+  return message
+    .replace(regex, (_match, prefix: string) => prefix)
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/ *\n */g, '\n')
+    .trim()
 }

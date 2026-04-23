@@ -37,7 +37,7 @@ function createQueuedMessage(id: string, message: string): QueuedMessage {
     message,
     pendingImages: [],
     pendingFiles: [],
-    pendingSkills: [],
+    skills: [],
     pendingTextFiles: [],
     model: 'gpt-5.4',
     provider: null,

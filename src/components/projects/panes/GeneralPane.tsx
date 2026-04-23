@@ -51,6 +51,7 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { hideGitHubIssuesAndPRs } from '@/types/projects'
+import { editorOptions } from '@/types/preferences'
 
 const SettingsSection: React.FC<{
   title: string
@@ -183,6 +184,16 @@ export function GeneralPane({
       updateSettings.mutate({
         projectId,
         defaultBackend: value === 'global-default' ? '__none__' : value,
+      })
+    },
+    [projectId, updateSettings]
+  )
+
+  const handleEditorChange = useCallback(
+    (value: string) => {
+      updateSettings.mutate({
+        projectId,
+        defaultEditor: value === 'global-default' ? '__none__' : value,
       })
     },
     [projectId, updateSettings]
@@ -539,6 +550,28 @@ export function GeneralPane({
                   BETA
                 </span>
               </SelectItem>
+            </SelectContent>
+          </Select>
+        </InlineField>
+
+        <InlineField
+          label="Default Editor"
+          description="Editor to use when opening this repo or its worktrees"
+        >
+          <Select
+            value={project?.default_editor ?? 'global-default'}
+            onValueChange={handleEditorChange}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="global-default">Use global default</SelectItem>
+              {editorOptions.map(option => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </InlineField>

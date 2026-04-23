@@ -70,7 +70,11 @@ import { useChatStore } from '@/store/chat-store'
 import { useProjectsStore } from '@/store/projects-store'
 import { useUIStore } from '@/store/ui-store'
 import { isBaseSession, type Worktree } from '@/types/projects'
-import { getEditorLabel, getTerminalLabel } from '@/types/preferences'
+import {
+  getEditorLabel,
+  getEffectiveEditor,
+  getTerminalLabel,
+} from '@/types/preferences'
 import type { LabelData, Session, WorktreeSessions } from '@/types/chat'
 import { NewIssuesBadge } from '@/components/shared/NewIssuesBadge'
 import { OpenPRsBadge } from '@/components/shared/OpenPRsBadge'
@@ -643,6 +647,10 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
   // Get project info
   const { data: projects = [], isLoading: projectsLoading } = useProjects()
   const project = projects.find(p => p.id === projectId)
+  const effectiveEditor = getEffectiveEditor(
+    project?.default_editor,
+    preferences?.editor
+  )
 
   // Open PRs: used to link a worktree's base_branch to a PR number in row badges
   const { data: openPRs } = useGitHubPRs(project?.path ?? null, 'open')
@@ -2030,12 +2038,12 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
                     onSelect={() =>
                       openInEditor.mutate({
                         worktreePath: project.path,
-                        editor: preferences?.editor,
+                        editor: undefined,
                       })
                     }
                   >
                     <Code className="h-4 w-4" />
-                    Open in {getEditorLabel(preferences?.editor)}
+                    Open in {getEditorLabel(effectiveEditor)}
                   </DropdownMenuItem>
 
                   <DropdownMenuItem
@@ -2226,7 +2234,10 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
           {/* OpenInButton always visible on desktop (grid column 3) */}
           {!isMobile && (
             <div className="flex items-center gap-2 shrink-0 justify-end col-start-3">
-              <OpenInButton worktreePath={project.path} />
+              <OpenInButton
+                worktreePath={project.path}
+                preferredEditor={project.default_editor}
+              />
             </div>
           )}
         </div>

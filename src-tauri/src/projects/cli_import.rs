@@ -260,6 +260,7 @@ mod tests {
             worktrees_dir: None,
             linear_api_key: None,
             linear_team_id: None,
+            default_editor: None,
             hide_github_issues_and_prs: false,
             linked_project_ids: Vec::new(),
         }];

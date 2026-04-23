@@ -1,5 +1,6 @@
 import type { LabelData } from '@/types/chat'
 import type { AdvisoryContext, SecurityAlertContext } from '@/types/github'
+import type { EditorApp } from '@/types/preferences'
 
 /**
  * Type of session (base branch or worktree)
@@ -60,6 +61,8 @@ export interface Project {
   linear_api_key?: string | null
   /** Linear team ID to filter issues (undefined/null = show all teams) */
   linear_team_id?: string | null
+  /** Default editor app for this repo and its worktrees (undefined/null = use global default) */
+  default_editor?: EditorApp | null
   /** Hide this project's GitHub issues and PRs across Jean */
   hide_github_issues_and_prs?: boolean
   /** IDs of linked projects for cross-project context sharing */

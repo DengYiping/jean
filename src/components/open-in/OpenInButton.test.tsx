@@ -41,8 +41,14 @@ describe('OpenInButton', () => {
     vi.clearAllMocks()
   })
 
+  it('uses the project editor as the default label', () => {
+    render(<OpenInButton worktreePath="/tmp/worktree" preferredEditor="zed" />)
+
+    expect(screen.getByRole('button', { name: /Open in Zed/i })).toBeVisible()
+  })
+
   it('renders additional detected editors in the dropdown and opens the selected editor', () => {
-    render(<OpenInButton worktreePath="/tmp/worktree" />)
+    render(<OpenInButton worktreePath="/tmp/worktree" preferredEditor="zed" />)
 
     const dropdownTrigger = screen.getAllByRole('button')[1]
     if (!dropdownTrigger) {
@@ -51,11 +57,22 @@ describe('OpenInButton', () => {
 
     fireEvent.pointerDown(dropdownTrigger)
     expect(screen.getByRole('menuitem', { name: 'VS Code' })).toBeVisible()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Zed' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'VS Code' }))
 
     expect(openInEditorMutate).toHaveBeenCalledWith({
       worktreePath: '/tmp/worktree',
-      editor: 'zed',
+      editor: 'vscode',
+    })
+  })
+
+  it('does not force the global editor for the default action', () => {
+    render(<OpenInButton worktreePath="/tmp/worktree" preferredEditor="zed" />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Open in Zed/i }))
+
+    expect(openInEditorMutate).toHaveBeenCalledWith({
+      worktreePath: '/tmp/worktree',
+      editor: undefined,
     })
   })
 })

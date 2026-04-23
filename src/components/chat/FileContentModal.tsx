@@ -204,13 +204,12 @@ export function FileContentModal({ filePath, onClose }: FileContentModalProps) {
     try {
       await invoke('open_file_in_default_app', {
         path: filePath,
-        editor: preferences?.editor,
       })
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       toast.error(`Failed to open: ${message}`)
     }
-  }, [filePath, preferences?.editor])
+  }, [filePath])
 
   // Toggle edit mode
   const handleToggleEdit = useCallback(() => {

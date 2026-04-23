@@ -3788,11 +3788,31 @@ pub async fn write_file_content(path: String, content: String) -> Result<(), Str
 /// When `line_number` is provided, opens the file at that line when the editor supports it.
 #[tauri::command]
 pub async fn open_file_in_default_app(
+    app: tauri::AppHandle,
     path: String,
     editor: Option<String>,
     line_number: Option<u32>,
 ) -> Result<(), String> {
-    let editor_app = editor.unwrap_or_else(|| "zed".to_string());
+    let editor_app = crate::projects::storage::load_projects_data(&app)
+        .ok()
+        .map(|data| {
+            crate::projects::storage::resolve_editor_for_path(
+                &data,
+                &path,
+                editor.as_deref(),
+                crate::load_preferences_sync(&app)
+                    .ok()
+                    .map(|prefs| prefs.editor)
+                    .as_deref(),
+            )
+        })
+        .unwrap_or_else(|| {
+            editor.unwrap_or_else(|| {
+                crate::load_preferences_sync(&app)
+                    .map(|prefs| prefs.editor)
+                    .unwrap_or_else(|_| "zed".to_string())
+            })
+        });
     log::trace!("Opening file in {editor_app}: {path} line={line_number:?}");
 
     crate::platform::open_file_path_in_editor(&path, &editor_app, line_number)?;

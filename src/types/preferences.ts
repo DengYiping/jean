@@ -1571,6 +1571,13 @@ export function getTerminalLabel(terminal: TerminalApp | undefined): string {
   return option?.label ?? 'Terminal'
 }
 
+export function getEffectiveEditor(
+  projectEditor: EditorApp | null | undefined,
+  globalEditor: EditorApp | undefined
+): EditorApp | undefined {
+  return projectEditor ?? globalEditor
+}
+
 export function getEditorLabel(editor: EditorApp | undefined): string {
   // Search all options (not just platform-filtered) so saved cross-platform values resolve
   const option = allEditorOptions.find(opt => opt.value === editor)

@@ -90,7 +90,7 @@ import {
   useOpenWorktreeInFinder,
   useOpenBranchOnGitHub,
 } from '@/services/projects'
-import { getOpenInDefaultLabel } from '@/types/preferences'
+import { getEffectiveEditor, getOpenInDefaultLabel } from '@/types/preferences'
 import {
   computeSessionCardData,
   type ChatStoreState,
@@ -338,6 +338,10 @@ export function SessionChatModal({
   const openInTerminal = useOpenWorktreeInTerminal()
   const openInFinder = useOpenWorktreeInFinder()
   const openOnGitHub = useOpenBranchOnGitHub()
+  const effectiveEditor = getEffectiveEditor(
+    project?.default_editor,
+    preferences?.editor
+  )
 
   const [diffRequest, setDiffRequest] = useState<DiffRequest | null>(null)
 
@@ -806,6 +810,7 @@ export function SessionChatModal({
                   <OpenInButton
                     worktreePath={worktreePath}
                     branch={worktree?.branch}
+                    preferredEditor={project?.default_editor}
                   />
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -917,14 +922,14 @@ export function SessionChatModal({
                       onSelect={() =>
                         openInEditor.mutate({
                           worktreePath,
-                          editor: preferences?.editor,
+                          editor: undefined,
                         })
                       }
                     >
                       <Code className="h-4 w-4" />
                       {getOpenInDefaultLabel(
                         'editor',
-                        preferences?.editor,
+                        effectiveEditor,
                         preferences?.terminal
                       )}
                     </DropdownMenuItem>
@@ -939,7 +944,7 @@ export function SessionChatModal({
                       <Terminal className="h-4 w-4" />
                       {getOpenInDefaultLabel(
                         'terminal',
-                        preferences?.editor,
+                        effectiveEditor,
                         preferences?.terminal
                       )}
                     </DropdownMenuItem>

@@ -135,6 +135,8 @@ pub async fn dispatch_command(
                 field_opt(&args, "defaultProvider", "default_provider")?;
             let default_backend: Option<Option<String>> =
                 field_opt(&args, "defaultBackend", "default_backend")?;
+            let default_editor: Option<Option<String>> =
+                field_opt(&args, "defaultEditor", "default_editor")?;
             let github_account_host: Option<String> =
                 field_opt(&args, "githubAccountHost", "github_account_host")?;
             let github_account_user: Option<String> =
@@ -164,6 +166,7 @@ pub async fn dispatch_command(
                 custom_system_prompt,
                 default_provider,
                 default_backend,
+                default_editor,
                 github_account_host,
                 github_account_user,
                 worktrees_dir,

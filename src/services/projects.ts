@@ -2533,6 +2533,7 @@ export function useUpdateProjectSettings() {
       customSystemPrompt,
       defaultProvider,
       defaultBackend,
+      defaultEditor,
       githubAccountHost,
       githubAccountUser,
       worktreesDir,
@@ -2548,6 +2549,7 @@ export function useUpdateProjectSettings() {
       customSystemPrompt?: string
       defaultProvider?: string | null
       defaultBackend?: string | null
+      defaultEditor?: string | null
       githubAccountHost?: string
       githubAccountUser?: string
       worktreesDir?: string
@@ -2574,6 +2576,7 @@ export function useUpdateProjectSettings() {
         customSystemPrompt,
         defaultProvider,
         defaultBackend,
+        defaultEditor,
         githubAccountHost,
         githubAccountUser,
         worktreesDir,

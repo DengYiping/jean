@@ -309,13 +309,12 @@ export function useCommandContext(
     try {
       await invoke('open_worktree_in_editor', {
         worktreePath,
-        editor: preferences?.editor,
       })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       notify(message, undefined, { type: 'error' })
     }
-  }, [getTargetPath, preferences?.editor])
+  }, [getTargetPath])
 
   // Open In - GitHub
   const openOnGitHub = useCallback(async () => {

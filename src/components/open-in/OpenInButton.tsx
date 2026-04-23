@@ -21,6 +21,7 @@ import {
 import { useAvailableEditors, usePreferences } from '@/services/preferences'
 import {
   getDetectedEditorOptions,
+  getEffectiveEditor,
   getOpenInDefaultLabel,
   type EditorApp,
 } from '@/types/preferences'
@@ -30,12 +31,14 @@ interface OpenInButtonProps {
   worktreePath: string
   branch?: string | null
   className?: string
+  preferredEditor?: EditorApp | null
 }
 
 export function OpenInButton({
   worktreePath,
   branch,
   className,
+  preferredEditor,
 }: OpenInButtonProps) {
   const { data: preferences } = usePreferences()
   const { data: availableEditors } = useAvailableEditors()
@@ -43,15 +46,19 @@ export function OpenInButton({
   const openInTerminal = useOpenWorktreeInTerminal()
   const openInFinder = useOpenWorktreeInFinder()
   const openOnGitHub = useOpenBranchOnGitHub()
+  const effectiveEditor = getEffectiveEditor(
+    preferredEditor,
+    preferences?.editor
+  )
 
   const openEditor = useCallback(
     (editor?: EditorApp) => {
       openInEditor.mutate({
         worktreePath,
-        editor: editor ?? preferences?.editor,
+        editor,
       })
     },
-    [openInEditor, preferences?.editor, worktreePath]
+    [openInEditor, worktreePath]
   )
 
   const openAction = useCallback(
@@ -86,13 +93,13 @@ export function OpenInButton({
   )
 
   const editorOptions = getDetectedEditorOptions(
-    preferences?.editor,
+    effectiveEditor,
     availableEditors
   )
 
   const defaultLabel = getOpenInDefaultLabel(
     preferences?.open_in ?? 'editor',
-    preferences?.editor,
+    effectiveEditor,
     preferences?.terminal
   )
 
@@ -130,7 +137,7 @@ export function OpenInButton({
             <Code className="h-4 w-4" />
             {getOpenInDefaultLabel(
               'editor',
-              preferences?.editor,
+              effectiveEditor,
               preferences?.terminal
             )}
           </DropdownMenuItem>
@@ -149,7 +156,7 @@ export function OpenInButton({
             <Terminal className="h-4 w-4" />
             {getOpenInDefaultLabel(
               'terminal',
-              preferences?.editor,
+              effectiveEditor,
               preferences?.terminal
             )}
           </DropdownMenuItem>

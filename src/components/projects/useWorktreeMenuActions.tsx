@@ -3,7 +3,9 @@ import { invoke } from '@/lib/transport'
 import { toast } from 'sonner'
 import { logger } from '@/lib/logger'
 import { isBaseSession, type Worktree } from '@/types/projects'
+import { getEffectiveEditor } from '@/types/preferences'
 import {
+  useProjects,
   useArchiveWorktree,
   useCloseBaseSession,
   useDeleteWorktree,
@@ -42,8 +44,14 @@ export function useWorktreeMenuActions({
   const { data: buildScript } = useBuildScript(worktree.path)
   const { data: runScripts = [] } = useRunScripts(worktree.path)
   const { data: preferences } = usePreferences()
+  const { data: projects = [] } = useProjects()
   const { data: sessionsData } = useSessions(worktree.id, worktree.path)
   const isBase = isBaseSession(worktree)
+  const project = projects.find(candidate => candidate.id === projectId)
+  const effectiveEditor = getEffectiveEditor(
+    project?.default_editor,
+    preferences?.editor
+  )
 
   // Check if any session has at least one message (for recap generation)
   const hasMessages = sessionsData?.sessions?.some(
@@ -92,9 +100,9 @@ export function useWorktreeMenuActions({
   const handleOpenInEditor = useCallback(() => {
     openInEditor.mutate({
       worktreePath: worktree.path,
-      editor: preferences?.editor,
+      editor: undefined,
     })
-  }, [openInEditor, worktree.path, preferences?.editor])
+  }, [openInEditor, worktree.path])
 
   const handleArchiveOrClose = useCallback(() => {
     if (isBase) {
@@ -173,6 +181,7 @@ export function useWorktreeMenuActions({
     buildScript,
     runScripts,
     preferences,
+    effectiveEditor,
 
     // Handlers
     handleRun,

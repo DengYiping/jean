@@ -966,6 +966,7 @@ export interface AppPreferences {
   zoom_level: number // Zoom level percentage (50-200, default 100)
   custom_cli_profiles: CustomCliProfile[] // Custom CLI settings profiles (e.g., OpenRouter, MiniMax)
   default_provider: string | null // Default provider profile name (null = Anthropic direct)
+  default_project_id: string | null // Default repo/project used by desktop CLI yolo requests
 
   confirm_session_close: boolean // Show confirmation dialog before closing sessions/worktrees
   default_execution_mode: ExecutionMode // Default execution mode for new sessions: 'plan', 'build', or 'yolo'
@@ -1642,6 +1643,7 @@ export const defaultPreferences: AppPreferences = {
   zoom_level: ZOOM_LEVEL_DEFAULT,
   custom_cli_profiles: [],
   default_provider: null,
+  default_project_id: null,
   confirm_session_close: true, // Default: enabled (show confirmation)
   default_execution_mode: 'plan', // Default: plan mode
   default_backend: 'claude', // Default: Claude

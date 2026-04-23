@@ -74,6 +74,7 @@ export const mockPreferences = {
   auto_pull_base_branch: false,
   auto_investigate: true,
   auto_archive_on_merge: false,
+  default_project_id: null,
   magic_prompts: {
     investigate_issue: null,
     investigate_pr: null,

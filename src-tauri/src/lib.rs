@@ -192,6 +192,8 @@ pub struct AppPreferences {
     pub custom_cli_profiles: Vec<CustomCliProfile>, // Custom CLI settings profiles (e.g., OpenRouter, MiniMax)
     #[serde(default)]
     pub default_provider: Option<String>, // Default provider profile name (None = Anthropic direct)
+    #[serde(default)]
+    pub default_project_id: Option<String>, // Default repo/project used by desktop CLI yolo requests
     #[serde(default = "default_canvas_layout")]
     pub canvas_layout: String, // Canvas display mode: grid or list
     #[serde(default = "default_confirm_session_close")]
@@ -532,6 +534,31 @@ mod tests {
     }
 
     #[test]
+    fn parse_cli_args_supports_yolo_subcommand() {
+        let args = vec![
+            "jean".to_string(),
+            "yolo".to_string(),
+            "tell me about Iceberg".to_string(),
+        ];
+
+        let parsed = try_parse_cli_args(&args).unwrap();
+
+        assert_eq!(
+            parsed,
+            CliArgs {
+                headless: false,
+                host: None,
+                port: None,
+                token: None,
+                no_token: false,
+                command: Some(CliCommand::Yolo {
+                    prompt: "tell me about Iceberg".to_string(),
+                }),
+            }
+        );
+    }
+
+    #[test]
     fn parse_cli_args_rejects_import_without_path() {
         let args = vec!["jean".to_string(), "import".to_string()];
 
@@ -541,12 +568,35 @@ mod tests {
     }
 
     #[test]
+    fn parse_cli_args_rejects_yolo_without_prompt() {
+        let args = vec!["jean".to_string(), "yolo".to_string()];
+
+        let error = try_parse_cli_args(&args).unwrap_err();
+
+        assert!(error.contains("requires a prompt"));
+    }
+
+    #[test]
     fn parse_cli_args_rejects_headless_import_combination() {
         let args = vec![
             "jean".to_string(),
             "--headless".to_string(),
             "import".to_string(),
             ".".to_string(),
+        ];
+
+        let error = try_parse_cli_args(&args).unwrap_err();
+
+        assert!(error.contains("mutually exclusive"));
+    }
+
+    #[test]
+    fn parse_cli_args_rejects_headless_yolo_combination() {
+        let args = vec![
+            "jean".to_string(),
+            "--headless".to_string(),
+            "yolo".to_string(),
+            "tell me about Iceberg".to_string(),
         ];
 
         let error = try_parse_cli_args(&args).unwrap_err();
@@ -1400,6 +1450,7 @@ impl Default for AppPreferences {
             zoom_level: default_zoom_level(),
             custom_cli_profiles: Vec::new(),
             default_provider: None,
+            default_project_id: None,
             canvas_layout: default_canvas_layout(),
             confirm_session_close: default_confirm_session_close(),
             default_execution_mode: default_execution_mode(),
@@ -1449,6 +1500,7 @@ fn normalize_preferences(preferences: &mut AppPreferences) {
     normalize_optional_path(&mut preferences.claude_update_command);
     normalize_optional_path(&mut preferences.codex_update_command);
     normalize_optional_path(&mut preferences.opencode_launch_command);
+    normalize_optional_path(&mut preferences.default_project_id);
 }
 
 fn migrate_loaded_preferences(preferences: &mut AppPreferences) -> bool {
@@ -2469,6 +2521,7 @@ pub fn fix_macos_path() {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum CliCommand {
     Import { path: String },
+    Yolo { prompt: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2496,6 +2549,7 @@ fn print_cli_help() {
     println!();
     println!("Usage: jean [OPTIONS]");
     println!("       jean import <path>");
+    println!("       jean yolo <prompt>");
     println!();
     println!("Options:");
     println!("  --headless          Run without GUI (HTTP server only)");
@@ -2559,6 +2613,16 @@ fn try_parse_cli_args(args: &[String]) -> Result<CliArgs, String> {
                     .cloned()
                     .ok_or_else(|| "import requires a path argument".to_string())?;
                 command = Some(CliCommand::Import { path });
+            }
+            "yolo" => {
+                if command.is_some() {
+                    return Err("Only one CLI command can be used at a time".to_string());
+                }
+                let prompt = iter
+                    .next()
+                    .cloned()
+                    .ok_or_else(|| "yolo requires a prompt argument".to_string())?;
+                command = Some(CliCommand::Yolo { prompt });
             }
             _ => {} // ignore unknown flags (Tauri/OS may pass their own)
         }
@@ -2651,6 +2715,12 @@ fn handle_cli_command(command: CliCommand) -> Result<(), String> {
             let request = crate::projects::enqueue_cli_import_request(&path)?;
             open_macos_app_bundle()?;
             println!("Opening Jean to import {}", request.path);
+            Ok(())
+        }
+        CliCommand::Yolo { prompt } => {
+            crate::projects::enqueue_cli_yolo_request(&prompt)?;
+            open_macos_app_bundle()?;
+            println!("Opening Jean to start a yolo session");
             Ok(())
         }
     }
@@ -3076,6 +3146,8 @@ pub fn run() {
             projects::set_git_identity,
             projects::consume_pending_cli_import_requests,
             projects::import_project_from_cli_path,
+            projects::consume_pending_cli_yolo_requests,
+            projects::prepare_cli_yolo_from_pending_request,
             projects::browse_directory,
             projects::list_projects,
             projects::add_project,

@@ -16,7 +16,12 @@ import {
 import { isNativeApp } from '@/lib/environment'
 import { projectsQueryKeys } from '@/services/projects'
 import { chatQueryKeys } from '@/services/chat'
-import type { Session, WorktreeSessions } from '@/types/chat'
+import type {
+  EffortLevel,
+  Session,
+  ThinkingLevel,
+  WorktreeSessions,
+} from '@/types/chat'
 import { initializeCommandSystem } from './lib/commands'
 import { logger } from './lib/logger'
 import { toast } from 'sonner'
@@ -52,14 +57,21 @@ import useStreamingEvents from './components/chat/hooks/useStreamingEvents'
 import { preloadAllSounds } from './lib/sounds'
 import { applyCliImportNavigation } from './lib/cli-import'
 import {
+  applyCliYoloNavigation,
+  resolveCliYoloExecutionConfig,
+} from './lib/cli-yolo'
+import {
   beginSessionStateHydration,
   endSessionStateHydration,
 } from './lib/session-state-hydration'
 import { scheduleIdleWork } from './lib/idle'
 import type {
   CliImportedProjectResult,
+  CliYoloSessionResult,
   PendingCliImportRequest,
+  PendingCliYoloRequest,
 } from './types/projects'
+import { defaultPreferences } from './types/preferences'
 
 /** Loading screen shown while preloading initial data (browser mode only). */
 function WebLoadingScreen() {
@@ -523,29 +535,165 @@ function App() {
         const pendingRequests = await invoke<PendingCliImportRequest[]>(
           'consume_pending_cli_import_requests'
         )
-        if (cancelled || pendingRequests.length === 0) return
+        if (cancelled) return
 
-        for (const request of pendingRequests) {
-          const result = await invoke<CliImportedProjectResult>(
-            'import_project_from_cli_path',
+        if (pendingRequests.length > 0) {
+          for (const request of pendingRequests) {
+            const result = await invoke<CliImportedProjectResult>(
+              'import_project_from_cli_path',
+              {
+                path: request.path,
+              }
+            )
+            if (cancelled) return
+
+            applyCliImportNavigation(queryClient, result)
+            toast.success(
+              result.created
+                ? `Imported project: ${result.project.name}`
+                : `Opened project: ${result.project.name}`
+            )
+          }
+        }
+
+        const pendingYoloRequests = await invoke<PendingCliYoloRequest[]>(
+          'consume_pending_cli_yolo_requests'
+        )
+        if (cancelled) return
+
+        for (const request of pendingYoloRequests) {
+          const result = await invoke<CliYoloSessionResult>(
+            'prepare_cli_yolo_from_pending_request',
             {
-              path: request.path,
+              prompt: request.prompt,
             }
           )
           if (cancelled) return
 
-          applyCliImportNavigation(queryClient, result)
-          toast.success(
-            result.created
-              ? `Imported project: ${result.project.name}`
-              : `Opened project: ${result.project.name}`
+          applyCliYoloNavigation(queryClient, result)
+
+          const preferences =
+            queryClient.getQueryData<AppPreferences>(['preferences']) ??
+            defaultPreferences
+          const { backend, model, provider, thinkingLevel, effortLevel } =
+            resolveCliYoloExecutionConfig({
+              sessionBackend: (result.session.backend ??
+                preferences.default_backend) as 'claude' | 'codex' | 'opencode',
+              preferences,
+              projectDefaultProvider: result.project.default_provider,
+            })
+
+          const store = useChatStore.getState()
+          store.setExecutionMode(result.session.id, 'yolo')
+          store.setLastSentMessage(result.session.id, result.prompt)
+          store.setError(result.session.id, null)
+          store.addSendingSession(result.session.id)
+          store.setSelectedModel(result.session.id, model)
+          store.setSelectedBackend(result.session.id, backend)
+          store.setSelectedProvider(result.session.id, provider)
+          store.setThinkingLevel(
+            result.session.id,
+            thinkingLevel as ThinkingLevel
           )
+          if (effortLevel) {
+            store.setEffortLevel(result.session.id, effortLevel as EffortLevel)
+          }
+          store.setExecutingMode(result.session.id, 'yolo')
+
+          queryClient.setQueryData<Session>(
+            chatQueryKeys.session(result.session.id),
+            old =>
+              old
+                ? {
+                    ...old,
+                    backend,
+                    selected_execution_mode: 'yolo',
+                    selected_model: model,
+                    selected_provider: provider ?? undefined,
+                    selected_thinking_level: thinkingLevel,
+                    selected_effort_level: effortLevel,
+                  }
+                : {
+                    ...result.session,
+                    backend,
+                    selected_execution_mode: 'yolo',
+                    selected_model: model,
+                    selected_provider: provider ?? undefined,
+                    selected_thinking_level: thinkingLevel,
+                    selected_effort_level: effortLevel,
+                  }
+          )
+
+          await invoke('update_session_state', {
+            worktreeId: result.worktree.id,
+            worktreePath: result.worktree.path,
+            sessionId: result.session.id,
+            selectedExecutionMode: 'yolo',
+          })
+
+          await invoke('set_session_model', {
+            worktreeId: result.worktree.id,
+            worktreePath: result.worktree.path,
+            sessionId: result.session.id,
+            model,
+          })
+
+          await invoke('set_session_backend', {
+            worktreeId: result.worktree.id,
+            worktreePath: result.worktree.path,
+            sessionId: result.session.id,
+            backend,
+          })
+
+          await invoke('set_session_provider', {
+            worktreeId: result.worktree.id,
+            worktreePath: result.worktree.path,
+            sessionId: result.session.id,
+            provider,
+          })
+
+          if (backend !== 'codex') {
+            await invoke('set_session_thinking_level', {
+              worktreeId: result.worktree.id,
+              worktreePath: result.worktree.path,
+              sessionId: result.session.id,
+              thinkingLevel,
+            })
+          }
+
+          if (effortLevel) {
+            await invoke('set_session_effort_level', {
+              worktreeId: result.worktree.id,
+              worktreePath: result.worktree.path,
+              sessionId: result.session.id,
+              effortLevel,
+            })
+          }
+
+          await invoke('send_chat_message', {
+            sessionId: result.session.id,
+            worktreeId: result.worktree.id,
+            worktreePath: result.worktree.path,
+            message: result.prompt,
+            model,
+            executionMode: 'yolo',
+            thinkingLevel,
+            effortLevel,
+            parallelExecutionPrompt: undefined,
+            aiLanguage: preferences.ai_language,
+            mcpConfig: undefined,
+            chromeEnabled: preferences.chrome_enabled,
+            customProfileName: provider ?? undefined,
+            backend,
+          })
+
+          toast.success(`Started yolo in ${result.project.name}`)
         }
       } catch (error) {
         if (!cancelled) {
           const message = error instanceof Error ? error.message : String(error)
-          logger.error('Failed to process CLI import request', { error })
-          toast.error('Failed to import project from CLI', {
+          logger.error('Failed to process desktop CLI request', { error })
+          toast.error('Failed to process desktop CLI request', {
             description: message,
           })
         }

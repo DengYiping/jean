@@ -199,12 +199,30 @@ export const test = base.extend<TauriMockFixtures>({
             }
             return null
           },
+          set_session_thinking_level: args => {
+            const wid = (args?.worktreeId as string) ?? 'unknown'
+            const store = getWorktreeStore(wid)
+            const session = store.sessions.find(s => s.id === args?.sessionId)
+            if (session) {
+              session.selected_thinking_level = args?.thinkingLevel as string
+            }
+            return null
+          },
           set_session_effort_level: args => {
             const wid = (args?.worktreeId as string) ?? 'unknown'
             const store = getWorktreeStore(wid)
             const session = store.sessions.find(s => s.id === args?.sessionId)
             if (session) {
               session.selected_effort_level = args?.effortLevel as string
+            }
+            return null
+          },
+          set_session_backend: args => {
+            const wid = (args?.worktreeId as string) ?? 'unknown'
+            const store = getWorktreeStore(wid)
+            const session = store.sessions.find(s => s.id === args?.sessionId)
+            if (session) {
+              session.backend = args?.backend as string
             }
             return null
           },

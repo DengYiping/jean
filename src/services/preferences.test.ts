@@ -143,6 +143,7 @@ describe('preferences service', () => {
         zoom_level: 100,
         custom_cli_profiles: [],
         default_provider: null,
+        default_project_id: null,
 
         auto_save_context: true,
         auto_pull_base_branch: true,
@@ -293,6 +294,7 @@ describe('preferences service', () => {
         zoom_level: 100,
         custom_cli_profiles: [],
         default_provider: null,
+        default_project_id: null,
 
         auto_save_context: true,
         auto_pull_base_branch: true,
@@ -396,6 +398,7 @@ describe('preferences service', () => {
         zoom_level: 100,
         custom_cli_profiles: [],
         default_provider: null,
+        default_project_id: null,
 
         auto_save_context: true,
         auto_pull_base_branch: true,
@@ -579,6 +582,7 @@ describe('preferences service', () => {
         zoom_level: 100,
         custom_cli_profiles: [],
         default_provider: null,
+        default_project_id: null,
 
         auto_save_context: true,
         auto_pull_base_branch: true,
@@ -685,6 +689,7 @@ describe('preferences service', () => {
         zoom_level: 100,
         custom_cli_profiles: [],
         default_provider: null,
+        default_project_id: null,
 
         auto_save_context: true,
         auto_pull_base_branch: true,
@@ -791,6 +796,7 @@ describe('preferences service', () => {
         zoom_level: 100,
         custom_cli_profiles: [],
         default_provider: null,
+        default_project_id: null,
 
         auto_save_context: true,
         auto_pull_base_branch: true,
@@ -895,6 +901,7 @@ describe('preferences service', () => {
         zoom_level: 100,
         custom_cli_profiles: [],
         default_provider: null,
+        default_project_id: null,
 
         auto_save_context: true,
         auto_pull_base_branch: true,

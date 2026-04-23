@@ -1,4 +1,5 @@
 mod cli_import;
+mod cli_yolo;
 mod commands;
 pub mod git;
 pub mod git_log;
@@ -15,6 +16,7 @@ pub mod types;
 
 // Re-export commands for registration in lib.rs
 pub use cli_import::*;
+pub use cli_yolo::*;
 pub use commands::*;
 pub use github_actions::*;
 pub use github_issues::*;

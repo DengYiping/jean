@@ -3,6 +3,10 @@ import { fireEvent, render, screen } from '@/test/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ToolCallInline } from './ToolCallInline'
 
+vi.mock('@/services/preferences', () => ({
+  usePreferences: () => ({ data: undefined }),
+}))
+
 describe('ToolCallInline', () => {
   beforeEach(() => {
     vi.stubGlobal(

@@ -112,7 +112,11 @@ export function usePlanApproval({
       setWaitingForInput(sessionId, false)
       setPendingPlanMessageId(sessionId, null)
 
-      const sessionBackend = card.session.backend
+      const sessionBackend =
+        card.session.backend ??
+        useChatStore.getState().selectedBackends[card.session.id] ??
+        preferences?.default_backend ??
+        'claude'
       const buildBackendOverride = preferences?.build_backend
       const overridesApply =
         !buildBackendOverride || buildBackendOverride === sessionBackend
@@ -301,7 +305,11 @@ export function usePlanApproval({
       setWaitingForInput(sessionId, false)
       setPendingPlanMessageId(sessionId, null)
 
-      const sessionBackend = card.session.backend
+      const sessionBackend =
+        card.session.backend ??
+        useChatStore.getState().selectedBackends[card.session.id] ??
+        preferences?.default_backend ??
+        'claude'
       const yoloBackendOverride = preferences?.yolo_backend
       const overridesApplyYolo =
         !yoloBackendOverride || yoloBackendOverride === sessionBackend

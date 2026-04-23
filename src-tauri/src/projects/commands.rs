@@ -4,7 +4,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::mpsc;
 use std::sync::Mutex;
@@ -207,6 +207,100 @@ pub async fn set_git_identity(name: String, email: String) -> Result<(), String>
 pub struct GitIdentity {
     pub name: Option<String>,
     pub email: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DirEntry {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+    pub is_git_repo: bool,
+    pub is_hidden: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BrowseDirectoryResult {
+    pub current_path: String,
+    pub parent_path: Option<String>,
+    pub entries: Vec<DirEntry>,
+}
+
+#[tauri::command]
+pub async fn browse_directory(path: Option<String>) -> Result<BrowseDirectoryResult, String> {
+    let requested_path = path
+        .map(PathBuf::from)
+        .or_else(dirs::home_dir)
+        .ok_or_else(|| "No home directory found".to_string())?;
+
+    let current_path = requested_path
+        .canonicalize()
+        .map_err(|e| format!("Failed to access directory: {e}"))?;
+
+    if !current_path.is_dir() {
+        return Err(format!(
+            "Path is not a directory: {}",
+            current_path.display()
+        ));
+    }
+
+    let parent_path = current_path
+        .parent()
+        .map(|parent| parent.display().to_string());
+    let mut entries = Vec::new();
+
+    let read_dir = std::fs::read_dir(&current_path)
+        .map_err(|e| format!("Failed to read directory {}: {e}", current_path.display()))?;
+
+    for entry_result in read_dir {
+        if entries.len() >= 500 {
+            break;
+        }
+
+        let entry = match entry_result {
+            Ok(entry) => entry,
+            Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => continue,
+            Err(error) => return Err(format!("Failed to read directory entry: {error}")),
+        };
+
+        let path = entry.path();
+        let metadata = match entry.metadata() {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => continue,
+            Err(error) => {
+                return Err(format!(
+                    "Failed to read metadata for {}: {error}",
+                    path.display()
+                ))
+            }
+        };
+
+        if !metadata.is_dir() {
+            continue;
+        }
+
+        let name = entry.file_name().to_string_lossy().to_string();
+        let is_hidden = name.starts_with('.');
+
+        entries.push(DirEntry {
+            name,
+            path: path.display().to_string(),
+            is_dir: true,
+            is_git_repo: path.join(".git").exists(),
+            is_hidden,
+        });
+    }
+
+    entries.sort_by(|a, b| match (a.is_hidden, b.is_hidden) {
+        (false, true) => std::cmp::Ordering::Less,
+        (true, false) => std::cmp::Ordering::Greater,
+        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+    });
+
+    Ok(BrowseDirectoryResult {
+        current_path: current_path.display().to_string(),
+        parent_path,
+        entries,
+    })
 }
 
 #[tauri::command]
@@ -834,6 +928,7 @@ pub async fn create_worktree(
         name: name.clone(),
         path: worktree_path_str.clone(),
         branch: name.clone(),
+        base_branch: Some(base.clone()),
         created_at,
         setup_output: None,
         setup_script: None,
@@ -903,7 +998,10 @@ pub async fn create_worktree(
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
             log::trace!("Background: Creating git worktree {name_clone} at {worktree_path_clone}");
 
-            // Fetch base branch if enabled, use origin/<base> for up-to-date start point
+            // Fetch base branch if enabled, use origin/<base> for up-to-date start point.
+            // If the base is only available as a remote-tracking branch (e.g. stacking on a
+            // PR head that wasn't fetched locally), also use the origin/<base> ref.
+            let has_local_branch = git::branch_exists(&project_path, &base_clone);
             let effective_base = if should_auto_pull {
                 log::trace!("Fetching base branch {base_clone} before worktree creation");
                 match git::git_fetch(&project_path, &base_clone, None) {
@@ -913,11 +1011,17 @@ pub async fn create_worktree(
                     }
                     Err(e) => {
                         log::warn!("Failed to fetch base branch {base_clone}: {e}");
-                        base_clone.clone()
+                        if has_local_branch {
+                            base_clone.clone()
+                        } else {
+                            format!("origin/{base_clone}")
+                        }
                     }
                 }
-            } else {
+            } else if has_local_branch {
                 base_clone.clone()
+            } else {
+                format!("origin/{base_clone}")
             };
 
             // Check if path already exists
@@ -1378,6 +1482,7 @@ pub async fn create_worktree(
                     name: name_clone.clone(),
                     path: worktree_path_clone.clone(),
                     branch: final_branch.clone(),
+                    base_branch: Some(base_clone.clone()),
                     created_at,
                     setup_output: None,
                     setup_script: pending_setup_script.clone(),
@@ -1591,6 +1696,7 @@ pub async fn create_worktree_from_existing_branch(
         name: name.clone(),
         path: worktree_path_str.clone(),
         branch: name.clone(),
+        base_branch: Some(branch_name.clone()),
         created_at,
         setup_output: None,
         setup_script: None,
@@ -1987,7 +2093,8 @@ pub async fn create_worktree_from_existing_branch(
                     project_id: project_id_clone.clone(),
                     name: name_clone.clone(),
                     path: worktree_path_clone.clone(),
-                    branch: branch_name_clone,
+                    branch: branch_name_clone.clone(),
+                    base_branch: Some(branch_name_clone),
                     created_at,
                     setup_output,
                     setup_script,
@@ -2286,6 +2393,7 @@ pub async fn checkout_pr(
         name: final_worktree_name.clone(),
         path: worktree_path_str.clone(),
         branch: pr_detail.head_ref_name.clone(), // Use PR's actual branch name
+        base_branch: None,
         created_at,
         setup_output: None,
         setup_script: None,
@@ -2597,6 +2705,7 @@ pub async fn checkout_pr(
                     name: worktree_name_clone.clone(),
                     path: worktree_path_clone.clone(),
                     branch: actual_branch.clone(),
+                    base_branch: None,
                     created_at,
                     setup_output,
                     setup_script,
@@ -2897,6 +3006,7 @@ pub async fn create_base_session(app: AppHandle, project_id: String) -> Result<W
         name: project.default_branch.clone(),
         path: project.path.clone(), // Uses project's base directory directly
         branch: project.default_branch.clone(),
+        base_branch: None,
         created_at: now(),
         setup_output: None,
         setup_script: None,
@@ -3297,6 +3407,7 @@ pub async fn import_worktree(
         name,
         path: path.clone(),
         branch,
+        base_branch: None,
         created_at: now(),
         setup_output: None,
         setup_script: None,
@@ -8333,8 +8444,8 @@ pub async fn cleanup_old_archives(
     }
 
     // --- Clean up orphaned session data directories ---
-    let orphaned = crate::chat::storage::cleanup_orphaned_session_data(&app).unwrap_or(0);
-    deleted_sessions += orphaned;
+    // Background janitor only — not archive-related, not user-facing.
+    let _ = crate::chat::storage::cleanup_orphaned_session_data(&app);
 
     // --- Clean up orphaned context files ---
     let deleted_contexts =
@@ -9658,6 +9769,7 @@ mod tests {
             name: branch.to_string(),
             path: format!("/tmp/{id}"),
             branch: branch.to_string(),
+            base_branch: None,
             created_at: 0,
             setup_output: None,
             setup_script: None,

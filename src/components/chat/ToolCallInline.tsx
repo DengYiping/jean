@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import type { RefObject } from 'react'
+import { usePreferences } from '@/services/preferences'
 import {
   FileText,
   Edit,
@@ -63,7 +64,10 @@ export function ToolCallInline({
   isStreaming,
   isIncomplete,
 }: ToolCallInlineProps) {
-  const [isOpen, setIsOpen] = useState(false)
+  const { data: preferences } = usePreferences()
+  const [isOpen, setIsOpen] = useState(
+    preferences?.expand_tool_calls_by_default ?? false
+  )
   const display = getToolDisplay(toolCall, { viewportRef })
   const {
     icon,
@@ -179,7 +183,10 @@ export function TaskCallInline({
   isStreaming,
   isIncomplete,
 }: TaskCallInlineProps) {
-  const [isOpen, setIsOpen] = useState(false)
+  const { data: preferences } = usePreferences()
+  const [isOpen, setIsOpen] = useState(
+    preferences?.expand_tool_calls_by_default ?? false
+  )
   const input = taskToolCall.input as Record<string, unknown>
   const subagentType = input.subagent_type as string | undefined
   const description = input.description as string | undefined
@@ -300,7 +307,10 @@ export function StackedGroup({
   isStreaming,
   isIncomplete,
 }: StackedGroupProps) {
-  const [isOpen, setIsOpen] = useState(false)
+  const { data: preferences } = usePreferences()
+  const [isOpen, setIsOpen] = useState(
+    preferences?.expand_tool_calls_by_default ?? false
+  )
 
   // Count thinking blocks and tools for summary
   let thinkingCount = 0
@@ -388,7 +398,10 @@ interface SubThinkingItemProps {
  * Similar style to SubToolItem but for thinking content
  */
 function SubThinkingItem({ thinking }: SubThinkingItemProps) {
-  const [isOpen, setIsOpen] = useState(false)
+  const { data: preferences } = usePreferences()
+  const [isOpen, setIsOpen] = useState(
+    preferences?.expand_tool_calls_by_default ?? false
+  )
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
@@ -431,7 +444,10 @@ interface SubToolItemProps {
  * Even more minimal than ToolCallInline - just icon, label, and detail inline
  */
 function SubToolItem({ toolCall, onFileClick, viewportRef }: SubToolItemProps) {
-  const [isOpen, setIsOpen] = useState(false)
+  const { data: preferences } = usePreferences()
+  const [isOpen, setIsOpen] = useState(
+    preferences?.expand_tool_calls_by_default ?? false
+  )
   const {
     icon,
     label,

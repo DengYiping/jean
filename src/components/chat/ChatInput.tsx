@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { useAutoResize } from '@/hooks/use-auto-resize'
 import { invoke } from '@/lib/transport'
 import { generateId } from '@/lib/uuid'
 import { toast } from 'sonner'
@@ -76,6 +77,7 @@ export const ChatInput = memo(function ChatInput({
   inputRef,
 }: ChatInputProps) {
   const isMobile = useIsMobile()
+  const resizeTextarea = useAutoResize(inputRef)
 
   // PERFORMANCE: Use uncontrolled input pattern - track value in ref, not state
   // This avoids React re-renders on every keystroke
@@ -146,8 +148,9 @@ export const ChatInput = memo(function ChatInput({
 
     if (inputRef.current) {
       inputRef.current.value = draft
+      resizeTextarea()
     }
-  }, [activeSessionId, inputRef])
+  }, [activeSessionId, inputRef, resizeTextarea])
 
   // Listen for command:focus-chat-input event from command palette
   useEffect(() => {
@@ -181,9 +184,10 @@ export const ChatInput = memo(function ChatInput({
         const isEmpty = !draft.trim()
         setShowHint(isEmpty)
         onHasValueChangeRef.current?.(!isEmpty)
+        resizeTextarea()
       }
     })
-  }, [activeSessionId, inputRef])
+  }, [activeSessionId, inputRef, resizeTextarea])
 
   const clearInputState = useCallback(() => {
     clearTimeout(debouncedSaveRef.current)
@@ -193,7 +197,8 @@ export const ChatInput = memo(function ChatInput({
     valueRef.current = ''
     setShowHint(true)
     onHasValueChangeRef.current?.(false)
-  }, [inputRef])
+    resizeTextarea()
+  }, [inputRef, resizeTextarea])
 
   useEffect(() => {
     onRegisterClearHandler?.(clearInputState)
@@ -468,6 +473,7 @@ export const ChatInput = memo(function ChatInput({
         setShowHint(true)
         const textarea = e.target as HTMLTextAreaElement
         textarea.value = ''
+        resizeTextarea()
       }
       // Shift+Enter adds a new line (default behavior)
     },
@@ -481,6 +487,7 @@ export const ChatInput = memo(function ChatInput({
       canSwitchBackendWithTab,
       onSwitchBackendWithTab,
       isMobile,
+      resizeTextarea,
     ]
   )
 
@@ -526,6 +533,7 @@ export const ChatInput = memo(function ChatInput({
                 .getState()
                 .setInputDraft(activeSessionId, textarea.value)
               onHasValueChangeRef.current?.(Boolean(textarea.value.trim()))
+              resizeTextarea()
             }
 
             const {
@@ -831,7 +839,7 @@ export const ChatInput = memo(function ChatInput({
         }
       }
     },
-    [activeSessionId, activeWorktreePath, inputRef]
+    [activeSessionId, activeWorktreePath, inputRef, resizeTextarea]
   )
 
   // Handle file selection from @ mention popover
@@ -856,6 +864,7 @@ export const ChatInput = memo(function ChatInput({
         // PERFORMANCE: Update DOM directly, no React render
         inputRef.current.value = newValue
         valueRef.current = newValue
+        resizeTextarea()
 
         // Set cursor position after the inserted filename
         requestAnimationFrame(() => {
@@ -872,7 +881,7 @@ export const ChatInput = memo(function ChatInput({
       // Refocus input
       inputRef.current?.focus()
     },
-    [activeSessionId, atTriggerIndex, inputRef]
+    [activeSessionId, atTriggerIndex, inputRef, resizeTextarea]
   )
 
   // Handle skill selection from the `$` popover
@@ -903,6 +912,7 @@ export const ChatInput = memo(function ChatInput({
         // PERFORMANCE: Update DOM directly, no React render
         inputRef.current.value = newValue
         valueRef.current = newValue
+        resizeTextarea()
 
         // Cancel pending debounced save (it still has the old trigger query value)
         // and sync cleaned value to store immediately
@@ -927,7 +937,7 @@ export const ChatInput = memo(function ChatInput({
       // Refocus input
       inputRef.current?.focus()
     },
-    [activeSessionId, slashTriggerIndex, inputRef]
+    [activeSessionId, slashTriggerIndex, inputRef, resizeTextarea]
   )
 
   // Handle command selection from the `/` popover (executes immediately)
@@ -944,6 +954,7 @@ export const ChatInput = memo(function ChatInput({
       if (activeSessionId) {
         useChatStore.getState().setInputDraft(activeSessionId, '')
       }
+      resizeTextarea()
 
       // Reset slash popover state
       setSlashPopoverOpen(false)
@@ -955,7 +966,7 @@ export const ChatInput = memo(function ChatInput({
       // Notify parent to execute command
       onCommandExecute?.(command)
     },
-    [activeSessionId, inputRef, onCommandExecute]
+    [activeSessionId, inputRef, onCommandExecute, resizeTextarea]
   )
 
   return (
@@ -982,7 +993,7 @@ export const ChatInput = memo(function ChatInput({
         onKeyDown={handleKeyDown}
         onPaste={handlePaste}
         disabled={false}
-        className="custom-scrollbar min-h-[40px] max-h-[240px] w-full resize-none overflow-y-auto border-0 bg-transparent dark:bg-transparent p-0 font-mono text-sm shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+        className="custom-scrollbar min-h-[40px] max-h-[50vh] w-full resize-none overflow-x-hidden overflow-y-auto border-0 bg-transparent dark:bg-transparent p-0 font-mono text-base shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 md:text-sm"
         rows={1}
         autoFocus={!isMobile}
       />

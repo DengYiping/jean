@@ -397,11 +397,16 @@ export function useSession(
               sessionId,
               cachedCount: cached.messages.length,
               diskCount: session.messages.length,
+              cachedStart: cached.loaded_run_start_index,
+              freshStart: session.loaded_run_start_index,
             }
           )
           return {
             ...session,
             messages: cached.messages,
+            // Keep cached pagination cursor (reflects what's actually in
+            // messages); fresh total_runs is still authoritative.
+            loaded_run_start_index: cached.loaded_run_start_index,
           }
         }
 

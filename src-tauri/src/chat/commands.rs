@@ -1015,6 +1015,7 @@ pub async fn restore_session_with_base(
         name: project.default_branch.clone(),
         path: project.path.clone(),
         branch: project.default_branch.clone(),
+        base_branch: None,
         created_at: now(),
         setup_output: None,
         setup_script: None,
@@ -1821,6 +1822,7 @@ pub async fn send_chat_message(
 
                             if response.content.is_empty()
                                 && response.usage.is_none()
+                                && !response.cancelled
                                 && claude_session_id_for_call.is_some()
                             {
                                 log::warn!(
@@ -1949,6 +1951,28 @@ pub async fn send_chat_message(
                     }
                 }
 
+                // Collect linked project paths once for both add_dirs and system prompt
+                let linked_project_paths: Vec<String> =
+                    crate::projects::storage::load_projects_data(&thread_app)
+                        .ok()
+                        .and_then(|data| {
+                            let worktree = data.find_worktree(&thread_worktree_id)?;
+                            let project = data.find_project(&worktree.project_id)?;
+                            Some(
+                                project
+                                    .linked_project_ids
+                                    .iter()
+                                    .filter_map(|id| data.find_project(id))
+                                    .filter(|p| !p.path.trim().is_empty())
+                                    .map(|p| p.path.clone())
+                                    .collect(),
+                            )
+                        })
+                        .unwrap_or_default();
+                for dir in &linked_project_paths {
+                    codex_add_dirs.push(dir.clone());
+                }
+
                 // Build combined developer instructions for Codex app-server.
                 // The older `experimental_instructions_file` config path is deprecated
                 // and ignored by current Codex, so prompt injection must flow through
@@ -2006,7 +2030,7 @@ pub async fn send_chat_message(
                         }
                     }
 
-                    // Per-project custom system prompt
+                    // Per-project custom system prompt + linked project instructions
                     if let Ok(data) = load_projects_data(&thread_app) {
                         if let Some(worktree) = data.find_worktree(&thread_worktree_id) {
                             if let Some(project) = data.find_project(&worktree.project_id) {
@@ -2015,6 +2039,20 @@ pub async fn send_chat_message(
                                     if !prompt.is_empty() {
                                         system_prompt_parts.push(prompt.to_string());
                                     }
+                                }
+
+                                // Linked projects: inject instruction to check their directories
+                                if !linked_project_paths.is_empty() {
+                                    let dirs_list = linked_project_paths
+                                        .iter()
+                                        .map(|p| format!("- {p}"))
+                                        .collect::<Vec<_>>()
+                                        .join("\n");
+                                    system_prompt_parts.push(format!(
+                                        "This project is linked to other projects for cross-project context. \
+                                         Check the following directories for additional instructions and documentation \
+                                         (e.g., CLAUDE.md, AGENTS.md, docs/):\n{dirs_list}"
+                                    ));
                                 }
                             }
                         }
@@ -2212,6 +2250,26 @@ pub async fn send_chat_message(
             }
             Backend::Opencode => {
                 log::trace!("About to call execute_opencode...");
+
+                // Collect linked project paths for system prompt injection
+                let opencode_linked_project_paths: Vec<String> =
+                    crate::projects::storage::load_projects_data(&thread_app)
+                        .ok()
+                        .and_then(|data| {
+                            let worktree = data.find_worktree(&thread_worktree_id)?;
+                            let project = data.find_project(&worktree.project_id)?;
+                            Some(
+                                project
+                                    .linked_project_ids
+                                    .iter()
+                                    .filter_map(|id| data.find_project(id))
+                                    .filter(|p| !p.path.trim().is_empty())
+                                    .map(|p| p.path.clone())
+                                    .collect(),
+                            )
+                        })
+                        .unwrap_or_default();
+
                 let opencode_reasoning_effort: Option<String> =
                     thread_effort_level.as_ref().and_then(|e| match e {
                         super::types::EffortLevel::Low => Some("low".to_string()),
@@ -2264,7 +2322,7 @@ pub async fn send_chat_message(
                         }
                     }
 
-                    // Per-project custom system prompt
+                    // Per-project custom system prompt + linked project instructions
                     if let Ok(data) = load_projects_data(&thread_app) {
                         if let Some(worktree) = data.find_worktree(&thread_worktree_id) {
                             if let Some(project) = data.find_project(&worktree.project_id) {
@@ -2273,6 +2331,20 @@ pub async fn send_chat_message(
                                     if !prompt.is_empty() {
                                         system_prompt_parts.push(prompt.to_string());
                                     }
+                                }
+
+                                // Linked projects: inject instruction to check their directories
+                                if !opencode_linked_project_paths.is_empty() {
+                                    let dirs_list = opencode_linked_project_paths
+                                        .iter()
+                                        .map(|p| format!("- {p}"))
+                                        .collect::<Vec<_>>()
+                                        .join("\n");
+                                    system_prompt_parts.push(format!(
+                                        "This project is linked to other projects for cross-project context. \
+                                         Check the following directories for additional instructions and documentation \
+                                         (e.g., CLAUDE.md, AGENTS.md, docs/):\n{dirs_list}"
+                                    ));
                                 }
                             }
                         }
@@ -2472,20 +2544,21 @@ pub async fn send_chat_message(
                 // Non-OpenCode error: check if CLI actually completed despite the
                 // thread error (e.g. tailing timed out but CLI finished). If so,
                 // salvage the run as Completed with the resume ID (#209).
+                // Always try to extract partial session_id from JSONL for --resume continuity
+                let partial_sid =
+                    run_log::extract_session_id_from_jsonl(&app, &session_id, &run_id);
                 if run_log::jsonl_has_result_line(&app, &session_id, &run_id) {
                     log::info!(
                         "[SendChat] CLI completed despite thread error for session={session_id}, salvaging run"
                     );
-                    let resume_sid =
-                        run_log::extract_session_id_from_jsonl(&app, &session_id, &run_id);
                     let salvage_msg_id = Uuid::new_v4().to_string();
                     if let Err(complete_err) =
-                        run_log_writer.complete(&salvage_msg_id, resume_sid.as_deref(), None)
+                        run_log_writer.complete(&salvage_msg_id, partial_sid.as_deref(), None)
                     {
                         log::warn!("Failed to complete salvaged run: {complete_err}");
                     }
                     // Also persist resume ID to session index so --resume works
-                    if let Some(ref sid) = resume_sid {
+                    if let Some(ref sid) = partial_sid {
                         if let Err(save_err) =
                             with_sessions_mut(&app, &worktree_path, &worktree_id, |sessions| {
                                 if let Some(session) = sessions.find_session_mut(&session_id) {
@@ -2506,6 +2579,15 @@ pub async fn send_chat_message(
                     if let Err(mark_err) = run_log_writer.mark_crashed() {
                         log::warn!("Failed to mark run as crashed after thread error: {mark_err}");
                     }
+                    // Persist partial session_id even for crashed/cancelled runs so next send can --resume
+                    if let Some(ref sid) = partial_sid {
+                        let _ = with_sessions_mut(&app, &worktree_path, &worktree_id, |sessions| {
+                            if let Some(session) = sessions.find_session_mut(&session_id) {
+                                session.claude_session_id = Some(sid.clone());
+                            }
+                            Ok(())
+                        });
+                    }
                 }
             }
             return Err(e);
@@ -2514,14 +2596,14 @@ pub async fn send_chat_message(
             log::info!("[SendChat] EXIT session={session_id} reason=thread_panic");
             super::registry::cleanup_session_registrations(&session_id);
             // Check if CLI completed despite thread panic (#209)
+            let partial_sid = run_log::extract_session_id_from_jsonl(&app, &session_id, &run_id);
             if run_log::jsonl_has_result_line(&app, &session_id, &run_id) {
                 log::info!(
                     "[SendChat] CLI completed despite thread panic for session={session_id}, salvaging run"
                 );
-                let resume_sid = run_log::extract_session_id_from_jsonl(&app, &session_id, &run_id);
                 let salvage_msg_id = Uuid::new_v4().to_string();
                 if let Err(complete_err) =
-                    run_log_writer.complete(&salvage_msg_id, resume_sid.as_deref(), None)
+                    run_log_writer.complete(&salvage_msg_id, partial_sid.as_deref(), None)
                 {
                     log::warn!("Failed to complete salvaged run after panic: {complete_err}");
                 }
@@ -2529,6 +2611,15 @@ pub async fn send_chat_message(
             } else {
                 if let Err(mark_err) = run_log_writer.mark_crashed() {
                     log::warn!("Failed to mark run as crashed after thread panic: {mark_err}");
+                }
+                // Persist partial session_id so next send can --resume despite crash/cancel
+                if let Some(ref sid) = partial_sid {
+                    let _ = with_sessions_mut(&app, &worktree_path, &worktree_id, |sessions| {
+                        if let Some(session) = sessions.find_session_mut(&session_id) {
+                            session.claude_session_id = Some(sid.clone());
+                        }
+                        Ok(())
+                    });
                 }
             }
             return Err(

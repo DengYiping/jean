@@ -2,7 +2,7 @@ import type React from 'react'
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import { WindowsWindowControls } from './WindowsWindowControls'
-import { isMacOS, openExternal } from '@/lib/platform'
+import { isLinux, isMacOS, openExternal } from '@/lib/platform'
 import { Button } from '@/components/ui/button'
 import {
   Tooltip,
@@ -24,6 +24,7 @@ import { isNativeApp } from '@/lib/environment'
 import { UnreadBell } from '@/components/unread/UnreadBell'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { FALLBACK_APP_VERSION } from '@/lib/app-version'
+import { LinuxWindowControls } from './LinuxWindowControls'
 
 interface TitleBarProps {
   className?: string
@@ -168,7 +169,8 @@ export function TitleBar({
             v{appVersion}
           </button>
         )}
-        {native && !isMacOS && <WindowsWindowControls />}
+        {native && isLinux && <LinuxWindowControls />}
+        {native && !isMacOS && !isLinux && <WindowsWindowControls />}
       </div>
     </div>
   )

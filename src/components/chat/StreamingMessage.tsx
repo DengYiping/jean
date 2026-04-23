@@ -374,7 +374,6 @@ export const StreamingMessage = memo(function StreamingMessage({
           <ToolCallsDisplay
             toolCalls={toolCalls}
             sessionId={sessionId}
-            defaultExpanded={false}
             isStreaming={true}
             onQuestionAnswer={onQuestionAnswer}
             onQuestionSkip={onQuestionSkip}

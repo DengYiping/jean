@@ -58,9 +58,11 @@ describe('PRItem', () => {
         index={0}
         isSelected={false}
         isCreating={false}
+        isStacking={false}
         onMouseEnter={vi.fn()}
         onClick={onClick}
         onInvestigate={onInvestigate}
+        onStack={vi.fn()}
         onPreview={onPreview}
         onOpenReview={onOpenReview}
       />
@@ -93,9 +95,11 @@ describe('PRItem', () => {
         index={0}
         isSelected={false}
         isCreating={false}
+        isStacking={false}
         onMouseEnter={vi.fn()}
         onClick={onClick}
         onInvestigate={onInvestigate}
+        onStack={vi.fn()}
         onPreview={onPreview}
         onOpenReview={onOpenReview}
       />

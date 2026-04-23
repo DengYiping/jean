@@ -16,15 +16,9 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import {
-  ClipboardList,
-  GripVertical,
-  Hammer,
-  Trash2,
-  WandSparkles,
-  Zap,
-} from 'lucide-react'
+import { GripVertical, Trash2, WandSparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { MessageSettingsBadges } from '@/components/chat/MessageSettingsBadges'
 import type { QueuedMessage } from '@/types/chat'
 
 interface SortableQueuedMessageItemProps {
@@ -88,29 +82,6 @@ const SortableQueuedMessageItem = memo(function SortableQueuedMessageItem({
             <GripVertical className="h-3.5 w-3.5" />
           </button>
 
-          <span
-            className={cn(
-              'inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[10px]',
-              message.executionMode === 'plan' &&
-                'bg-yellow-500/20 text-yellow-700 dark:text-yellow-300',
-              message.executionMode === 'build' &&
-                'bg-muted/80 text-muted-foreground',
-              message.executionMode === 'yolo' &&
-                'bg-red-500/20 text-red-700 dark:text-red-300'
-            )}
-          >
-            {message.executionMode === 'plan' && (
-              <ClipboardList className="h-2.5 w-2.5" />
-            )}
-            {message.executionMode === 'build' && (
-              <Hammer className="h-2.5 w-2.5" />
-            )}
-            {message.executionMode === 'yolo' && (
-              <Zap className="h-2.5 w-2.5" />
-            )}
-            <span className="capitalize">{message.executionMode}</span>
-          </span>
-
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <span className="truncate text-sm">
@@ -135,6 +106,16 @@ const SortableQueuedMessageItem = memo(function SortableQueuedMessageItem({
                   file(s)
                 </span>
               )}
+            </div>
+
+            <div className="mt-1">
+              <MessageSettingsBadges
+                model={message.model}
+                executionMode={message.executionMode}
+                thinkingLevel={message.thinkingLevel}
+                effortLevel={message.effortLevel}
+                isCursor={message.model.startsWith('cursor/')}
+              />
             </div>
           </div>
 

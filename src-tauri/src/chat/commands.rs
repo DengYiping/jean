@@ -5733,6 +5733,40 @@ pub async fn clear_message_queue(
     Ok(())
 }
 
+/// Cancel the pending ScheduleWakeup for a session (user-initiated).
+#[tauri::command]
+pub async fn cancel_session_wakeup(app: AppHandle, session_id: String) -> Result<bool, String> {
+    let cleared = super::wakeup::cancel(&app, &session_id)?;
+    Ok(cleared.is_some())
+}
+
+/// Fetch the pending ScheduleWakeup for a session (UI hydration).
+#[tauri::command]
+pub async fn get_scheduled_wakeup(
+    app: AppHandle,
+    session_id: String,
+) -> Result<Option<super::types::ScheduledWakeup>, String> {
+    super::wakeup::get_for_session(&app, &session_id)
+}
+
+/// Answer a pending OpenCode question by calling the OpenCode Question.reply API.
+/// This unblocks the in-flight HTTP POST that is waiting for the question to be answered.
+#[tauri::command]
+pub async fn answer_opencode_question(
+    app: AppHandle,
+    worktree_path: String,
+    tool_call_id: String,
+    answers: Vec<Vec<String>>,
+) -> Result<(), String> {
+    let working_dir = worktree_path.clone();
+    let app_clone = app.clone();
+
+    tokio::task::spawn_blocking(move || {
+        super::opencode::answer_opencode_question(&app_clone, &working_dir, &tool_call_id, answers)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {e}"))?
+}
 #[cfg(test)]
 mod tests {
     use super::*;

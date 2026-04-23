@@ -642,6 +642,52 @@ pub struct Session {
     /// Messages queued for sending (persisted so they survive page refresh / sync across clients)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub queued_messages: Vec<serde_json::Value>,
+
+    // ========================================================================
+    // Pagination metadata (populated by get_session)
+    // ========================================================================
+    /// Total number of runs in this session's metadata (for "more available" check)
+    #[serde(default)]
+    pub total_runs: usize,
+    /// Index (in metadata.runs) of the first run included in `messages`.
+    /// 0 means oldest run is loaded; > 0 means older runs exist on disk.
+    #[serde(default)]
+    pub loaded_run_start_index: usize,
+
+    /// Pending ScheduleWakeup request (one per session, last-wins).
+    /// Fires the stored prompt into this session after fire_at_unix.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scheduled_wakeup: Option<ScheduledWakeup>,
+}
+
+/// A ScheduleWakeup request originated from the Claude CLI tool.
+/// Persisted on Session so it survives app restarts.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ScheduledWakeup {
+    /// Unix timestamp (seconds) when the wakeup should fire
+    pub fire_at_unix: u64,
+    /// Unix timestamp (seconds) when the wakeup was scheduled
+    pub scheduled_at_unix: u64,
+    /// Original delaySeconds (clamped to [60, 3600])
+    pub delay_seconds: u64,
+    /// Prompt text to send when the wakeup fires
+    pub prompt: String,
+    /// Reason string supplied by the model (telemetry / UI display)
+    #[serde(default)]
+    pub reason: String,
+    /// ID of the tool_use call that scheduled this wakeup
+    pub tool_call_id: String,
+}
+
+/// Result of loading a window of session messages from disk.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoadedMessages {
+    /// Parsed messages for the requested window of runs (chronological order).
+    pub messages: Vec<ChatMessage>,
+    /// Total number of runs in this session's metadata.
+    pub total_runs: usize,
+    /// Index of the first run included in `messages`.
+    pub loaded_run_start_index: usize,
 }
 
 impl Session {
@@ -702,6 +748,9 @@ impl Session {
             label: None,
             session_derived_state: None,
             queued_messages: vec![],
+            total_runs: 0,
+            loaded_run_start_index: 0,
+            scheduled_wakeup: None,
         }
     }
 
@@ -1008,6 +1057,9 @@ impl SessionMetadata {
             label: self.label.clone(),
             session_derived_state: None,
             queued_messages: self.queued_messages.clone(),
+            total_runs: self.runs.len(),
+            loaded_run_start_index: self.runs.len(),
+            scheduled_wakeup: self.scheduled_wakeup.clone(),
         };
         session.refresh_derived_state();
         session
@@ -1057,6 +1109,7 @@ impl SessionMetadata {
         self.attention_updated_at =
             (session.updated_at > run_updated_at).then_some(session.updated_at);
         self.label = session.label.clone();
+        self.scheduled_wakeup = session.scheduled_wakeup.clone();
         // NOTE: Do NOT overwrite queued_messages here. Queue state is managed
         // exclusively by enqueue/dequeue/remove/clear operations which use
         // atomic read-modify-write via with_existing_metadata_mut. Overwriting
@@ -1431,6 +1484,10 @@ pub struct SessionMetadata {
     #[serde(default)]
     pub runs: Vec<RunEntry>,
 
+    /// Pending ScheduleWakeup request (one per session, last-wins)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scheduled_wakeup: Option<ScheduledWakeup>,
+
     /// Storage format version for migrations
     #[serde(default = "default_manifest_version")]
     pub version: u32,
@@ -1532,6 +1589,7 @@ impl SessionMetadata {
             automation_target_worktree_id: None,
             automation_owned: false,
             runs: vec![],
+            scheduled_wakeup: None,
             version: 1,
         }
     }

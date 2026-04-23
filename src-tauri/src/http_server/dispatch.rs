@@ -2135,6 +2135,29 @@ pub async fn dispatch_command(
                 .await?;
             Ok(Value::Null)
         }
+        "answer_opencode_question" => {
+            let worktree_path: String = field(&args, "worktreePath", "worktree_path")?;
+            let tool_call_id: String = field(&args, "toolCallId", "tool_call_id")?;
+            let answers: Vec<Vec<String>> = from_field(&args, "answers")?;
+            crate::chat::answer_opencode_question(
+                app.clone(),
+                worktree_path,
+                tool_call_id,
+                answers,
+            )
+            .await?;
+            Ok(Value::Null)
+        }
+        "cancel_session_wakeup" => {
+            let session_id: String = field(&args, "sessionId", "session_id")?;
+            let cleared = crate::chat::cancel_session_wakeup(app.clone(), session_id).await?;
+            to_value(cleared)
+        }
+        "get_scheduled_wakeup" => {
+            let session_id: String = field(&args, "sessionId", "session_id")?;
+            let wakeup = crate::chat::get_scheduled_wakeup(app.clone(), session_id).await?;
+            to_value(wakeup)
+        }
 
         // =====================================================================
         // Chat (additional)

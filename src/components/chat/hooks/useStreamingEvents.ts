@@ -1882,6 +1882,7 @@ export default function useStreamingEvents({
         const {
           sendStartedAt,
           streamingContents,
+          streamingThinkingContent,
           activeToolCalls,
           streamingContentBlocks,
           activeWorktreeId,

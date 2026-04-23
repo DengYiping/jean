@@ -242,8 +242,8 @@ export function getOrCreateTerminal(
             }
           }, 0)
         } else if (isRunTerminal) {
-          // Non-zero exit on a run terminal → mark as failed (red indicator in sidebar)
-          useTerminalStore.getState().setTerminalFailed(terminalId, true)
+          // Keep the terminal open so the failure remains inspectable.
+          useTerminalStore.getState().setTerminalRunning(terminalId, false)
         }
       }
     })

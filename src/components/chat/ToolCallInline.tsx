@@ -1,7 +1,6 @@
 import { useState, useMemo } from 'react'
 import type { RefObject } from 'react'
 import { usePreferences } from '@/services/preferences'
-import { usePreferences } from '@/services/preferences'
 import {
   FileText,
   Edit,

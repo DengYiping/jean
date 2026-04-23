@@ -1647,7 +1647,7 @@ async fn load_preferences(app: AppHandle) -> Result<AppPreferences, String> {
     })?;
 
     normalize_preferences(&mut preferences);
-    let mut needs_resave = migrate_loaded_preferences(&mut preferences);
+    let _needs_resave = migrate_loaded_preferences(&mut preferences);
 
     // Migrate legacy magic-prompt model names ("opus" → "claude-opus-4-7")
     // and legacy auto-naming models ("haiku" → "sonnet")

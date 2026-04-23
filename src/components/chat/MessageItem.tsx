@@ -9,16 +9,10 @@ import type {
   QuestionAnswer,
   ReviewFinding,
 } from '@/types/chat'
+import { isAskUserQuestion } from '@/types/chat'
 import { AskUserQuestion } from './AskUserQuestion'
 import { ToolCallInline, TaskCallInline, StackedGroup } from './ToolCallInline'
-import {
-  buildTimeline,
-  findPlanFilePath,
-  getPlanTextBlockIndicesToHide,
-  isDuplicatePlanTextBlock,
-  resolvePlanContent,
-  splitTextAroundPlan,
-} from './tool-call-utils'
+import { buildTimeline, findPlanFilePath } from './tool-call-utils'
 import { PlanDisplay } from './PlanFileDisplay'
 import { ImageLightbox } from './ImageLightbox'
 import { TextFileLightbox } from './TextFileLightbox'
@@ -50,8 +44,42 @@ import {
   extractSkillPaths,
   stripAllMarkers,
 } from './message-content-utils'
-import { hasQuestionAnswerOutput } from '@/types/chat'
 import { MessageSettingsBadges } from '@/components/chat/MessageSettingsBadges'
+
+function hasQuestionAnswerOutput(output?: string): boolean {
+  return Boolean(output?.trim())
+}
+
+function resolvePlanContent(params: {
+  toolCalls?: ChatMessage['tool_calls']
+  messageContent?: string
+  contentBlocks?: ChatMessage['content_blocks']
+}): { content: string } {
+  const planTool = params.toolCalls?.find(tc => tc.name === 'ExitPlanMode')
+  const input = planTool?.input as { plan?: string } | undefined
+  return { content: input?.plan ?? '' }
+}
+
+function getPlanTextBlockIndicesToHide(
+  _contentBlocks?: ChatMessage['content_blocks'],
+  _planContent?: string
+): Set<number> {
+  return new Set()
+}
+
+function splitTextAroundPlan(
+  text: string,
+  _planContent?: string
+): { beforePlan: string | null } {
+  return { beforePlan: text || null }
+}
+
+function isDuplicatePlanTextBlock(
+  _text?: string,
+  _planContent?: string
+): boolean {
+  return false
+}
 
 interface MessageItemProps {
   /** The message to render */
@@ -60,8 +88,8 @@ interface MessageItemProps {
   messageIndex: number
   /** Total number of messages (to determine if this is the last message) */
   totalMessages: number
-  /** Index of the last plan message (for approve button logic) */
-  lastPlanMessageIndex: number
+  /** Message ID of the currently pending plan awaiting approval */
+  pendingPlanMessageId?: string | null
   /** Pre-computed: does a user message follow this one? */
   hasFollowUpMessage: boolean
   /** Session ID for this message */
@@ -78,10 +106,14 @@ interface MessageItemProps {
   approveShortcutClearContextBuild?: string
   /** Ref to attach to approve button for visibility tracking */
   approveButtonRef?: React.RefObject<HTMLButtonElement | null>
+  /** Persisted approved plan IDs for this session */
+  approvedPlanMessageIds?: ReadonlySet<string>
   /** Whether Claude is currently streaming (affects last message rendering) */
   isSending: boolean
   /** Callback when user approves a plan */
   onPlanApproval: (messageId: string) => void
+  /** Callback when user wants to add a custom prompt before build approval */
+  onCustomBuildPrompt?: (messageId: string) => void
   /** Callback when user approves a plan with yolo mode */
   onPlanApprovalYolo?: (messageId: string) => void
   /** Callback for clear context approval (new session with plan in yolo mode) */
@@ -102,6 +134,8 @@ interface MessageItemProps {
   onQuestionSkip: (toolCallId: string) => void
   /** Callback when user clicks a file path */
   onFileClick: (path: string) => void
+  /** Chat viewport for preserving inline expansion position */
+  scrollViewportRef?: React.RefObject<HTMLDivElement | null>
   /** Callback when user clicks an edited file badge (opens diff modal) */
   onEditedFileClick: (path: string) => void
   /** Callback when user fixes a finding */
@@ -137,7 +171,7 @@ export const MessageItem = memo(function MessageItem({
   message,
   messageIndex,
   totalMessages,
-  lastPlanMessageIndex,
+  pendingPlanMessageId,
   hasFollowUpMessage,
   sessionId,
   worktreePath,
@@ -146,8 +180,10 @@ export const MessageItem = memo(function MessageItem({
   approveShortcutClearContext,
   approveShortcutClearContextBuild,
   approveButtonRef,
+  approvedPlanMessageIds: _approvedPlanMessageIds,
   isSending,
   onPlanApproval,
+  onCustomBuildPrompt: _onCustomBuildPrompt,
   onPlanApprovalYolo,
   onClearContextApproval,
   onClearContextApprovalBuild,
@@ -156,6 +192,7 @@ export const MessageItem = memo(function MessageItem({
   onQuestionAnswer,
   onQuestionSkip,
   onFileClick,
+  scrollViewportRef: _scrollViewportRef,
   onEditedFileClick,
   onFixFinding,
   onFixAllFindings,
@@ -168,7 +205,15 @@ export const MessageItem = memo(function MessageItem({
   durationMs,
 }: MessageItemProps) {
   // Only show Approve button for the last message with ExitPlanMode
-  const isLatestPlanRequest = messageIndex === lastPlanMessageIndex
+  const isLatestPlanRequest = pendingPlanMessageId === message.id
+  const isPlanApproved =
+    (message.plan_approved ?? false) ||
+    _approvedPlanMessageIds?.has(message.id) === true
+  const hasUnresolvedQuestions =
+    message.tool_calls?.some(
+      tc =>
+        isAskUserQuestion(tc) && !isQuestionAnswered(message.session_id, tc.id)
+    ) ?? false
 
   // Extract image, text file, file mention, and skill paths and clean content for user messages
   const imagePaths =
@@ -314,7 +359,6 @@ export const MessageItem = memo(function MessageItem({
               <SkillBadge
                 key={`${message.id}-skill-${idx}`}
                 skill={{
-                  id: `${message.id}-skill-${idx}`,
                   name: name ?? path,
                   path,
                 }}
@@ -538,7 +582,6 @@ export const MessageItem = memo(function MessageItem({
                                       )
                                     : undefined
                                 }
-                                toolOutput={item.tool.output ?? undefined}
                               />
                             )
                           }
@@ -596,9 +639,7 @@ export const MessageItem = memo(function MessageItem({
                   {resolvedPlan.content && !hasRenderedPlanItem && (
                     <PlanDisplay
                       content={resolvedPlan.content}
-                      defaultCollapsed={
-                        message.plan_approved || hasFollowUpMessage
-                      }
+                      defaultCollapsed={isPlanApproved || hasFollowUpMessage}
                     />
                   )}
                 </>
@@ -608,9 +649,10 @@ export const MessageItem = memo(function MessageItem({
           {/* Show ExitPlanMode button after all content blocks */}
           <ExitPlanModeButton
             toolCalls={message.tool_calls}
-            isApproved={message.plan_approved ?? false}
+            isApproved={isPlanApproved}
             isLatestPlanRequest={isLatestPlanRequest}
             hasFollowUpMessage={hasFollowUpMessage}
+            hasUnresolvedQuestions={hasUnresolvedQuestions}
             onPlanApproval={handlePlanApproval}
             onPlanApprovalYolo={handlePlanApprovalYolo}
             onClearContextApproval={handleClearContextApproval}
@@ -658,7 +700,7 @@ export const MessageItem = memo(function MessageItem({
             !skipToolCalls && (
               <PlanDisplay
                 content={resolvedPlan.content}
-                defaultCollapsed={message.plan_approved || hasFollowUpMessage}
+                defaultCollapsed={isPlanApproved || hasFollowUpMessage}
               />
             )}
           {/* Show content after tool calls */}
@@ -708,9 +750,10 @@ export const MessageItem = memo(function MessageItem({
             !skipToolCalls && (
               <ExitPlanModeButton
                 toolCalls={message.tool_calls}
-                isApproved={message.plan_approved ?? false}
+                isApproved={isPlanApproved}
                 isLatestPlanRequest={isLatestPlanRequest}
                 hasFollowUpMessage={hasFollowUpMessage}
+                hasUnresolvedQuestions={hasUnresolvedQuestions}
                 onPlanApproval={handlePlanApproval}
                 onPlanApprovalYolo={handlePlanApprovalYolo}
                 onClearContextApproval={handleClearContextApproval}

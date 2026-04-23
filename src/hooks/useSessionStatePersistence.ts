@@ -2,7 +2,6 @@ import { useEffect, useRef, useCallback, useMemo } from 'react'
 import { useChatStore } from '@/store/chat-store'
 import { useUIStore } from '@/store/ui-store'
 import { useUpdateSessionState, useSessions } from '@/services/chat'
-import { useUpdateSessionState, useSessions } from '@/services/chat'
 import { logger } from '@/lib/logger'
 import type {
   CodexMcpElicitation,

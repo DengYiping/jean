@@ -9769,6 +9769,7 @@ mod tests {
             name: branch.to_string(),
             path: format!("/tmp/{id}"),
             branch: branch.to_string(),
+            base_branch: None,
             created_at: 0,
             setup_output: None,
             setup_script: None,

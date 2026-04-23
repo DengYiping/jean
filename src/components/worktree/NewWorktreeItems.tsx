@@ -267,10 +267,10 @@ export function PRItem({
             className: 'bg-red-500/10 text-red-600 border border-red-500/20',
           }
         : pr.checkStatus === 'pending'
-        ? {
-            label: 'Checks pending',
-            className:
-              'bg-amber-500/10 text-amber-600 border border-amber-500/20',
+          ? {
+              label: 'Checks pending',
+              className:
+                'bg-amber-500/10 text-amber-600 border border-amber-500/20',
             }
           : null
   return (

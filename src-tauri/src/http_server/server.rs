@@ -255,11 +255,6 @@ async fn auth_handler(Query(params): Query<WsAuth>, State(state): State<AppState
     }
 }
 
-/// Maximum number of chat messages loaded per active session at init.
-/// Older messages are fetched on-demand via `load_older_session_messages`
-/// when the user scrolls up in the chat window.
-const INIT_MESSAGE_WINDOW: usize = 50;
-
 /// Maximum number of buffered WebSocket events replayed per focused running
 /// session at init. Plenty to reconstruct an in-flight turn; full stream
 /// continues over the WebSocket connection.
@@ -534,14 +529,8 @@ async fn init_handler(Query(params): Query<WsAuth>, State(state): State<AppState
                         let wt_path = wt.path.clone();
                         let sess_id = session_id.clone();
                         async move {
-                            match crate::chat::get_session(
-                                app,
-                                wt_id,
-                                wt_path,
-                                sess_id.clone(),
-                                Some(INIT_MESSAGE_WINDOW),
-                            )
-                            .await
+                            match crate::chat::get_session(app, wt_id, wt_path, sess_id.clone())
+                                .await
                             {
                                 Ok(session) => Some((sess_id, session)),
                                 Err(e) => {

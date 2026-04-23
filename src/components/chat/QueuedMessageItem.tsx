@@ -16,11 +16,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import {
-  GripVertical,
-  Trash2,
-  WandSparkles,
-} from 'lucide-react'
+import { GripVertical, Trash2, WandSparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { MessageSettingsBadges } from '@/components/chat/MessageSettingsBadges'
 import type { QueuedMessage } from '@/types/chat'
@@ -118,7 +114,7 @@ const SortableQueuedMessageItem = memo(function SortableQueuedMessageItem({
                 executionMode={message.executionMode}
                 thinkingLevel={message.thinkingLevel}
                 effortLevel={message.effortLevel}
-                isCursor={message.backend === 'cursor'}
+                isCursor={message.model.startsWith('cursor/')}
               />
             </div>
           </div>

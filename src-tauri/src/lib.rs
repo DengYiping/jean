@@ -3096,6 +3096,7 @@ pub fn run() {
             list_available_editors,
             projects::open_pull_request,
             projects::create_pr_with_ai_content,
+            projects::mark_pr_ready_for_review,
             projects::merge_github_pr,
             projects::generate_pr_update_content,
             projects::update_pr_description,

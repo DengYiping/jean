@@ -6,7 +6,10 @@ export function getPrStatusDisplay(status: PrDisplayStatus): {
 } {
   switch (status) {
     case 'draft':
-      return { label: 'Draft', className: 'text-muted-foreground' }
+      return {
+        label: 'Draft',
+        className: 'text-amber-600 dark:text-amber-400',
+      }
     case 'open':
       return { label: 'Open', className: 'text-green-600 dark:text-green-500' }
     case 'merged':

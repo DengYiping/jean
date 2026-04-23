@@ -337,6 +337,8 @@ export interface CreatePrResponse {
   pr_url: string
   /** AI-generated PR title */
   title: string
+  /** Whether the linked or created PR is a draft */
+  is_draft: boolean
   /** Whether this PR already existed (was linked, not newly created) */
   existing: boolean
 }

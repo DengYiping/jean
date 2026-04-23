@@ -4785,6 +4785,39 @@ pub async fn save_worktree_pr(
     Ok(())
 }
 
+/// Mark a linked draft PR as ready for review.
+#[tauri::command]
+pub async fn mark_pr_ready_for_review(app: AppHandle, worktree_id: String) -> Result<(), String> {
+    log::trace!("Marking PR ready for review for worktree {worktree_id}");
+
+    let mut data = load_projects_data(&app)?;
+    let worktree = data
+        .worktrees
+        .iter_mut()
+        .find(|w| w.id == worktree_id)
+        .ok_or_else(|| format!("Worktree not found: {worktree_id}"))?;
+
+    let pr_number = worktree
+        .pr_number
+        .ok_or_else(|| "No PR linked to this worktree".to_string())?;
+
+    let output = build_gh_command(&app, Some(&worktree.path))
+        .args(["pr", "ready", &pr_number.to_string()])
+        .current_dir(&worktree.path)
+        .output()
+        .map_err(|e| format!("Failed to run gh pr ready: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Failed to mark PR ready for review: {stderr}"));
+    }
+
+    worktree.cached_pr_status = Some("open".to_string());
+    save_projects_data(&app, &data)?;
+
+    Ok(())
+}
+
 /// Response from detecting an existing PR for the current branch
 #[derive(Serialize, Clone)]
 pub struct DetectPrResponse {
@@ -4849,6 +4882,8 @@ pub async fn detect_and_link_pr(
             if wt.pr_number.is_some() {
                 wt.pr_number = None;
                 wt.pr_url = None;
+                wt.cached_pr_status = None;
+                wt.cached_check_status = None;
                 let _ = save_projects_data(&app, &data);
             }
         }
@@ -4874,6 +4909,8 @@ pub async fn clear_worktree_pr(app: AppHandle, worktree_id: String) -> Result<()
 
     worktree.pr_number = None;
     worktree.pr_url = None;
+    worktree.cached_pr_status = None;
+    worktree.cached_check_status = None;
 
     save_projects_data(&app, &data)?;
 
@@ -5223,8 +5260,19 @@ pub struct CreatePrResponse {
     pub pr_number: u32,
     pub pr_url: String,
     pub title: String,
+    pub is_draft: bool,
     /// Whether this PR already existed (was linked, not newly created)
     pub existing: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExistingPrViewResponse {
+    number: u32,
+    url: String,
+    title: String,
+    #[serde(default)]
+    is_draft: bool,
 }
 
 /// Extract structured output from Claude CLI stream-json response
@@ -5570,6 +5618,14 @@ fn format_repo_slug(repo: &git::RepoIdentifier) -> String {
     format!("{}/{}", repo.owner, repo.repo)
 }
 
+fn parse_existing_pr_view(stdout: &[u8]) -> Option<ExistingPrViewResponse> {
+    let view = serde_json::from_slice::<ExistingPrViewResponse>(stdout).ok()?;
+    if view.number == 0 || view.url.is_empty() {
+        return None;
+    }
+    Some(view)
+}
+
 /// Create a PR with AI-generated title and body
 ///
 /// This command:
@@ -5578,6 +5634,7 @@ fn format_repo_slug(repo: &git::RepoIdentifier) -> String {
 /// 3. Generates PR title and body using Claude CLI with JSON schema
 /// 4. Creates the PR using gh CLI
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn create_pr_with_ai_content(
     app: AppHandle,
     worktree_path: String,
@@ -5586,8 +5643,10 @@ pub async fn create_pr_with_ai_content(
     model: Option<String>,
     custom_profile_name: Option<String>,
     reasoning_effort: Option<String>,
+    draft: Option<bool>,
 ) -> Result<CreatePrResponse, String> {
     log::trace!("Creating PR for: {worktree_path}");
+    let is_draft = draft.unwrap_or(false);
 
     // Load project data to get target branch
     let data = load_projects_data(&app)?;
@@ -5704,39 +5763,43 @@ pub async fn create_pr_with_ai_content(
             "--repo",
             &target_repo_slug,
             "--json",
-            "number,url,title",
+            "number,url,title,isDraft",
         ])
         .current_dir(&worktree_path)
         .output();
 
     if let Ok(view_out) = view_output {
         if view_out.status.success() {
-            if let Ok(view_json) = serde_json::from_slice::<serde_json::Value>(&view_out.stdout) {
-                let pr_number = view_json["number"].as_u64().unwrap_or(0) as u32;
-                let pr_url = view_json["url"].as_str().unwrap_or("").to_string();
-                let title = view_json["title"].as_str().unwrap_or("").to_string();
+            if let Some(existing_pr) = parse_existing_pr_view(&view_out.stdout) {
+                log::trace!(
+                    "Found existing PR #{}, skipping AI generation",
+                    existing_pr.number
+                );
 
-                if pr_number > 0 && !pr_url.is_empty() {
-                    log::trace!("Found existing PR #{pr_number}, skipping AI generation");
-
-                    // Save PR info to worktree
-                    if let Ok(mut data) = load_projects_data(&app) {
-                        if let Some(wt) =
-                            data.worktrees.iter_mut().find(|w| w.path == worktree_path)
-                        {
-                            wt.pr_number = Some(pr_number);
-                            wt.pr_url = Some(pr_url.clone());
-                            let _ = save_projects_data(&app, &data);
-                        }
+                // Save PR info to worktree
+                if let Ok(mut data) = load_projects_data(&app) {
+                    if let Some(wt) = data.worktrees.iter_mut().find(|w| w.path == worktree_path) {
+                        wt.pr_number = Some(existing_pr.number);
+                        wt.pr_url = Some(existing_pr.url.clone());
+                        wt.cached_pr_status = Some(
+                            if existing_pr.is_draft {
+                                "draft"
+                            } else {
+                                "open"
+                            }
+                            .to_string(),
+                        );
+                        let _ = save_projects_data(&app, &data);
                     }
-
-                    return Ok(CreatePrResponse {
-                        pr_number,
-                        pr_url,
-                        title,
-                        existing: true,
-                    });
                 }
+
+                return Ok(CreatePrResponse {
+                    pr_number: existing_pr.number,
+                    pr_url: existing_pr.url,
+                    title: existing_pr.title,
+                    is_draft: existing_pr.is_draft,
+                    existing: true,
+                });
             }
         }
     }
@@ -5840,20 +5903,26 @@ pub async fn create_pr_with_ai_content(
     // Create the PR using gh CLI
     log::trace!("Creating PR with gh CLI");
     let output = build_gh_command(&app, Some(&worktree_path))
-        .args([
-            "pr",
-            "create",
-            "--repo",
-            &target_repo_slug,
-            "--base",
-            target_branch,
-            "--head",
-            &current_branch,
-            "--title",
-            &pr_content.title,
-            "--body",
-            &pr_content.body,
-        ])
+        .args({
+            let mut args = vec![
+                "pr",
+                "create",
+                "--repo",
+                &target_repo_slug,
+                "--base",
+                target_branch,
+                "--head",
+                &current_branch,
+                "--title",
+                &pr_content.title,
+                "--body",
+                &pr_content.body,
+            ];
+            if is_draft {
+                args.push("--draft");
+            }
+            args
+        })
         .current_dir(&worktree_path)
         .output()
         .map_err(|e| format!("Failed to run gh pr create: {e}"))?;
@@ -5869,39 +5938,40 @@ pub async fn create_pr_with_ai_content(
                     "--repo",
                     &target_repo_slug,
                     "--json",
-                    "number,url,title",
+                    "number,url,title,isDraft",
                 ])
                 .current_dir(&worktree_path)
                 .output();
 
             if let Ok(view_out) = view_output {
                 if view_out.status.success() {
-                    if let Ok(view_json) =
-                        serde_json::from_slice::<serde_json::Value>(&view_out.stdout)
-                    {
-                        let pr_number = view_json["number"].as_u64().unwrap_or(0) as u32;
-                        let pr_url = view_json["url"].as_str().unwrap_or("").to_string();
-                        let title = view_json["title"].as_str().unwrap_or("").to_string();
-
-                        if pr_number > 0 && !pr_url.is_empty() {
-                            // Save PR info to worktree
-                            if let Ok(mut data) = load_projects_data(&app) {
-                                if let Some(wt) =
-                                    data.worktrees.iter_mut().find(|w| w.path == worktree_path)
-                                {
-                                    wt.pr_number = Some(pr_number);
-                                    wt.pr_url = Some(pr_url.clone());
-                                    let _ = save_projects_data(&app, &data);
-                                }
+                    if let Some(existing_pr) = parse_existing_pr_view(&view_out.stdout) {
+                        // Save PR info to worktree
+                        if let Ok(mut data) = load_projects_data(&app) {
+                            if let Some(wt) =
+                                data.worktrees.iter_mut().find(|w| w.path == worktree_path)
+                            {
+                                wt.pr_number = Some(existing_pr.number);
+                                wt.pr_url = Some(existing_pr.url.clone());
+                                wt.cached_pr_status = Some(
+                                    if existing_pr.is_draft {
+                                        "draft"
+                                    } else {
+                                        "open"
+                                    }
+                                    .to_string(),
+                                );
+                                let _ = save_projects_data(&app, &data);
                             }
-
-                            return Ok(CreatePrResponse {
-                                pr_number,
-                                pr_url,
-                                title,
-                                existing: true,
-                            });
                         }
+
+                        return Ok(CreatePrResponse {
+                            pr_number: existing_pr.number,
+                            pr_url: existing_pr.url,
+                            title: existing_pr.title,
+                            is_draft: existing_pr.is_draft,
+                            existing: true,
+                        });
                     }
                 }
             }
@@ -5916,10 +5986,20 @@ pub async fn create_pr_with_ai_content(
 
     log::trace!("Successfully created PR #{pr_number}: {pr_url}");
 
+    if let Ok(mut data) = load_projects_data(&app) {
+        if let Some(wt) = data.worktrees.iter_mut().find(|w| w.path == worktree_path) {
+            wt.pr_number = Some(pr_number);
+            wt.pr_url = Some(pr_url.clone());
+            wt.cached_pr_status = Some(if is_draft { "draft" } else { "open" }.to_string());
+            let _ = save_projects_data(&app, &data);
+        }
+    }
+
     Ok(CreatePrResponse {
         pr_number,
         pr_url,
         title: pr_content.title,
+        is_draft,
         existing: false,
     })
 }
@@ -9739,6 +9819,36 @@ Body
 
         let result = extract_structured_output(output);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_existing_pr_view_reads_draft_flag() {
+        let stdout = br#"{
+            "number": 42,
+            "url": "https://github.com/test/repo/pull/42",
+            "title": "Draft PR",
+            "isDraft": true
+        }"#;
+
+        let parsed = parse_existing_pr_view(stdout).unwrap();
+
+        assert_eq!(parsed.number, 42);
+        assert_eq!(parsed.title, "Draft PR");
+        assert!(parsed.is_draft);
+    }
+
+    #[test]
+    fn test_parse_existing_pr_view_defaults_non_draft() {
+        let stdout = br#"{
+            "number": 99,
+            "url": "https://github.com/test/repo/pull/99",
+            "title": "Normal PR"
+        }"#;
+
+        let parsed = parse_existing_pr_view(stdout).unwrap();
+
+        assert_eq!(parsed.number, 99);
+        assert!(!parsed.is_draft);
     }
 
     #[test]

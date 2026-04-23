@@ -315,6 +315,7 @@ pub async fn dispatch_command(
                 field_opt(&args, "customProfileName", "custom_profile_name")?;
             let reasoning_effort: Option<String> =
                 field_opt(&args, "reasoningEffort", "reasoning_effort")?;
+            let draft: Option<bool> = from_field_opt(&args, "draft")?;
             let result = crate::projects::create_pr_with_ai_content(
                 app.clone(),
                 worktree_path,
@@ -323,9 +324,17 @@ pub async fn dispatch_command(
                 model,
                 custom_profile_name,
                 reasoning_effort,
+                draft,
             )
             .await?;
+            emit_cache_invalidation(app, &["projects"]);
             to_value(result)
+        }
+        "mark_pr_ready_for_review" => {
+            let worktree_id: String = field(&args, "worktreeId", "worktree_id")?;
+            crate::projects::mark_pr_ready_for_review(app.clone(), worktree_id).await?;
+            emit_cache_invalidation(app, &["projects"]);
+            Ok(Value::Null)
         }
         "merge_github_pr" => {
             let worktree_path: String = field(&args, "worktreePath", "worktree_path")?;

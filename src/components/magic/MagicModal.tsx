@@ -51,15 +51,18 @@ import type {
   MergeConflictsResponse,
   MergePrResponse,
   ReviewResponse,
+  Worktree,
 } from '@/types/projects'
 import type { Session } from '@/types/chat'
+import type { PrDisplayStatus, PrStatusEvent } from '@/types/pr-status'
 import {
   DEFAULT_RESOLVE_CONFLICTS_PROMPT,
   resolveMagicPromptProvider,
 } from '@/types/preferences'
 import { useRemotePicker } from '@/hooks/useRemotePicker'
 import { chatQueryKeys } from '@/services/chat'
-import { saveWorktreePr, projectsQueryKeys } from '@/services/projects'
+import { prStatusQueryKeys } from '@/services/pr-status'
+import { projectsQueryKeys } from '@/services/projects'
 import { useQueryClient } from '@tanstack/react-query'
 
 type MagicOption =
@@ -73,7 +76,9 @@ type MagicOption =
   | 'pull-upstream'
   | 'push'
   | 'open-pr'
+  | 'draft-pr'
   | 'update-pr'
+  | 'ready-for-review'
   | 'review'
   | 'merge'
   | 'resolve-conflicts'
@@ -94,12 +99,14 @@ const CANVAS_ALLOWED_OPTIONS = new Set<MagicOption>([
   'pull-upstream',
   'push',
   'open-pr',
+  'draft-pr',
   'update-pr',
   'review',
   'review-comments',
   'release-notes',
   'merge',
   'merge-pr',
+  'ready-for-review',
   'resolve-conflicts',
   'linked-projects',
 ])
@@ -125,7 +132,10 @@ interface MagicColumns {
   all: MagicSection[]
 }
 
-function buildMagicColumns(hasOpenPr: boolean): MagicColumns {
+function buildMagicColumns(
+  hasOpenPr: boolean,
+  hasDraftPr: boolean
+): MagicColumns {
   const left: MagicSection[] = [
     {
       header: 'Context',
@@ -199,6 +209,26 @@ function buildMagicColumns(hasOpenPr: boolean): MagicColumns {
           icon: GitPullRequest,
           key: 'O',
         },
+        ...(!hasOpenPr
+          ? [
+              {
+                id: 'draft-pr' as const,
+                label: 'Create Draft',
+                icon: GitPullRequest,
+                key: 'Y',
+              },
+            ]
+          : []),
+        ...(hasDraftPr
+          ? [
+              {
+                id: 'ready-for-review' as const,
+                label: 'Ready for Review',
+                icon: GitPullRequestArrow,
+                key: 'W',
+              },
+            ]
+          : []),
         { id: 'review', label: 'Review', icon: Eye, key: 'R' },
         {
           id: 'review-comments',
@@ -267,7 +297,9 @@ const KEY_TO_OPTION: Record<string, MagicOption> = {
   h: 'pull-upstream',
   u: 'push',
   o: 'open-pr',
+  y: 'draft-pr',
   e: 'update-pr',
+  w: 'ready-for-review',
   r: 'review',
   v: 'review-comments',
   m: 'merge',
@@ -299,6 +331,10 @@ export function MagicModal() {
     useState<MagicOption>('save-context')
 
   const hasOpenPr = Boolean(worktree?.pr_url)
+  const prDisplayStatus = worktree?.cached_pr_status as
+    | PrDisplayStatus
+    | undefined
+  const hasDraftPr = prDisplayStatus === 'draft'
 
   // Check if worktree has loaded issue/PR contexts (for enabling investigate options)
   // Contexts may be registered under session ID (Load Context) or worktree ID (create_worktree)
@@ -323,7 +359,10 @@ export function MagicModal() {
   const pickRemoteOrRun = useRemotePicker(worktree?.path)
 
   // Build columns dynamically based on PR state
-  const magicColumns = useMemo(() => buildMagicColumns(hasOpenPr), [hasOpenPr])
+  const magicColumns = useMemo(
+    () => buildMagicColumns(hasOpenPr, hasDraftPr),
+    [hasOpenPr, hasDraftPr]
+  )
 
   // Flatten all options for arrow key navigation
   const allOptions = useMemo(
@@ -359,6 +398,61 @@ export function MagicModal() {
     ? projects?.find(p => p.id === worktree.project_id)
     : null
 
+  const syncLocalPrState = useCallback(
+    (
+      prNumber: number,
+      prUrl: string,
+      status: Extract<PrDisplayStatus, 'draft' | 'open'>
+    ) => {
+      if (!selectedWorktreeId || !worktree) return
+
+      queryClient.setQueryData<Worktree | null>(
+        [...projectsQueryKeys.all, 'worktree', selectedWorktreeId],
+        current =>
+          current
+            ? {
+                ...current,
+                pr_number: prNumber,
+                pr_url: prUrl,
+                cached_pr_status: status,
+              }
+            : current
+      )
+
+      queryClient.setQueryData<Worktree[]>(
+        projectsQueryKeys.worktrees(worktree.project_id),
+        current =>
+          current?.map(item =>
+            item.id === selectedWorktreeId
+              ? {
+                  ...item,
+                  pr_number: prNumber,
+                  pr_url: prUrl,
+                  cached_pr_status: status,
+                }
+              : item
+          ) ?? current
+      )
+
+      queryClient.setQueryData<PrStatusEvent | null>(
+        prStatusQueryKeys.worktree(selectedWorktreeId),
+        current => ({
+          worktree_id: selectedWorktreeId,
+          pr_number: prNumber,
+          pr_url: prUrl,
+          state: 'open',
+          is_draft: status === 'draft',
+          review_decision: current?.review_decision ?? null,
+          check_status: current?.check_status ?? null,
+          display_status: status,
+          mergeable: current?.mergeable ?? null,
+          checked_at: Math.floor(Date.now() / 1000),
+        })
+      )
+    },
+    [queryClient, selectedWorktreeId, worktree]
+  )
+
   // Direct git execution for when ChatWindow isn't rendered (project canvas)
   const executeGitDirectly = useCallback(
     async (option: MagicOption) => {
@@ -366,6 +460,70 @@ export function MagicModal() {
 
       const { setWorktreeLoading, clearWorktreeLoading } =
         useChatStore.getState()
+
+      const doCreatePr = async (draft: boolean) => {
+        setWorktreeLoading(selectedWorktreeId, 'pr')
+        const branch = worktree.branch ?? ''
+        const toastId = toast.loading(
+          `${draft ? 'Creating draft PR' : 'Creating PR'} for ${branch}...`
+        )
+
+        try {
+          const result = await invoke<CreatePrResponse>(
+            'create_pr_with_ai_content',
+            {
+              worktreePath: worktree.path,
+              sessionId: activeSessionId,
+              customPrompt: preferences?.magic_prompts?.pr_content,
+              model: preferences?.magic_prompt_models?.pr_content_model,
+              customProfileName: resolveMagicPromptProvider(
+                preferences?.magic_prompt_providers,
+                'pr_content_provider',
+                preferences?.default_provider
+              ),
+              reasoningEffort:
+                preferences?.magic_prompt_efforts?.pr_content_effort ?? null,
+              draft,
+            }
+          )
+
+          syncLocalPrState(
+            result.pr_number,
+            result.pr_url,
+            result.is_draft ? 'draft' : 'open'
+          )
+          queryClient.invalidateQueries({
+            queryKey: projectsQueryKeys.worktrees(worktree.project_id),
+          })
+          queryClient.invalidateQueries({
+            queryKey: [
+              ...projectsQueryKeys.all,
+              'worktree',
+              selectedWorktreeId,
+            ],
+          })
+          triggerImmediateGitPoll()
+          if (worktree.project_id) fetchWorktreesStatus(worktree.project_id)
+          toast.success(
+            result.existing
+              ? `PR linked: ${result.title}`
+              : `${result.is_draft ? 'Draft PR' : 'PR'} created: ${result.title}`,
+            {
+              id: toastId,
+              action: {
+                label: 'Open',
+                onClick: () => openExternal(result.pr_url),
+              },
+            }
+          )
+        } catch (error) {
+          toast.error(`Failed to create ${draft ? 'draft ' : ''}PR: ${error}`, {
+            id: toastId,
+          })
+        } finally {
+          clearWorktreeLoading(selectedWorktreeId)
+        }
+      }
 
       const doCommit = async (isPush: boolean, remote?: string) => {
         setWorktreeLoading(selectedWorktreeId, 'commit')
@@ -517,31 +675,30 @@ export function MagicModal() {
             await openExternal(worktree.pr_url)
             return
           }
+          await doCreatePr(false)
+          break
+        }
+        case 'draft-pr': {
+          if (worktree.pr_url) {
+            toast.error('A PR is already linked to this worktree')
+            return
+          }
+          await doCreatePr(true)
+          break
+        }
+        case 'ready-for-review': {
+          if (!worktree.pr_number || !hasDraftPr) {
+            toast.error('No draft PR linked to this worktree')
+            return
+          }
           setWorktreeLoading(selectedWorktreeId, 'pr')
-          const branch = worktree.branch ?? ''
-          const toastId = toast.loading(`Creating PR for ${branch}...`)
+          const toastId = toast.loading('Marking draft PR ready for review...')
           try {
-            const result = await invoke<CreatePrResponse>(
-              'create_pr_with_ai_content',
-              {
-                worktreePath: worktree.path,
-                customPrompt: preferences?.magic_prompts?.pr_content,
-                model: preferences?.magic_prompt_models?.pr_content_model,
-                customProfileName: resolveMagicPromptProvider(
-                  preferences?.magic_prompt_providers,
-                  'pr_content_provider',
-                  preferences?.default_provider
-                ),
-                reasoningEffort:
-                  preferences?.magic_prompt_efforts?.pr_content_effort ?? null,
-              }
-            )
-            if (!result.existing) {
-              await saveWorktreePr(
-                selectedWorktreeId,
-                result.pr_number,
-                result.pr_url
-              )
+            await invoke('mark_pr_ready_for_review', {
+              worktreeId: selectedWorktreeId,
+            })
+            if (worktree.pr_url) {
+              syncLocalPrState(worktree.pr_number, worktree.pr_url, 'open')
             }
             queryClient.invalidateQueries({
               queryKey: projectsQueryKeys.worktrees(worktree.project_id),
@@ -553,22 +710,11 @@ export function MagicModal() {
                 selectedWorktreeId,
               ],
             })
-            triggerImmediateGitPoll()
-            if (worktree.project_id) fetchWorktreesStatus(worktree.project_id)
-            toast.success(
-              result.existing
-                ? `PR linked: ${result.title}`
-                : `PR created: ${result.title}`,
-              {
-                id: toastId,
-                action: {
-                  label: 'Open',
-                  onClick: () => openExternal(result.pr_url),
-                },
-              }
-            )
+            toast.success('PR marked ready for review', { id: toastId })
           } catch (error) {
-            toast.error(`Failed to create PR: ${error}`, { id: toastId })
+            toast.error(`Failed to mark PR ready for review: ${error}`, {
+              id: toastId,
+            })
           } finally {
             clearWorktreeLoading(selectedWorktreeId)
           }
@@ -868,10 +1014,13 @@ ${resolveInstructions}`
     [
       selectedWorktreeId,
       worktree,
+      activeSessionId,
       preferences,
       project,
       queryClient,
       pickRemoteOrRun,
+      syncLocalPrState,
+      hasDraftPr,
     ]
   )
 
@@ -982,6 +1131,32 @@ ${resolveInstructions}`
         return
       }
 
+      if (option === 'draft-pr') {
+        if (worktree?.pr_url) {
+          notify('A PR is already linked to this worktree', undefined, {
+            type: 'error',
+          })
+          setMagicModalOpen(false)
+          return
+        }
+      }
+
+      if (option === 'ready-for-review') {
+        if (!worktree?.pr_number || !hasDraftPr) {
+          notify('No draft PR linked to this worktree', undefined, {
+            type: 'error',
+          })
+          setMagicModalOpen(false)
+          return
+        }
+      }
+
+      if (option === 'draft-pr' || option === 'ready-for-review') {
+        setMagicModalOpen(false)
+        await executeGitDirectly(option)
+        return
+      }
+
       // If PR already exists, open it in the browser instead of creating a new one
       if (option === 'open-pr' && worktree?.pr_url) {
         await openExternal(worktree.pr_url)
@@ -1037,6 +1212,7 @@ ${resolveInstructions}`
       activeSessionId,
       worktree?.path,
       worktree?.pr_number,
+      hasDraftPr,
     ]
   )
 
@@ -1116,7 +1292,9 @@ ${resolveInstructions}`
                         (option.id === 'investigate-issue' &&
                           !hasIssueContexts) ||
                         (option.id === 'investigate-pr' && !hasPrContexts) ||
+                        (option.id === 'draft-pr' && hasOpenPr) ||
                         (option.id === 'update-pr' && !hasOpenPr) ||
+                        (option.id === 'ready-for-review' && !hasDraftPr) ||
                         (option.id === 'review-comments' && !hasOpenPr) ||
                         (option.id === 'merge-pr' && !hasOpenPr)
 

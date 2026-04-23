@@ -668,6 +668,15 @@ pub async fn remove_project(app: AppHandle, project_id: String) -> Result<(), St
         }
     }
 
+    if let Ok(mut preferences) = crate::load_preferences(app.clone()).await {
+        if preferences.default_project_id.as_deref() == Some(project_id.as_str()) {
+            preferences.default_project_id = None;
+            if let Err(e) = crate::save_preferences(app.clone(), preferences).await {
+                log::warn!("Failed to clear default project preference for removed project: {e}");
+            }
+        }
+    }
+
     log::trace!("Successfully removed project: {project_id}");
     Ok(())
 }

@@ -1,4 +1,4 @@
-import type { LabelData } from '@/types/chat'
+import type { LabelData, Session } from '@/types/chat'
 import type { AdvisoryContext, SecurityAlertContext } from '@/types/github'
 import type { EditorApp } from '@/types/preferences'
 
@@ -384,6 +384,19 @@ export interface CliImportedProjectResult {
   worktree: Worktree
   session_id: string
   created: boolean
+}
+
+export interface PendingCliYoloRequest {
+  id: string
+  prompt: string
+  created_at: number
+}
+
+export interface CliYoloSessionResult {
+  project: Project
+  worktree: Worktree
+  session: Session
+  prompt: string
 }
 
 // =============================================================================

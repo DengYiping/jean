@@ -46,6 +46,8 @@ export const defaultResponses: Record<string, unknown> = {
     branch: 'new-worktree',
     order: 2,
   }),
+  consume_pending_cli_yolo_requests: [],
+  prepare_cli_yolo_from_pending_request: null,
 
   // Sessions
   get_sessions: { sessions: [], active_session_id: null },
@@ -210,7 +212,9 @@ export const defaultResponses: Record<string, unknown> = {
   // Session settings
   set_active_session: null,
   set_session_model: null,
+  set_session_thinking_level: null,
   set_session_effort_level: null,
+  set_session_backend: null,
   set_session_provider: null,
   update_session_state: null,
   answer_codex_mcp_elicitation: null,

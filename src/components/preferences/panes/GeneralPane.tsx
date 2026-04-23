@@ -113,6 +113,7 @@ import {
   setGitPollInterval,
   setRemotePollInterval,
 } from '@/services/git-status'
+import { useProjects } from '@/services/projects'
 
 interface CleanupResult {
   deleted_worktrees: number
@@ -157,6 +158,7 @@ const InlineField: React.FC<{
 export const GeneralPane: React.FC = () => {
   const queryClient = useQueryClient()
   const { data: preferences } = usePreferences()
+  const { data: projects = [] } = useProjects()
   const patchPreferences = usePatchPreferences()
   const notificationSoundOptions = getNotificationSoundOptions()
   const waitingSound = normalizeNotificationSound(preferences?.waiting_sound)
@@ -337,6 +339,14 @@ export const GeneralPane: React.FC = () => {
     }
   }
 
+  const handleDefaultProjectChange = (value: string) => {
+    if (preferences) {
+      patchPreferences.mutate({
+        default_project_id: value === 'none' ? null : value,
+      })
+    }
+  }
+
   // If stored default_backend isn't installed, fall back to the first installed one
   const stored = preferences?.default_backend ?? 'claude'
   const claudeInstalled = cliStatus?.installed
@@ -352,6 +362,10 @@ export const GeneralPane: React.FC = () => {
     const first = backendOptions.find(o => installed[o.value])
     return first?.value ?? stored
   }, [stored, claudeInstalled, codexInstalled, opencodeInstalled])
+  const repoProjects = useMemo(
+    () => projects.filter(project => !project.is_folder),
+    [projects]
+  )
 
   const handleCodexModelChange = (value: CodexModel) => {
     if (preferences) {
@@ -1142,6 +1156,28 @@ export const GeneralPane: React.FC = () => {
                       {option.label}
                     </SelectItem>
                   ))}
+              </SelectContent>
+            </Select>
+          </InlineField>
+
+          <InlineField
+            label="Default repo for CLI yolo"
+            description="Desktop `jean yolo` requests open a new base-session thread in this repo"
+          >
+            <Select
+              value={preferences?.default_project_id ?? 'none'}
+              onValueChange={handleDefaultProjectChange}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None</SelectItem>
+                {repoProjects.map(project => (
+                  <SelectItem key={project.id} value={project.id}>
+                    {project.name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </InlineField>

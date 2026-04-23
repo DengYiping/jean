@@ -94,6 +94,12 @@ Additional systems (no dedicated docs yet):
 - **MCP** - Model Context Protocol server integration with per-project overrides (`src/services/mcp.ts`)
 - **CLI Management** - Claude CLI, Codex CLI, Cursor CLI, OpenCode, and gh CLI installation/versioning (`src-tauri/src/claude_cli/`, `src-tauri/src/codex_cli/`, `src-tauri/src/cursor_cli/`, `src-tauri/src/opencode_cli/`, `src-tauri/src/gh_cli/`)
 
+Desktop CLI queue pattern:
+
+- Short desktop CLI commands like `jean import ...` and `jean yolo ...` should not mutate app state directly.
+- Instead, they write a small request file into app data, launch Jean, and let the React app consume the request on startup.
+- This keeps the CLI path thin, avoids duplicating frontend navigation logic, and works even when the app is not already running.
+
 Cursor-specific notes:
 
 - Cursor auth/status checks must use short timeouts; `cursor-agent status/about` can hang indefinitely

@@ -99,6 +99,19 @@ jean --headless --host 127.0.0.1 --port 3456
 `--host` accepts `localhost` or an IP address. Passing a specific address such
 as your Tailscale IP binds Jean only to that interface.
 
+## Desktop CLI
+
+Desktop CLI subcommands can hand work off to the Jean app:
+
+```bash
+jean import /path/to/repo
+jean yolo "tell me about Iceberg"
+```
+
+`jean yolo` opens Jean, creates a fresh yolo session in the configured default
+repo's base session, and sends the prompt there. Configure the target repo in
+Settings > General > Default repo for CLI yolo.
+
 ## Roadmap
 
 - Enhance remote web access

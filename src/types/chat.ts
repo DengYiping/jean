@@ -875,6 +875,8 @@ export interface ClaudeCommand {
   path: string
   /** Optional description from file header */
   description?: string
+  /** Where the command comes from */
+  source?: 'file' | 'builtin'
 }
 
 export interface SkillReference {

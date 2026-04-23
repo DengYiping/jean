@@ -1628,6 +1628,13 @@ pub async fn send_chat_message(
         .find_session(&session_id)
         .and_then(|s| s.opencode_session_id.clone());
 
+    if effective_backend == Backend::Codex
+        && super::codex::is_manual_compact_request(&message)
+        && codex_thread_id.is_none()
+    {
+        return Err("Nothing to compact yet. Send one message first.".to_string());
+    }
+
     // Start NDJSON run log for crash recovery
     let mut run_log_writer = run_log::start_run(
         &app,
@@ -2212,23 +2219,38 @@ pub async fn send_chat_message(
                     }
                 };
 
-                match super::codex::execute_codex_via_server(
-                    &thread_app,
-                    &thread_session_id,
-                    &thread_worktree_id,
-                    &thread_output_file,
-                    std::path::Path::new(&thread_working_dir),
-                    thread_codex_thread_id.as_deref(),
-                    thread_model.as_deref(),
-                    thread_execution_mode.as_deref(),
-                    codex_reasoning_effort.as_deref(),
-                    thread_codex_search,
-                    &codex_add_dirs,
-                    &thread_message,
-                    codex_developer_prompt.as_deref(),
-                    thread_codex_multi_agent,
-                    thread_codex_max_threads,
-                ) {
+                let codex_result = if super::codex::is_manual_compact_request(&thread_message) {
+                    match thread_codex_thread_id.as_deref() {
+                        Some(thread_id) => super::codex::execute_codex_compact_via_server(
+                            &thread_app,
+                            &thread_session_id,
+                            &thread_worktree_id,
+                            &thread_output_file,
+                            thread_id,
+                        ),
+                        None => Err("Nothing to compact yet. Send one message first.".to_string()),
+                    }
+                } else {
+                    super::codex::execute_codex_via_server(
+                        &thread_app,
+                        &thread_session_id,
+                        &thread_worktree_id,
+                        &thread_output_file,
+                        std::path::Path::new(&thread_working_dir),
+                        thread_codex_thread_id.as_deref(),
+                        thread_model.as_deref(),
+                        thread_execution_mode.as_deref(),
+                        codex_reasoning_effort.as_deref(),
+                        thread_codex_search,
+                        &codex_add_dirs,
+                        &thread_message,
+                        codex_developer_prompt.as_deref(),
+                        thread_codex_multi_agent,
+                        thread_codex_max_threads,
+                    )
+                };
+
+                match codex_result {
                     Ok(response) => Ok((
                         0, // No PID for app-server sessions
                         UnifiedResponse {

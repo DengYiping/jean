@@ -25,6 +25,15 @@ import type {
 import { cn } from '@/lib/utils'
 import { fuzzySearchItems } from '@/lib/fuzzy-search'
 
+const BUILTIN_COMMANDS: ClaudeCommand[] = [
+  {
+    name: 'compact',
+    path: '',
+    description: 'Summarize history and free up context',
+    source: 'builtin',
+  },
+]
+
 export interface SlashPopoverHandle {
   moveUp: () => void
   moveDown: () => void
@@ -79,13 +88,22 @@ export function SlashPopover({
   const { data: commands = [] } = useClaudeCommands(worktreePath)
   const listRef = useRef<HTMLDivElement>(null)
   const [selectedIndex, setSelectedIndex] = useState(0)
+  const availableCommands = useMemo(() => {
+    if (backend === 'claude') {
+      return [...BUILTIN_COMMANDS, ...commands]
+    }
+    if (backend === 'codex') {
+      return BUILTIN_COMMANDS
+    }
+    return []
+  }, [backend, commands])
 
   // Filter and combine items based on search query and context (fuzzy match)
   const filteredItems = useMemo(() => {
     const items: ListItem[] = []
 
-    if (mode === 'command' && backend === 'claude') {
-      fuzzySearchItems(commands, searchQuery, 10).forEach(cmd => {
+    if (mode === 'command' && availableCommands.length > 0) {
+      fuzzySearchItems(availableCommands, searchQuery, 10).forEach(cmd => {
         items.push({ type: 'command', data: cmd })
       })
     }
@@ -97,7 +115,7 @@ export function SlashPopover({
     }
 
     return items.slice(0, 15) // Limit total to 15
-  }, [backend, commands, mode, searchQuery, skills])
+  }, [availableCommands, mode, searchQuery, skills])
 
   // Clamp selectedIndex to valid range (handles case when filter reduces results)
   const clampedSelectedIndex = Math.min(

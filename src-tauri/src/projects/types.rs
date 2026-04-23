@@ -134,6 +134,9 @@ pub struct Project {
     /// Linear team ID to filter issues (None = show all teams)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub linear_team_id: Option<String>,
+    /// Default editor app for opening this repo and its worktrees (None = use global default)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_editor: Option<String>,
     /// Hide this project's GitHub issues and PRs across Jean
     #[serde(default)]
     pub hide_github_issues_and_prs: bool,
@@ -648,5 +651,22 @@ mod tests {
         .unwrap();
 
         assert!(!project.hide_github_issues_and_prs);
+    }
+
+    #[test]
+    fn project_deserializes_default_editor_to_none_by_default() {
+        let project: Project = serde_json::from_str(
+            r#"{
+                "id": "project-1",
+                "name": "demo",
+                "path": "/tmp/demo",
+                "default_branch": "main",
+                "added_at": 1,
+                "order": 0
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(project.default_editor, None);
     }
 }

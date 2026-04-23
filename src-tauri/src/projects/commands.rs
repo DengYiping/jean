@@ -361,6 +361,7 @@ pub async fn add_project(
         worktrees_dir: None,
         linear_api_key: None,
         linear_team_id: None,
+        default_editor: None,
         hide_github_issues_and_prs: false,
         linked_project_ids: Vec::new(),
     };
@@ -524,6 +525,7 @@ pub async fn init_project(
         worktrees_dir: None,
         linear_api_key: None,
         linear_team_id: None,
+        default_editor: None,
         hide_github_issues_and_prs: false,
         linked_project_ids: Vec::new(),
     };
@@ -581,6 +583,7 @@ pub async fn clone_project(
         worktrees_dir: None,
         linear_api_key: None,
         linear_team_id: None,
+        default_editor: None,
         hide_github_issues_and_prs: false,
         linked_project_ids: Vec::new(),
     };
@@ -3863,10 +3866,30 @@ pub async fn open_worktree_in_terminal(
 /// Open a worktree path in the configured editor app (macOS)
 #[tauri::command]
 pub async fn open_worktree_in_editor(
+    app: AppHandle,
     worktree_path: String,
     editor: Option<String>,
 ) -> Result<(), String> {
-    let editor_app = editor.unwrap_or_else(|| "zed".to_string());
+    let editor_app = load_projects_data(&app)
+        .ok()
+        .map(|data| {
+            crate::projects::storage::resolve_editor_for_path(
+                &data,
+                &worktree_path,
+                editor.as_deref(),
+                crate::load_preferences_sync(&app)
+                    .ok()
+                    .map(|prefs| prefs.editor)
+                    .as_deref(),
+            )
+        })
+        .unwrap_or_else(|| {
+            editor.unwrap_or_else(|| {
+                crate::load_preferences_sync(&app)
+                    .map(|prefs| prefs.editor)
+                    .unwrap_or_else(|_| "zed".to_string())
+            })
+        });
     log::trace!("Opening worktree in {editor_app}: {worktree_path}");
 
     // If opening jean.json and it doesn't exist, create template
@@ -4325,6 +4348,7 @@ pub async fn update_project_settings(
     custom_system_prompt: Option<String>,
     default_provider: Option<Option<String>>,
     default_backend: Option<Option<String>>,
+    default_editor: Option<Option<String>>,
     github_account_host: Option<String>,
     github_account_user: Option<String>,
     worktrees_dir: Option<String>,
@@ -4387,6 +4411,11 @@ pub async fn update_project_settings(
     if let Some(backend) = default_backend {
         log::trace!("Updating default backend: {backend:?}");
         project.default_backend = backend.filter(|b| b != "__none__");
+    }
+
+    if let Some(editor) = default_editor {
+        log::trace!("Updating default editor: {editor:?}");
+        project.default_editor = editor.filter(|e| e != "__none__");
     }
 
     if let Some(host) = github_account_host {
@@ -8701,6 +8730,7 @@ pub async fn create_folder(
         worktrees_dir: None,
         linear_api_key: None,
         linear_team_id: None,
+        default_editor: None,
         hide_github_issues_and_prs: false,
         linked_project_ids: Vec::new(),
     };

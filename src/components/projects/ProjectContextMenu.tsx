@@ -32,7 +32,11 @@ import {
 import { usePreferences } from '@/services/preferences'
 import { useProjectsStore } from '@/store/projects-store'
 import { useUIStore } from '@/store/ui-store'
-import { getEditorLabel, getTerminalLabel } from '@/types/preferences'
+import {
+  getEditorLabel,
+  getEffectiveEditor,
+  getTerminalLabel,
+} from '@/types/preferences'
 import { getFileManagerName } from '@/lib/platform'
 
 interface ProjectContextMenuProps {
@@ -58,6 +62,10 @@ export function ProjectContextMenu({
   const setNewWorktreeModalOpen = useUIStore(
     state => state.setNewWorktreeModalOpen
   )
+  const effectiveEditor = getEffectiveEditor(
+    project.default_editor,
+    preferences?.editor
+  )
   // Check if base session already exists
   const existingBaseSession = worktrees.find(isBaseSession)
   const isNested = project.parent_id !== undefined
@@ -80,7 +88,7 @@ export function ProjectContextMenu({
   const handleOpenInEditor = () => {
     openInEditor.mutate({
       worktreePath: project.path,
-      editor: preferences?.editor,
+      editor: undefined,
     })
   }
 
@@ -141,7 +149,7 @@ export function ProjectContextMenu({
 
         <ContextMenuItem onClick={handleOpenInEditor}>
           <Code className="mr-2 h-4 w-4" />
-          Open in {getEditorLabel(preferences?.editor)}
+          Open in {getEditorLabel(effectiveEditor)}
         </ContextMenuItem>
 
         <ContextMenuItem onClick={handleOpenInFinder}>

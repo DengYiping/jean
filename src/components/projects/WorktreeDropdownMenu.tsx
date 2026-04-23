@@ -96,6 +96,7 @@ export function WorktreeDropdownMenu({
     buildScript,
     runScripts,
     preferences,
+    effectiveEditor,
     handleRun,
     handleRunCommand,
     handleBuild,
@@ -317,7 +318,7 @@ export function WorktreeDropdownMenu({
           {isNativeApp() && (
             <DropdownMenuItem onClick={handleOpenInEditor}>
               <Code className="mr-2 h-4 w-4" />
-              Open in {getEditorLabel(preferences?.editor)}
+              Open in {getEditorLabel(effectiveEditor)}
             </DropdownMenuItem>
           )}
 

@@ -32,6 +32,7 @@ import { useLoadedIssueContexts, useLoadedPRContexts } from '@/services/github'
 import { useAvailableEditors, usePreferences } from '@/services/preferences'
 import {
   getDetectedEditorOptions,
+  getEffectiveEditor,
   getEditorLabel,
   getTerminalLabel,
   type EditorApp,
@@ -85,10 +86,17 @@ export function OpenInModal() {
   )
   const { data: loadedPRs } = useLoadedPRContexts(activeSessionId)
   const { data: loadedIssues } = useLoadedIssueContexts(activeSessionId)
+  const selectedProject =
+    projects?.find(p => p.id === (worktree?.project_id ?? selectedProjectId)) ??
+    null
+  const effectiveEditor = getEffectiveEditor(
+    selectedProject?.default_editor,
+    preferences?.editor
+  )
 
   const editorOptions = useMemo(
-    () => getDetectedEditorOptions(preferences?.editor, availableEditors),
-    [availableEditors, preferences?.editor]
+    () => getDetectedEditorOptions(effectiveEditor, availableEditors),
+    [availableEditors, effectiveEditor]
   )
 
   const isNative = isNativeApp()
@@ -113,7 +121,7 @@ export function OpenInModal() {
     const allOptions: ModalOption[] = [
       {
         id: 'editor',
-        label: getEditorLabel(preferences?.editor),
+        label: getEditorLabel(effectiveEditor),
         icon: Code,
         key: 'E',
       },
@@ -159,7 +167,7 @@ export function OpenInModal() {
       : allOptions.filter(opt => opt.id === 'github' || opt.id === 'open-pr')
   }, [
     editorOptions,
-    preferences?.editor,
+    effectiveEditor,
     preferences?.terminal,
     isNative,
     worktree?.pr_url,
@@ -274,7 +282,7 @@ export function OpenInModal() {
         case 'editor':
           openInEditor.mutate({
             worktreePath: targetPath,
-            editor: preferences?.editor,
+            editor: undefined,
           })
           break
         case 'terminal':

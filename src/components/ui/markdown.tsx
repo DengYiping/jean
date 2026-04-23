@@ -20,7 +20,6 @@ import remend from 'remend'
 import { Copy, Check, Table, ListChecks } from 'lucide-react'
 import { toast } from 'sonner'
 import { invoke } from '@/lib/transport'
-import { usePreferences } from '@/services/preferences'
 import { isNativeApp } from '@/lib/environment'
 import { copyToClipboard } from '@/lib/clipboard'
 import {
@@ -513,30 +512,25 @@ const Markdown = memo(function Markdown({
   messageId,
   sessionId,
 }: MarkdownProps) {
-  const { data: preferences } = usePreferences()
   // Apply remend preprocessing for streaming content to auto-close incomplete markdown
   const content = streaming ? remend(children) : children
 
-  const handleLocalLinkOpen = useCallback(
-    async (href: string) => {
-      const parsed = parseLocalEditorLink(href)
-      if (!parsed || !isNativeApp()) return false
+  const handleLocalLinkOpen = useCallback(async (href: string) => {
+    const parsed = parseLocalEditorLink(href)
+    if (!parsed || !isNativeApp()) return false
 
-      try {
-        await invoke('open_file_in_default_app', {
-          path: parsed.path,
-          editor: preferences?.editor,
-          lineNumber: parsed.lineNumber,
-        })
-        return true
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        toast.error(`Failed to open link: ${message}`)
-        return true
-      }
-    },
-    [preferences?.editor]
-  )
+    try {
+      await invoke('open_file_in_default_app', {
+        path: parsed.path,
+        lineNumber: parsed.lineNumber,
+      })
+      return true
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      toast.error(`Failed to open link: ${message}`)
+      return true
+    }
+  }, [])
 
   const contextValue = useMemo(
     () => ({ messageId: messageId ?? null, sessionId: sessionId ?? null }),

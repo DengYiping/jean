@@ -30,11 +30,19 @@ vi.mock('@/services/projects', () => ({
     mutate: openInEditorMutate,
   }),
   useProjects: () => ({
-    data: [],
+    data: [
+      {
+        id: 'project-1',
+        name: 'Test Project',
+        path: '/tmp/project',
+        default_editor: 'zed',
+      },
+    ],
   }),
   useWorktree: () => ({
     data: {
       path: '/tmp/worktree',
+      project_id: 'project-1',
       branch: 'main',
       pr_url: null,
       pr_number: null,
@@ -88,14 +96,25 @@ describe('OpenInModal', () => {
   it('shows additional detected editors and opens the selected editor', () => {
     render(<OpenInModal />)
 
-    expect(screen.getByRole('button', { name: 'Zed' })).toBeVisible()
+    expect(screen.getByRole('button', { name: /Zed/ })).toBeVisible()
     expect(screen.getByRole('button', { name: 'VS Code' })).toBeVisible()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Zed' }))
+    fireEvent.click(screen.getByRole('button', { name: 'VS Code' }))
 
     expect(openInEditorMutate).toHaveBeenCalledWith({
       worktreePath: '/tmp/worktree',
-      editor: 'zed',
+      editor: 'vscode',
+    })
+  })
+
+  it('uses the project editor for the default open action', () => {
+    render(<OpenInModal />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Zed/ }))
+
+    expect(openInEditorMutate).toHaveBeenCalledWith({
+      worktreePath: '/tmp/worktree',
+      editor: undefined,
     })
   })
 })

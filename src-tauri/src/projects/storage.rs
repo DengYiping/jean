@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use once_cell::sync::Lazy;
@@ -225,17 +225,21 @@ pub fn save_projects_data(app: &AppHandle, data: &ProjectsData) -> Result<(), St
     save_projects_data_internal(app, data)
 }
 
-/// Find the project owning a repository path.
-///
-/// The path may be either the base project repository path or a tracked worktree path.
-pub fn find_project_for_repo_path<'a>(
-    data: &'a ProjectsData,
-    repo_path: &str,
-) -> Option<&'a Project> {
+fn canonicalize_for_matching(path: &str) -> PathBuf {
+    Path::new(path)
+        .canonicalize()
+        .unwrap_or_else(|_| PathBuf::from(path))
+}
+
+fn path_depth(path: &Path) -> usize {
+    path.components().count()
+}
+
+fn candidate_root<'a>(data: &'a ProjectsData, path: &str) -> Option<&'a Project> {
     if let Some(project) = data
         .projects
         .iter()
-        .find(|project| !project.is_folder && project.path == repo_path)
+        .find(|project| !project.is_folder && project.path == path)
     {
         return Some(project);
     }
@@ -243,13 +247,80 @@ pub fn find_project_for_repo_path<'a>(
     let worktree = data
         .worktrees
         .iter()
-        .find(|worktree| worktree.path == repo_path)?;
+        .find(|worktree| worktree.path == path)?;
     data.find_project(&worktree.project_id)
+}
+
+/// Find the project owning a repository path.
+///
+/// The path may be either the base project repository path or a tracked worktree path.
+pub fn find_project_for_repo_path<'a>(
+    data: &'a ProjectsData,
+    repo_path: &str,
+) -> Option<&'a Project> {
+    candidate_root(data, repo_path)
+}
+
+/// Find the project owning any path under a project repo or tracked worktree.
+pub fn find_project_for_path<'a>(data: &'a ProjectsData, path: &str) -> Option<&'a Project> {
+    if let Some(project) = candidate_root(data, path) {
+        return Some(project);
+    }
+
+    let target = canonicalize_for_matching(path);
+    let mut best_match: Option<(&Project, usize)> = None;
+
+    for project in data.projects.iter().filter(|project| !project.is_folder) {
+        let root = canonicalize_for_matching(&project.path);
+        if target.starts_with(&root) {
+            let depth = path_depth(&root);
+            if best_match.is_none_or(|(_, best_depth)| depth > best_depth) {
+                best_match = Some((project, depth));
+            }
+        }
+    }
+
+    for worktree in &data.worktrees {
+        let root = canonicalize_for_matching(&worktree.path);
+        if !target.starts_with(&root) {
+            continue;
+        }
+        let Some(project) = data.find_project(&worktree.project_id) else {
+            continue;
+        };
+        let depth = path_depth(&root);
+        if best_match.is_none_or(|(_, best_depth)| depth > best_depth) {
+            best_match = Some((project, depth));
+        }
+    }
+
+    best_match.map(|(project, _)| project)
+}
+
+pub fn resolve_editor_for_path(
+    data: &ProjectsData,
+    path: &str,
+    explicit_editor: Option<&str>,
+    global_editor: Option<&str>,
+) -> String {
+    explicit_editor
+        .filter(|editor| !editor.is_empty())
+        .map(ToOwned::to_owned)
+        .or_else(|| {
+            find_project_for_path(data, path).and_then(|project| project.default_editor.clone())
+        })
+        .or_else(|| {
+            global_editor
+                .filter(|editor| !editor.is_empty())
+                .map(ToOwned::to_owned)
+        })
+        .unwrap_or_else(|| "zed".to_string())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::projects::types::{Project, ProjectsData, Worktree};
 
     #[test]
     fn test_sanitize_directory_name() {
@@ -258,5 +329,165 @@ mod tests {
         assert_eq!(sanitize_directory_name("my/project"), "my-project");
         assert_eq!(sanitize_directory_name("my_project"), "my_project");
         assert_eq!(sanitize_directory_name("MyProject123"), "MyProject123");
+    }
+
+    #[test]
+    fn find_project_for_path_matches_nested_repo_and_worktree_paths() {
+        let data = ProjectsData {
+            projects: vec![
+                Project {
+                    id: "project-1".to_string(),
+                    name: "demo".to_string(),
+                    path: "/tmp/demo".to_string(),
+                    default_branch: "main".to_string(),
+                    added_at: 1,
+                    order: 0,
+                    parent_id: None,
+                    is_folder: false,
+                    avatar_path: None,
+                    enabled_mcp_servers: None,
+                    known_mcp_servers: vec![],
+                    custom_system_prompt: None,
+                    default_provider: None,
+                    default_backend: None,
+                    github_account_host: None,
+                    github_account_user: None,
+                    worktrees_dir: None,
+                    linear_api_key: None,
+                    linear_team_id: None,
+                    hide_github_issues_and_prs: false,
+                    linked_project_ids: vec![],
+                    default_editor: Some("zed".to_string()),
+                },
+                Project {
+                    id: "project-2".to_string(),
+                    name: "other".to_string(),
+                    path: "/tmp/other".to_string(),
+                    default_branch: "main".to_string(),
+                    added_at: 1,
+                    order: 1,
+                    parent_id: None,
+                    is_folder: false,
+                    avatar_path: None,
+                    enabled_mcp_servers: None,
+                    known_mcp_servers: vec![],
+                    custom_system_prompt: None,
+                    default_provider: None,
+                    default_backend: None,
+                    github_account_host: None,
+                    github_account_user: None,
+                    worktrees_dir: None,
+                    linear_api_key: None,
+                    linear_team_id: None,
+                    hide_github_issues_and_prs: false,
+                    linked_project_ids: vec![],
+                    default_editor: Some("cursor".to_string()),
+                },
+            ],
+            worktrees: vec![Worktree {
+                id: "worktree-1".to_string(),
+                project_id: "project-1".to_string(),
+                name: "feature".to_string(),
+                path: "/tmp/demo/.worktrees/feature".to_string(),
+                branch: "feature".to_string(),
+                base_branch: None,
+                created_at: 1,
+                setup_output: None,
+                setup_script: None,
+                setup_success: None,
+                session_type: Default::default(),
+                pr_number: None,
+                pr_url: None,
+                issue_number: None,
+                linear_issue_identifier: None,
+                security_alert_number: None,
+                security_alert_url: None,
+                advisory_ghsa_id: None,
+                advisory_url: None,
+                cached_pr_status: None,
+                cached_check_status: None,
+                cached_behind_count: None,
+                cached_ahead_count: None,
+                cached_status_at: None,
+                cached_uncommitted_added: None,
+                cached_uncommitted_removed: None,
+                cached_branch_diff_added: None,
+                cached_branch_diff_removed: None,
+                cached_base_branch_ahead_count: None,
+                cached_base_branch_behind_count: None,
+                cached_worktree_ahead_count: None,
+                cached_unpushed_count: None,
+                order: 0,
+                label: None,
+                archived_at: None,
+                last_opened_at: None,
+                automation_id: None,
+                automation_name: None,
+                automation_owned: false,
+            }],
+        };
+
+        let project = find_project_for_path(&data, "/tmp/demo/src/main.ts").unwrap();
+        assert_eq!(project.id, "project-1");
+
+        let project =
+            find_project_for_path(&data, "/tmp/demo/.worktrees/feature/src/App.tsx").unwrap();
+        assert_eq!(project.id, "project-1");
+
+        let project = find_project_for_path(&data, "/tmp/other/README.md").unwrap();
+        assert_eq!(project.id, "project-2");
+    }
+
+    #[test]
+    fn resolve_editor_for_path_prefers_explicit_then_project_then_global() {
+        let data = ProjectsData {
+            projects: vec![Project {
+                id: "project-1".to_string(),
+                name: "demo".to_string(),
+                path: "/tmp/demo".to_string(),
+                default_branch: "main".to_string(),
+                added_at: 1,
+                order: 0,
+                parent_id: None,
+                is_folder: false,
+                avatar_path: None,
+                enabled_mcp_servers: None,
+                known_mcp_servers: vec![],
+                custom_system_prompt: None,
+                default_provider: None,
+                default_backend: None,
+                github_account_host: None,
+                github_account_user: None,
+                worktrees_dir: None,
+                linear_api_key: None,
+                linear_team_id: None,
+                hide_github_issues_and_prs: false,
+                linked_project_ids: vec![],
+                default_editor: Some("zed".to_string()),
+            }],
+            worktrees: vec![],
+        };
+
+        assert_eq!(
+            resolve_editor_for_path(
+                &data,
+                "/tmp/demo/src/main.ts",
+                Some("cursor"),
+                Some("vscode")
+            ),
+            "cursor"
+        );
+        assert_eq!(
+            resolve_editor_for_path(&data, "/tmp/demo/src/main.ts", None, Some("vscode")),
+            "zed"
+        );
+        assert_eq!(
+            resolve_editor_for_path(&data, "/tmp/unknown/file.ts", None, Some("vscode")),
+            "vscode"
+        );
+        assert_eq!(
+            resolve_editor_for_path(&data, "/tmp/unknown/file.ts", None, None),
+            "zed"
+        );
     }
 }

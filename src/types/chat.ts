@@ -875,6 +875,18 @@ export interface ClaudeCommand {
   description?: string
 }
 
+export interface SkillReference {
+  /** Skill name */
+  name: string
+  /** Full path to skill file */
+  path: string
+}
+
+/**
+ * A canonical inline skill mention binding in the draft composer.
+ */
+export type DraftSkillBinding = SkillReference
+
 /**
  * A resolved Claude command with interpolations expanded
  */
@@ -890,13 +902,9 @@ export interface ResolvedCommand {
 /**
  * Represents a pending skill attachment before sending
  */
-export interface PendingSkill {
+export interface PendingSkill extends SkillReference {
   /** Unique ID for this pending skill */
   id: string
-  /** Skill name */
-  name: string
-  /** Full path to skill file */
-  path: string
 }
 
 // ============================================================================
@@ -975,8 +983,10 @@ export interface QueuedMessage {
   pendingImages: PendingImage[]
   /** Snapshot of pending files at time of queue */
   pendingFiles: PendingFile[]
-  /** Snapshot of pending skills at time of queue */
-  pendingSkills: PendingSkill[]
+  /** Snapshot of inline skill bindings at time of queue */
+  skills: SkillReference[]
+  /** Legacy snapshot of pending skills at time of queue */
+  pendingSkills?: PendingSkill[]
   /** Snapshot of pending text files at time of queue */
   pendingTextFiles: PendingTextFile[]
   /** Model to use for this message (snapshot at queue time) */

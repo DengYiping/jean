@@ -270,7 +270,7 @@ export function usePlanDialogApproval({
         message: displayMessage,
         pendingImages: [],
         pendingFiles: [],
-        pendingSkills: [],
+        skills: [],
         pendingTextFiles: [],
         model,
         provider: selectedProviderRef.current,

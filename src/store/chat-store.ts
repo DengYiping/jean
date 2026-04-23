@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
 import { logger } from '@/lib/logger'
+import { getActiveSkillsFromText } from '@/lib/skill-prompt'
 import {
   isAskUserQuestion,
   type ToolCall,
@@ -10,7 +11,8 @@ import {
   type EffortLevel,
   type PendingImage,
   type PendingFile,
-  type PendingSkill,
+  type DraftSkillBinding,
+  type SkillReference,
   type PendingTextFile,
   type ContentBlock,
   type Todo,
@@ -162,7 +164,7 @@ interface ChatUIState {
       images: PendingImage[]
       files: PendingFile[]
       textFiles: PendingTextFile[]
-      skills: PendingSkill[]
+      skills: SkillReference[]
     }
   >
 
@@ -175,8 +177,8 @@ interface ChatUIState {
   // Pending files per session (from @ mentions)
   pendingFiles: Record<string, PendingFile[]>
 
-  // Pending skills per session (from / mentions)
-  pendingSkills: Record<string, PendingSkill[]>
+  // Canonical inline skill bindings per session (from $ mentions)
+  draftSkillBindings: Record<string, DraftSkillBinding[]>
 
   // Pending text files per session (large text pastes saved as files)
   pendingTextFiles: Record<string, PendingTextFile[]>
@@ -428,7 +430,7 @@ interface ChatUIState {
       images: PendingImage[]
       files: PendingFile[]
       textFiles: PendingTextFile[]
-      skills: PendingSkill[]
+      skills: SkillReference[]
     }
   ) => void
   clearLastSentAttachments: (sessionId: string) => void
@@ -455,11 +457,20 @@ interface ChatUIState {
   clearPendingFiles: (sessionId: string) => void
   getPendingFiles: (sessionId: string) => PendingFile[]
 
-  // Actions - Pending skills (session-based, for / mentions)
-  addPendingSkill: (sessionId: string, skill: PendingSkill) => void
-  removePendingSkill: (sessionId: string, skillId: string) => void
-  clearPendingSkills: (sessionId: string) => void
-  getPendingSkills: (sessionId: string) => PendingSkill[]
+  // Actions - Canonical inline skill bindings (session-based, for $ mentions)
+  upsertDraftSkillBinding: (sessionId: string, skill: DraftSkillBinding) => void
+  removeDraftSkillBinding: (sessionId: string, skillName: string) => void
+  setDraftSkillBindings: (
+    sessionId: string,
+    skills: DraftSkillBinding[]
+  ) => void
+  syncDraftSkillBindings: (sessionId: string, draft: string) => void
+  clearDraftSkillBindings: (sessionId: string) => void
+  getDraftSkillBindings: (sessionId: string) => DraftSkillBinding[]
+  getActiveDraftSkills: (
+    sessionId: string,
+    draft?: string
+  ) => DraftSkillBinding[]
 
   // Actions - Pending text files (session-based)
   addPendingTextFile: (sessionId: string, textFile: PendingTextFile) => void
@@ -633,7 +644,7 @@ export const useChatStore = create<ChatUIState>()(
       setupScriptResults: {},
       pendingImages: {},
       pendingFiles: {},
-      pendingSkills: {},
+      draftSkillBindings: {},
       pendingTextFiles: {},
       activeTodos: {},
       fixedFindings: {},
@@ -1791,10 +1802,10 @@ export const useChatStore = create<ChatUIState>()(
                   ...saved.textFiles,
                 ],
               },
-              pendingSkills: {
-                ...state.pendingSkills,
+              draftSkillBindings: {
+                ...state.draftSkillBindings,
                 [sessionId]: [
-                  ...(state.pendingSkills[sessionId] ?? []),
+                  ...(state.draftSkillBindings[sessionId] ?? []),
                   ...saved.skills,
                 ],
               },
@@ -1927,44 +1938,96 @@ export const useChatStore = create<ChatUIState>()(
 
       getPendingFiles: sessionId => get().pendingFiles[sessionId] ?? [],
 
-      // Pending skills (session-based, for / mentions)
-      addPendingSkill: (sessionId, skill) =>
+      // Canonical inline skill bindings (session-based, for $ mentions)
+      upsertDraftSkillBinding: (sessionId, skill) =>
         set(
-          state => ({
-            pendingSkills: {
-              ...state.pendingSkills,
-              [sessionId]: [...(state.pendingSkills[sessionId] ?? []), skill],
-            },
-          }),
+          state => {
+            const existing = state.draftSkillBindings[sessionId] ?? []
+            const next = existing.filter(
+              existingSkill => existingSkill.name !== skill.name
+            )
+            next.push(skill)
+            return {
+              draftSkillBindings: {
+                ...state.draftSkillBindings,
+                [sessionId]: next,
+              },
+            }
+          },
           undefined,
-          'addPendingSkill'
+          'upsertDraftSkillBinding'
         ),
 
-      removePendingSkill: (sessionId, skillId) =>
+      removeDraftSkillBinding: (sessionId, skillName) =>
         set(
           state => ({
-            pendingSkills: {
-              ...state.pendingSkills,
-              [sessionId]: (state.pendingSkills[sessionId] ?? []).filter(
-                s => s.id !== skillId
+            draftSkillBindings: {
+              ...state.draftSkillBindings,
+              [sessionId]: (state.draftSkillBindings[sessionId] ?? []).filter(
+                skill => skill.name !== skillName
               ),
             },
           }),
           undefined,
-          'removePendingSkill'
+          'removeDraftSkillBinding'
         ),
 
-      clearPendingSkills: sessionId =>
+      setDraftSkillBindings: (sessionId, skills) =>
+        set(
+          state => ({
+            draftSkillBindings: {
+              ...state.draftSkillBindings,
+              [sessionId]: skills,
+            },
+          }),
+          undefined,
+          'setDraftSkillBindings'
+        ),
+
+      syncDraftSkillBindings: (sessionId, draft) =>
         set(
           state => {
-            const { [sessionId]: _, ...rest } = state.pendingSkills
-            return { pendingSkills: rest }
+            const existing = state.draftSkillBindings[sessionId] ?? []
+            const active = getActiveSkillsFromText(draft, existing)
+            if (
+              active.length === existing.length &&
+              active.every(
+                (skill, index) =>
+                  skill.name === existing[index]?.name &&
+                  skill.path === existing[index]?.path
+              )
+            ) {
+              return state
+            }
+            return {
+              draftSkillBindings: {
+                ...state.draftSkillBindings,
+                [sessionId]: active,
+              },
+            }
           },
           undefined,
-          'clearPendingSkills'
+          'syncDraftSkillBindings'
         ),
 
-      getPendingSkills: sessionId => get().pendingSkills[sessionId] ?? [],
+      clearDraftSkillBindings: sessionId =>
+        set(
+          state => {
+            const { [sessionId]: _, ...rest } = state.draftSkillBindings
+            return { draftSkillBindings: rest }
+          },
+          undefined,
+          'clearDraftSkillBindings'
+        ),
+
+      getDraftSkillBindings: sessionId =>
+        get().draftSkillBindings[sessionId] ?? [],
+
+      getActiveDraftSkills: (sessionId, draft) =>
+        getActiveSkillsFromText(
+          draft ?? get().inputDrafts[sessionId] ?? '',
+          get().draftSkillBindings[sessionId] ?? []
+        ),
 
       // Pending text files (session-based)
       addPendingTextFile: (sessionId, textFile) =>
@@ -2563,6 +2626,8 @@ export const useChatStore = create<ChatUIState>()(
             const { [sessionId]: _label, ...restLabels } = state.sessionLabels
             const { [sessionId]: _ttu, ...restThreadTokenUsage } =
               state.threadTokenUsage
+            const { [sessionId]: _skillBindings, ...restSkillBindings } =
+              state.draftSkillBindings
 
             return {
               approvedTools: restApproved,
@@ -2580,6 +2645,7 @@ export const useChatStore = create<ChatUIState>()(
                 restParallelExecutionPrompt,
               sessionLabels: restLabels,
               threadTokenUsage: restThreadTokenUsage,
+              draftSkillBindings: restSkillBindings,
             }
           },
           undefined,

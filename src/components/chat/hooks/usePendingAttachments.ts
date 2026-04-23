@@ -30,6 +30,7 @@ interface UsePendingAttachmentsParams {
   mcpServersDataRef: RefObject<McpServerInfo[] | undefined>
   enabledMcpServersRef: RefObject<string[]>
   selectedBackendRef: RefObject<'claude' | 'codex' | 'opencode'>
+  inputRef: RefObject<HTMLTextAreaElement | null>
   setInputDraft: (sessionId: string, draft: string) => void
   sendMessageNow: (queuedMsg: QueuedMessage) => void
 }
@@ -51,6 +52,7 @@ export function usePendingAttachments({
   mcpServersDataRef,
   enabledMcpServersRef,
   selectedBackendRef,
+  inputRef,
   setInputDraft,
   sendMessageNow,
 }: UsePendingAttachmentsParams) {
@@ -71,11 +73,29 @@ export function usePendingAttachments({
   )
 
   const handleRemovePendingSkill = useCallback(
-    (skillId: string) => {
+    (skillName: string) => {
       if (!activeSessionId) return
-      useChatStore.getState().removePendingSkill(activeSessionId, skillId)
+      const { inputDrafts, removeDraftSkillBinding, setInputDraft } =
+        useChatStore.getState()
+      const currentInput = inputDrafts[activeSessionId] ?? ''
+      const escapedName = skillName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const pattern = new RegExp(
+        `(^|[\\s([{])\\$${escapedName}(?=$|[\\s.,!?;:)}\\]])`,
+        'gm'
+      )
+      const newInput = currentInput
+        .replace(pattern, (_match, prefix: string) => prefix)
+        .replace(/[ \t]{2,}/g, ' ')
+        .replace(/ *\n */g, '\n')
+        .trim()
+
+      if (inputRef.current) {
+        inputRef.current.value = newInput
+      }
+      setInputDraft(activeSessionId, newInput)
+      removeDraftSkillBinding(activeSessionId, skillName)
     },
-    [activeSessionId]
+    [activeSessionId, inputRef]
   )
 
   const handleRemovePendingFile = useCallback(
@@ -126,7 +146,7 @@ export function usePendingAttachments({
             message: resolved.content,
             pendingImages: [],
             pendingFiles: [],
-            pendingSkills: [],
+            skills: [],
             pendingTextFiles: [],
             model: selectedModelRef.current,
             provider: selectedProviderRef.current,

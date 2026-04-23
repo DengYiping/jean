@@ -304,7 +304,6 @@ export const MessageItem = memo(function MessageItem({
               <SkillBadge
                 key={`${message.id}-skill-${idx}`}
                 skill={{
-                  id: `${message.id}-skill-${idx}`,
                   name: getSkillName(path),
                   path,
                 }}

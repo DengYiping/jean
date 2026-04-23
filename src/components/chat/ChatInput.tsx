@@ -11,7 +11,7 @@ import { getFilename, getExtension } from '@/lib/path-utils'
 import type {
   Backend,
   PendingFile,
-  PendingSkill,
+  DraftSkillBinding,
   ClaudeCommand,
   SaveImageResponse,
   SaveTextResponse,
@@ -169,23 +169,18 @@ export const ChatInput = memo(function ChatInput({
       const draft = state.inputDrafts[activeSessionId ?? ''] ?? ''
       const prevDraft = prevState.inputDrafts[activeSessionId ?? ''] ?? ''
 
-      // React to external clears (draft went from non-empty to empty)
-      if (prevDraft && !draft && inputRef.current?.value) {
-        // Cancel pending debounced writes so cleared drafts don't get restored.
+      // Mirror external draft changes into the uncontrolled textarea and ref state.
+      if (
+        draft !== prevDraft &&
+        inputRef.current &&
+        draft !== inputRef.current.value
+      ) {
         clearTimeout(debouncedSaveRef.current)
-        inputRef.current.value = ''
-        valueRef.current = ''
-        setShowHint(true)
-        onHasValueChangeRef.current?.(false)
-      }
-
-      // React to external restores (draft went from empty to non-empty)
-      // This handles message restoration after instant cancellation
-      if (!prevDraft && draft && inputRef.current && !inputRef.current.value) {
         inputRef.current.value = draft
         valueRef.current = draft
-        setShowHint(false)
-        onHasValueChangeRef.current?.(true)
+        const isEmpty = !draft.trim()
+        setShowHint(isEmpty)
+        onHasValueChangeRef.current?.(!isEmpty)
       }
     })
   }, [activeSessionId, inputRef])
@@ -249,6 +244,8 @@ export const ChatInput = memo(function ChatInput({
           }
         }
       }
+
+      useChatStore.getState().syncDraftSkillBindings(activeSessionId, value)
 
       // Detect @ trigger for file mentions
       const cursorPos = e.target.selectionStart ?? 0
@@ -534,7 +531,8 @@ export const ChatInput = memo(function ChatInput({
             const {
               addPendingImage,
               addPendingFile,
-              addPendingSkill,
+              setDraftSkillBindings,
+              syncDraftSkillBindings,
               addPendingTextFile,
             } = useChatStore.getState()
 
@@ -576,14 +574,9 @@ export const ChatInput = memo(function ChatInput({
               })
             }
 
-            // Restore skills
-            for (const skill of metadata.skills ?? []) {
-              addPendingSkill(activeSessionId, {
-                id: generateId(),
-                name: skill.name,
-                path: skill.path,
-              })
-            }
+            // Restore inline skill bindings
+            setDraftSkillBindings(activeSessionId, metadata.skills ?? [])
+            syncDraftSkillBindings(activeSessionId, valueRef.current)
           } catch {
             // Invalid JSON, fall through to normal paste
           }
@@ -884,20 +877,28 @@ export const ChatInput = memo(function ChatInput({
 
   // Handle skill selection from the `$` popover
   const handleSkillSelect = useCallback(
-    (skill: PendingSkill) => {
+    (skill: DraftSkillBinding) => {
       if (!activeSessionId) return
 
-      const { addPendingSkill } = useChatStore.getState()
-      addPendingSkill(activeSessionId, skill)
+      const { upsertDraftSkillBinding, syncDraftSkillBindings } =
+        useChatStore.getState()
+      upsertDraftSkillBinding(activeSessionId, skill)
 
-      // Remove the `$query` text from input (skill shows as a chip only)
+      // Replace the active `$query` text with the selected inline skill token.
       const triggerIndex = slashTriggerIndex
       if (triggerIndex !== null && inputRef.current) {
         const currentValue = valueRef.current
         const cursorPos = inputRef.current.selectionStart ?? currentValue.length
-        const beforeSlash = currentValue.slice(0, triggerIndex)
+        const beforeTrigger = currentValue.slice(0, triggerIndex)
         const afterQuery = currentValue.slice(cursorPos)
-        const newValue = beforeSlash + afterQuery
+        const token = `$${skill.name}`
+        const escapedName = skill.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        const alreadyPresent = new RegExp(
+          `(^|[\\s([{])\\$${escapedName}(?=$|[\\s.,!?;:)}\\]])`,
+          'm'
+        ).test(currentValue)
+        const insertedToken = alreadyPresent ? '' : `${token} `
+        const newValue = beforeTrigger + insertedToken + afterQuery
 
         // PERFORMANCE: Update DOM directly, no React render
         inputRef.current.value = newValue
@@ -907,11 +908,13 @@ export const ChatInput = memo(function ChatInput({
         // and sync cleaned value to store immediately
         clearTimeout(debouncedSaveRef.current)
         useChatStore.getState().setInputDraft(activeSessionId, newValue)
+        syncDraftSkillBindings(activeSessionId, newValue)
         onHasValueChangeRef.current?.(Boolean(newValue.trim()))
 
-        // Set cursor position where the trigger was
+        // Set cursor position after the inserted token, or back at the trigger.
         requestAnimationFrame(() => {
-          inputRef.current?.setSelectionRange(triggerIndex, triggerIndex)
+          const newCursorPos = triggerIndex + insertedToken.length
+          inputRef.current?.setSelectionRange(newCursorPos, newCursorPos)
         })
       }
 

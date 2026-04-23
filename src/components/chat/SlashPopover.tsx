@@ -20,10 +20,9 @@ import type {
   Backend,
   ClaudeSkill,
   ClaudeCommand,
-  PendingSkill,
+  DraftSkillBinding,
 } from '@/types/chat'
 import { cn } from '@/lib/utils'
-import { generateId } from '@/lib/uuid'
 import { fuzzySearchItems } from '@/lib/fuzzy-search'
 
 export interface SlashPopoverHandle {
@@ -41,8 +40,8 @@ interface SlashPopoverProps {
   mode: SlashPopoverMode
   /** Callback when popover should close */
   onOpenChange: (open: boolean) => void
-  /** Callback when a skill is selected (adds to pending, continues editing) */
-  onSelectSkill: (skill: PendingSkill) => void
+  /** Callback when a skill is selected (adds an inline binding, continues editing) */
+  onSelectSkill: (skill: DraftSkillBinding) => void
   /** Callback when a command is selected (executes immediately) */
   onSelectCommand: (command: ClaudeCommand) => void
   /** Current search query (text after the active trigger) */
@@ -108,12 +107,11 @@ export function SlashPopover({
 
   const handleSelectSkill = useCallback(
     (skill: ClaudeSkill) => {
-      const pendingSkill: PendingSkill = {
-        id: generateId(),
+      const binding: DraftSkillBinding = {
         name: skill.name,
         path: skill.path,
       }
-      onSelectSkill(pendingSkill)
+      onSelectSkill(binding)
       onOpenChange(false)
     },
     [onSelectSkill, onOpenChange]

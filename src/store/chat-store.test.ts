@@ -36,9 +36,11 @@ describe('ChatStore', () => {
       submittedAnswers: {},
       errors: {},
       lastSentMessages: {},
+      lastSentAttachments: {},
       setupScriptResults: {},
       pendingImages: {},
       pendingFiles: {},
+      draftSkillBindings: {},
       pendingTextFiles: {},
       activeTodos: {},
       fixedFindings: {},
@@ -570,7 +572,7 @@ describe('ChatStore', () => {
       message,
       pendingImages: [],
       pendingFiles: [],
-      pendingSkills: [],
+      skills: [],
       pendingTextFiles: [],
       model: 'sonnet',
       provider: null,
@@ -776,6 +778,73 @@ describe('ChatStore', () => {
 
       clearInputDraft('session-1')
       expect(useChatStore.getState().inputDrafts['session-1']).toBeUndefined()
+    })
+  })
+
+  describe('draft skill bindings', () => {
+    it('upserts inline skill bindings by name', () => {
+      const { upsertDraftSkillBinding, getDraftSkillBindings } =
+        useChatStore.getState()
+
+      upsertDraftSkillBinding('session-1', {
+        name: 'frontend-design',
+        path: '/tmp/frontend-design/SKILL.md',
+      })
+      upsertDraftSkillBinding('session-1', {
+        name: 'frontend-design',
+        path: '/tmp/frontend-design-v2/SKILL.md',
+      })
+
+      expect(getDraftSkillBindings('session-1')).toEqual([
+        {
+          name: 'frontend-design',
+          path: '/tmp/frontend-design-v2/SKILL.md',
+        },
+      ])
+    })
+
+    it('derives only skills still present in the current draft text', () => {
+      const {
+        setInputDraft,
+        setDraftSkillBindings,
+        getActiveDraftSkills,
+        syncDraftSkillBindings,
+      } = useChatStore.getState()
+
+      setInputDraft(
+        'session-1',
+        'Please use $frontend-design and ignore everything else.'
+      )
+      setDraftSkillBindings('session-1', [
+        {
+          name: 'frontend-design',
+          path: '/tmp/frontend-design/SKILL.md',
+        },
+        {
+          name: 'agent-slack',
+          path: '/tmp/agent-slack/SKILL.md',
+        },
+      ])
+
+      expect(getActiveDraftSkills('session-1')).toEqual([
+        {
+          name: 'frontend-design',
+          path: '/tmp/frontend-design/SKILL.md',
+        },
+      ])
+
+      syncDraftSkillBindings(
+        'session-1',
+        'Please use $frontend-design and ignore everything else.'
+      )
+      expect(
+        useChatStore.getState().getDraftSkillBindings('session-1')
+      ).toEqual([
+        {
+          name: 'frontend-design',
+          path: '/tmp/frontend-design/SKILL.md',
+        },
+      ])
     })
   })
 

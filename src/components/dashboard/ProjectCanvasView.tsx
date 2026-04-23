@@ -374,6 +374,7 @@ function WorktreeSectionHeader({
 
   const lastActivity = formatRelativeTime(sessionMetrics?.latestActivityAt)
   const displayBranch = gitStatus?.current_branch ?? worktree.branch
+  const isDraftPr = worktree.cached_pr_status === 'draft'
 
   return (
     <>
@@ -432,7 +433,14 @@ function WorktreeSectionHeader({
                   {isBase ? 'Base Session' : worktree.name}
                 </span>
                 {displayBranch && (
-                  <span className="hidden items-center gap-1 rounded border border-border/50 px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground sm:inline-flex">
+                  <span
+                    className={cn(
+                      'hidden items-center gap-1 rounded border border-border/50 px-1.5 py-0.5 text-[10px] font-normal sm:inline-flex',
+                      isDraftPr
+                        ? 'text-amber-600 dark:text-amber-400'
+                        : 'text-muted-foreground'
+                    )}
+                  >
                     <GitBranch className="h-2.5 w-2.5" />
                     <span className="max-w-40 truncate">{displayBranch}</span>
                     {worktree.pr_number && (
@@ -476,7 +484,14 @@ function WorktreeSectionHeader({
                 </span>
               </span>
               {displayBranch && (
-                <span className="inline-flex max-w-full items-center gap-1 self-start rounded border border-border/50 px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground sm:hidden">
+                <span
+                  className={cn(
+                    'inline-flex max-w-full items-center gap-1 self-start rounded border border-border/50 px-1.5 py-0.5 text-[10px] font-normal sm:hidden',
+                    isDraftPr
+                      ? 'text-amber-600 dark:text-amber-400'
+                      : 'text-muted-foreground'
+                  )}
+                >
                   <GitBranch className="h-2.5 w-2.5 shrink-0" />
                   <span className="max-w-full truncate">{displayBranch}</span>
                   {worktree.pr_number && (

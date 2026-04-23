@@ -151,6 +151,16 @@ export const defaultResponses: Record<string, unknown> = {
     raw_patch: '',
   },
   read_git_file_content: '',
+  create_pr_with_ai_content: {
+    pr_number: 123,
+    pr_url: 'https://github.com/test/repo/pull/123',
+    title: 'Test PR',
+    is_draft: false,
+    existing: false,
+  },
+  save_worktree_pr: null,
+  update_worktree_cached_status: null,
+  mark_pr_ready_for_review: null,
 
   // MCP
   get_mcp_servers: [],

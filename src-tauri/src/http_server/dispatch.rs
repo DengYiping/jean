@@ -1186,6 +1186,7 @@ pub async fn dispatch_command(
             let pr_url: Option<String> = field_opt(&args, "prUrl", "pr_url")?;
             let state = app.state::<crate::background_tasks::BackgroundTaskManager>();
             crate::background_tasks::commands::set_active_worktree_for_polling(
+                app.clone(),
                 state,
                 worktree_id,
                 worktree_path,
@@ -2501,13 +2502,21 @@ pub async fn dispatch_command(
         "set_all_worktrees_for_polling" => {
             let worktrees = from_field(&args, "worktrees")?;
             let state = app.state::<crate::background_tasks::BackgroundTaskManager>();
-            crate::background_tasks::commands::set_all_worktrees_for_polling(state, worktrees)?;
+            crate::background_tasks::commands::set_all_worktrees_for_polling(
+                app.clone(),
+                state,
+                worktrees,
+            )?;
             Ok(Value::Null)
         }
         "set_pr_worktrees_for_polling" => {
             let worktrees = from_field(&args, "worktrees")?;
             let state = app.state::<crate::background_tasks::BackgroundTaskManager>();
-            crate::background_tasks::commands::set_pr_worktrees_for_polling(state, worktrees)?;
+            crate::background_tasks::commands::set_pr_worktrees_for_polling(
+                app.clone(),
+                state,
+                worktrees,
+            )?;
             Ok(Value::Null)
         }
         "list_automations" => {

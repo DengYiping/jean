@@ -235,9 +235,12 @@ export function DesktopToolbarControls({
 
   return (
     <>
-      <DockBurgerButton activeMcpCount={activeMcpCount} />
+      <DockBurgerButton
+        activeMcpCount={activeMcpCount}
+        className="hidden @xl:flex"
+      />
 
-      <div className="h-4 w-px bg-border/50" />
+      <div className="hidden @xl:block h-4 w-px bg-border/50" />
 
       <div className="block @xl:hidden h-4 w-px bg-border/50" />
 

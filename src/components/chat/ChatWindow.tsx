@@ -438,6 +438,14 @@ export function ChatWindow({
       messageCount: session?.messages.length ?? 0,
     })
   }, [activeWorktreeId, deferredSessionId, isLoading, session])
+
+  useEffect(() => {
+    if (!deferredSessionId || !session) return
+    const lastMsg = session.messages.at(-1)
+    if (lastMsg?.role === 'assistant' && lastMsg.id.startsWith('running-')) {
+      hydrateRunningSnapshot(deferredSessionId, lastMsg)
+    }
+  }, [deferredSessionId, session])
   const automationBadge = session?.automation_owned
     ? (session.automation_name ?? 'Automation')
     : null

@@ -28,8 +28,11 @@ export function hydrateRunningSnapshot(
   message: ChatMessage
 ): boolean {
   const store = useChatStore.getState()
+  if (store.sendingSessionIds[sessionId]) {
+    return false
+  }
+
   const hasLiveStreamingState =
-    !!store.streamingContents[sessionId] ||
     (store.streamingContentBlocks[sessionId]?.length ?? 0) > 0 ||
     (store.activeToolCalls[sessionId]?.length ?? 0) > 0
 

@@ -148,4 +148,84 @@ describe('useInvestigateHandlers', () => {
       expect.any(Object)
     )
   })
+
+  it('runs investigate issue in build mode even when current mode is plan', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    })
+    const sendMessage = { mutate: vi.fn() }
+    const setSessionProvider = { mutate: vi.fn() }
+    const setSessionBackend = { mutate: vi.fn() }
+    const setSessionModel = { mutate: vi.fn() }
+    const setSessionEffortLevel = { mutate: vi.fn() }
+    const createSession = {
+      mutate: vi.fn(),
+    }
+    const resolveCustomProfile = vi.fn(() => ({
+      model: 'sonnet',
+      customProfileName: undefined,
+    }))
+    const inputRef: RefObject<HTMLTextAreaElement | null> = { current: null }
+    const selectedModelRef = { current: 'sonnet' }
+    const selectedThinkingLevelRef: RefObject<ThinkingLevel> = {
+      current: 'think',
+    }
+    const executionModeRef: RefObject<ExecutionMode> = { current: 'plan' }
+    const mcpServersDataRef: RefObject<McpServerInfo[] | undefined> = {
+      current: [],
+    }
+    const enabledMcpServersRef: RefObject<string[]> = { current: [] }
+    const activeWorktreeIdRef: RefObject<string | null | undefined> = {
+      current: 'wt-1',
+    }
+    const activeWorktreePathRef: RefObject<string | null | undefined> = {
+      current: '/tmp/wt-1',
+    }
+
+    vi.mocked(invoke).mockResolvedValue([{ number: 123 }])
+
+    const { result } = renderHook(
+      () =>
+        useInvestigateHandlers({
+          activeSessionId: 'session-1',
+          activeWorktreeId: 'wt-1',
+          activeWorktreePath: '/tmp/wt-1',
+          inputRef,
+          preferences: defaultPreferences,
+          selectedModelRef,
+          selectedThinkingLevelRef,
+          executionModeRef,
+          mcpServersDataRef,
+          enabledMcpServersRef,
+          activeWorktreeIdRef,
+          activeWorktreePathRef,
+          sendMessage,
+          setSessionProvider,
+          setSessionBackend,
+          setSessionModel,
+          setSessionEffortLevel,
+          createSession,
+          resolveCustomProfile,
+          cliVersion: '2.1.32',
+          worktreeProjectId: null,
+        }),
+      { wrapper: createWrapper(queryClient) }
+    )
+
+    await act(async () => {
+      await result.current.handleInvestigate('issue')
+    })
+
+    expect(sendMessage.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 'session-1',
+        executionMode: 'build',
+      }),
+      expect.any(Object)
+    )
+    expect(useChatStore.getState().executingModes['session-1']).toBe('build')
+  })
 })

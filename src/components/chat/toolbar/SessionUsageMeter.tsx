@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  type ComponentType,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { Sparkles, Terminal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -37,7 +44,9 @@ interface SessionUsageMeterProps {
   variant?: 'dock' | 'toolbar'
 }
 
-function CodexIcon({ className }: { className: string }) {
+const BASELINE_CONTEXT_TOKENS = 12_000
+
+function CodexIcon({ className }: { className?: string }) {
   return (
     <svg
       viewBox="0 0 100 100"
@@ -50,6 +59,81 @@ function CodexIcon({ className }: { className: string }) {
         fill="currentColor"
       />
     </svg>
+  )
+}
+
+function ContextUsageIcon({
+  Icon,
+  percentUsed,
+  remainingPercent,
+  className,
+}: {
+  Icon: ComponentType<{ className?: string }>
+  percentUsed: number | null
+  remainingPercent: number | null
+  className?: string
+}) {
+  const radius = 10
+  const circumference = 2 * Math.PI * radius
+  const clampedPercentUsed =
+    percentUsed === null ? 0 : Math.min(Math.max(percentUsed, 0), 100)
+  const dashOffset = circumference * (1 - clampedPercentUsed / 100)
+  const meterColor =
+    remainingPercent === null
+      ? 'stroke-muted-foreground/40'
+      : remainingPercent > 30
+        ? 'stroke-primary'
+        : remainingPercent > 10
+          ? 'stroke-yellow-500'
+          : 'stroke-red-500'
+
+  return (
+    <span
+      className={cn(
+        'relative inline-grid size-5 place-items-center',
+        className
+      )}
+      aria-hidden="true"
+    >
+      <svg
+        viewBox="0 0 24 24"
+        className="absolute inset-0 size-full -rotate-90"
+      >
+        <circle
+          cx="12"
+          cy="12"
+          r={radius}
+          fill="none"
+          strokeWidth="2"
+          className="stroke-muted"
+        />
+        {percentUsed === null ? (
+          <circle
+            cx="12"
+            cy="12"
+            r={radius}
+            fill="none"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeDasharray="1 4"
+            className={meterColor}
+          />
+        ) : (
+          <circle
+            cx="12"
+            cy="12"
+            r={radius}
+            fill="none"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={dashOffset}
+            className={cn('transition-[stroke-dashoffset]', meterColor)}
+          />
+        )}
+      </svg>
+      <Icon className="size-2.5 text-foreground" />
+    </span>
   )
 }
 
@@ -131,18 +215,21 @@ export function SessionUsageMeter({
   ])
 
   const contextMeter = useMemo(() => {
-    if (!threadTokenUsage?.modelContextWindow) return null
-    const usedTokens = activeUsageEntry.input + activeUsageEntry.output
+    if (activeBackend !== 'codex' || !threadTokenUsage?.modelContextWindow) {
+      return null
+    }
+    const usedTokens = threadTokenUsage.last.totalTokens
     const pct = computeContextPercent(
       usedTokens,
       threadTokenUsage.modelContextWindow
     )
     return {
       percent: pct,
+      usedPercent: 100 - pct,
       used: usedTokens,
       window: threadTokenUsage.modelContextWindow,
     }
-  }, [activeUsageEntry.input, activeUsageEntry.output, threadTokenUsage])
+  }, [activeBackend, threadTokenUsage])
 
   const usageBadge = useMemo(
     () => ({
@@ -179,6 +266,9 @@ export function SessionUsageMeter({
       DEFAULT_KEYBINDINGS.open_usage_dropdown) as string
   )
   const isToolbar = variant === 'toolbar'
+  const triggerLabel = contextMeter
+    ? `${activeUsageEntry.label} context usage, ${contextMeter.percent}% remaining`
+    : `${activeUsageEntry.label} session token usage`
 
   return (
     <DropdownMenu open={usageMenuOpen} onOpenChange={setUsageMenuOpen}>
@@ -188,26 +278,20 @@ export function SessionUsageMeter({
             <Button
               ref={usageTriggerRef}
               variant="ghost"
-              size={isToolbar ? 'sm' : 'icon'}
-              aria-label={`${activeUsageEntry.label} context usage`}
+              size="icon"
+              aria-label={triggerLabel}
               className={cn(
                 isToolbar
-                  ? 'h-8 gap-1 rounded-none px-2 text-xs font-medium text-muted-foreground hover:bg-muted/80 hover:text-foreground'
+                  ? 'h-8 w-8 rounded-none text-muted-foreground hover:bg-muted/80 hover:text-foreground'
                   : 'h-7 w-7 rounded-full text-muted-foreground hover:text-foreground',
-                !isToolbar && side === 'top' && 'w-[88px] justify-center px-2'
+                !isToolbar && side === 'top' && 'justify-center'
               )}
             >
-              <activeUsageEntry.Icon
-                className={cn(
-                  isToolbar || side === 'top' ? 'size-3.5 shrink-0' : 'size-4',
-                  !isToolbar && side === 'top' && 'mr-1'
-                )}
+              <ContextUsageIcon
+                Icon={activeUsageEntry.Icon}
+                percentUsed={contextMeter?.usedPercent ?? null}
+                remainingPercent={contextMeter?.percent ?? null}
               />
-              {(isToolbar || side === 'top') && (
-                <span className="text-[11px] leading-none tabular-nums">
-                  {usageBadge.text}
-                </span>
-              )}
             </Button>
           </DropdownMenuTrigger>
         </TooltipTrigger>
@@ -309,7 +393,7 @@ export function getFloatingDockUsageTotals(
       output,
       cacheRead,
       cacheCreation,
-      totalTokens: input + output + cacheRead + cacheCreation,
+      totalTokens: threadTokenUsage.last.totalTokens,
     }
   }
 
@@ -334,10 +418,11 @@ export function computeContextPercent(
   usedTokens: number,
   contextWindow: number
 ): number {
-  if (contextWindow <= 0) return 0
-  const used = Math.max(usedTokens, 0)
-  const remaining = Math.max(contextWindow - used, 0)
+  if (contextWindow <= BASELINE_CONTEXT_TOKENS) return 0
+  const effectiveWindow = contextWindow - BASELINE_CONTEXT_TOKENS
+  const used = Math.max(usedTokens - BASELINE_CONTEXT_TOKENS, 0)
+  const remaining = Math.max(effectiveWindow - used, 0)
   return Math.round(
-    Math.min(Math.max((remaining / contextWindow) * 100, 0), 100)
+    Math.min(Math.max((remaining / effectiveWindow) * 100, 0), 100)
   )
 }

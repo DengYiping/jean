@@ -211,11 +211,24 @@ describe('ChatToolbar', () => {
   it('shows Codex context usage from the toolbar while the floating dock is hidden', () => {
     render(<ChatToolbar {...createProps()} />)
 
+    const trigger = screen.getByRole('button', {
+      name: /Codex context usage/i,
+    })
+
+    expect(trigger).toBeInTheDocument()
+    expect(trigger).toHaveAttribute(
+      'aria-label',
+      expect.stringContaining('94% remaining')
+    )
     expect(
-      screen.getByRole('button', {
-        name: /Codex context usage/i,
-      })
+      screen
+        .getByRole('button', {
+          name: /Codex context usage/i,
+        })
+        .querySelector('svg')
     ).toBeInTheDocument()
+    expect(screen.queryByText('94%')).not.toBeInTheDocument()
+    expect(screen.queryByText('-- tok')).not.toBeInTheDocument()
   })
 
   it('opens the toolbar usage menu from the global usage shortcut event', async () => {
@@ -224,6 +237,6 @@ describe('ChatToolbar', () => {
     fireEvent(window, new CustomEvent('toggle-usage-menu'))
 
     expect(await screen.findByText('Context window')).toBeInTheDocument()
-    expect(screen.getByText('100% remaining')).toBeInTheDocument()
+    expect(screen.getByText('94% remaining')).toBeInTheDocument()
   })
 })

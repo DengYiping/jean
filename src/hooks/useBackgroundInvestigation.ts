@@ -452,7 +452,7 @@ async function processBackgroundInvestigation(
   setSelectedModel(sessionId, selectedModel)
   setSelectedProvider(sessionId, provider)
   setSelectedBackend(sessionId, backend)
-  setExecutingMode(sessionId, 'plan')
+  setExecutingMode(sessionId, 'build')
 
   // Determine adaptive thinking
   const isCustomProvider = Boolean(provider && provider !== '__anthropic__')
@@ -477,7 +477,7 @@ async function processBackgroundInvestigation(
     worktreePath,
     message: prompt,
     model: selectedModel,
-    executionMode: 'plan',
+    executionMode: 'build',
     thinkingLevel: 'think',
     effortLevel: useAdaptive ? 'high' : undefined,
     customProfileName,

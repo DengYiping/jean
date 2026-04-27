@@ -324,7 +324,7 @@ export function useInvestigateHandlers({
         setEffortLevel(activeSessionId, investigateEffortLevel)
       }
       setSelectedProvider(activeSessionId, investigateProvider)
-      setExecutingMode(activeSessionId, executionModeRef.current)
+      setExecutingMode(activeSessionId, 'build')
 
       setSessionProvider.mutate({
         sessionId: activeSessionId,
@@ -390,7 +390,7 @@ export function useInvestigateHandlers({
           worktreePath: activeWorktreePath,
           message: prompt,
           model: investigateModel,
-          executionMode: executionModeRef.current,
+          executionMode: 'build',
           thinkingLevel: selectedThinkingLevelRef.current,
           effortLevel: investigateUseAdaptive
             ? (investigateEffort ?? undefined)

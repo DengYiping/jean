@@ -22,6 +22,7 @@ import type {
   ToolUseEvent,
   ToolBlockEvent,
   ToolResultEvent,
+  ToolEventEvent,
   DoneEvent,
   ErrorEvent,
   CancelledEvent,
@@ -35,7 +36,13 @@ import type {
   SessionDigest,
   AllSessionsResponse,
   WorktreeSessions,
+  WakeupFiredEvent,
+  WakeupScheduledEvent,
+  WakeupCancelledEvent,
+  PendingWakeupEntry,
+  QueuedMessage,
 } from '@/types/chat'
+import { persistEnqueue } from '@/services/chat'
 import {
   applySessionSettingToSession,
   type SessionSettingKey,
@@ -308,11 +315,28 @@ export default function useStreamingEvents({
       appendStreamingContent,
       addToolCall,
       updateToolCallOutput,
+      appendToolEvent,
       addTextBlock,
       addToolBlock,
       appendThinkingBlock,
       addSendingSession,
     } = useChatStore.getState()
+
+    // Hydrate ScheduleWakeup indicator store from backend so reloads do not
+    // show historical tool_use blocks stuck in the "pending" spinner state.
+    invoke<PendingWakeupEntry[]>('list_pending_wakeups')
+      .then(entries => {
+        const store = useChatStore.getState()
+        for (const entry of entries) {
+          store.setScheduledWakeup(entry.wakeup.tool_call_id, {
+            ...entry.wakeup,
+            status: 'pending',
+          })
+        }
+      })
+      .catch(err => {
+        console.error('[useStreamingEvents] list_pending_wakeups failed:', err)
+      })
 
     // Sync sending state across clients (web <-> native)
     const unlistenSending = listen<{
@@ -565,12 +589,33 @@ export default function useStreamingEvents({
         const toolCalls = activeToolCalls[session_id] ?? []
         const toolCall = toolCalls.find(tc => tc.id === tool_use_id)
 
+        // For question tools, don't overwrite — we store JSON-encoded answer data
+        // in the output at answer time (see useMessageHandlers handleQuestionAnswer)
+        if (toolCall?.name === 'question' && toolCall?.output) return
+
+        // For Monitor, notifications stream through chat:tool_event into
+        // `events`. Writing .output here would render the same text again
+        // in both the "Final output" block and the outer raw-output panel.
+        if (toolCall?.name === 'Monitor') return
         // For Read tools, store empty placeholder instead of full content (can be large)
         updateToolCallOutput(
           session_id,
           tool_use_id,
           toolCall?.name === 'Read' ? '' : output
         )
+      }
+    )
+
+    // Handle live tool events (Monitor notifications, status changes, etc.)
+    const unlistenToolEvent = listen<ToolEventEvent>(
+      'chat:tool_event',
+      event => {
+        const { session_id, tool_use_id, kind, payload, ts_ms } = event.payload
+        appendToolEvent(session_id, tool_use_id, {
+          kind,
+          payload,
+          ts_ms,
+        })
       }
     )
 
@@ -2198,6 +2243,77 @@ export default function useStreamingEvents({
       }
     )
 
+    // Handle ScheduleWakeup lifecycle events (pending/fired/cancelled) so the
+    // ToolCallInline indicator can render a live countdown + status change.
+    const unlistenWakeupScheduled = listen<WakeupScheduledEvent>(
+      'chat:wakeup_scheduled',
+      event => {
+        const { wakeup } = event.payload
+        useChatStore.getState().setScheduledWakeup(wakeup.tool_call_id, {
+          ...wakeup,
+          status: 'pending',
+        })
+      }
+    )
+
+    const unlistenWakeupCancelled = listen<WakeupCancelledEvent>(
+      'chat:wakeup_cancelled',
+      event => {
+        const { tool_call_id } = event.payload
+        if (!tool_call_id) return
+        useChatStore
+          .getState()
+          .markScheduledWakeupStatus(tool_call_id, 'cancelled')
+      }
+    )
+
+    // Handle ScheduleWakeup fires — the Rust scheduler emits this when a
+    // persisted wakeup's fire_at_unix <= now. Enqueue the stored prompt so
+    // the existing queue processor drives it through send_chat_message with
+    // the session's current model/backend/execution-mode settings.
+    const unlistenWakeupFired = listen<WakeupFiredEvent>(
+      'chat:wakeup_fired',
+      event => {
+        const { session_id, worktree_id, worktree_path, prompt, tool_call_id } =
+          event.payload
+        const store = useChatStore.getState()
+        store.markScheduledWakeupStatus(tool_call_id, 'fired')
+        const model = store.selectedModels[session_id] ?? 'sonnet'
+        const executionMode = store.executionModes[session_id] ?? 'yolo'
+        const thinkingLevel = store.thinkingLevels[session_id] ?? 'off'
+        const backend = store.selectedBackends[session_id]
+        const provider = store.selectedProviders?.[session_id] ?? null
+        const queuedMessage: QueuedMessage = {
+          id: generateId(),
+          message: prompt,
+          skills: [],
+          pendingImages: [],
+          pendingFiles: [],
+          pendingSkills: [],
+          pendingTextFiles: [],
+          model,
+          provider,
+          executionMode,
+          thinkingLevel,
+          backend,
+          queuedAt: Date.now(),
+        }
+        // Ensure the queue processor can resolve worktree → path and
+        // session → worktree when firing this message.
+        if (worktree_id && worktree_path) {
+          store.registerWorktreePath(worktree_id, worktree_path)
+        }
+        useChatStore.setState(s => ({
+          sessionWorktreeMap: {
+            ...s.sessionWorktreeMap,
+            [session_id]: worktree_id,
+          },
+        }))
+        store.enqueueMessage(session_id, queuedMessage)
+        persistEnqueue(worktree_id, worktree_path, session_id, queuedMessage)
+      }
+    )
+
     // Handle session setting changes (backend, model, thinking level, execution mode)
     // Broadcast by other clients via broadcast_session_setting command
     const unlistenSettingChanged = listen<{
@@ -2278,6 +2394,7 @@ export default function useStreamingEvents({
       unlistenToolBlock.then(f => f())
       unlistenThinking.then(f => f())
       unlistenToolResult.then(f => f())
+      unlistenToolEvent.then(f => f())
       unlistenPermissionDenied.then(f => f())
       unlistenCodexMcpElicitation.then(f => f())
       unlistenDone.then(f => f())
@@ -2285,6 +2402,9 @@ export default function useStreamingEvents({
       unlistenCancelled.then(f => f())
       unlistenCompacting.then(f => f())
       unlistenCompacted.then(f => f())
+      unlistenWakeupScheduled.then(f => f())
+      unlistenWakeupCancelled.then(f => f())
+      unlistenWakeupFired.then(f => f())
       unlistenSettingChanged.then(f => f())
       unlistenThreadTokenUsage.then(f => f())
     }

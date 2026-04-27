@@ -153,7 +153,6 @@ function executeKeybindingAction(
       break
     case 'execute_run': {
       logger.debug('Keybinding: execute_run')
-      if (!isNativeApp()) break
 
       // Skip if git diff modal is open
       const uiStore = useUIStore.getState()
@@ -505,9 +504,11 @@ export function useMainWindowEventListeners() {
       // Skip when any modal/dialog is open - let it handle its own shortcuts.
       // Covers all shadcn/Radix Dialog + AlertDialog instances automatically
       // (including future modals) via their data-state attribute.
+      // Also skip when a Radix DropdownMenu / Select is open so its built-in
+      // arrow-key navigation isn't hijacked (e.g. by scroll_chat_*).
       if (
         document.querySelector(
-          '[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]'
+          '[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"], [role="menu"][data-state="open"], [role="listbox"][data-state="open"]'
         )
       )
         return

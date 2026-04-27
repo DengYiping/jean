@@ -2,7 +2,9 @@ use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::io::Read;
 use std::sync::Mutex;
 use std::thread;
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
+
+use crate::http_server::EmitExt;
 
 use super::registry::{register_terminal, unregister_terminal};
 use super::types::{
@@ -162,7 +164,7 @@ pub fn spawn_terminal(
         cols,
         rows,
     };
-    if let Err(e) = app.emit("terminal:started", &started_event) {
+    if let Err(e) = app.emit_all("terminal:started", &started_event) {
         log::error!("Failed to emit terminal:started event: {e}");
     }
 
@@ -185,7 +187,7 @@ pub fn spawn_terminal(
                         terminal_id: terminal_id_clone.clone(),
                         data,
                     };
-                    if let Err(e) = app_clone.emit("terminal:output", &event) {
+                    if let Err(e) = app_clone.emit_all("terminal:output", &event) {
                         log::error!("Failed to emit terminal:output event: {e}");
                     }
                 }
@@ -220,7 +222,7 @@ pub fn spawn_terminal(
                 exit_code,
                 signal,
             };
-            if let Err(e) = app_clone.emit("terminal:stopped", &stopped_event) {
+            if let Err(e) = app_clone.emit_all("terminal:stopped", &stopped_event) {
                 log::error!("Failed to emit terminal:stopped event: {e}");
             }
         }
@@ -296,7 +298,7 @@ pub fn kill_terminal(app: &AppHandle, terminal_id: &str) -> Result<bool, String>
             exit_code: None,
             signal: None,
         };
-        if let Err(e) = app.emit("terminal:stopped", &stopped_event) {
+        if let Err(e) = app.emit_all("terminal:stopped", &stopped_event) {
             log::error!("Failed to emit terminal:stopped event: {e}");
         }
 

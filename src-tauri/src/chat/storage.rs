@@ -698,6 +698,9 @@ pub fn load_sessions(
                 label: None,
                 session_derived_state: None,
                 queued_messages: vec![],
+                total_runs: 0,
+                loaded_run_start_index: 0,
+                scheduled_wakeup: None,
             };
             session.refresh_derived_state();
             session
@@ -792,6 +795,9 @@ where
                 label: None,
                 session_derived_state: None,
                 queued_messages: vec![],
+                total_runs: 0,
+                loaded_run_start_index: 0,
+                scheduled_wakeup: None,
             };
             session.refresh_derived_state();
             session

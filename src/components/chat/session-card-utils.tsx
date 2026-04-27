@@ -159,8 +159,20 @@ export function computeSessionCardData(
     tc => isExitPlanMode(tc) && !answeredSet?.has(tc.id)
   )
 
+  // Mirrors `canBeWaiting` filter in prefetchSessions (src/services/chat.ts).
+  // A session's waiting flag is only meaningful while the run is active, resumable,
+  // or parked after a plan approval. Otherwise (e.g. completed non-plan run) the
+  // flag is stale and must not be trusted — either in persisted state or Zustand.
+  const runCanBeWaiting =
+    !session.last_run_status ||
+    session.last_run_status === 'running' ||
+    session.last_run_status === 'resumable' ||
+    (session.last_run_status === 'completed' &&
+      session.waiting_for_input_type === 'plan')
+
   // Check persisted session state for waiting status
   const hasPendingQuestion =
+    runCanBeWaiting &&
     !isStoreReviewing &&
     !sessionSending &&
     !hasStreamingQuestion &&
@@ -168,6 +180,7 @@ export function computeSessionCardData(
       ((session.waiting_for_input ?? false) &&
         (session.waiting_for_input_type ?? 'question') === 'question'))
   const hasPendingExitPlan =
+    runCanBeWaiting &&
     !isStoreReviewing &&
     !sessionSending &&
     !hasStreamingExitPlan &&
@@ -195,7 +208,8 @@ export function computeSessionCardData(
 
   // Use persisted waiting_for_input flag from session metadata
   const persistedWaitingForInput =
-    derived?.is_waiting ?? session.waiting_for_input ?? false
+    derived?.is_waiting ??
+    (runCanBeWaiting && (session.waiting_for_input ?? false))
 
   if (!sessionSending && !planFilePath) {
     for (let i = session.messages.length - 1; i >= 0; i--) {
@@ -220,8 +234,10 @@ export function computeSessionCardData(
     }
   }
 
-  // Use persisted waiting state as fallback when messages aren't loaded
-  const isExplicitlyWaiting = waitingForInputSessionIds[session.id] ?? false
+  // Use persisted waiting state as fallback when messages aren't loaded.
+  const isExplicitlyWaiting =
+    (waitingForInputSessionIds[session.id] ?? false) &&
+    (session.waiting_for_input ?? false)
   const isWaitingFromMessages =
     hasStreamingQuestion ||
     hasStreamingExitPlan ||

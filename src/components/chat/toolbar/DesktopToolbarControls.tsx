@@ -72,6 +72,7 @@ import {
   getPrStatusDisplay,
   getProviderDisplayName,
 } from '@/components/chat/toolbar/toolbar-utils'
+import { DockBurgerButton } from '@/components/chat/toolbar/DockBurgerButton'
 
 interface DesktopToolbarControlsProps {
   hasPendingQuestions: boolean
@@ -234,6 +235,13 @@ export function DesktopToolbarControls({
 
   return (
     <>
+      <DockBurgerButton
+        activeMcpCount={activeMcpCount}
+        className="hidden @xl:flex"
+      />
+
+      <div className="hidden @xl:block h-4 w-px bg-border/50" />
+
       <div className="block @xl:hidden h-4 w-px bg-border/50" />
 
       <button

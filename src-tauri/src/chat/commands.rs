@@ -2065,15 +2065,7 @@ pub async fn send_chat_message(
                         }
                     }
 
-                    // Embedded binary path hints
-                    let gh_binary = crate::gh_cli::config::resolve_gh_binary(&thread_app);
-                    if gh_binary != std::path::Path::new("gh") {
-                        system_prompt_parts.push(format!(
-                            "When running GitHub CLI commands, use the full path to the embedded binary: {}\n\
-                             Do NOT use bare `gh` — always use the full path above.",
-                            gh_binary.display()
-                        ));
-                    }
+                    // Host binary path hints
                     let claude_binary = crate::claude_cli::resolve_cli_binary(&thread_app);
                     if claude_binary.is_absolute() {
                         system_prompt_parts.push(format!(
@@ -2372,15 +2364,7 @@ pub async fn send_chat_message(
                         }
                     }
 
-                    // Embedded binary path hints
-                    let gh_binary = crate::gh_cli::config::resolve_gh_binary(&thread_app);
-                    if gh_binary != std::path::Path::new("gh") {
-                        system_prompt_parts.push(format!(
-                            "When running GitHub CLI commands, use the full path to the embedded binary: {}\n\
-                             Do NOT use bare `gh` — always use the full path above.",
-                            gh_binary.display()
-                        ));
-                    }
+                    // Host binary path hints
                     let claude_binary = crate::claude_cli::resolve_cli_binary(&thread_app);
                     if claude_binary.is_absolute() {
                         system_prompt_parts.push(format!(

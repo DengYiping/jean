@@ -246,8 +246,8 @@ pub struct AppPreferences {
     pub codex_cli_source: String, // Codex CLI source: "jean" (managed) or "path" (system PATH)
     #[serde(default = "default_cli_source")]
     pub opencode_cli_source: String, // OpenCode CLI source: "jean" (managed) or "path" (system PATH)
-    #[serde(default = "default_cli_source")]
-    pub gh_cli_source: String, // GitHub CLI source: "jean" (managed) or "path" (system PATH)
+    #[serde(default = "default_gh_cli_source")]
+    pub gh_cli_source: String, // Legacy GitHub CLI source field; gh always resolves from system PATH
     #[serde(default)]
     pub expand_tool_calls_by_default: bool, // Expand all tool call collapsibles by default (default: false)
 }
@@ -425,6 +425,10 @@ fn default_backend() -> String {
 
 fn default_cli_source() -> String {
     "jean".to_string()
+}
+
+fn default_gh_cli_source() -> String {
+    "path".to_string()
 }
 
 fn default_codex_model() -> String {
@@ -1477,7 +1481,7 @@ impl Default for AppPreferences {
             claude_cli_source: default_cli_source(),
             codex_cli_source: default_cli_source(),
             opencode_cli_source: default_cli_source(),
-            gh_cli_source: default_cli_source(),
+            gh_cli_source: default_gh_cli_source(),
             expand_tool_calls_by_default: false,
         }
     }

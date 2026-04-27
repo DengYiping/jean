@@ -174,7 +174,7 @@ describe('preferences service', () => {
         claude_cli_source: 'jean',
         codex_cli_source: 'jean',
         opencode_cli_source: 'jean',
-        gh_cli_source: 'jean',
+        gh_cli_source: 'path',
         expand_tool_calls_by_default: false,
       }
       vi.mocked(invoke).mockResolvedValueOnce(mockPreferences)
@@ -325,7 +325,7 @@ describe('preferences service', () => {
         claude_cli_source: 'jean',
         codex_cli_source: 'jean',
         opencode_cli_source: 'jean',
-        gh_cli_source: 'jean',
+        gh_cli_source: 'path',
         expand_tool_calls_by_default: false,
       }
       vi.mocked(invoke).mockResolvedValueOnce(prefsWithOldBinding)
@@ -430,7 +430,7 @@ describe('preferences service', () => {
         claude_cli_source: 'jean',
         codex_cli_source: 'jean',
         opencode_cli_source: 'jean',
-        gh_cli_source: 'jean',
+        gh_cli_source: 'path',
         expand_tool_calls_by_default: false,
       }
       vi.mocked(invoke).mockResolvedValueOnce(prefsWithDeprecatedFastModel)
@@ -615,7 +615,7 @@ describe('preferences service', () => {
         claude_cli_source: 'jean',
         codex_cli_source: 'jean',
         opencode_cli_source: 'jean',
-        gh_cli_source: 'jean',
+        gh_cli_source: 'path',
         expand_tool_calls_by_default: false,
       }
 
@@ -722,7 +722,7 @@ describe('preferences service', () => {
         claude_cli_source: 'jean',
         codex_cli_source: 'jean',
         opencode_cli_source: 'jean',
-        gh_cli_source: 'jean',
+        gh_cli_source: 'path',
         expand_tool_calls_by_default: false,
       }
 
@@ -829,7 +829,7 @@ describe('preferences service', () => {
         claude_cli_source: 'jean',
         codex_cli_source: 'jean',
         opencode_cli_source: 'jean',
-        gh_cli_source: 'jean',
+        gh_cli_source: 'path',
         expand_tool_calls_by_default: false,
       }
 
@@ -934,7 +934,7 @@ describe('preferences service', () => {
         claude_cli_source: 'jean',
         codex_cli_source: 'jean',
         opencode_cli_source: 'jean',
-        gh_cli_source: 'jean',
+        gh_cli_source: 'path',
         expand_tool_calls_by_default: false,
       }
 

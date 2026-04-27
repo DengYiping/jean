@@ -1,7 +1,6 @@
 //! GitHub CLI management module
 //!
-//! Handles downloading, installing, and managing the GitHub CLI (gh) binary
-//! embedded within the Jean application.
+//! Handles detecting and using the host-system GitHub CLI (gh) binary.
 
 mod commands;
 pub(crate) mod config;

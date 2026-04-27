@@ -11,7 +11,6 @@ pub mod storage;
 pub mod tail;
 pub mod types;
 pub mod wakeup;
-pub mod wakeup;
 
 pub use commands::*;
 pub use storage::{preserve_base_sessions, restore_base_sessions, with_sessions_mut};

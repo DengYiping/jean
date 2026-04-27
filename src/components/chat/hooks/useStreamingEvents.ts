@@ -36,7 +36,6 @@ import type {
   SessionDigest,
   AllSessionsResponse,
   WorktreeSessions,
-  SaveContextResponse,
   WakeupFiredEvent,
   WakeupScheduledEvent,
   WakeupCancelledEvent,
@@ -2287,6 +2286,7 @@ export default function useStreamingEvents({
         const queuedMessage: QueuedMessage = {
           id: generateId(),
           message: prompt,
+          skills: [],
           pendingImages: [],
           pendingFiles: [],
           pendingSkills: [],

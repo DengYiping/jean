@@ -5740,24 +5740,6 @@ pub async fn list_pending_wakeups() -> Result<Vec<super::wakeup::PendingWakeupEn
     Ok(super::wakeup::list_pending())
 }
 
-/// Answer a pending OpenCode question by calling the OpenCode Question.reply API.
-/// This unblocks the in-flight HTTP POST that is waiting for the question to be answered.
-#[tauri::command]
-pub async fn answer_opencode_question(
-    app: AppHandle,
-    worktree_path: String,
-    tool_call_id: String,
-    answers: Vec<Vec<String>>,
-) -> Result<(), String> {
-    let working_dir = worktree_path.clone();
-    let app_clone = app.clone();
-
-    tokio::task::spawn_blocking(move || {
-        super::opencode::answer_opencode_question(&app_clone, &working_dir, &tool_call_id, answers)
-    })
-    .await
-    .map_err(|e| format!("Task join error: {e}"))?
-}
 #[cfg(test)]
 mod tests {
     use super::*;

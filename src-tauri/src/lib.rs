@@ -3372,7 +3372,6 @@ pub fn run() {
             chat::remove_queued_message,
             chat::reorder_queued_messages,
             chat::clear_message_queue,
-            chat::answer_opencode_question,
             // Chat commands - ScheduleWakeup support
             chat::cancel_session_wakeup,
             chat::get_scheduled_wakeup,

@@ -1591,8 +1591,18 @@ pub async fn dispatch_command(
             let cols: u16 = from_field(&args, "cols")?;
             let rows: u16 = from_field(&args, "rows")?;
             let command: Option<String> = from_field_opt(&args, "command")?;
-            let command_args: Option<Vec<String>> = field_opt(&args, "commandArgs", "command_args")?;
-            crate::terminal::start_terminal(app.clone(), terminal_id, worktree_path, cols, rows, command, command_args).await?;
+            let command_args: Option<Vec<String>> =
+                field_opt(&args, "commandArgs", "command_args")?;
+            crate::terminal::start_terminal(
+                app.clone(),
+                terminal_id,
+                worktree_path,
+                cols,
+                rows,
+                command,
+                command_args,
+            )
+            .await?;
             Ok(Value::Null)
         }
         "terminal_write" => {
@@ -2133,19 +2143,6 @@ pub async fn dispatch_command(
             let session_id: String = field(&args, "sessionId", "session_id")?;
             crate::chat::clear_message_queue(app.clone(), worktree_id, worktree_path, session_id)
                 .await?;
-            Ok(Value::Null)
-        }
-        "answer_opencode_question" => {
-            let worktree_path: String = field(&args, "worktreePath", "worktree_path")?;
-            let tool_call_id: String = field(&args, "toolCallId", "tool_call_id")?;
-            let answers: Vec<Vec<String>> = from_field(&args, "answers")?;
-            crate::chat::answer_opencode_question(
-                app.clone(),
-                worktree_path,
-                tool_call_id,
-                answers,
-            )
-            .await?;
             Ok(Value::Null)
         }
         "cancel_session_wakeup" => {

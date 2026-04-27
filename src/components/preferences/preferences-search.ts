@@ -564,10 +564,22 @@ const magicPromptDefinitions: {
     keywords: ['session recap prompt', 'recap prompt'],
   },
   {
-    key: 'global_system_prompt',
-    title: 'Global System Prompt',
-    description: 'System prompt applied to every session.',
-    keywords: ['global system prompt', 'system prompt'],
+    key: 'claude_system_prompt',
+    title: 'Claude System Prompt',
+    description: 'System prompt applied to Claude sessions.',
+    keywords: ['claude system prompt', 'global system prompt', 'system prompt'],
+  },
+  {
+    key: 'codex_system_prompt',
+    title: 'Codex System Prompt',
+    description: 'System prompt applied to Codex sessions.',
+    keywords: ['codex system prompt', 'system prompt'],
+  },
+  {
+    key: 'opencode_system_prompt',
+    title: 'OpenCode System Prompt',
+    description: 'System prompt applied to OpenCode sessions.',
+    keywords: ['opencode system prompt', 'system prompt'],
   },
   {
     key: 'parallel_execution',

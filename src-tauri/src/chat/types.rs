@@ -680,6 +680,7 @@ pub struct ScheduledWakeup {
 }
 
 /// Result of loading a window of session messages from disk.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoadedMessages {
     /// Parsed messages for the requested window of runs (chronological order).

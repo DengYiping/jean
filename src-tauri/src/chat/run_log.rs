@@ -488,10 +488,13 @@ pub fn parse_run_to_message(lines: &[String], run: &RunEntry) -> Result<ChatMess
     // `<unix_ms>|<text>` so the UI can render real relative timestamps.
     let mut monitor_event_log: std::collections::HashMap<String, Vec<String>> =
         std::collections::HashMap::new();
+    // OpenCode echoes the user prompt as the first text block in assistant messages.
+    // Skip it during replay so the prompt doesn't appear twice.
+    let mut skipped_prompt_echo = false;
     // Track the most recent timestamp seen in the stream (from user-msg
     // ISO 8601 `timestamp` field). System and assistant messages don't
     // carry explicit timestamps, so we fall back to this.
-    let mut last_ms: u64 = (run.started_at as u64).saturating_mul(1000);
+    let mut last_ms: u64 = run.started_at.saturating_mul(1000);
     fn parse_iso8601_ms(s: &str) -> Option<u64> {
         // Very small ISO 8601 parser: "YYYY-MM-DDTHH:MM:SS(.fff)?Z".
         // Good enough for Claude CLI's output; avoids pulling a date lib.
@@ -578,9 +581,7 @@ pub fn parse_run_to_message(lines: &[String], run: &RunEntry) -> Result<ChatMess
                 // Text-routing gate (mirrors live-stream logic): if ANY armed
                 // Monitor has initial_turn_finished=true, this assistant turn
                 // is a per-notification wake-up, so skip its text from chat.
-                let in_monitor_wakeup = armed_monitors
-                    .values()
-                    .any(|a| a.initial_turn_finished);
+                let in_monitor_wakeup = armed_monitors.values().any(|a| a.initial_turn_finished);
 
                 if let Some(message) = msg.get("message") {
                     if let Some(blocks) = message.get("content").and_then(|c| c.as_array()) {
@@ -612,15 +613,13 @@ pub fn parse_run_to_message(lines: &[String], run: &RunEntry) -> Result<ChatMess
                                         // (`[Monitor notification]`,
                                         // `[Monitor notification: <payload>]`, …);
                                         // prefix match without closing bracket catches all.
-                                        let monitor_target =
-                                            if !armed_monitors.is_empty() || in_monitor_wakeup {
-                                                armed_monitors
-                                                    .iter()
-                                                    .next()
-                                                    .map(|(id, _)| id.clone())
-                                            } else {
-                                                None
-                                            };
+                                        let monitor_target = if !armed_monitors.is_empty()
+                                            || in_monitor_wakeup
+                                        {
+                                            armed_monitors.iter().next().map(|(id, _)| id.clone())
+                                        } else {
+                                            None
+                                        };
 
                                         let mut chat_buf = String::new();
                                         for raw_line in text.split_inclusive('\n') {
@@ -652,9 +651,8 @@ pub fn parse_run_to_message(lines: &[String], run: &RunEntry) -> Result<ChatMess
                                         }
                                         if !chat_buf.is_empty() {
                                             content.push_str(&chat_buf);
-                                            content_blocks.push(ContentBlock::Text {
-                                                text: chat_buf,
-                                            });
+                                            content_blocks
+                                                .push(ContentBlock::Text { text: chat_buf });
                                         }
                                     }
                                 }
@@ -808,10 +806,8 @@ pub fn parse_run_to_message(lines: &[String], run: &RunEntry) -> Result<ChatMess
                                     .get("status")
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("update");
-                                let summary = msg
-                                    .get("summary")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("");
+                                let summary =
+                                    msg.get("summary").and_then(|v| v.as_str()).unwrap_or("");
                                 if summary.is_empty() {
                                     s.to_string()
                                 } else {

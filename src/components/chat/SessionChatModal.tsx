@@ -806,171 +806,18 @@ export function SessionChatModal({
             <div className="flex items-center gap-1 shrink-0">
               {/* Desktop: inline action buttons */}
               <div className="hidden sm:flex items-center gap-1">
-                  <OpenInButton
-                    worktreePath={worktreePath}
-                    branch={worktree?.branch}
-                    preferredEditor={project?.default_editor}
-                  />
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 px-2 text-xs"
-                        onClick={() => {
-                          const { reviewResults, toggleReviewSidebar } =
-                            useChatStore.getState()
-                          const hasReviewResults =
-                            currentSessionId &&
-                            (reviewResults[currentSessionId] ||
-                              currentSession?.review_results)
-                          if (hasReviewResults) {
-                            if (
-                              currentSessionId &&
-                              !reviewResults[currentSessionId] &&
-                              currentSession?.review_results
-                            ) {
-                              useChatStore
-                                .getState()
-                                .setReviewResults(
-                                  currentSessionId,
-                                  currentSession.review_results
-                                )
-                            }
-                            toggleReviewSidebar()
-                          } else {
-                            window.dispatchEvent(
-                              new CustomEvent('magic-command', {
-                                detail: {
-                                  command: 'review',
-                                  sessionId: currentSessionId,
-                                },
-                              })
-                            )
-                          }
-                        }}
-                      >
-                        <Eye className="h-3 w-3" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Review</TooltipContent>
-                  </Tooltip>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 px-2 text-xs"
-                        onClick={() => {
-                          useTerminalStore
-                            .getState()
-                            .toggleModalTerminal(worktreeId)
-                        }}
-                      >
-                        <Terminal className="h-3 w-3" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Terminal</TooltipContent>
-                  </Tooltip>
-                  {runScript && (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 px-2 text-xs"
-                          onClick={handleRun}
-                        >
-                          <Play className="h-3 w-3" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Run</TooltipContent>
-                    </Tooltip>
-                  )}
-                  {buildScript && (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 px-2 text-xs"
-                          onClick={handleBuild}
-                        >
-                          <Hammer className="h-3 w-3" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Build</TooltipContent>
-                    </Tooltip>
-                  )}
-              </div>
-              {/* Mobile: overflow menu */}
-              <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
+                <OpenInButton
+                  worktreePath={worktreePath}
+                  branch={worktree?.branch}
+                  preferredEditor={project?.default_editor}
+                />
+                <Tooltip>
+                  <TooltipTrigger asChild>
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-7 w-7 p-0 flex sm:hidden"
-                    >
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    {isNativeApp() && (
-                      <>
-                        <DropdownMenuItem
-                          onSelect={() =>
-                            openInEditor.mutate({
-                              worktreePath,
-                              editor: undefined,
-                            })
-                          }
-                        >
-                          <Code className="h-4 w-4" />
-                          {getOpenInDefaultLabel(
-                            'editor',
-                            effectiveEditor,
-                            preferences?.terminal
-                          )}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onSelect={() =>
-                            openInTerminal.mutate({
-                              worktreePath,
-                              terminal: preferences?.terminal,
-                            })
-                          }
-                        >
-                          <Terminal className="h-4 w-4" />
-                          {getOpenInDefaultLabel(
-                            'terminal',
-                            effectiveEditor,
-                            preferences?.terminal
-                          )}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onSelect={() => openInFinder.mutate(worktreePath)}
-                        >
-                          <FolderOpen className="h-4 w-4" />
-                          Finder
-                        </DropdownMenuItem>
-                      </>
-                    )}
-                    {worktree?.branch && (
-                      <DropdownMenuItem
-                        onSelect={() =>
-                          openOnGitHub.mutate({
-                            repoPath: worktreePath,
-                            branch: worktree.branch,
-                          })
-                        }
-                      >
-                        <Github className="h-4 w-4" />
-                        GitHub
-                      </DropdownMenuItem>
-                    )}
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      onSelect={() => {
+                      className="h-7 px-2 text-xs"
+                      onClick={() => {
                         const { reviewResults, toggleReviewSidebar } =
                           useChatStore.getState()
                         const hasReviewResults =
@@ -1003,67 +850,220 @@ export function SessionChatModal({
                         }
                       }}
                     >
-                      <Eye className="h-4 w-4" />
-                      Review
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onSelect={() =>
+                      <Eye className="h-3 w-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Review</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => {
                         useTerminalStore
                           .getState()
                           .toggleModalTerminal(worktreeId)
-                      }
+                      }}
                     >
-                      <Terminal className="h-4 w-4" />
-                      Terminal
-                    </DropdownMenuItem>
-                    {runScript && (
-                      <DropdownMenuItem onSelect={handleRun}>
-                        <Play className="h-4 w-4" />
-                        Run
-                      </DropdownMenuItem>
-                    )}
-                    {buildScript && (
-                      <DropdownMenuItem onSelect={handleBuild}>
-                        <Hammer className="h-4 w-4" />
-                        Build
-                      </DropdownMenuItem>
-                    )}
-                    {currentResumeCommand && (
+                      <Terminal className="h-3 w-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Terminal</TooltipContent>
+                </Tooltip>
+                {runScript && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        onClick={handleRun}
+                      >
+                        <Play className="h-3 w-3" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Run</TooltipContent>
+                  </Tooltip>
+                )}
+                {buildScript && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        onClick={handleBuild}
+                      >
+                        <Hammer className="h-3 w-3" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Build</TooltipContent>
+                  </Tooltip>
+                )}
+              </div>
+              {/* Mobile: overflow menu */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 p-0 flex sm:hidden"
+                  >
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {isNativeApp() && (
+                    <>
                       <DropdownMenuItem
-                        onSelect={() => {
-                          void navigator.clipboard
-                            .writeText(currentResumeCommand)
-                            .then(() => toast.success('Resume command copied'))
-                            .catch(() =>
-                              toast.error('Failed to copy resume command')
-                            )
-                        }}
+                        onSelect={() =>
+                          openInEditor.mutate({
+                            worktreePath,
+                            editor: undefined,
+                          })
+                        }
+                      >
+                        <Code className="h-4 w-4" />
+                        {getOpenInDefaultLabel(
+                          'editor',
+                          effectiveEditor,
+                          preferences?.terminal
+                        )}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onSelect={() =>
+                          openInTerminal.mutate({
+                            worktreePath,
+                            terminal: preferences?.terminal,
+                          })
+                        }
                       >
                         <Terminal className="h-4 w-4" />
-                        Copy Resume Command
+                        {getOpenInDefaultLabel(
+                          'terminal',
+                          effectiveEditor,
+                          preferences?.terminal
+                        )}
                       </DropdownMenuItem>
-                    )}
-                    <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onSelect={() => openInFinder.mutate(worktreePath)}
+                      >
+                        <FolderOpen className="h-4 w-4" />
+                        Finder
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                  {worktree?.branch && (
                     <DropdownMenuItem
-                      disabled={!hasRecap}
                       onSelect={() =>
-                        window.dispatchEvent(new CustomEvent('open-recap'))
+                        openOnGitHub.mutate({
+                          repoPath: worktreePath,
+                          branch: worktree.branch,
+                        })
                       }
                     >
-                      <Sparkles className="h-4 w-4" />
-                      Recap
+                      <Github className="h-4 w-4" />
+                      GitHub
                     </DropdownMenuItem>
-                    <DropdownMenuItem
-                      disabled={!hasPlan}
-                      onSelect={() =>
-                        window.dispatchEvent(new CustomEvent('open-plan'))
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      const { reviewResults, toggleReviewSidebar } =
+                        useChatStore.getState()
+                      const hasReviewResults =
+                        currentSessionId &&
+                        (reviewResults[currentSessionId] ||
+                          currentSession?.review_results)
+                      if (hasReviewResults) {
+                        if (
+                          currentSessionId &&
+                          !reviewResults[currentSessionId] &&
+                          currentSession?.review_results
+                        ) {
+                          useChatStore
+                            .getState()
+                            .setReviewResults(
+                              currentSessionId,
+                              currentSession.review_results
+                            )
+                        }
+                        toggleReviewSidebar()
+                      } else {
+                        window.dispatchEvent(
+                          new CustomEvent('magic-command', {
+                            detail: {
+                              command: 'review',
+                              sessionId: currentSessionId,
+                            },
+                          })
+                        )
                       }
-                    >
-                      <FileText className="h-4 w-4" />
-                      Plan
+                    }}
+                  >
+                    <Eye className="h-4 w-4" />
+                    Review
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() =>
+                      useTerminalStore
+                        .getState()
+                        .toggleModalTerminal(worktreeId)
+                    }
+                  >
+                    <Terminal className="h-4 w-4" />
+                    Terminal
+                  </DropdownMenuItem>
+                  {runScript && (
+                    <DropdownMenuItem onSelect={handleRun}>
+                      <Play className="h-4 w-4" />
+                      Run
                     </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                  )}
+                  {buildScript && (
+                    <DropdownMenuItem onSelect={handleBuild}>
+                      <Hammer className="h-4 w-4" />
+                      Build
+                    </DropdownMenuItem>
+                  )}
+                  {currentResumeCommand && (
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        void navigator.clipboard
+                          .writeText(currentResumeCommand)
+                          .then(() => toast.success('Resume command copied'))
+                          .catch(() =>
+                            toast.error('Failed to copy resume command')
+                          )
+                      }}
+                    >
+                      <Terminal className="h-4 w-4" />
+                      Copy Resume Command
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    disabled={!hasRecap}
+                    onSelect={() =>
+                      window.dispatchEvent(new CustomEvent('open-recap'))
+                    }
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    Recap
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={!hasPlan}
+                    onSelect={() =>
+                      window.dispatchEvent(new CustomEvent('open-plan'))
+                    }
+                  >
+                    <FileText className="h-4 w-4" />
+                    Plan
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <ModalCloseButton onClick={handleClose} />
             </div>
           </div>
@@ -1362,7 +1362,10 @@ export function SessionChatModal({
         </div>
 
         {/* Terminal side drawer */}
-        <ModalTerminalDrawer worktreeId={worktreeId} worktreePath={worktreePath} />
+        <ModalTerminalDrawer
+          worktreeId={worktreeId}
+          worktreePath={worktreePath}
+        />
         {diffRequest && (
           <Suspense fallback={null}>
             <GitDiffModal

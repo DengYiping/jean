@@ -1,10 +1,4 @@
-import {
-  useState,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-} from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import {
   Settings,
   Palette,
@@ -492,10 +486,7 @@ export function PreferencesDialog() {
 
                 <div className="ml-auto hidden md:flex items-center gap-2">
                   {/* Search bar — right side of header */}
-                  <div
-                    ref={searchContainerRef}
-                    className="relative shrink-0"
-                  >
+                  <div ref={searchContainerRef} className="relative shrink-0">
                     <Command
                       value={effectiveSearchSelection}
                       onValueChange={setSearchSelection}
@@ -556,10 +547,10 @@ export function PreferencesDialog() {
                                         {result.sectionTitle &&
                                           result.sectionTitle !==
                                             result.paneTitle && (
-                                          <span className="text-xs text-muted-foreground truncate">
-                                            {result.sectionTitle}
-                                          </span>
-                                        )}
+                                            <span className="text-xs text-muted-foreground truncate">
+                                              {result.sectionTitle}
+                                            </span>
+                                          )}
                                       </div>
                                     </CommandItem>
                                   ))}

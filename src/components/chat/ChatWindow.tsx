@@ -125,7 +125,6 @@ import { buildMcpConfigJson } from '@/services/mcp'
 import type { McpServerInfo } from '@/types/chat'
 import { useGitStatus } from '@/services/git-status'
 import { useRemotePicker } from '@/hooks/useRemotePicker'
-import { isNativeApp } from '@/lib/environment'
 import { supportsAdaptiveThinking } from '@/lib/model-utils'
 import { useClaudeCliStatus } from '@/services/claude-cli'
 import { usePrStatus, usePrStatusEvents } from '@/services/pr-status'
@@ -3295,27 +3294,25 @@ export function ChatWindow({
               </ResizablePanel>
 
               {/* Terminal panel - only render when panel is open (not in modal) */}
-              {!isModal &&
-                activeWorktreePath &&
-                terminalPanelOpen && (
-                  <>
-                    <ResizableHandle withHandle />
-                    <ResizablePanel
-                      ref={terminalPanelRef}
-                      defaultSize={terminalVisible ? 30 : 4}
-                      minSize={terminalVisible ? 15 : 4}
-                      collapsible
-                      collapsedSize={4}
-                      onCollapse={handleTerminalCollapse}
+              {!isModal && activeWorktreePath && terminalPanelOpen && (
+                <>
+                  <ResizableHandle withHandle />
+                  <ResizablePanel
+                    ref={terminalPanelRef}
+                    defaultSize={terminalVisible ? 30 : 4}
+                    minSize={terminalVisible ? 15 : 4}
+                    collapsible
+                    collapsedSize={4}
+                    onCollapse={handleTerminalCollapse}
+                    onExpand={handleTerminalExpand}
+                  >
+                    <TerminalPanel
+                      isCollapsed={!terminalVisible}
                       onExpand={handleTerminalExpand}
-                    >
-                      <TerminalPanel
-                        isCollapsed={!terminalVisible}
-                        onExpand={handleTerminalExpand}
-                      />
-                    </ResizablePanel>
-                  </>
-                )}
+                    />
+                  </ResizablePanel>
+                </>
+              )}
             </ResizablePanelGroup>
           </ResizablePanel>
 

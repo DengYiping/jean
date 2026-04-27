@@ -24,7 +24,7 @@ interface MagicCommandHandlers {
   handleMerge: () => void
   handleResolveConflicts: () => void
   handleInvestigateWorkflowRun: (detail: WorkflowRunDetail) => void
-  handleInvestigate: (type: 'issue' | 'pr') => void
+  handleInvestigate: (type: 'issue' | 'pr' | 'advisory') => void
   handleReviewComments: (prompt: string) => void
 }
 
@@ -157,7 +157,7 @@ export function useMagicCommands({
           break
         case 'investigate':
           handlers.handleInvestigate(
-            (rest as { type: 'issue' | 'pr' }).type ?? 'issue'
+            (rest as { type: 'issue' | 'pr' | 'advisory' }).type ?? 'issue'
           )
           break
         case 'investigate-workflow-run':

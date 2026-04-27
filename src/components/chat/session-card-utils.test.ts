@@ -36,6 +36,9 @@ function createStoreState(
   }
 }
 
+const createBaseSession = createSession
+const createBaseStoreState = createStoreState
+
 describe('computeSessionCardData', () => {
   it('prefers local review state over stale persisted waiting state', () => {
     const session = createSession({

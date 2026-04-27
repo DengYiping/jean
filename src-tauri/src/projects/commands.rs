@@ -9882,6 +9882,8 @@ mod tests {
             session_type: SessionType::Worktree,
             pr_number: None,
             pr_url: None,
+            pr_push_remote: None,
+            pr_push_branch: None,
             issue_number: None,
             linear_issue_identifier: None,
             security_alert_number: None,

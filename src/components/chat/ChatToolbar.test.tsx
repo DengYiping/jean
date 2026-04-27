@@ -1,7 +1,10 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@/test/test-utils'
 import { ChatToolbar } from './ChatToolbar'
 import type { ChatToolbarProps } from './toolbar/types'
+import { useChatStore } from '@/store/chat-store'
+import { useProjectsStore } from '@/store/projects-store'
+import { useUIStore } from '@/store/ui-store'
 
 vi.mock('@/services/preferences', () => ({
   usePreferences: () => ({ data: {} }),
@@ -130,6 +133,42 @@ function createProps(
 }
 
 describe('ChatToolbar', () => {
+  beforeEach(() => {
+    useProjectsStore.setState({
+      selectedWorktreeId: 'worktree-1',
+    })
+    useChatStore.setState({
+      activeWorktreeId: 'worktree-1',
+      activeWorktreePath: '/tmp/worktree',
+      activeSessionIds: { 'worktree-1': 'session-1' },
+      selectedBackends: { 'session-1': 'codex' },
+      threadTokenUsage: {
+        'session-1': {
+          total: {
+            totalTokens: 812_700,
+            inputTokens: 406_000,
+            cachedInputTokens: 405_500,
+            outputTokens: 1_200,
+            reasoningOutputTokens: 0,
+          },
+          last: {
+            totalTokens: 68_500,
+            inputTokens: 400,
+            cachedInputTokens: 66_900,
+            outputTokens: 1_200,
+            reasoningOutputTokens: 0,
+          },
+          modelContextWindow: 997_500,
+        },
+      },
+    })
+    useUIStore.setState({
+      sessionChatModalOpen: false,
+      sessionChatModalWorktreeId: null,
+      chatToolbarMounted: false,
+    })
+  })
+
   it('allows toggling parallel execution prompting before a thread starts', () => {
     const onParallelExecutionPromptChange = vi.fn()
     render(
@@ -167,5 +206,37 @@ describe('ChatToolbar', () => {
     fireEvent.click(button)
 
     expect(onParallelExecutionPromptChange).not.toHaveBeenCalled()
+  })
+
+  it('shows Codex context usage from the toolbar while the floating dock is hidden', () => {
+    render(<ChatToolbar {...createProps()} />)
+
+    const trigger = screen.getByRole('button', {
+      name: /Codex context usage/i,
+    })
+
+    expect(trigger).toBeInTheDocument()
+    expect(trigger).toHaveAttribute(
+      'aria-label',
+      expect.stringContaining('94% remaining')
+    )
+    expect(
+      screen
+        .getByRole('button', {
+          name: /Codex context usage/i,
+        })
+        .querySelector('svg')
+    ).toBeInTheDocument()
+    expect(screen.queryByText('94%')).not.toBeInTheDocument()
+    expect(screen.queryByText('-- tok')).not.toBeInTheDocument()
+  })
+
+  it('opens the toolbar usage menu from the global usage shortcut event', async () => {
+    render(<ChatToolbar {...createProps()} />)
+
+    fireEvent(window, new CustomEvent('toggle-usage-menu'))
+
+    expect(await screen.findByText('Context window')).toBeInTheDocument()
+    expect(screen.getByText('94% remaining')).toBeInTheDocument()
   })
 })

@@ -19,6 +19,7 @@ import { MobileToolbarMenu } from '@/components/chat/toolbar/MobileToolbarMenu'
 import { DesktopToolbarControls } from '@/components/chat/toolbar/DesktopToolbarControls'
 import { DockBurgerButton } from '@/components/chat/toolbar/DockBurgerButton'
 import { SendCancelButton } from '@/components/chat/toolbar/SendCancelButton'
+import { SessionUsageMeter } from '@/components/chat/toolbar/SessionUsageMeter'
 import { ContextViewerDialog } from '@/components/chat/toolbar/ContextViewerDialog'
 import {
   CODEX_MODEL_OPTIONS,
@@ -312,6 +313,7 @@ export const ChatToolbar = memo(function ChatToolbar({
           activeMcpCount={activeMcpCount}
           className="flex @xl:hidden shrink-0"
         />
+        <SessionUsageMeter side="top" align="start" variant="toolbar" />
         <MobileToolbarMenu
           isDisabled={isSending || hasPendingQuestions}
           hasOpenPr={hasOpenPr}

@@ -16,7 +16,7 @@ describe('getFloatingDockUsageTotals', () => {
         reasoningOutputTokens: 0,
       },
       last: {
-        totalTokens: 68_500,
+        totalTokens: 70_000,
         inputTokens: 400,
         cachedInputTokens: 66_900,
         outputTokens: 1_200,
@@ -51,7 +51,7 @@ describe('getFloatingDockUsageTotals', () => {
       output: 1_200,
       cacheRead: 66_900,
       cacheCreation: 0,
-      totalTokens: 68_500,
+      totalTokens: 70_000,
     })
   })
 
@@ -85,11 +85,19 @@ describe('getFloatingDockUsageTotals', () => {
 })
 
 describe('computeContextPercent', () => {
-  it('uses only in plus out tokens against the context window', () => {
+  it('matches Codex baseline-normalized context remaining math', () => {
+    expect(computeContextPercent(68_500, 997_500)).toBe(94)
+  })
+
+  it('treats baseline-only usage as fully available', () => {
     expect(computeContextPercent(1_600, 997_500)).toBe(100)
   })
 
   it('clamps at zero when usage exceeds the context window', () => {
+    expect(computeContextPercent(1_100_000, 997_500)).toBe(0)
+  })
+
+  it('returns zero when the context window is not larger than the baseline', () => {
     expect(computeContextPercent(1_500, 1_000)).toBe(0)
   })
 })

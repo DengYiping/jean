@@ -462,24 +462,26 @@ describe('preferences service', () => {
       expect(result.current.data?.selected_codex_model).toBe('gpt-5.4')
     })
 
-    it.each(['gpt-5.4-pro', 'gpt-5.4-mini', 'gpt-5.4-nano'] as const)(
-      'accepts %s without migration',
-      async model => {
-        const { invoke } = await import('@/lib/transport')
-        vi.mocked(invoke).mockResolvedValueOnce({
-          ...defaultPreferences,
-          selected_codex_model: model,
-        })
+    it.each([
+      'gpt-5.5',
+      'gpt-5.4-pro',
+      'gpt-5.4-mini',
+      'gpt-5.4-nano',
+    ] as const)('accepts %s without migration', async model => {
+      const { invoke } = await import('@/lib/transport')
+      vi.mocked(invoke).mockResolvedValueOnce({
+        ...defaultPreferences,
+        selected_codex_model: model,
+      })
 
-        const localQueryClient = createTestQueryClient()
-        const { result } = renderHook(() => usePreferences(), {
-          wrapper: createWrapper(localQueryClient),
-        })
+      const localQueryClient = createTestQueryClient()
+      const { result } = renderHook(() => usePreferences(), {
+        wrapper: createWrapper(localQueryClient),
+      })
 
-        await waitFor(() => expect(result.current.isSuccess).toBe(true))
-        expect(result.current.data?.selected_codex_model).toBe(model)
-      }
-    )
+      await waitFor(() => expect(result.current.isSuccess).toBe(true))
+      expect(result.current.data?.selected_codex_model).toBe(model)
+    })
   })
 
   describe('useAvailableEditors', () => {

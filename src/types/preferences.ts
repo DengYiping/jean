@@ -1135,6 +1135,7 @@ export const effortLevelOptions: {
 
 export type CodexModel =
   | 'gpt-5.5'
+  | 'gpt-5.5-pro'
   | 'gpt-5.4'
   | 'gpt-5.4-pro'
   | 'gpt-5.4-mini'
@@ -1148,6 +1149,7 @@ export type CodexModel =
 
 export const codexModelOptions: { value: CodexModel; label: string }[] = [
   { value: 'gpt-5.5', label: 'GPT 5.5' },
+  { value: 'gpt-5.5-pro', label: 'GPT 5.5 Pro' },
   { value: 'gpt-5.4', label: 'GPT 5.4' },
   { value: 'gpt-5.4-pro', label: 'GPT 5.4 Pro' },
   { value: 'gpt-5.4-mini', label: 'GPT 5.4 Mini' },

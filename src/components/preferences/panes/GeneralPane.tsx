@@ -646,7 +646,7 @@ export const GeneralPane: React.FC = () => {
 
   const ghStatusDescription = ghStatus?.installed
     ? ghStatus.path
-    : 'GitHub CLI is required for GitHub integration'
+    : 'Install gh on your PATH for GitHub integration'
 
   const handleCopyPath = useCallback((path: string | null | undefined) => {
     if (!path) return
@@ -766,7 +766,7 @@ export const GeneralPane: React.FC = () => {
               )
             ) : (
               <span className="text-sm text-muted-foreground">
-                Not installed
+                Not found in PATH
               </span>
             )
           }
@@ -912,7 +912,7 @@ export const GeneralPane: React.FC = () => {
                   className="w-40"
                   onClick={() => openCliUpdateModal('gh')}
                 >
-                  Install
+                  Set Up
                 </Button>
               )}
             </InlineField>

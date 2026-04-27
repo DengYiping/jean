@@ -62,7 +62,6 @@ type OnboardingStep =
   | 'opencode-auth-checking'
   | 'opencode-auth-login'
   | 'gh-setup'
-  | 'gh-installing'
   | 'gh-auth-checking'
   | 'gh-auth-login'
   | 'complete'
@@ -77,7 +76,7 @@ interface VersionOption {
 }
 
 interface CliSetupData {
-  type: CliType
+  type: AIBackend
   title: string
   description: string
   versions: VersionOption[]
@@ -158,12 +157,10 @@ function OnboardingDialogContent() {
   const [claudeVersion, setClaudeVersion] = useState<string | null>(null)
   const [codexVersion, setCodexVersion] = useState<string | null>(null)
   const [opencodeVersion, setOpencodeVersion] = useState<string | null>(null)
-  const [ghVersion, setGhVersion] = useState<string | null>(null)
 
   const [claudeInstallFailed, setClaudeInstallFailed] = useState(false)
   const [codexInstallFailed, setCodexInstallFailed] = useState(false)
   const [opencodeInstallFailed, setOpencodeInstallFailed] = useState(false)
-  const [ghInstallFailed, setGhInstallFailed] = useState(false)
   const [claudeInstallCommand, setClaudeInstallCommand] =
     useState<ResolvedUpdateCommand | null>(null)
   const [codexInstallCommand, setCodexInstallCommand] =
@@ -195,7 +192,6 @@ function OnboardingDialogContent() {
   const stableOpencodeVersions = opencodeSetup.versions.filter(
     v => !v.prerelease
   )
-  const stableGhVersions = ghSetup.versions.filter(v => !v.prerelease)
 
   useEffect(() => {
     if (!claudeVersion && stableClaudeVersions.length > 0) {
@@ -220,12 +216,6 @@ function OnboardingDialogContent() {
       )
     }
   }, [opencodeVersion, stableOpencodeVersions])
-
-  useEffect(() => {
-    if (!ghVersion && stableGhVersions.length > 0) {
-      queueMicrotask(() => setGhVersion(stableGhVersions[0]?.version ?? null))
-    }
-  }, [ghVersion, stableGhVersions])
 
   const isBackendReady = useCallback(
     (backend: AIBackend) => {
@@ -332,7 +322,6 @@ function OnboardingDialogContent() {
       setClaudeInstallFailed(false)
       setCodexInstallFailed(false)
       setOpencodeInstallFailed(false)
-      setGhInstallFailed(false)
       setClaudeInstallCommand(null)
       setCodexInstallCommand(null)
       setClaudeInstallAttempt(0)
@@ -604,20 +593,18 @@ function OnboardingDialogContent() {
     })
   }, [opencodeSetup, opencodeAuth])
 
-  const handleGhInstall = useCallback(() => {
-    if (!ghVersion) return
-    setStep('gh-installing')
-    ghSetup.install(ghVersion, {
-      onSuccess: () => {
-        setStep('gh-auth-checking')
-        ghAuth.refetch()
-      },
-      onError: () => {
-        setGhInstallFailed(true)
-        setStep('gh-setup')
-      },
-    })
-  }, [ghVersion, ghSetup, ghAuth])
+  const handleGhInstall = useCallback(async () => {
+    const result = await ghSetup.refetchStatus()
+    if (result.data?.installed) {
+      setStep('gh-auth-checking')
+      await ghAuth.refetch()
+      return
+    }
+
+    toast.error(
+      'GitHub CLI not found in PATH. Install `gh` on your system first.'
+    )
+  }, [ghSetup, ghAuth])
 
   const handleClaudeLoginComplete = useCallback(async () => {
     setStep('claude-auth-checking')
@@ -751,23 +738,6 @@ function OnboardingDialogContent() {
       }
     }
 
-    if (step === 'gh-setup' || step === 'gh-installing') {
-      return {
-        type: 'gh',
-        title: 'GitHub CLI',
-        description: 'GitHub CLI is required for GitHub integration.',
-        versions: stableGhVersions,
-        isVersionsLoading: ghSetup.isVersionsLoading,
-        isVersionsError: ghSetup.isVersionsError,
-        onRetryVersions: ghSetup.refetchVersions,
-        isInstalling: ghSetup.isInstalling,
-        installError: ghInstallFailed ? ghSetup.installError : null,
-        progress: ghSetup.progress,
-        install: ghSetup.install,
-        currentVersion: ghSetup.status?.version,
-      }
-    }
-
     return null
   }
 
@@ -779,8 +749,6 @@ function OnboardingDialogContent() {
     codexSetup.status?.installed && step === 'codex-setup'
   const isOpencodeReinstall =
     opencodeSetup.status?.installed && step === 'opencode-setup'
-  const isGhReinstall = ghSetup.status?.installed && step === 'gh-setup'
-
   const claudeLoginCommand = claudeSetup.status?.path ?? ''
   const claudeLoginArgs = claudeSetup.status?.supports_auth_command
     ? ['auth', 'login']
@@ -816,14 +784,11 @@ function OnboardingDialogContent() {
       }
     }
 
-    if (step === 'gh-setup' || step === 'gh-installing') {
+    if (step === 'gh-setup') {
       return {
-        title: isGhReinstall
-          ? 'Change GitHub CLI Version'
-          : 'Install GitHub CLI',
-        description: isGhReinstall
-          ? 'Select a version to install. This will replace the current installation.'
-          : 'GitHub CLI is required for GitHub integration.',
+        title: 'Detect GitHub CLI',
+        description:
+          'GitHub CLI must be installed on your host system before Jean can use it.',
       }
     }
 
@@ -1024,11 +989,6 @@ function OnboardingDialogContent() {
                 cliName="OpenCode CLI"
                 progress={cliData.progress}
               />
-            ) : step === 'gh-installing' && cliData ? (
-              <InstallingState
-                cliName="GitHub CLI"
-                progress={cliData.progress}
-              />
             ) : step === 'claude-auth-checking' ? (
               <AuthCheckingState cliName="Claude CLI" />
             ) : step === 'codex-auth-checking' ? (
@@ -1125,6 +1085,13 @@ function OnboardingDialogContent() {
                 binaryName="opencode"
                 onRefresh={handleOpencodeInstall}
               />
+            ) : step === 'gh-setup' ? (
+              <HostInstallState
+                cliName="GitHub CLI"
+                binaryName="gh"
+                buttonLabel="Refresh"
+                onRefresh={handleGhInstall}
+              />
             ) : cliData ? (
               cliData.installError ? (
                 <ErrorState
@@ -1135,9 +1102,7 @@ function OnboardingDialogContent() {
                       ? handleClaudeInstall
                       : cliData.type === 'codex'
                         ? handleCodexInstall
-                        : cliData.type === 'opencode'
-                          ? handleOpencodeInstall
-                          : handleGhInstall
+                        : handleOpencodeInstall
                   }
                 />
               ) : (
@@ -1149,15 +1114,12 @@ function OnboardingDialogContent() {
                       ? claudeVersion
                       : cliData.type === 'codex'
                         ? codexVersion
-                        : cliData.type === 'opencode'
-                          ? opencodeVersion
-                          : ghVersion
+                        : opencodeVersion
                   }
                   currentVersion={
                     (cliData.type === 'claude' && isClaudeReinstall) ||
                     (cliData.type === 'codex' && isCodexReinstall) ||
-                    (cliData.type === 'opencode' && isOpencodeReinstall) ||
-                    (cliData.type === 'gh' && isGhReinstall)
+                    (cliData.type === 'opencode' && isOpencodeReinstall)
                       ? cliData.currentVersion
                       : null
                   }
@@ -1169,18 +1131,14 @@ function OnboardingDialogContent() {
                       ? setClaudeVersion
                       : cliData.type === 'codex'
                         ? setCodexVersion
-                        : cliData.type === 'opencode'
-                          ? setOpencodeVersion
-                          : setGhVersion
+                        : setOpencodeVersion
                   }
                   onInstall={
                     cliData.type === 'claude'
                       ? handleClaudeInstall
                       : cliData.type === 'codex'
                         ? handleCodexInstall
-                        : cliData.type === 'opencode'
-                          ? handleOpencodeInstall
-                          : handleGhInstall
+                        : handleOpencodeInstall
                   }
                 />
               )

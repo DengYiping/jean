@@ -1,10 +1,10 @@
-//! Configuration and path management for the embedded GitHub CLI
+//! Configuration and path management for the GitHub CLI
 
 use crate::platform::silent_command;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
 
-/// Directory name for storing the GitHub CLI binary
+/// Legacy directory name that may contain an older Jean-managed GitHub CLI.
 pub const GH_CLI_DIR_NAME: &str = "gh-cli";
 
 /// Name of the GitHub CLI binary
@@ -14,7 +14,7 @@ pub const GH_CLI_BINARY_NAME: &str = "gh";
 #[cfg(target_os = "windows")]
 pub const GH_CLI_BINARY_NAME: &str = "gh.exe";
 
-/// Get the directory where GitHub CLI is installed
+/// Get the legacy Jean-managed GitHub CLI directory.
 ///
 /// Returns: `~/Library/Application Support/jean/gh-cli/` (macOS)
 ///          `~/.local/share/jean/gh-cli/` (Linux)
@@ -27,7 +27,7 @@ pub fn get_gh_cli_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(app_data_dir.join(GH_CLI_DIR_NAME))
 }
 
-/// Get the full path to the GitHub CLI binary
+/// Get the legacy Jean-managed GitHub CLI binary path.
 ///
 /// Returns: `~/Library/Application Support/jean/gh-cli/gh` (macOS/Linux)
 ///          `%APPDATA%/jean/gh-cli/gh.exe` (Windows)
@@ -35,58 +35,49 @@ pub fn get_gh_cli_binary_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(get_gh_cli_dir(app)?.join(GH_CLI_BINARY_NAME))
 }
 
-/// Resolve GitHub CLI binary path based on the user's preference.
-///
-/// If `gh_cli_source` preference is `"path"`, look up `gh` in system PATH.
-/// Otherwise (default `"jean"`), use the Jean-managed binary.
-pub fn resolve_gh_binary(app: &AppHandle) -> PathBuf {
-    let use_path = match crate::get_preferences_path(app) {
-        Ok(prefs_path) => {
-            if let Ok(contents) = std::fs::read_to_string(&prefs_path) {
-                if let Ok(prefs) = serde_json::from_str::<crate::AppPreferences>(&contents) {
-                    prefs.gh_cli_source == "path"
-                } else {
-                    false
-                }
-            } else {
-                false
-            }
-        }
-        Err(_) => false,
-    };
+fn select_host_gh_path(output: &str, jean_managed_path: Option<&Path>) -> Option<PathBuf> {
+    let jean_managed_path = jean_managed_path.and_then(|path| std::fs::canonicalize(path).ok());
 
-    if use_path {
-        let which_cmd = if cfg!(target_os = "windows") {
-            "where"
-        } else {
-            "which"
-        };
+    output
+        .lines()
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+        .filter(|path| path.exists())
+        .find(|path| {
+            let Some(jean_managed_path) = &jean_managed_path else {
+                return true;
+            };
 
-        if let Ok(output) = silent_command(which_cmd).arg("gh").output() {
-            if output.status.success() {
-                // On Windows, `where` can return multiple paths; take only the first line
-                let path_str = String::from_utf8_lossy(&output.stdout)
-                    .lines()
-                    .next()
-                    .unwrap_or("")
-                    .trim()
-                    .to_string();
-                if !path_str.is_empty() {
-                    let path = PathBuf::from(&path_str);
-                    if path.exists() {
-                        return path;
-                    }
-                }
-            }
-        }
-        log::warn!("gh_cli_source is 'path' but could not find gh in PATH, falling back to Jean-managed binary");
-    }
-
-    get_gh_cli_binary_path(app)
-        .unwrap_or_else(|_| PathBuf::from(GH_CLI_DIR_NAME).join(GH_CLI_BINARY_NAME))
+            std::fs::canonicalize(path).map_or(true, |canonical| canonical != *jean_managed_path)
+        })
 }
 
-/// Ensure the CLI directory exists, creating it if necessary
+/// Find a host-system GitHub CLI in PATH, ignoring Jean-managed binaries.
+pub fn find_gh_in_path(app: &AppHandle) -> Option<PathBuf> {
+    let jean_managed_path = get_gh_cli_binary_path(app).ok();
+
+    #[cfg(target_os = "windows")]
+    let output = silent_command("where").arg("gh").output();
+
+    #[cfg(not(target_os = "windows"))]
+    let output = silent_command("which").args(["-a", "gh"]).output();
+
+    match output {
+        Ok(output) if output.status.success() => select_host_gh_path(
+            &String::from_utf8_lossy(&output.stdout),
+            jean_managed_path.as_deref(),
+        ),
+        _ => None,
+    }
+}
+
+/// Resolve the GitHub CLI binary from PATH, falling back to the bare command name.
+pub fn resolve_gh_binary(app: &AppHandle) -> PathBuf {
+    find_gh_in_path(app).unwrap_or_else(|| PathBuf::from("gh"))
+}
+
+/// Ensure the legacy CLI cache directory exists, creating it if necessary.
 pub fn ensure_gh_cli_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let cli_dir = get_gh_cli_dir(app)?;
     std::fs::create_dir_all(&cli_dir)
@@ -97,12 +88,55 @@ pub fn ensure_gh_cli_dir(app: &AppHandle) -> Result<PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     #[test]
-    fn fallback_path_is_jean_managed_location_shape() {
-        let resolved = PathBuf::from(GH_CLI_DIR_NAME).join(GH_CLI_BINARY_NAME);
+    fn selects_first_existing_host_gh_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let first = temp.path().join("bin").join(GH_CLI_BINARY_NAME);
+        let second = temp.path().join("other").join(GH_CLI_BINARY_NAME);
+        fs::create_dir_all(first.parent().unwrap()).unwrap();
+        fs::create_dir_all(second.parent().unwrap()).unwrap();
+        fs::write(&first, "").unwrap();
+        fs::write(&second, "").unwrap();
 
-        assert!(resolved.ends_with(GH_CLI_BINARY_NAME));
-        assert!(resolved.to_string_lossy().contains(GH_CLI_DIR_NAME));
+        let output = format!("/missing/gh\n{}\n{}\n", first.display(), second.display());
+
+        assert_eq!(select_host_gh_path(&output, None), Some(first));
+    }
+
+    #[test]
+    fn skips_jean_managed_gh_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let managed = temp.path().join(GH_CLI_DIR_NAME).join(GH_CLI_BINARY_NAME);
+        let host = temp.path().join("host").join(GH_CLI_BINARY_NAME);
+        fs::create_dir_all(managed.parent().unwrap()).unwrap();
+        fs::create_dir_all(host.parent().unwrap()).unwrap();
+        fs::write(&managed, "").unwrap();
+        fs::write(&host, "").unwrap();
+
+        let output = format!("{}\n{}\n", managed.display(), host.display());
+
+        assert_eq!(select_host_gh_path(&output, Some(&managed)), Some(host));
+    }
+
+    #[test]
+    fn returns_none_when_only_jean_managed_path_is_found() {
+        let temp = tempfile::tempdir().unwrap();
+        let managed = temp.path().join(GH_CLI_DIR_NAME).join(GH_CLI_BINARY_NAME);
+        fs::create_dir_all(managed.parent().unwrap()).unwrap();
+        fs::write(&managed, "").unwrap();
+
+        assert_eq!(
+            select_host_gh_path(&managed.display().to_string(), Some(&managed)),
+            None
+        );
+    }
+
+    #[test]
+    fn fallback_path_is_bare_command_name() {
+        let resolved = PathBuf::from("gh");
+
+        assert_eq!(resolved, PathBuf::from("gh"));
     }
 }

@@ -16,6 +16,7 @@ import {
   AlertCircle,
   Wand2,
   Eye,
+  GitBranchPlus,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { getModifierSymbol } from '@/lib/platform'
@@ -267,16 +268,21 @@ export function PRRow({
   onPreview,
   onInvestigate,
   onOpenReview,
+  isStacking,
+  onStack,
   onLabelClick,
 }: {
   pr: GitHubPullRequest
   isCreating: boolean
+  isStacking: boolean
   onClick: (background: boolean) => void
   onPreview: () => void
   onInvestigate: (background: boolean) => void
   onOpenReview: () => void
+  onStack: (background: boolean) => void
   onLabelClick?: (label: string) => void
 }) {
+  const busy = isCreating || isStacking
   const reviewBadge =
     pr.reviewDecision === 'approved'
       ? {
@@ -321,10 +327,10 @@ export function PRRow({
     <div
       className={cn(
         'group w-full flex items-start gap-3 px-3 py-2 text-left transition-colors hover:bg-accent',
-        isCreating && 'opacity-50'
+        busy && 'opacity-50'
       )}
     >
-      {isCreating ? (
+      {busy ? (
         <Loader2 className="h-4 w-4 mt-0.5 animate-spin text-muted-foreground flex-shrink-0" />
       ) : (
         <GitPullRequest
@@ -340,7 +346,7 @@ export function PRRow({
       )}
       <button
         onClick={e => onClick(e.metaKey || e.ctrlKey)}
-        disabled={isCreating}
+        disabled={busy}
         className="flex-1 min-w-0 text-left focus:outline-none disabled:cursor-not-allowed"
       >
         <div className="flex items-center gap-2">
@@ -431,8 +437,31 @@ export function PRRow({
           </TooltipTrigger>
           <TooltipContent>Preview PR ({getModifierSymbol()}O)</TooltipContent>
         </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              aria-label={`New worktree based on ${pr.headRefName}`}
+              onClick={e => {
+                e.stopPropagation()
+                onStack(e.metaKey || e.ctrlKey)
+              }}
+              disabled={busy}
+              className="inline-flex h-6 w-6 items-center justify-center rounded px-1 text-foreground/80 transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              {isStacking ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <GitBranchPlus className="h-3.5 w-3.5" />
+              )}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>
+            New worktree based on {pr.headRefName}
+          </TooltipContent>
+        </Tooltip>
         <InvestigateButton
-          isCreating={isCreating}
+          isCreating={busy}
           tooltip={`Investigate PR (${getModifierSymbol()}+Click = background)`}
           onClick={e => {
             e.stopPropagation()
@@ -643,6 +672,7 @@ export function GitHubDashboardModal() {
   const [preview, setPreview] = useState<PreviewState | null>(null)
   // Track which item is being created (number for issues/prs/alerts, ghsaId for advisories)
   const [creatingId, setCreatingId] = useState<string | null>(null)
+  const [stackingId, setStackingId] = useState<string | null>(null)
 
   // Tab switching via Cmd/Ctrl+1-4 (dispatched from useMainWindowEventListeners)
   useEffect(() => {
@@ -957,6 +987,29 @@ export function GitHubDashboardModal() {
         toast.error(`Failed: ${error}`)
       } finally {
         setCreatingId(null)
+      }
+    },
+    [createWorktree, setGitHubDashboardOpen]
+  )
+
+  const handleStackOnPR = useCallback(
+    async (pr: GitHubPullRequest, projectId: string, background: boolean) => {
+      setStackingId(`pr-${pr.number}`)
+      try {
+        if (background)
+          useUIStore.getState().incrementPendingBackgroundCreations()
+        await createWorktree.mutateAsync({
+          projectId,
+          baseBranch: pr.headRefName,
+          background,
+        })
+        if (!background) {
+          setGitHubDashboardOpen(false)
+        }
+      } catch (error) {
+        toast.error(`Failed: ${error}`)
+      } finally {
+        setStackingId(null)
       }
     },
     [createWorktree, setGitHubDashboardOpen]
@@ -1287,6 +1340,7 @@ export function GitHubDashboardModal() {
                           key={pr.number}
                           pr={pr}
                           isCreating={creatingId === `pr-${pr.number}`}
+                          isStacking={stackingId === `pr-${pr.number}`}
                           onClick={bg =>
                             handleCheckoutPR(pr, project.id, project.path, bg)
                           }
@@ -1311,6 +1365,7 @@ export function GitHubDashboardModal() {
                               bg
                             )
                           }
+                          onStack={bg => handleStackOnPR(pr, project.id, bg)}
                           onLabelClick={handleLabelClick}
                         />
                       ))}

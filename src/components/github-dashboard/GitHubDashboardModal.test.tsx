@@ -51,10 +51,12 @@ describe('PRRow', () => {
       <PRRow
         pr={pr}
         isCreating={false}
+        isStacking={false}
         onClick={vi.fn()}
         onPreview={vi.fn()}
         onOpenReview={vi.fn()}
         onInvestigate={vi.fn()}
+        onStack={vi.fn()}
       />
     )
 
@@ -70,15 +72,18 @@ describe('PRRow', () => {
     const onPreview = vi.fn()
     const onInvestigate = vi.fn()
     const onOpenReview = vi.fn()
+    const onStack = vi.fn()
 
     render(
       <PRRow
         pr={pr}
         isCreating={false}
+        isStacking={false}
         onClick={onClick}
         onPreview={onPreview}
         onOpenReview={onOpenReview}
         onInvestigate={onInvestigate}
+        onStack={onStack}
       />
     )
 
@@ -89,6 +94,7 @@ describe('PRRow', () => {
     expect(onPreview).not.toHaveBeenCalled()
     expect(onOpenReview).not.toHaveBeenCalled()
     expect(onInvestigate).not.toHaveBeenCalled()
+    expect(onStack).not.toHaveBeenCalled()
   })
 
   it('opens the review surface without triggering row actions', () => {
@@ -96,15 +102,18 @@ describe('PRRow', () => {
     const onPreview = vi.fn()
     const onInvestigate = vi.fn()
     const onOpenReview = vi.fn()
+    const onStack = vi.fn()
 
     render(
       <PRRow
         pr={pr}
         isCreating={false}
+        isStacking={false}
         onClick={onClick}
         onPreview={onPreview}
         onOpenReview={onOpenReview}
         onInvestigate={onInvestigate}
+        onStack={onStack}
       />
     )
 
@@ -116,5 +125,65 @@ describe('PRRow', () => {
     expect(onClick).not.toHaveBeenCalled()
     expect(onPreview).not.toHaveBeenCalled()
     expect(onInvestigate).not.toHaveBeenCalled()
+    expect(onStack).not.toHaveBeenCalled()
+  })
+
+  it('creates a stack worktree without triggering row actions', () => {
+    const onClick = vi.fn()
+    const onPreview = vi.fn()
+    const onInvestigate = vi.fn()
+    const onOpenReview = vi.fn()
+    const onStack = vi.fn()
+
+    render(
+      <PRRow
+        pr={pr}
+        isCreating={false}
+        isStacking={false}
+        onClick={onClick}
+        onPreview={onPreview}
+        onOpenReview={onOpenReview}
+        onInvestigate={onInvestigate}
+        onStack={onStack}
+      />
+    )
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: `New worktree based on ${pr.headRefName}`,
+      })
+    )
+
+    expect(onStack).toHaveBeenCalledWith(false)
+    expect(onClick).not.toHaveBeenCalled()
+    expect(onPreview).not.toHaveBeenCalled()
+    expect(onOpenReview).not.toHaveBeenCalled()
+    expect(onInvestigate).not.toHaveBeenCalled()
+  })
+
+  it('creates a background stack worktree with modifier click', () => {
+    const onStack = vi.fn()
+
+    render(
+      <PRRow
+        pr={pr}
+        isCreating={false}
+        isStacking={false}
+        onClick={vi.fn()}
+        onPreview={vi.fn()}
+        onOpenReview={vi.fn()}
+        onInvestigate={vi.fn()}
+        onStack={onStack}
+      />
+    )
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: `New worktree based on ${pr.headRefName}`,
+      }),
+      { metaKey: true }
+    )
+
+    expect(onStack).toHaveBeenCalledWith(true)
   })
 })

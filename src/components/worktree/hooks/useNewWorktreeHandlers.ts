@@ -821,30 +821,81 @@ export function useNewWorktreeHandlers(data: Data, setters: Setters) {
   // =========================================================================
 
   const handleStackOnPR = useCallback(
-    (pr: GitHubPullRequest, background = false) => {
-      if (!selectedProjectId) {
+    async (pr: GitHubPullRequest, background = false) => {
+      const projectPath = selectedProject?.path
+      if (!selectedProjectId || !projectPath) {
         toast.error('No project selected')
         return
       }
+
       setStackingFromPR(pr.number)
-      if (background)
-        useUIStore.getState().incrementPendingBackgroundCreations()
-      createWorktree.mutate(
-        {
-          projectId: selectedProjectId,
-          baseBranch: pr.headRefName,
-          background,
-        },
-        {
-          onError: () => setStackingFromPR(null),
-          onSuccess: () => {
-            if (background) setStackingFromPR(null)
-          },
+
+      try {
+        const prDetail = await invoke<
+          GitHubPullRequest & {
+            comments: {
+              body: string
+              author: { login: string }
+              created_at: string
+            }[]
+            reviews: {
+              body: string
+              state: string
+              author: { login: string }
+              submittedAt?: string
+            }[]
+          }
+        >('get_github_pr', {
+          projectPath,
+          prNumber: pr.number,
+        })
+
+        const relatedPrContext: PullRequestContext = {
+          number: prDetail.number,
+          title: prDetail.title,
+          body: prDetail.body,
+          headRefName: prDetail.headRefName,
+          baseRefName: prDetail.baseRefName,
+          comments: (prDetail.comments ?? [])
+            .filter(c => c && c.created_at && c.author)
+            .map(c => ({
+              body: c.body ?? '',
+              author: { login: c.author.login ?? '' },
+              createdAt: c.created_at,
+            })),
+          reviews: (prDetail.reviews ?? [])
+            .filter(r => r && r.author)
+            .map(r => ({
+              body: r.body ?? '',
+              state: r.state,
+              author: { login: r.author.login ?? '' },
+              submittedAt: r.submittedAt,
+            })),
         }
-      )
-      if (!background) handleOpenChange(false)
+
+        if (background)
+          useUIStore.getState().incrementPendingBackgroundCreations()
+        createWorktree.mutate(
+          {
+            projectId: selectedProjectId,
+            baseBranch: prDetail.headRefName,
+            relatedPrContext,
+            background,
+          },
+          {
+            onError: () => setStackingFromPR(null),
+            onSuccess: () => {
+              if (background) setStackingFromPR(null)
+            },
+          }
+        )
+        if (!background) handleOpenChange(false)
+      } catch (error) {
+        toast.error(`Failed to fetch PR details: ${error}`)
+        setStackingFromPR(null)
+      }
     },
-    [selectedProjectId, createWorktree, handleOpenChange]
+    [selectedProjectId, selectedProject, createWorktree, handleOpenChange]
   )
 
   const handleStackOnBranch = useCallback(

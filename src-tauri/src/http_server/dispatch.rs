@@ -84,6 +84,7 @@ pub async fn dispatch_command(
             let base_branch: Option<String> = field_opt(&args, "baseBranch", "base_branch")?;
             let issue_context = field_opt(&args, "issueContext", "issue_context")?;
             let pr_context = field_opt(&args, "prContext", "pr_context")?;
+            let related_pr_context = field_opt(&args, "relatedPrContext", "related_pr_context")?;
             let security_context = field_opt(&args, "securityContext", "security_context")?;
             let advisory_context = field_opt(&args, "advisoryContext", "advisory_context")?;
             let linear_context = field_opt(&args, "linearContext", "linear_context")?;
@@ -96,6 +97,7 @@ pub async fn dispatch_command(
                 base_branch,
                 issue_context,
                 pr_context,
+                related_pr_context,
                 security_context,
                 advisory_context,
                 linear_context,

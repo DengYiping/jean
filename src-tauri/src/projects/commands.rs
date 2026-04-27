@@ -736,6 +736,7 @@ pub async fn create_worktree(
     base_branch: Option<String>,
     issue_context: Option<IssueContext>,
     pr_context: Option<PullRequestContext>,
+    related_pr_context: Option<PullRequestContext>,
     security_context: Option<SecurityAlertContext>,
     advisory_context: Option<AdvisoryContext>,
     linear_context: Option<LinearIssueContext>,
@@ -1012,6 +1013,7 @@ pub async fn create_worktree(
     let base_clone = base.clone();
     let issue_context_clone = issue_context.clone();
     let pr_context_clone = pr_context.clone();
+    let related_pr_context_clone = related_pr_context.clone();
     let security_context_clone = security_context.clone();
     let advisory_context_clone = advisory_context.clone();
     let linear_context_clone = linear_context.clone();
@@ -1365,6 +1367,68 @@ pub async fn create_worktree(
                     }
                 } else {
                     log::warn!("Background: Could not get repo identifier for PR context");
+                }
+            }
+
+            // Write related PR context without treating this worktree as that PR's branch.
+            if let Some(ctx) = &related_pr_context_clone {
+                log::trace!(
+                    "Background: Writing related PR context file for PR #{}",
+                    ctx.number
+                );
+                if let Ok(repo_id) = get_repo_identifier(&project_path) {
+                    let repo_key = repo_id.to_key();
+                    if let Ok(contexts_dir) = get_github_contexts_dir(&app_clone) {
+                        if let Err(e) = std::fs::create_dir_all(&contexts_dir) {
+                            log::warn!("Background: Failed to create git-context directory: {e}");
+                        } else {
+                            let ctx_with_diff = if ctx.diff.is_none() {
+                                log::debug!(
+                                    "Background: Fetching diff for related PR #{}",
+                                    ctx.number
+                                );
+                                let diff = get_pr_diff(&app_clone, &project_path, ctx.number).ok();
+                                PullRequestContext {
+                                    number: ctx.number,
+                                    title: ctx.title.clone(),
+                                    body: ctx.body.clone(),
+                                    head_ref_name: ctx.head_ref_name.clone(),
+                                    base_ref_name: ctx.base_ref_name.clone(),
+                                    comments: ctx.comments.clone(),
+                                    reviews: ctx.reviews.clone(),
+                                    diff,
+                                }
+                            } else {
+                                ctx.clone()
+                            };
+
+                            let context_file =
+                                contexts_dir.join(format!("{repo_key}-pr-{}.md", ctx.number));
+                            let context_content = format_pr_context_markdown(&ctx_with_diff);
+                            if let Err(e) = std::fs::write(&context_file, context_content) {
+                                log::warn!(
+                                    "Background: Failed to write related PR context file: {e}"
+                                );
+                            } else {
+                                if let Err(e) = add_pr_reference(
+                                    &app_clone,
+                                    &repo_key,
+                                    ctx.number,
+                                    &worktree_id_clone,
+                                ) {
+                                    log::warn!(
+                                        "Background: Failed to add related PR reference: {e}"
+                                    );
+                                }
+                                log::trace!(
+                                    "Background: Related PR context file written to {:?}",
+                                    context_file
+                                );
+                            }
+                        }
+                    }
+                } else {
+                    log::warn!("Background: Could not get repo identifier for related PR context");
                 }
             }
 
@@ -5812,6 +5876,15 @@ fn parse_existing_pr_view(stdout: &[u8]) -> Option<ExistingPrViewResponse> {
     Some(view)
 }
 
+fn resolve_pr_target_branch<'a>(worktree: &'a Worktree, project: &'a Project) -> &'a str {
+    worktree
+        .base_branch
+        .as_deref()
+        .map(str::trim)
+        .filter(|branch| !branch.is_empty())
+        .unwrap_or(&project.default_branch)
+}
+
 /// Create a PR with AI-generated title and body
 ///
 /// This command:
@@ -5846,13 +5919,13 @@ pub async fn create_pr_with_ai_content(
         .find_project(&worktree.project_id)
         .ok_or_else(|| format!("Project not found: {}", worktree.project_id))?;
 
-    let target_branch = &project.default_branch;
+    let target_branch = resolve_pr_target_branch(worktree, project);
     let current_branch = git::get_current_branch(&worktree_path)?;
     let target_repo = git::get_repo_identifier(&worktree_path)?;
     let target_repo_slug = format_repo_slug(&target_repo);
 
     // Check if we're on the target branch (can't create PR to same branch)
-    if current_branch == *target_branch {
+    if current_branch == target_branch {
         return Err(format!(
             "Cannot create PR: current branch '{current_branch}' is the same as target branch"
         ));
@@ -6307,7 +6380,7 @@ pub async fn generate_pr_update_content(
         .find_project(&worktree.project_id)
         .ok_or_else(|| format!("Project not found: {}", worktree.project_id))?;
 
-    let target_branch = &project.default_branch;
+    let target_branch = resolve_pr_target_branch(worktree, project);
     let current_branch = git::get_current_branch(&worktree_path)?;
 
     // Gather issue/PR context for this session AND worktree (same logic as create_pr_with_ai_content)
@@ -9911,6 +9984,62 @@ mod tests {
             automation_name: None,
             automation_owned: false,
         }
+    }
+
+    fn test_project(id: &str, default_branch: &str) -> Project {
+        Project {
+            id: id.to_string(),
+            name: "test-project".to_string(),
+            path: "/tmp/test-project".to_string(),
+            default_branch: default_branch.to_string(),
+            added_at: 0,
+            order: 0,
+            parent_id: None,
+            is_folder: false,
+            avatar_path: None,
+            enabled_mcp_servers: None,
+            known_mcp_servers: Vec::new(),
+            custom_system_prompt: None,
+            default_provider: None,
+            default_backend: None,
+            github_account_host: None,
+            github_account_user: None,
+            worktrees_dir: None,
+            linear_api_key: None,
+            linear_team_id: None,
+            default_editor: None,
+            hide_github_issues_and_prs: false,
+            linked_project_ids: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn resolve_pr_target_branch_uses_project_default_without_base_branch() {
+        let worktree = test_worktree("wt-1", "project-1", "feature");
+        let project = test_project("project-1", "main");
+
+        assert_eq!(resolve_pr_target_branch(&worktree, &project), "main");
+    }
+
+    #[test]
+    fn resolve_pr_target_branch_uses_non_default_base_branch() {
+        let mut worktree = test_worktree("wt-1", "project-1", "child-feature");
+        worktree.base_branch = Some("parent-feature".to_string());
+        let project = test_project("project-1", "main");
+
+        assert_eq!(
+            resolve_pr_target_branch(&worktree, &project),
+            "parent-feature"
+        );
+    }
+
+    #[test]
+    fn resolve_pr_target_branch_ignores_blank_base_branch() {
+        let mut worktree = test_worktree("wt-1", "project-1", "feature");
+        worktree.base_branch = Some("  \t ".to_string());
+        let project = test_project("project-1", "main");
+
+        assert_eq!(resolve_pr_target_branch(&worktree, &project), "main");
     }
 
     #[test]

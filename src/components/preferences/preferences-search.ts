@@ -78,6 +78,20 @@ const paneEntries: PreferenceSearchEntry[] = [
     anchorId: 'pref-pane-magic-prompts',
   },
   {
+    id: 'pane-skills',
+    pane: 'skills',
+    paneTitle: 'Skills',
+    type: 'pane',
+    title: 'Skills',
+    keywords: [
+      'codex skills',
+      'skill toggles',
+      'enable skills',
+      'disable skills',
+    ],
+    anchorId: 'pref-pane-skills',
+  },
+  {
     id: 'pane-mcp-servers',
     pane: 'mcp-servers',
     paneTitle: 'MCP Servers',

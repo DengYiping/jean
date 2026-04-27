@@ -30,6 +30,10 @@ vi.mock('./panes/MagicPromptsPane', async importOriginal => {
   }
 })
 
+vi.mock('./panes/CodexSkillsPane', () => ({
+  CodexSkillsPane: () => <div>Codex skills pane</div>,
+}))
+
 vi.mock('./panes/McpServersPane', () => ({
   McpServersPane: () => <div>MCP Servers pane</div>,
 }))
@@ -176,5 +180,15 @@ describe('PreferencesDialog', () => {
       expect(searchItems.length).toBeGreaterThan(0)
       expect(searchItems[0]).toHaveAttribute('aria-selected', 'true')
     })
+  })
+
+  it('shows the skills pane in settings navigation', async () => {
+    const user = userEvent.setup()
+
+    render(<PreferencesDialog />)
+
+    await user.click(screen.getByRole('button', { name: /Skills/i }))
+
+    expect(screen.getByText('Codex skills pane')).toBeInTheDocument()
   })
 })

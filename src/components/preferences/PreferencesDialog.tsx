@@ -111,6 +111,11 @@ const navigationItems = [
     icon: Wand2,
   },
   {
+    id: 'skills' as const,
+    name: 'Skills',
+    icon: Puzzle,
+  },
+  {
     id: 'mcp-servers' as const,
     name: 'MCP Servers',
     icon: Plug,

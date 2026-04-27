@@ -28,7 +28,7 @@ import { useUIStore } from '@/store/ui-store'
 import { getFileManagerName } from '@/lib/platform'
 
 import type { AppPreferences } from '@/types/preferences'
-import type { AdvisoryContext } from '@/types/github'
+import type { AdvisoryContext, PullRequestContext } from '@/types/github'
 import { hasBackend } from '@/lib/environment'
 import { openExternal, preOpenWindow } from '@/lib/platform'
 import { consumeWorktreeSilentReady } from '@/services/worktree-silent-ready'
@@ -455,6 +455,7 @@ export function useCreateWorktree() {
       baseBranch,
       issueContext,
       prContext,
+      relatedPrContext,
       securityContext,
       advisoryContext,
       linearContext,
@@ -474,24 +475,9 @@ export function useCreateWorktree() {
         }[]
       }
       /** PR context to pass when creating a worktree from a PR */
-      prContext?: {
-        number: number
-        title: string
-        body?: string
-        headRefName: string
-        baseRefName: string
-        comments: {
-          body: string
-          author: { login: string }
-          createdAt: string
-        }[]
-        reviews: {
-          body: string
-          state: string
-          author: { login: string }
-          submittedAt?: string
-        }[]
-      }
+      prContext?: PullRequestContext
+      /** PR context to store as related context without checking out that PR branch */
+      relatedPrContext?: PullRequestContext
       /** Security alert context to pass when creating a worktree from a security alert */
       securityContext?: {
         number: number
@@ -533,6 +519,7 @@ export function useCreateWorktree() {
         baseBranch,
         issueNumber: issueContext?.number,
         prNumber: prContext?.number,
+        relatedPrNumber: relatedPrContext?.number,
         securityAlertNumber: securityContext?.number,
         advisoryGhsaId: advisoryContext?.ghsaId,
         customName,
@@ -542,6 +529,7 @@ export function useCreateWorktree() {
         baseBranch,
         issueContext,
         prContext,
+        relatedPrContext,
         securityContext,
         advisoryContext,
         linearContext,

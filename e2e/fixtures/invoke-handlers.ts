@@ -116,7 +116,11 @@ export const defaultResponses: Record<string, unknown> = {
   check_claude_cli_auth: { authenticated: true },
   resolve_claude_update_command: null,
   resolve_codex_update_command: null,
-  check_gh_cli_installed: { installed: true },
+  check_gh_cli_installed: {
+    installed: true,
+    version: '2.74.0',
+    path: '/opt/homebrew/bin/gh',
+  },
   check_gh_cli_auth: { authenticated: true },
   get_available_cli_versions: [],
   get_available_gh_versions: [],

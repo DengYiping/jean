@@ -30,6 +30,7 @@ import {
   SetupState,
   InstallingState,
   ErrorState,
+  HostInstallState,
 } from '@/components/onboarding/CliSetupComponents'
 
 /**
@@ -90,13 +91,65 @@ export function GhCliReinstallModal({ open, onOpenChange }: ModalProps) {
 
 function GhCliReinstallModalContent({ open, onOpenChange }: ModalProps) {
   const setup = useGhCliSetup()
+  const [isRefreshing, setIsRefreshing] = useState(false)
+
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true)
+    try {
+      await setup.refetchStatus()
+    } finally {
+      setIsRefreshing(false)
+    }
+  }, [setup])
+
   return (
-    <CliReinstallModalUI
-      setup={setup}
-      cliType="gh"
-      open={open}
-      onOpenChange={onOpenChange}
-    />
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[450px]" preventClose>
+        <DialogHeader>
+          <DialogTitle>GitHub CLI</DialogTitle>
+          <DialogDescription>
+            Jean uses the host system <code>gh</code> binary from PATH.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="py-4">
+          {setup.status?.installed ? (
+            <div className="space-y-6">
+              <div className="flex flex-col items-center gap-4">
+                <CheckCircle2 className="size-10 text-green-500" />
+                <div className="text-center">
+                  <p className="font-medium">GitHub CLI Detected</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {setup.status.version
+                      ? `v${setup.status.version}`
+                      : 'Installed'}
+                  </p>
+                  {setup.status.path && (
+                    <p className="mt-2 break-all font-mono text-xs text-muted-foreground">
+                      {setup.status.path}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <Button
+                onClick={() => onOpenChange(false)}
+                className="w-full"
+                size="lg"
+              >
+                Done
+              </Button>
+            </div>
+          ) : (
+            <HostInstallState
+              cliName="GitHub CLI"
+              binaryName="gh"
+              buttonLabel={isRefreshing ? 'Checking...' : 'Refresh'}
+              onRefresh={handleRefresh}
+            />
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 

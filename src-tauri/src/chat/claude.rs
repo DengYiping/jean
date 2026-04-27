@@ -417,12 +417,6 @@ fn build_claude_args(
         }
     }
 
-    // Allow embedded CLI binaries without approval via --allowedTools
-    // Claude wraps paths with spaces in quotes, so the actual command is:
-    // "/Users/.../Application Support/.../gh-cli/gh" --version
-    // Use *gh-cli/gh* to match regardless of quoting
-    args.push("--allowedTools".to_string());
-    args.push("Bash(*gh-cli/gh*)".to_string());
     args.push("--allowedTools".to_string());
     args.push("Bash(*claude-cli/claude*)".to_string());
 
@@ -529,16 +523,6 @@ fn build_claude_args(
                 }
             }
         }
-    }
-
-    // Embedded gh CLI path - tell Claude to use the app's bundled binary
-    let gh_binary = crate::gh_cli::config::resolve_gh_binary(app);
-    if gh_binary != std::path::Path::new("gh") {
-        system_prompt_parts.push(format!(
-            "When running GitHub CLI commands, use the full path to the embedded binary: {}\n\
-             Do NOT use bare `gh` — always use the full path above.",
-            gh_binary.display()
-        ));
     }
 
     // System Claude CLI path - tell Claude to use the host binary explicitly when available

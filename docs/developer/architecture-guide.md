@@ -92,7 +92,7 @@ Additional systems (no dedicated docs yet):
 - **HTTP Server** - Embedded Axum server + WebSocket for headless/web mode (`src-tauri/src/http_server/`)
 - **Diagnostics** - CPU/memory monitoring panel (`src-tauri/src/diagnostics/`)
 - **MCP** - Model Context Protocol server integration with per-project overrides (`src/services/mcp.ts`)
-- **CLI Management** - Claude CLI, Codex CLI, Cursor CLI, OpenCode, and gh CLI installation/versioning (`src-tauri/src/claude_cli/`, `src-tauri/src/codex_cli/`, `src-tauri/src/cursor_cli/`, `src-tauri/src/opencode_cli/`, `src-tauri/src/gh_cli/`)
+- **CLI Management** - Claude CLI, Codex CLI, Cursor CLI, OpenCode, and host-system gh CLI detection/versioning (`src-tauri/src/claude_cli/`, `src-tauri/src/codex_cli/`, `src-tauri/src/cursor_cli/`, `src-tauri/src/opencode_cli/`, `src-tauri/src/gh_cli/`)
 
 Desktop CLI queue pattern:
 

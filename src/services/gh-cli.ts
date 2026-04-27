@@ -1,8 +1,8 @@
 /**
  * GitHub CLI management service
  *
- * Provides TanStack Query hooks for checking, installing, and managing
- * the embedded GitHub CLI (gh) binary.
+ * Provides TanStack Query hooks for checking and authenticating the host
+ * system GitHub CLI (gh) binary.
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -224,14 +224,15 @@ export function useAvailableGhVersions(options?: { enabled?: boolean }) {
 }
 
 /**
- * Hook to install GitHub CLI
+ * Compatibility hook for older GitHub CLI install call sites.
+ * Jean now requires GitHub CLI to be installed on the host PATH.
  */
 export function useInstallGhCli() {
   const queryClient = useQueryClient()
 
   return useMutation({
     mutationFn: async (version?: string) => {
-      logger.info('Installing GitHub CLI', { version })
+      logger.info('GitHub CLI install requested but unsupported', { version })
       await invoke('install_gh_cli', { version: version ?? null })
     },
     // Disable retry - installation should not be retried automatically
@@ -239,13 +240,13 @@ export function useInstallGhCli() {
     onSuccess: () => {
       // Invalidate status to refetch
       queryClient.invalidateQueries({ queryKey: ghCliQueryKeys.status() })
-      logger.info('GitHub CLI installed successfully')
-      toast.success('GitHub CLI installed successfully')
+      logger.info('GitHub CLI install compatibility command completed')
+      toast.success('GitHub CLI detected')
     },
     onError: error => {
       const message = error instanceof Error ? error.message : String(error)
-      logger.error('Failed to install GitHub CLI', { error })
-      toast.error('Failed to install GitHub CLI', { description: message })
+      logger.error('GitHub CLI install is unsupported', { error })
+      toast.error('Install GitHub CLI on your PATH', { description: message })
     },
   })
 }
@@ -311,50 +312,13 @@ export function useGhInstallProgress(): [GhInstallProgress | null, () => void] {
  */
 export function useGhCliSetup() {
   const status = useGhCliStatus()
-  const versions = useAvailableGhVersions()
-  const installMutation = useInstallGhCli()
-  const [progress, resetProgress] = useGhInstallProgress()
 
   const needsSetup = !status.isLoading && !status.data?.installed
-
-  // Wrapper to support install with options (e.g., onSuccess callback)
-  const install = (
-    version: string,
-    options?: { onSuccess?: () => void; onError?: (error: Error) => void }
-  ) => {
-    logger.info('[useGhCliSetup] install() called', {
-      version,
-      isPending: installMutation.isPending,
-    })
-
-    // Reset progress before starting new installation to prevent stale state
-    resetProgress()
-
-    logger.info('[useGhCliSetup] Calling installMutation.mutate()', { version })
-    installMutation.mutate(version, {
-      onSuccess: () => {
-        logger.info('[useGhCliSetup] mutate onSuccess callback')
-        options?.onSuccess?.()
-      },
-      onError: error => {
-        logger.error('[useGhCliSetup] mutate onError callback', { error })
-        options?.onError?.(error)
-      },
-    })
-  }
 
   return {
     status: status.data,
     isStatusLoading: status.isLoading,
-    versions: versions.data ?? [],
-    isVersionsLoading: versions.isFetching,
-    isVersionsError: versions.isError,
-    refetchVersions: versions.refetch,
     needsSetup,
-    isInstalling: installMutation.isPending,
-    installError: installMutation.error,
-    progress,
-    install,
     refetchStatus: status.refetch,
   }
 }

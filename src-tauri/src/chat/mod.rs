@@ -5,6 +5,7 @@ mod commands;
 pub mod detached;
 mod naming;
 pub(crate) mod opencode;
+pub(crate) mod permission_rules;
 pub mod registry;
 pub mod run_log;
 pub mod storage;

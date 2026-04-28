@@ -3,7 +3,13 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { Kbd } from '@/components/ui/kbd'
-import { ShieldAlert, Play, ChevronRight, CheckCircle2 } from 'lucide-react'
+import {
+  ShieldAlert,
+  ShieldCheck,
+  Play,
+  ChevronRight,
+  CheckCircle2,
+} from 'lucide-react'
 import { formatShortcutDisplay, DEFAULT_KEYBINDINGS } from '@/types/keybindings'
 import {
   Collapsible,
@@ -20,6 +26,8 @@ interface PermissionApprovalProps {
   denials: PermissionDenial[]
   /** Callback when user approves selected tools */
   onApprove: (sessionId: string, approvedPatterns: string[]) => void
+  /** Callback when user approves selected tools and persists Bash command rules */
+  onApproveAndPersist?: (sessionId: string, approvedPatterns: string[]) => void
   /** Callback when user approves with yolo mode (auto-approve all future tools) */
   onApproveYolo?: (sessionId: string, approvedPatterns: string[]) => void
   /** Callback when user denies/cancels */
@@ -106,6 +114,10 @@ function getToolCommand(denial: PermissionDenial): string | null {
   return null
 }
 
+function canPersistRule(denial: PermissionDenial): boolean {
+  return denial.tool_name === 'Bash' && getToolCommand(denial) != null
+}
+
 /**
  * Renders permission approval UI for denied tools from Claude CLI
  * Shows when Claude CLI returns permission_denials and allows users
@@ -115,6 +127,7 @@ export function PermissionApproval({
   sessionId,
   denials,
   onApprove,
+  onApproveAndPersist,
   onApproveYolo,
   onDeny,
   readOnly = false,
@@ -198,6 +211,21 @@ export function PermissionApproval({
       .map(formatToolPattern)
     onApproveYolo?.(sessionId, patterns)
   }, [sessionId, uniqueDenials, selectedIndices, onApproveYolo])
+
+  const persistentApprovalPatterns = useMemo(
+    () =>
+      uniqueDenials
+        .filter((denial, i) => selectedIndices.has(i) && canPersistRule(denial))
+        .map(formatToolPattern),
+    [uniqueDenials, selectedIndices]
+  )
+
+  const handleApproveAndPersist = useCallback(() => {
+    const patterns = uniqueDenials
+      .filter((_, i) => selectedIndices.has(i))
+      .map(formatToolPattern)
+    onApproveAndPersist?.(sessionId, patterns)
+  }, [sessionId, uniqueDenials, selectedIndices, onApproveAndPersist])
 
   // Listen for CMD+ENTER to approve (same event as answer-question)
   useEffect(() => {
@@ -316,7 +344,7 @@ export function PermissionApproval({
         })}
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <Button
           size="sm"
           variant="outline"
@@ -332,6 +360,18 @@ export function PermissionApproval({
             )}
           </Kbd>
         </Button>
+        {onApproveAndPersist && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleApproveAndPersist}
+            disabled={persistentApprovalPatterns.length === 0}
+            className="gap-1"
+          >
+            <ShieldCheck className="h-3 w-3" />
+            Always Allow & Continue
+          </Button>
+        )}
         {onApproveYolo && (
           <Button
             size="sm"

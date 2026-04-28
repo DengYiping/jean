@@ -11,14 +11,16 @@ pub fn list_available_editors() -> Vec<String> {
 }
 
 pub fn open_project_path_in_editor(path: &str, editor: &str) -> Result<(), String> {
+    let args = build_project_open_args(editor, path);
+
     #[cfg(target_os = "macos")]
     {
         let result = match editor {
-            "zed" => spawn_or_open_app("zed", "Zed", &[path]),
-            "cursor" => spawn_or_open_app("cursor", "Cursor", &[path]),
-            "xcode" => spawn_or_open_app("xed", "Xcode", &[path]),
-            "intellij" => spawn_or_open_app("idea", "IntelliJ IDEA", &[path]),
-            _ => spawn_or_open_app("code", "Visual Studio Code", &[path]),
+            "zed" => spawn_or_open_app("zed", "Zed", &args),
+            "cursor" => spawn_or_open_app("cursor", "Cursor", &args),
+            "xcode" => spawn_or_open_app("xed", "Xcode", &args),
+            "intellij" => spawn_or_open_app("idea", "IntelliJ IDEA", &args),
+            _ => spawn_or_open_app("code", "Visual Studio Code", &args),
         };
 
         return result
@@ -34,11 +36,11 @@ pub fn open_project_path_in_editor(path: &str, editor: &str) -> Result<(), Strin
     #[cfg(target_os = "linux")]
     {
         let result = match editor {
-            "zed" => Command::new("zed").arg(path).spawn(),
-            "cursor" => Command::new("cursor").arg(path).spawn(),
-            "intellij" => Command::new("idea").arg(path).spawn(),
+            "zed" => Command::new("zed").args(&args).spawn(),
+            "cursor" => Command::new("cursor").args(&args).spawn(),
+            "intellij" => Command::new("idea").args(&args).spawn(),
             "xcode" => return Err("Xcode is only available on macOS".to_string()),
-            _ => Command::new("code").arg(path).spawn(),
+            _ => Command::new("code").args(&args).spawn(),
         };
 
         return result
@@ -55,61 +57,29 @@ pub fn open_file_path_in_editor(
     editor: &str,
     line_number: Option<u32>,
 ) -> Result<(), String> {
+    let args = build_file_open_args(editor, path, line_number);
+
     #[cfg(target_os = "macos")]
     {
-        let zed_target = line_number
-            .map(|line| format!("{path}:{line}"))
-            .unwrap_or_else(|| path.to_string());
-        let cursor_target = line_number
-            .map(|line| format!("{path}:{line}"))
-            .unwrap_or_else(|| path.to_string());
-        let vscode_target = line_number
-            .map(|line| format!("{path}:{line}"))
-            .unwrap_or_else(|| path.to_string());
-
         let result = match editor {
-            "zed" => spawn_or_open_app("zed", "Zed", &[zed_target.as_str()]),
-            "cursor" => {
-                if line_number.is_some() {
-                    spawn_or_open_app("cursor", "Cursor", &["-g", cursor_target.as_str()])
-                } else {
-                    spawn_or_open_app("cursor", "Cursor", &[path])
-                }
-            }
+            "zed" => spawn_or_open_app("zed", "Zed", &args),
+            "cursor" => spawn_or_open_app("cursor", "Cursor", &args),
             "xcode" => {
                 let mut command = Command::new("xed");
-                if let Some(line) = line_number {
-                    command.args(["--line", &line.to_string()]);
-                }
-                command.arg(path).spawn()
+                command.args(&args).spawn()
             }
             "intellij" => {
                 let mut command = Command::new("idea");
-                if let Some(line) = line_number {
-                    command.args(["--line", &line.to_string()]);
-                }
 
-                match command.arg(path).spawn() {
+                match command.args(&args).spawn() {
                     Ok(child) => Ok(child),
                     Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                        Command::new("open")
-                            .args(["-a", "IntelliJ IDEA", path])
-                            .spawn()
+                        open_app_fallback("IntelliJ IDEA", &args)
                     }
                     Err(error) => Err(error),
                 }
             }
-            _ => {
-                if line_number.is_some() {
-                    spawn_or_open_app(
-                        "code",
-                        "Visual Studio Code",
-                        &["-g", vscode_target.as_str()],
-                    )
-                } else {
-                    spawn_or_open_app("code", "Visual Studio Code", &[path])
-                }
-            }
+            _ => spawn_or_open_app("code", "Visual Studio Code", &args),
         };
 
         return result
@@ -124,44 +94,12 @@ pub fn open_file_path_in_editor(
 
     #[cfg(target_os = "linux")]
     {
-        let zed_target = line_number
-            .map(|line| format!("{path}:{line}"))
-            .unwrap_or_else(|| path.to_string());
-        let cursor_target = line_number
-            .map(|line| format!("{path}:{line}"))
-            .unwrap_or_else(|| path.to_string());
-        let vscode_target = line_number
-            .map(|line| format!("{path}:{line}"))
-            .unwrap_or_else(|| path.to_string());
-
         let result = match editor {
-            "zed" => Command::new("zed").arg(&zed_target).spawn(),
-            "cursor" => {
-                let mut command = Command::new("cursor");
-                if line_number.is_some() {
-                    command.args(["-g", &cursor_target]);
-                } else {
-                    command.arg(path);
-                }
-                command.spawn()
-            }
-            "intellij" => {
-                let mut command = Command::new("idea");
-                if let Some(line) = line_number {
-                    command.args(["--line", &line.to_string()]);
-                }
-                command.arg(path).spawn()
-            }
+            "zed" => Command::new("zed").args(&args).spawn(),
+            "cursor" => Command::new("cursor").args(&args).spawn(),
+            "intellij" => Command::new("idea").args(&args).spawn(),
             "xcode" => return Err("Xcode is only available on macOS".to_string()),
-            _ => {
-                let mut command = Command::new("code");
-                if line_number.is_some() {
-                    command.args(["-g", &vscode_target]);
-                } else {
-                    command.arg(path);
-                }
-                command.spawn()
-            }
+            _ => Command::new("code").args(&args).spawn(),
         };
 
         return result
@@ -171,6 +109,62 @@ pub fn open_file_path_in_editor(
 
     #[allow(unreachable_code)]
     Err("Editor launching is not supported on this platform".to_string())
+}
+
+fn build_project_open_args(editor: &str, path: &str) -> Vec<String> {
+    match editor {
+        "cursor" | "vscode" => vec!["--disable-workspace-trust".to_string(), path.to_string()],
+        "intellij" => vec!["--trust".to_string(), path.to_string()],
+        _ => vec![path.to_string()],
+    }
+}
+
+fn build_file_open_args(editor: &str, path: &str, line_number: Option<u32>) -> Vec<String> {
+    let line_target = line_number
+        .map(|line| format!("{path}:{line}"))
+        .unwrap_or_else(|| path.to_string());
+
+    match editor {
+        "zed" => vec![line_target],
+        "cursor" | "vscode" => {
+            let mut args = vec!["--disable-workspace-trust".to_string()];
+            if line_number.is_some() {
+                args.push("-g".to_string());
+                args.push(line_target);
+            } else {
+                args.push(path.to_string());
+            }
+            args
+        }
+        "xcode" => {
+            let mut args = Vec::new();
+            if let Some(line) = line_number {
+                args.push("--line".to_string());
+                args.push(line.to_string());
+            }
+            args.push(path.to_string());
+            args
+        }
+        "intellij" => {
+            let mut args = vec!["--trust".to_string()];
+            if let Some(line) = line_number {
+                args.push("--line".to_string());
+                args.push(line.to_string());
+            }
+            args.push(path.to_string());
+            args
+        }
+        _ => {
+            let mut args = vec!["--disable-workspace-trust".to_string()];
+            if line_number.is_some() {
+                args.push("-g".to_string());
+                args.push(line_target);
+            } else {
+                args.push(path.to_string());
+            }
+            args
+        }
+    }
 }
 
 fn format_open_error(editor: &str, error: &std::io::Error) -> String {
@@ -194,20 +188,25 @@ fn format_open_error(editor: &str, error: &std::io::Error) -> String {
 fn spawn_or_open_app(
     cli: &str,
     app_name: &str,
-    args: &[&str],
+    args: &[String],
 ) -> std::io::Result<std::process::Child> {
     match Command::new(cli).args(args).spawn() {
         Ok(child) => Ok(child),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            let mut command = Command::new("open");
-            command.args(["-a", app_name]);
-            for arg in args.iter().filter(|arg| !arg.starts_with('-')) {
-                command.arg(arg);
-            }
-            command.spawn()
+            open_app_fallback(app_name, args)
         }
         Err(error) => Err(error),
     }
+}
+
+#[cfg(target_os = "macos")]
+fn open_app_fallback(app_name: &str, args: &[String]) -> std::io::Result<std::process::Child> {
+    let mut command = Command::new("open");
+    command.args(["-a", app_name]);
+    if args.iter().any(|arg| arg.starts_with('-')) {
+        command.arg("--args");
+    }
+    command.args(args).spawn()
 }
 
 fn is_editor_available(editor: &str) -> bool {
@@ -309,20 +308,24 @@ fn windows_known_editor_paths(editor: &str) -> Vec<std::path::PathBuf> {
 fn open_project_path_in_editor_windows(path: &str, editor: &str) -> Result<(), String> {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x08000000;
+    let args = build_project_open_args(editor, path);
 
     let result = match editor {
-        "zed" => Command::new("zed").arg(path).spawn(),
+        "zed" => Command::new("zed").args(&args).spawn(),
         "cursor" => Command::new("cmd")
-            .args(["/c", "cursor", path])
+            .args(["/c", "cursor"])
+            .args(&args)
             .creation_flags(CREATE_NO_WINDOW)
             .spawn(),
         "intellij" => Command::new("cmd")
-            .args(["/c", "idea", path])
+            .args(["/c", "idea"])
+            .args(&args)
             .creation_flags(CREATE_NO_WINDOW)
             .spawn(),
         "xcode" => return Err("Xcode is only available on macOS".to_string()),
         _ => Command::new("cmd")
-            .args(["/c", "code", path])
+            .args(["/c", "code"])
+            .args(&args)
             .creation_flags(CREATE_NO_WINDOW)
             .spawn(),
     };
@@ -340,50 +343,134 @@ fn open_file_path_in_editor_windows(
 ) -> Result<(), String> {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x08000000;
-
-    let zed_target = line_number
-        .map(|line| format!("{path}:{line}"))
-        .unwrap_or_else(|| path.to_string());
-    let cursor_target = line_number
-        .map(|line| format!("{path}:{line}"))
-        .unwrap_or_else(|| path.to_string());
-    let vscode_target = line_number
-        .map(|line| format!("{path}:{line}"))
-        .unwrap_or_else(|| path.to_string());
+    let args = build_file_open_args(editor, path, line_number);
 
     let result = match editor {
-        "zed" => Command::new("zed").arg(&zed_target).spawn(),
-        "cursor" => {
-            let mut command = Command::new("cmd");
-            if line_number.is_some() {
-                command.args(["/c", "cursor", "-g", &cursor_target]);
-            } else {
-                command.args(["/c", "cursor", path]);
-            }
-            command.creation_flags(CREATE_NO_WINDOW).spawn()
-        }
-        "intellij" => {
-            let mut command = Command::new("cmd");
-            if let Some(line) = line_number {
-                command.args(["/c", "idea", "--line", &line.to_string(), path]);
-            } else {
-                command.args(["/c", "idea", path]);
-            }
-            command.creation_flags(CREATE_NO_WINDOW).spawn()
-        }
+        "zed" => Command::new("zed").args(&args).spawn(),
+        "cursor" => Command::new("cmd")
+            .args(["/c", "cursor"])
+            .args(&args)
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn(),
+        "intellij" => Command::new("cmd")
+            .args(["/c", "idea"])
+            .args(&args)
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn(),
         "xcode" => return Err("Xcode is only available on macOS".to_string()),
-        _ => {
-            let mut command = Command::new("cmd");
-            if line_number.is_some() {
-                command.args(["/c", "code", "-g", &vscode_target]);
-            } else {
-                command.args(["/c", "code", path]);
-            }
-            command.creation_flags(CREATE_NO_WINDOW).spawn()
-        }
+        _ => Command::new("cmd")
+            .args(["/c", "code"])
+            .args(&args)
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn(),
     };
 
     result
         .map(|_| ())
         .map_err(|error| format_open_error(editor, &error))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn strings(args: Vec<String>) -> Vec<String> {
+        args
+    }
+
+    #[test]
+    fn vscode_project_open_disables_workspace_trust() {
+        assert_eq!(
+            strings(build_project_open_args("vscode", "/tmp/demo")),
+            ["--disable-workspace-trust", "/tmp/demo"]
+        );
+    }
+
+    #[test]
+    fn cursor_project_open_disables_workspace_trust() {
+        assert_eq!(
+            strings(build_project_open_args("cursor", "/tmp/demo")),
+            ["--disable-workspace-trust", "/tmp/demo"]
+        );
+    }
+
+    #[test]
+    fn vscode_file_open_preserves_goto_with_workspace_trust_disabled() {
+        assert_eq!(
+            strings(build_file_open_args(
+                "vscode",
+                "/tmp/demo/src/main.ts",
+                Some(42)
+            )),
+            [
+                "--disable-workspace-trust",
+                "-g",
+                "/tmp/demo/src/main.ts:42"
+            ]
+        );
+    }
+
+    #[test]
+    fn cursor_file_open_preserves_goto_with_workspace_trust_disabled() {
+        assert_eq!(
+            strings(build_file_open_args(
+                "cursor",
+                "/tmp/demo/src/main.ts",
+                Some(42)
+            )),
+            [
+                "--disable-workspace-trust",
+                "-g",
+                "/tmp/demo/src/main.ts:42"
+            ]
+        );
+    }
+
+    #[test]
+    fn intellij_project_open_marks_project_trusted() {
+        assert_eq!(
+            strings(build_project_open_args("intellij", "/tmp/demo")),
+            ["--trust", "/tmp/demo"]
+        );
+    }
+
+    #[test]
+    fn intellij_file_open_marks_project_trusted_and_preserves_line() {
+        assert_eq!(
+            strings(build_file_open_args(
+                "intellij",
+                "/tmp/demo/src/main.java",
+                Some(42)
+            )),
+            ["--trust", "--line", "42", "/tmp/demo/src/main.java"]
+        );
+    }
+
+    #[test]
+    fn zed_and_xcode_args_are_unchanged() {
+        assert_eq!(
+            strings(build_project_open_args("zed", "/tmp/demo")),
+            ["/tmp/demo"]
+        );
+        assert_eq!(
+            strings(build_file_open_args(
+                "zed",
+                "/tmp/demo/src/main.ts",
+                Some(42)
+            )),
+            ["/tmp/demo/src/main.ts:42"]
+        );
+        assert_eq!(
+            strings(build_project_open_args("xcode", "/tmp/demo")),
+            ["/tmp/demo"]
+        );
+        assert_eq!(
+            strings(build_file_open_args(
+                "xcode",
+                "/tmp/demo/src/main.swift",
+                Some(42)
+            )),
+            ["--line", "42", "/tmp/demo/src/main.swift"]
+        );
+    }
 }

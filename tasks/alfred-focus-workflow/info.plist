@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>bundleid</key>
+	<string>dev.jean.focus</string>
+	<key>connections</key>
+	<dict>
+		<key>7E233524-545A-4D58-86BC-DF256E890E91</key>
+		<array>
+			<dict>
+				<key>destinationuid</key>
+				<string>7C575935-4CF3-43C4-9365-0920C141562E</string>
+				<key>modifiers</key>
+				<integer>0</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+		</array>
+	</dict>
+	<key>createdby</key>
+	<string>Codex</string>
+	<key>description</key>
+	<string>Focus the Jean app window with Cmd+Shift+J.</string>
+	<key>disabled</key>
+	<false/>
+	<key>name</key>
+	<string>Jean Focus</string>
+	<key>objects</key>
+	<array>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>action</key>
+				<integer>0</integer>
+				<key>argument</key>
+				<integer>0</integer>
+				<key>focusedappvariable</key>
+				<false/>
+				<key>focusedappvariablename</key>
+				<string></string>
+				<key>hotkey</key>
+				<integer>38</integer>
+				<key>hotmod</key>
+				<integer>1179648</integer>
+				<key>hotstring</key>
+				<string>J</string>
+				<key>leftcursor</key>
+				<false/>
+				<key>modsmode</key>
+				<integer>0</integer>
+				<key>relatedAppsMode</key>
+				<integer>0</integer>
+			</dict>
+			<key>type</key>
+			<string>alfred.workflow.trigger.hotkey</string>
+			<key>uid</key>
+			<string>7E233524-545A-4D58-86BC-DF256E890E91</string>
+			<key>version</key>
+			<integer>2</integer>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>concurrently</key>
+				<false/>
+				<key>escaping</key>
+				<integer>102</integer>
+				<key>script</key>
+				<string>osascript &lt;&lt;'APPLESCRIPT'
+tell application "Jean" to activate
+delay 0.05
+tell application "System Events"
+	if exists process "Jean" then
+		tell process "Jean"
+			set frontmost to true
+			if (count of windows) &gt; 0 then
+				try
+					perform action "AXRaise" of window 1
+				end try
+			end if
+		end tell
+	end if
+end tell
+APPLESCRIPT</string>
+				<key>scriptargtype</key>
+				<integer>0</integer>
+				<key>scriptfile</key>
+				<string></string>
+				<key>type</key>
+				<integer>0</integer>
+			</dict>
+			<key>type</key>
+			<string>alfred.workflow.action.script</string>
+			<key>uid</key>
+			<string>7C575935-4CF3-43C4-9365-0920C141562E</string>
+			<key>version</key>
+			<integer>2</integer>
+		</dict>
+	</array>
+	<key>readme</key>
+	<string>Press Cmd+Shift+J to activate Jean and raise its front window.</string>
+	<key>uidata</key>
+	<dict>
+		<key>7C575935-4CF3-43C4-9365-0920C141562E</key>
+		<dict>
+			<key>xpos</key>
+			<integer>360</integer>
+			<key>ypos</key>
+			<integer>140</integer>
+		</dict>
+		<key>7E233524-545A-4D58-86BC-DF256E890E91</key>
+		<dict>
+			<key>xpos</key>
+			<integer>120</integer>
+			<key>ypos</key>
+			<integer>140</integer>
+		</dict>
+	</dict>
+	<key>userconfigurationconfig</key>
+	<array/>
+	<key>version</key>
+	<string>1.0</string>
+	<key>webaddress</key>
+	<string></string>
+</dict>
+</plist>

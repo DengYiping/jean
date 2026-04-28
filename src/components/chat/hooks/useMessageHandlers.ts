@@ -8,6 +8,7 @@ import {
   readPlanFile,
   persistEnqueue,
   formatAnswersForCodexRequestUserInput,
+  addGlobalCommandPermissionRule,
 } from '@/services/chat'
 import { useChatStore } from '@/store/chat-store'
 import type {
@@ -48,6 +49,11 @@ export const GIT_ALLOWED_TOOLS = [
   'Bash(git:*)', // All git commands
   // gh-cli/claude-cli are auto-allowed via --allowedTools in build_claude_args()
 ]
+
+function commandFromBashPattern(pattern: string): string | null {
+  const match = pattern.match(/^Bash\((.+)\)$/)
+  return match?.[1]?.trim() || null
+}
 
 /** Type for the sendMessage mutation */
 interface SendMessageMutation {
@@ -138,6 +144,10 @@ interface MessageHandlers {
   handleStreamingWorktreeYoloApproval: () => void
   handlePendingPlanApprovalCallback: () => void
   handlePermissionApproval: (
+    sessionId: string,
+    approvedPatterns: string[]
+  ) => void
+  handlePermissionApprovalAndPersist: (
     sessionId: string,
     approvedPatterns: string[]
   ) => void
@@ -2494,6 +2504,34 @@ export function useMessageHandlers({
     ]
   )
 
+  const handlePermissionApprovalAndPersist = useCallback(
+    async (sessionId: string, approvedPatterns: string[]) => {
+      const commands = approvedPatterns
+        .map(commandFromBashPattern)
+        .filter((command): command is string => command != null)
+
+      if (commands.length === 0) {
+        toast.error('No command rule to save')
+        return
+      }
+
+      try {
+        await Promise.all(commands.map(addGlobalCommandPermissionRule))
+      } catch (err) {
+        logger.error(
+          '[useMessageHandlers] Failed to save command permission rule:',
+          err
+        )
+        toast.error(`Failed to save command rule: ${err}`)
+        return
+      }
+
+      toast.success('Command rule saved')
+      handlePermissionApproval(sessionId, approvedPatterns)
+    },
+    [handlePermissionApproval]
+  )
+
   // Handle permission approval with yolo mode (auto-approve all future tools)
   // PERFORMANCE: Uses refs for session/worktree IDs to keep callback stable across session switches
   const handlePermissionApprovalYolo = useCallback(
@@ -3186,6 +3224,7 @@ Please apply all these fixes to the respective files.`
     handleStreamingWorktreeYoloApproval,
     handlePendingPlanApprovalCallback,
     handlePermissionApproval,
+    handlePermissionApprovalAndPersist,
     handlePermissionApprovalYolo,
     handlePermissionDeny,
     handleCodexMcpElicitationRespond,

@@ -2060,6 +2060,11 @@ pub async fn dispatch_command(
             crate::chat::approve_codex_command(session_id, rpc_id, decision)?;
             Ok(Value::Null)
         }
+        "add_global_command_permission_rule" => {
+            let command: String = from_field(&args, "command")?;
+            crate::chat::add_global_command_permission_rule(command)?;
+            Ok(Value::Null)
+        }
         "answer_codex_mcp_elicitation" => {
             let session_id: String = field(&args, "sessionId", "session_id")?;
             let rpc_id: u64 = field(&args, "rpcId", "rpc_id")?;

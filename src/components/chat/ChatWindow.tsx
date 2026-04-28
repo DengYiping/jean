@@ -77,7 +77,6 @@ import type {
 import { isAskUserQuestion } from '@/types/chat'
 import { getSkillName } from '@/lib/path-utils'
 import {
-  appendSkillPromptContext,
   getActiveSkillsFromText,
   stripLeadingInjectedSkillTokens,
 } from '@/lib/skill-prompt'
@@ -170,6 +169,7 @@ import { useMcpServerResolution } from './hooks/useMcpServerResolution'
 import { useInstalledBackends } from '@/hooks/useInstalledBackends'
 import { useToolbarHandlers } from './hooks/useToolbarHandlers'
 import { useMessageSending } from './hooks/useMessageSending'
+import { useAgentHarnessFanout } from './hooks/useAgentHarnessFanout'
 import { usePlanState } from './hooks/usePlanState'
 import { useActiveTodosAndAgents } from './hooks/useActiveTodosAndAgents'
 import { usePendingAttachments } from './hooks/usePendingAttachments'
@@ -177,6 +177,10 @@ import { useQueuedMessages } from './hooks/useQueuedMessages'
 import { applyOptimisticPlanApproval } from './hooks/optimistic-plan-approval'
 import { dedupeInFlightAssistantMessage } from './in-flight-message-dedupe'
 import { shouldShowPermissionApproval } from './permission-approval-utils'
+import {
+  buildMessageWithPendingRefs,
+  type PendingInputSnapshot,
+} from './pending-input'
 
 // PERFORMANCE: Stable empty array references to prevent infinite render loops
 // When Zustand selectors return [], a new reference is created each time
@@ -191,15 +195,6 @@ const EMPTY_INPUT_DRAFT = ''
 const EMPTY_QUEUED_MESSAGES: QueuedMessage[] = []
 const EMPTY_PERMISSION_DENIALS: PermissionDenial[] = []
 const EMPTY_CODEX_MCP_ELICITATIONS: CodexMcpElicitationType[] = []
-
-interface PendingInputSnapshot {
-  sourceSessionId: string
-  message: string
-  images: PendingImage[]
-  files: PendingFile[]
-  skills: SkillReference[]
-  textFiles: PendingTextFile[]
-}
 
 interface ChatWindowProps {
   /** When true, hides terminal panel and other elements not needed in modal */
@@ -1811,46 +1806,6 @@ export function ChatWindow({
     [activeSessionId, clearInputDraft]
   )
 
-  const buildMessageWithPendingRefs = useCallback(
-    (snapshot: PendingInputSnapshot): string => {
-      let message = appendSkillPromptContext(snapshot.message, snapshot.skills)
-
-      if (snapshot.files.length > 0) {
-        const fileRefs = snapshot.files
-          .map(file =>
-            file.isDirectory
-              ? `[Directory: ${file.relativePath} - Use Glob and Read tools to explore this directory]`
-              : `[File: ${file.relativePath} - Use the Read tool to view this file]`
-          )
-          .join('\n')
-        message = message ? `${message}\n\n${fileRefs}` : fileRefs
-      }
-
-      if (snapshot.images.length > 0) {
-        const imageRefs = snapshot.images
-          .map(
-            image =>
-              `[Image attached: ${image.path} - Use the Read tool to view this image]`
-          )
-          .join('\n')
-        message = message ? `${message}\n\n${imageRefs}` : imageRefs
-      }
-
-      if (snapshot.textFiles.length > 0) {
-        const textFileRefs = snapshot.textFiles
-          .map(
-            textFile =>
-              `[Text file attached: ${textFile.path} - Use the Read tool to view this file]`
-          )
-          .join('\n')
-        message = message ? `${message}\n\n${textFileRefs}` : textFileRefs
-      }
-
-      return message
-    },
-    []
-  )
-
   const resolveShortcutExecutionConfig = useCallback(
     (mode: 'build' | 'yolo') => {
       const isYolo = mode === 'yolo'
@@ -2075,6 +2030,25 @@ export function ChatWindow({
       sendMessage,
     ]
   )
+
+  const handleHarnessFanoutSend = useAgentHarnessFanout({
+    projectId: worktree?.project_id,
+    sourceBaseBranch: worktree?.branch,
+    sourceHasUncommittedChanges: uncommittedAdded > 0 || uncommittedRemoved > 0,
+    getPendingInputSnapshot,
+    clearPendingInputSnapshot,
+    executionModeRef,
+    selectedThinkingLevelRef,
+    selectedEffortLevelRef,
+    selectedProviderRef,
+    selectedModelRef,
+    mcpServersDataRef,
+    enabledMcpServersRef,
+    preferences,
+    queryClient,
+    sendMessage,
+    resolveCustomProfile,
+  })
 
   const handleInputNewSessionShortcut = useCallback(
     async (mode: 'build' | 'yolo') => {
@@ -3241,6 +3215,8 @@ export function ChatWindow({
                             }
                             onCancel={handleCancel}
                             queuedMessageCount={currentQueuedMessages.length}
+                            onHarnessFanoutSend={handleHarnessFanoutSend}
+                            fanoutDisabled={!worktree?.project_id}
                             availableMcpServers={availableMcpServers}
                             enabledMcpServers={enabledMcpServers}
                             onToggleMcpServer={handleToggleMcpServer}

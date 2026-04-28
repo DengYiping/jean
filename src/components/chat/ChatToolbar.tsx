@@ -113,6 +113,8 @@ export const ChatToolbar = memo(function ChatToolbar({
   onParallelExecutionPromptChange,
   onCancel,
   queuedMessageCount,
+  onHarnessFanoutSend,
+  fanoutDisabled,
   availableMcpServers,
   enabledMcpServers,
   onToggleMcpServer,
@@ -482,6 +484,9 @@ export const ChatToolbar = memo(function ChatToolbar({
             executionMode={executionMode}
             queuedMessageCount={queuedMessageCount}
             onCancel={onCancel}
+            installedBackends={installedBackends}
+            onHarnessFanoutSend={onHarnessFanoutSend}
+            fanoutDisabled={fanoutDisabled}
           />
         </div>
       </div>

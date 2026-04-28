@@ -203,6 +203,12 @@ export function SessionChatModal({
   const { data: preferences } = usePreferences()
   const { data: runScript } = useRunScript(worktreePath)
   const { data: buildScript } = useBuildScript(worktreePath)
+  const isBrowserModalOpen = useBrowserStore(
+    state => state.modalOpen[worktreeId] ?? false
+  )
+  const browserModalDockMode = useBrowserStore(state => state.modalDockMode)
+  const hasBottomDock =
+    isBrowserModalOpen && browserModalDockMode === 'bottom'
   const createSession = useCreateSession()
 
   // Horizontal scroll on session tabs
@@ -741,7 +747,8 @@ export function SessionChatModal({
         ref={isMobile ? swipe.containerRef : undefined}
         className={cn(
           'absolute inset-0 z-10 flex min-w-0 overflow-hidden bg-background pt-[3px]',
-          !isMobile && 'pb-2'
+          !isMobile && 'pb-2',
+          hasBottomDock ? 'flex-col' : 'flex-row'
         )}
         style={
           isMobile
@@ -1398,10 +1405,10 @@ export function SessionChatModal({
             />
           )}
         </div>
-        <ModalBrowserDrawer worktreeId={worktreeId} dockMode="bottom" />
         </div>
 
         <ModalBrowserDrawer worktreeId={worktreeId} dockMode="right" />
+        <ModalBrowserDrawer worktreeId={worktreeId} dockMode="bottom" />
         {/* Terminal side drawer */}
         <ModalTerminalDrawer
           worktreeId={worktreeId}

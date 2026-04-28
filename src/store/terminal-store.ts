@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { getFilename } from '@/lib/path-utils'
 import { generateId } from '@/lib/uuid'
+import { useBrowserStore } from './browser-store'
 
 /** A single terminal instance */
 export interface TerminalInstance {
@@ -64,6 +65,16 @@ function generateTerminalId(): string {
   return generateId()
 }
 
+function shiftBrowserModalAwayFromFloatingTerminal(worktreeId: string): void {
+  const browser = useBrowserStore.getState()
+  if (
+    (browser.modalOpen[worktreeId] ?? false) &&
+    browser.modalDockMode === 'floating'
+  ) {
+    browser.setModalDockMode('right')
+  }
+}
+
 function getDefaultLabel(command: string | null): string {
   if (!command) return 'Shell'
   // Extract first word or command name
@@ -107,18 +118,23 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
 
   setTerminalHeight: height => set({ terminalHeight: height }),
 
-  setModalTerminalOpen: (worktreeId, open) =>
+  setModalTerminalOpen: (worktreeId, open) => {
+    if (open) shiftBrowserModalAwayFromFloatingTerminal(worktreeId)
     set(state => ({
       modalTerminalOpen: { ...state.modalTerminalOpen, [worktreeId]: open },
-    })),
+    }))
+  },
 
-  toggleModalTerminal: worktreeId =>
+  toggleModalTerminal: worktreeId => {
+    const next = !(get().modalTerminalOpen[worktreeId] ?? false)
+    if (next) shiftBrowserModalAwayFromFloatingTerminal(worktreeId)
     set(state => ({
       modalTerminalOpen: {
         ...state.modalTerminalOpen,
-        [worktreeId]: !(state.modalTerminalOpen[worktreeId] ?? false),
+        [worktreeId]: next,
       },
-    })),
+    }))
+  },
 
   setModalTerminalWidth: width => set({ modalTerminalWidth: width }),
 

@@ -103,7 +103,7 @@ export const ModalBrowserDrawer = memo(function ModalBrowserDrawer({
 
   const header = (
     <div className="shrink-0 border-b">
-      <div className="flex items-center justify-between gap-2 px-3 py-1.5">
+      <div className="flex h-11 items-center justify-between gap-2 px-4 py-2">
         <div className="flex items-center gap-2">
           <Globe className="h-4 w-4" />
           {isFloating ? (
@@ -216,6 +216,7 @@ export const ModalBrowserDrawer = memo(function ModalBrowserDrawer({
         showCloseButton={false}
         className="p-0"
         style={{ width: `${width}px`, maxWidth: '95vw' }}
+        data-browser-host="true"
       >
         {content}
       </SheetContent>

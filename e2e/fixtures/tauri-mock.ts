@@ -34,6 +34,7 @@ export const test = base.extend<TauriMockFixtures>({
         overrideKeys: string[]
       }) => {
         const overrideSet = new Set(overrideKeys)
+        const eventEmitter = new EventTarget()
 
         // In-memory session store for stateful handlers
         const sessionStore: Record<
@@ -43,6 +44,9 @@ export const test = base.extend<TauriMockFixtures>({
             active_session_id: string | null
           }
         > = {}
+        const worktreeStore: Array<Record<string, unknown>> = structuredClone(
+          (responseMap.list_worktrees as Array<Record<string, unknown>>) ?? []
+        )
         const automationStore: Array<Record<string, unknown>> = []
 
         function getWorktreeStore(worktreeId: string) {
@@ -158,6 +162,37 @@ export const test = base.extend<TauriMockFixtures>({
               version: 2,
             }
           },
+          list_worktrees: () => structuredClone(worktreeStore),
+          get_worktree: args => {
+            const worktree = worktreeStore.find(w => w.id === args?.worktreeId)
+            return worktree ? structuredClone(worktree) : null
+          },
+          create_worktree: args => {
+            const projectId = (args?.projectId as string) ?? 'project-1'
+            const index = worktreeStore.length + 1
+            const name = `harness-${index}`
+            const worktree = {
+              id: `worktree-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              project_id: projectId,
+              name,
+              path: `/tmp/e2e-test-project/.worktrees/${name}`,
+              branch: name,
+              base_branch: (args?.baseBranch as string | undefined) ?? 'main',
+              created_at: Date.now() / 1000,
+              order: worktreeStore.length,
+              session_type: 'worktree',
+              status: 'ready',
+            }
+            worktreeStore.push(worktree)
+            window.setTimeout(() => {
+              eventEmitter.dispatchEvent(
+                new CustomEvent('worktree:created', {
+                  detail: { worktree: structuredClone(worktree) },
+                })
+              )
+            }, 0)
+            return structuredClone(worktree)
+          },
           create_session: args => {
             const wid = (args?.worktreeId as string) ?? 'unknown'
             const store = getWorktreeStore(wid)
@@ -170,6 +205,7 @@ export const test = base.extend<TauriMockFixtures>({
               created_at: Date.now() / 1000,
               updated_at: Date.now() / 1000,
               messages: [],
+              backend: (args?.backend as string | undefined) ?? 'claude',
             }
             store.sessions.unshift(session)
             store.active_session_id = session.id
@@ -223,6 +259,15 @@ export const test = base.extend<TauriMockFixtures>({
             const session = store.sessions.find(s => s.id === args?.sessionId)
             if (session) {
               session.backend = args?.backend as string
+            }
+            return null
+          },
+          set_session_provider: args => {
+            const wid = (args?.worktreeId as string) ?? 'unknown'
+            const store = getWorktreeStore(wid)
+            const session = store.sessions.find(s => s.id === args?.sessionId)
+            if (session) {
+              session.selected_provider = (args?.provider as string) ?? null
             }
             return null
           },
@@ -502,9 +547,25 @@ export const test = base.extend<TauriMockFixtures>({
           }
         }
 
+        const invokeCalls: Array<{
+          command: string
+          args: Record<string, unknown> | undefined
+        }> = []
+        const loggedHandlers: Record<string, (args?: any) => unknown> = {}
+        for (const [cmd, handler] of Object.entries(handlers)) {
+          loggedHandlers[cmd] = args => {
+            invokeCalls.push({
+              command: cmd,
+              args: args === undefined ? undefined : structuredClone(args),
+            })
+            return handler(args)
+          }
+        }
+
         ;(window as any).__JEAN_E2E_MOCK__ = {
-          invokeHandlers: handlers,
-          eventEmitter: new EventTarget(),
+          invokeHandlers: loggedHandlers,
+          invokeCalls,
+          eventEmitter,
         }
       },
       { responseMap: responses, overrideKeys }

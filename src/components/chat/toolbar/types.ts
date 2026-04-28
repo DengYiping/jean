@@ -1,5 +1,10 @@
 import type { ClaudeModel, CustomCliProfile } from '@/types/preferences'
-import type { ThinkingLevel, EffortLevel, ExecutionMode } from '@/types/chat'
+import type {
+  Backend,
+  ThinkingLevel,
+  EffortLevel,
+  ExecutionMode,
+} from '@/types/chat'
 import type { McpServerInfo } from '@/types/chat'
 import type {
   PrDisplayStatus,
@@ -92,6 +97,8 @@ export interface ChatToolbarProps {
   onParallelExecutionPromptChange: (enabled: boolean) => void
   onCancel: () => void
   queuedMessageCount?: number
+  onHarnessFanoutSend?: (targetBackends: Backend[]) => void
+  fanoutDisabled?: boolean
 
   availableMcpServers: McpServerInfo[]
   enabledMcpServers: string[]

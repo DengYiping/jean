@@ -2445,6 +2445,7 @@ export function ChatWindow({
     handleWorktreeYoloApproval,
     handleStreamingWorktreeYoloApproval,
     handlePermissionApproval,
+    handlePermissionApprovalAndPersist,
     handlePermissionApprovalYolo,
     handlePermissionDeny,
     handleCodexMcpElicitationRespond,
@@ -2934,6 +2935,9 @@ export function ChatWindow({
                               sessionId={activeSessionId}
                               denials={pendingDenials}
                               onApprove={handlePermissionApproval}
+                              onApproveAndPersist={
+                                handlePermissionApprovalAndPersist
+                              }
                               onApproveYolo={handlePermissionApprovalYolo}
                               onDeny={handlePermissionDeny}
                             />

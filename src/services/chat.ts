@@ -2324,3 +2324,12 @@ export async function steerCodexTurn(
     input,
   })
 }
+
+/**
+ * Persist an approved Bash command into the global Codex and Claude rule files.
+ */
+export async function addGlobalCommandPermissionRule(
+  command: string
+): Promise<void> {
+  await invoke('add_global_command_permission_rule', { command })
+}

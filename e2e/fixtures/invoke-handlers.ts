@@ -225,6 +225,7 @@ export const defaultResponses: Record<string, unknown> = {
   set_session_backend: null,
   set_session_provider: null,
   update_session_state: null,
+  add_global_command_permission_rule: null,
   answer_codex_mcp_elicitation: null,
   broadcast_session_setting: null,
   rename_session: null,

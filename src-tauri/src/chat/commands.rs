@@ -5548,6 +5548,12 @@ pub fn approve_codex_command(
     super::codex_server::send_response(rpc_id, serde_json::json!({"decision": decision}))
 }
 
+/// Persist a Bash command approval into global Codex and Claude Code rule files.
+#[tauri::command]
+pub fn add_global_command_permission_rule(command: String) -> Result<(), String> {
+    super::permission_rules::add_global_command_permission_rule(command)
+}
+
 /// Answer a Codex MCP elicitation request.
 #[tauri::command]
 pub fn answer_codex_mcp_elicitation(

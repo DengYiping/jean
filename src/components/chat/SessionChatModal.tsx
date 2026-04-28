@@ -23,6 +23,7 @@ import {
   Sparkles,
   Tag,
   Terminal,
+  Globe,
   Play,
   Plus,
   Trash2,
@@ -45,6 +46,7 @@ import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
 import { CloseWorktreeDialog } from './CloseWorktreeDialog'
 import { useChatStore } from '@/store/chat-store'
 import { useTerminalStore } from '@/store/terminal-store'
+import { useBrowserStore } from '@/store/browser-store'
 import { useUIStore } from '@/store/ui-store'
 import {
   useSessions,
@@ -76,6 +78,7 @@ const GitDiffModal = lazy(() =>
 import type { DiffRequest } from '@/types/git-diff'
 import { ChatWindow } from './ChatWindow'
 import { ModalTerminalDrawer } from './ModalTerminalDrawer'
+import { ModalBrowserDrawer } from '@/components/browser/ModalBrowserDrawer'
 import { OpenInButton } from '@/components/open-in/OpenInButton'
 import {
   DropdownMenu,
@@ -708,12 +711,15 @@ export function SessionChatModal({
         const portalAncestor = target?.closest?.(
           '[data-slot="dialog-portal"], [data-slot="alert-dialog-portal"], [data-slot="sheet-portal"]'
         )
-        const { planDialogOpen, gitDiffModalOpen } = useUIStore.getState()
+        const { planDialogOpen, gitDiffModalOpen, contextViewerOpen } =
+          useUIStore.getState()
 
         // Don't close if PlanDialog is open — let it handle ESC
         if (planDialogOpen) return
         // Don't close if GitDiffModal is open — let it handle ESC
         if (gitDiffModalOpen) return
+        // Don't close if ContextViewerDialog is open — let it handle ESC
+        if (contextViewerOpen) return
         // Don't close if CloseWorktreeDialog is open — let it handle ESC
         if (closeConfirmOpen) return
         // Don't close if ESC originated inside a child dialog/sheet portal
@@ -733,7 +739,10 @@ export function SessionChatModal({
       <div
         key={worktreeId}
         ref={isMobile ? swipe.containerRef : undefined}
-        className="absolute inset-0 z-10 flex flex-col overflow-hidden bg-background pb-2 pt-[3px]"
+        className={cn(
+          'absolute inset-0 z-10 flex min-w-0 overflow-hidden bg-background pt-[3px]',
+          !isMobile && 'pb-2'
+        )}
         style={
           isMobile
             ? {
@@ -752,7 +761,9 @@ export function SessionChatModal({
             )}
           />
         )}
-        <div className="flex shrink-0 flex-col gap-2 border-b px-4 py-2 sm:text-left">
+        <ModalBrowserDrawer worktreeId={worktreeId} dockMode="left" />
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <div className="flex shrink-0 flex-col gap-2 border-b px-4 py-2 sm:text-left">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
               <h2 className="text-sm font-medium shrink-0">
@@ -872,6 +883,23 @@ export function SessionChatModal({
                   </TooltipTrigger>
                   <TooltipContent>Terminal</TooltipContent>
                 </Tooltip>
+                {isNativeApp() && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        onClick={() => {
+                          useBrowserStore.getState().toggleModal(worktreeId)
+                        }}
+                      >
+                        <Globe className="h-3 w-3" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Browser</TooltipContent>
+                  </Tooltip>
+                )}
                 {runScript && (
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -1016,6 +1044,16 @@ export function SessionChatModal({
                     <Terminal className="h-4 w-4" />
                     Terminal
                   </DropdownMenuItem>
+                  {isNativeApp() && (
+                    <DropdownMenuItem
+                      onSelect={() =>
+                        useBrowserStore.getState().toggleModal(worktreeId)
+                      }
+                    >
+                      <Globe className="h-4 w-4" />
+                      Browser
+                    </DropdownMenuItem>
+                  )}
                   {runScript && (
                     <DropdownMenuItem onSelect={handleRun}>
                       <Play className="h-4 w-4" />
@@ -1360,12 +1398,16 @@ export function SessionChatModal({
             />
           )}
         </div>
+        <ModalBrowserDrawer worktreeId={worktreeId} dockMode="bottom" />
+        </div>
 
+        <ModalBrowserDrawer worktreeId={worktreeId} dockMode="right" />
         {/* Terminal side drawer */}
         <ModalTerminalDrawer
           worktreeId={worktreeId}
           worktreePath={worktreePath}
         />
+        <ModalBrowserDrawer worktreeId={worktreeId} dockMode="floating" />
         {diffRequest && (
           <Suspense fallback={null}>
             <GitDiffModal

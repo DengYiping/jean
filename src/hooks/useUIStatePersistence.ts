@@ -5,7 +5,11 @@ import { useProjectsStore } from '@/store/projects-store'
 import { useChatStore } from '@/store/chat-store'
 import { useUIStore } from '@/store/ui-store'
 import { useTerminalStore } from '@/store/terminal-store'
+import { useBrowserStore } from '@/store/browser-store'
+import { browserBackend } from '@/hooks/useBrowserPane'
+import { isNativeApp } from '@/lib/environment'
 import { logger } from '@/lib/logger'
+import type { BrowserTab } from '@/types/browser'
 import type { UIState } from '@/types/ui-state'
 
 // Simple debounce implementation
@@ -87,6 +91,13 @@ export function useUIStatePersistence() {
     const { leftSidebarSize, leftSidebarVisible } = useUIStore.getState()
     const { modalTerminalOpen, modalTerminalWidth } =
       useTerminalStore.getState()
+    const browserState = useBrowserStore.getState()
+    const browserTabsForPersist = Object.fromEntries(
+      Object.entries(browserState.tabs).map(([wid, list]) => [
+        wid,
+        list.map(t => ({ id: t.id, url: t.url, title: t.title || undefined })),
+      ])
+    )
 
     return {
       active_worktree_id: activeWorktreeId,
@@ -105,6 +116,17 @@ export function useUIStatePersistence() {
       // Modal terminal drawer state
       modal_terminal_open: modalTerminalOpen,
       modal_terminal_width: modalTerminalWidth,
+      // Browser pane state (per-worktree tabs + 3-surface visibility)
+      browser_tabs: browserTabsForPersist,
+      browser_active_tab_ids: browserState.activeTabIds,
+      browser_side_pane_open: browserState.sidePaneOpen,
+      browser_side_pane_width: browserState.sidePaneWidth,
+      browser_modal_open: browserState.modalOpen,
+      browser_modal_dock_mode: browserState.modalDockMode,
+      browser_modal_width: browserState.modalWidth,
+      browser_modal_height: browserState.modalHeight,
+      browser_bottom_panel_open: browserState.bottomPanelOpen,
+      browser_bottom_panel_height: browserState.bottomPanelHeight,
       // Project access timestamps for recency sorting
       project_access_timestamps: projectAccessTimestamps,
       // Dashboard worktree collapse overrides
@@ -301,6 +323,59 @@ export function useUIStatePersistence() {
       })
     }
 
+    const persistedBrowserTabs = uiState.browser_tabs ?? {}
+    const browserActiveTabIds = uiState.browser_active_tab_ids ?? {}
+    if (Object.keys(persistedBrowserTabs).length > 0) {
+      const hydratedTabs: Record<string, BrowserTab[]> = {}
+      for (const [wid, list] of Object.entries(persistedBrowserTabs)) {
+        hydratedTabs[wid] = list.map(t => ({
+          id: t.id,
+          worktreeId: wid,
+          url: t.url,
+          title: t.title ?? '',
+          isLoading: false,
+        }))
+      }
+      logger.debug('Restoring browser tabs', {
+        worktreeCount: Object.keys(hydratedTabs).length,
+      })
+      useBrowserStore.getState().hydrateTabs(hydratedTabs, browserActiveTabIds)
+    }
+    if (uiState.browser_side_pane_open) {
+      useBrowserStore.setState({
+        sidePaneOpen: uiState.browser_side_pane_open,
+      })
+    }
+    if (uiState.browser_side_pane_width != null) {
+      useBrowserStore.setState({
+        sidePaneWidth: uiState.browser_side_pane_width,
+      })
+    }
+    if (uiState.browser_modal_open) {
+      useBrowserStore.setState({ modalOpen: uiState.browser_modal_open })
+    }
+    if (uiState.browser_modal_dock_mode) {
+      useBrowserStore.setState({
+        modalDockMode: uiState.browser_modal_dock_mode,
+      })
+    }
+    if (uiState.browser_modal_width != null) {
+      useBrowserStore.setState({ modalWidth: uiState.browser_modal_width })
+    }
+    if (uiState.browser_modal_height != null) {
+      useBrowserStore.setState({ modalHeight: uiState.browser_modal_height })
+    }
+    if (uiState.browser_bottom_panel_open) {
+      useBrowserStore.setState({
+        bottomPanelOpen: uiState.browser_bottom_panel_open,
+      })
+    }
+    if (uiState.browser_bottom_panel_height != null) {
+      useBrowserStore.setState({
+        bottomPanelHeight: uiState.browser_bottom_panel_height,
+      })
+    }
+
     // Restore project access timestamps
     const projectAccessTimestamps = uiState.project_access_timestamps ?? {}
     if (Object.keys(projectAccessTimestamps).length > 0) {
@@ -390,6 +465,17 @@ export function useUIStatePersistence() {
     let prevLastOpenedPerProject = useChatStore.getState().lastOpenedPerProject
     let prevModalTerminalOpen = useTerminalStore.getState().modalTerminalOpen
     let prevModalTerminalWidth = useTerminalStore.getState().modalTerminalWidth
+    let prevBrowserTabs = useBrowserStore.getState().tabs
+    let prevBrowserActiveTabIds = useBrowserStore.getState().activeTabIds
+    let prevBrowserSidePaneOpen = useBrowserStore.getState().sidePaneOpen
+    let prevBrowserSidePaneWidth = useBrowserStore.getState().sidePaneWidth
+    let prevBrowserModalOpen = useBrowserStore.getState().modalOpen
+    let prevBrowserModalDockMode = useBrowserStore.getState().modalDockMode
+    let prevBrowserModalWidth = useBrowserStore.getState().modalWidth
+    let prevBrowserModalHeight = useBrowserStore.getState().modalHeight
+    let prevBrowserBottomPanelOpen = useBrowserStore.getState().bottomPanelOpen
+    let prevBrowserBottomPanelHeight =
+      useBrowserStore.getState().bottomPanelHeight
 
     // Subscribe to projects-store changes (expanded projects, folders, and selected project)
     const unsubProjects = useProjectsStore.subscribe(state => {
@@ -489,6 +575,61 @@ export function useUIStatePersistence() {
       }
     })
 
+    const unsubBrowser = useBrowserStore.subscribe(state => {
+      const tabsChanged = state.tabs !== prevBrowserTabs
+      const activeChanged = state.activeTabIds !== prevBrowserActiveTabIds
+      const sideOpenChanged = state.sidePaneOpen !== prevBrowserSidePaneOpen
+      const sideWidthChanged = state.sidePaneWidth !== prevBrowserSidePaneWidth
+      const modalOpenChanged = state.modalOpen !== prevBrowserModalOpen
+      const modalDockChanged = state.modalDockMode !== prevBrowserModalDockMode
+      const modalWidthChanged = state.modalWidth !== prevBrowserModalWidth
+      const modalHeightChanged = state.modalHeight !== prevBrowserModalHeight
+      const bottomOpenChanged =
+        state.bottomPanelOpen !== prevBrowserBottomPanelOpen
+      const bottomHeightChanged =
+        state.bottomPanelHeight !== prevBrowserBottomPanelHeight
+
+      if (
+        tabsChanged ||
+        activeChanged ||
+        sideOpenChanged ||
+        sideWidthChanged ||
+        modalOpenChanged ||
+        modalDockChanged ||
+        modalWidthChanged ||
+        modalHeightChanged ||
+        bottomOpenChanged ||
+        bottomHeightChanged
+      ) {
+        if (tabsChanged && isNativeApp()) {
+          const prevIds = new Set<string>()
+          for (const list of Object.values(prevBrowserTabs)) {
+            for (const t of list) prevIds.add(t.id)
+          }
+          const nextIds = new Set<string>()
+          for (const list of Object.values(state.tabs)) {
+            for (const t of list) nextIds.add(t.id)
+          }
+          for (const id of prevIds) {
+            if (!nextIds.has(id)) void browserBackend.close(id)
+          }
+        }
+
+        prevBrowserTabs = state.tabs
+        prevBrowserActiveTabIds = state.activeTabIds
+        prevBrowserSidePaneOpen = state.sidePaneOpen
+        prevBrowserSidePaneWidth = state.sidePaneWidth
+        prevBrowserModalOpen = state.modalOpen
+        prevBrowserModalDockMode = state.modalDockMode
+        prevBrowserModalWidth = state.modalWidth
+        prevBrowserModalHeight = state.modalHeight
+        prevBrowserBottomPanelOpen = state.bottomPanelOpen
+        prevBrowserBottomPanelHeight = state.bottomPanelHeight
+        const currentState = getCurrentUIState()
+        debouncedSaveRef.current?.(currentState)
+      }
+    })
+
     logger.debug('UI state persistence subscriptions active')
 
     return () => {
@@ -496,6 +637,7 @@ export function useUIStatePersistence() {
       unsubUI()
       unsubChat()
       unsubTerminal()
+      unsubBrowser()
       debouncedSaveRef.current?.cancel()
       logger.debug('UI state persistence subscriptions cleaned up')
     }

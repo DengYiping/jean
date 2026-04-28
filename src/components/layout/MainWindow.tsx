@@ -147,6 +147,9 @@ const CloseWorktreeDialog = lazy(() =>
 )
 import { FloatingDock } from '@/components/ui/floating-dock'
 import { Toaster } from '@/components/ui/sonner'
+import { BrowserSidePane } from '@/components/browser/BrowserSidePane'
+import { BrowserPanel } from '@/components/browser/BrowserPanel'
+import { useBrowserEvents } from '@/hooks/useBrowserPane'
 import { useWindowMaximized } from '@/hooks/use-window-maximized'
 import { useUIStore } from '@/store/ui-store'
 import { useProjectsStore } from '@/store/projects-store'
@@ -284,6 +287,9 @@ export function MainWindow() {
 
   // Set up global event listeners (keyboard shortcuts, etc.)
   useMainWindowEventListeners()
+
+  // Subscribe to Rust → React browser events (loading/loaded/title/nav/closed)
+  useBrowserEvents()
 
   // Handle CMD+W keybinding to close session or worktree (with optional confirmation)
   const [closeConfirmBranch, setCloseConfirmBranch] = useState<
@@ -477,11 +483,18 @@ export function MainWindow() {
           </div>
         )}
 
-        {/* Main Content - flex-1 to fill remaining space */}
-        <div className="relative min-w-0 flex-1 overflow-hidden">
-          <MainWindowContent />
-          <FloatingDock />
+        {/* Main Content + bottom browser panel stacked vertically */}
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <div className="relative min-w-0 flex-1 overflow-hidden">
+            <MainWindowContent />
+            <FloatingDock />
+          </div>
+          {/* Browser bottom panel - native-only, pinned to bottom */}
+          <BrowserPanel />
         </div>
+
+        {/* Browser side pane - native-only, mounts on right edge */}
+        <BrowserSidePane />
       </div>
 
       {/* Global UI Components (hidden until triggered) */}

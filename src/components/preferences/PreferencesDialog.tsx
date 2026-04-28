@@ -576,25 +576,72 @@ export function PreferencesDialog() {
               </div>
             </header>
 
-            <div
-              ref={scrollContainerRef}
-              className="flex flex-1 flex-col gap-4 overflow-y-auto p-4 min-h-0"
-            >
-              <PreferencesSearchBar
-                variant="mobile"
-                searchValue={searchValue}
-                onSearchValueChange={setSearchValue}
-                searchOpen={searchOpen}
-                onSearchOpenChange={setSearchOpen}
-                selectedId={effectiveSearchSelection}
-                onSelectedIdChange={setSearchSelection}
-                isSearching={isSearching}
-                searchResults={searchResults}
-                groupedResults={groupedResults}
-                paneIconMap={paneIconMap}
-                onResultSelect={handleSearchResultSelect}
-                containerRef={mobileSearchContainerRef}
-              />
+            <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4 min-h-0">
+              {/* Mobile search bar */}
+              <div
+                ref={mobileSearchContainerRef}
+                className="relative md:hidden"
+              >
+                <Command
+                  value={effectiveSearchSelection}
+                  onValueChange={setSearchSelection}
+                  shouldFilter={false}
+                  className="bg-transparent overflow-visible"
+                >
+                  <div className="flex h-9 w-full items-center gap-2 rounded-md border border-input bg-background px-3 text-sm focus-within:ring-1 focus-within:ring-ring focus-within:border-ring transition-colors">
+                    <Search className="size-3.5 shrink-0 text-muted-foreground" />
+                    <input
+                      placeholder="Search settings..."
+                      value={searchValue}
+                      onChange={e => {
+                        setSearchValue(e.target.value)
+                        setSearchOpen(true)
+                      }}
+                      onFocus={() => {
+                        if (searchValue.trim()) setSearchOpen(true)
+                      }}
+                      className="flex-1 bg-transparent outline-none placeholder:text-muted-foreground text-sm"
+                    />
+                  </div>
+
+                  {searchOpen && isSearching && (
+                    <CommandList className="absolute top-full left-0 right-0 mt-1.5 max-h-[320px] overflow-y-auto rounded-lg border border-border bg-popover shadow-lg z-50">
+                      {searchResults.length === 0 ? (
+                        <CommandEmpty>No settings found.</CommandEmpty>
+                      ) : (
+                        groupedResults.map(group => {
+                          const Icon = paneIconMap[group.pane]
+                          return (
+                            <CommandGroup
+                              key={group.pane}
+                              heading={
+                                <span className="flex items-center gap-1.5">
+                                  <Icon className="size-3" />
+                                  {group.title}
+                                </span>
+                              }
+                            >
+                              {group.items.map(result => (
+                                <CommandItem
+                                  key={result.id}
+                                  value={result.id}
+                                  onSelect={() =>
+                                    handleSearchResultSelect(result)
+                                  }
+                                >
+                                  <span className="truncate text-sm">
+                                    {result.title}
+                                  </span>
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          )
+                        })
+                      )}
+                    </CommandList>
+                  )}
+                </Command>
+              </div>
 
               {activePane === 'general' && (
                 <div id="pref-pane-general">

@@ -342,20 +342,6 @@ export function CommandPalette() {
       <CommandList>
         <CommandEmpty>No results found.</CommandEmpty>
 
-        {focusedProject && (
-          <CommandGroup heading={focusedProject.name}>
-            <CommandItem
-              value="back projects commands"
-              onSelect={() => {
-                setFocusedProjectId(null)
-                setSearch('')
-              }}
-            >
-              <span className="text-muted-foreground">Back to projects</span>
-            </CommandItem>
-          </CommandGroup>
-        )}
-
         {commandGroups.worktreeCommands.length > 0 && (
           <CommandGroup
             heading={focusedProject ? 'Worktrees' : 'Current Project'}
@@ -379,6 +365,20 @@ export function CommandPalette() {
                 )}
               </CommandItem>
             ))}
+          </CommandGroup>
+        )}
+
+        {focusedProject && (
+          <CommandGroup heading={focusedProject.name}>
+            <CommandItem
+              value="back projects commands"
+              onSelect={() => {
+                setFocusedProjectId(null)
+                setSearch('')
+              }}
+            >
+              <span className="text-muted-foreground">Back to projects</span>
+            </CommandItem>
           </CommandGroup>
         )}
 

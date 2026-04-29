@@ -636,6 +636,7 @@ export function MainWindow() {
       <Toaster
         position="bottom-right"
         offset={toasterOffset}
+        mobileOffset={toasterOffset}
         expand={true}
         toastOptions={{
           classNames: {

@@ -394,24 +394,39 @@ export function useUIStatePersistence() {
         bottomPanelHeight: uiState.browser_bottom_panel_height,
       })
     }
-    // Cross-pane dock collision check: if browser modal and terminal modal
-    // are both open for any shared worktree and the browser is still floating,
-    // move the browser to the right so it does not overlap the terminal sheet.
+    // Cross-pane mutual exclusion: browser surfaces and terminal modal are
+    // mutually exclusive per worktree. If both restored as open for the same
+    // worktree, close every browser surface there and let the terminal win.
     {
-      const browserDock = useBrowserStore.getState().modalDockMode
       const terminalState = useTerminalStore.getState()
-      const sharedCollision = Object.keys(sanitizedModal).some(
-        wid =>
-          sanitizedModal[wid] &&
-          (terminalState.modalTerminalOpen[wid] ?? false) &&
-          browserDock === 'floating'
-      )
-      if (sharedCollision) {
-        logger.debug('Resolving browser/terminal dock collision on hydrate', {
-          from: browserDock,
-          to: 'right',
+      const fixedSidePane = { ...sanitizedSidePane }
+      const fixedModal = { ...sanitizedModal }
+      const fixedBottom = { ...sanitizedBottom }
+      let changed = false
+      for (const wid of Object.keys(terminalState.modalTerminalOpen)) {
+        if (!terminalState.modalTerminalOpen[wid]) continue
+        if (fixedSidePane[wid]) {
+          fixedSidePane[wid] = false
+          changed = true
+        }
+        if (fixedModal[wid]) {
+          fixedModal[wid] = false
+          changed = true
+        }
+        if (fixedBottom[wid]) {
+          fixedBottom[wid] = false
+          changed = true
+        }
+      }
+      if (changed) {
+        logger.debug(
+          'Resolving browser/terminal mutual exclusion on hydrate (closing browser)'
+        )
+        useBrowserStore.setState({
+          sidePaneOpen: fixedSidePane,
+          modalOpen: fixedModal,
+          bottomPanelOpen: fixedBottom,
         })
-        useBrowserStore.setState({ modalDockMode: 'right' })
       }
     }
 

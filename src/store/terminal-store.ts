@@ -65,14 +65,26 @@ function generateTerminalId(): string {
   return generateId()
 }
 
-function shiftBrowserModalAwayFromFloatingTerminal(worktreeId: string): void {
+/** Close every browser surface for this worktree — terminal modal and
+ * browser surfaces are mutually exclusive. Called inside terminal-store
+ * actions when opening the terminal modal. */
+function closeBrowserSurfacesFor(worktreeId: string): void {
   const browser = useBrowserStore.getState()
-  if (
-    (browser.modalOpen[worktreeId] ?? false) &&
-    browser.modalDockMode === 'floating'
-  ) {
-    browser.setModalDockMode('right')
-  }
+  const sideOpen = browser.sidePaneOpen[worktreeId] ?? false
+  const modalOpen = browser.modalOpen[worktreeId] ?? false
+  const bottomOpen = browser.bottomPanelOpen[worktreeId] ?? false
+  if (!sideOpen && !modalOpen && !bottomOpen) return
+  useBrowserStore.setState({
+    sidePaneOpen: sideOpen
+      ? { ...browser.sidePaneOpen, [worktreeId]: false }
+      : browser.sidePaneOpen,
+    modalOpen: modalOpen
+      ? { ...browser.modalOpen, [worktreeId]: false }
+      : browser.modalOpen,
+    bottomPanelOpen: bottomOpen
+      ? { ...browser.bottomPanelOpen, [worktreeId]: false }
+      : browser.bottomPanelOpen,
+  })
 }
 
 function getDefaultLabel(command: string | null): string {
@@ -119,15 +131,20 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
   setTerminalHeight: height => set({ terminalHeight: height }),
 
   setModalTerminalOpen: (worktreeId, open) => {
-    if (open) shiftBrowserModalAwayFromFloatingTerminal(worktreeId)
+    const current =
+      useTerminalStore.getState().modalTerminalOpen[worktreeId] ?? false
+    if (current === open) return
+    if (open) closeBrowserSurfacesFor(worktreeId)
     set(state => ({
       modalTerminalOpen: { ...state.modalTerminalOpen, [worktreeId]: open },
     }))
   },
 
   toggleModalTerminal: worktreeId => {
-    const next = !(get().modalTerminalOpen[worktreeId] ?? false)
-    if (next) shiftBrowserModalAwayFromFloatingTerminal(worktreeId)
+    const current =
+      useTerminalStore.getState().modalTerminalOpen[worktreeId] ?? false
+    const next = !current
+    if (next) closeBrowserSurfacesFor(worktreeId)
     set(state => ({
       modalTerminalOpen: {
         ...state.modalTerminalOpen,

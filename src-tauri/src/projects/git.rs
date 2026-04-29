@@ -1281,6 +1281,83 @@ pub fn checkout_branch(worktree_path: &str, branch: &str) -> Result<(), String> 
     Ok(())
 }
 
+pub fn checkout_new_branch_from(
+    worktree_path: &str,
+    branch: &str,
+    base: &str,
+) -> Result<(), String> {
+    let output = silent_command("git")
+        .args(["checkout", "-B", branch, base])
+        .current_dir(worktree_path)
+        .output()
+        .map_err(|e| format!("Failed to checkout branch {branch}: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Failed to checkout branch {branch}: {stderr}"));
+    }
+    Ok(())
+}
+
+pub fn detach_head(worktree_path: &str) -> Result<(), String> {
+    let output = silent_command("git")
+        .args(["checkout", "--detach"])
+        .current_dir(worktree_path)
+        .output()
+        .map_err(|e| format!("Failed to detach worktree HEAD: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Failed to detach worktree HEAD: {stderr}"));
+    }
+    Ok(())
+}
+
+pub fn reset_hard(worktree_path: &str) -> Result<(), String> {
+    let output = silent_command("git")
+        .args(["reset", "--hard"])
+        .current_dir(worktree_path)
+        .output()
+        .map_err(|e| format!("Failed to reset worktree: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Failed to reset worktree: {stderr}"));
+    }
+    Ok(())
+}
+
+pub fn clean_for_slot_reuse(worktree_path: &str) -> Result<(), String> {
+    let output = silent_command("git")
+        .args([
+            "clean",
+            "-fd",
+            "-e",
+            ".idea/",
+            "-e",
+            "node_modules/",
+            "-e",
+            "**/node_modules/",
+            "-e",
+            "target/",
+            "-e",
+            "**/target/",
+            "-e",
+            ".pnpm-store/",
+            "-e",
+            ".bun/",
+        ])
+        .current_dir(worktree_path)
+        .output()
+        .map_err(|e| format!("Failed to clean worktree: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Failed to clean worktree: {stderr}"));
+    }
+    Ok(())
+}
+
 /// # Arguments
 /// * `worktree_path` - Path to the worktree where to checkout the PR
 /// * `pr_number` - The PR number to checkout
@@ -1427,6 +1504,41 @@ pub fn remove_worktree(repo_path: &str, worktree_path: &str) -> Result<(), Strin
     }
 
     log::trace!("Successfully removed worktree at {worktree_path}");
+    Ok(())
+}
+
+/// Move a git worktree to a new path.
+pub fn move_worktree(repo_path: &str, from_path: &str, to_path: &str) -> Result<(), String> {
+    log::trace!("Moving worktree from {from_path} to {to_path}");
+
+    if is_main_worktree(repo_path, from_path) {
+        return Err(format!("Refusing to move main working tree at {from_path}"));
+    }
+
+    if let Some(parent) = Path::new(to_path).parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create worktree destination directory: {e}"))?;
+    }
+
+    let output = silent_command("git")
+        .args(["worktree", "move", from_path, to_path])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| format!("Failed to run git worktree move: {e}"))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    log::trace!(
+        "git worktree move result: status={}, stdout={}, stderr={}",
+        output.status,
+        stdout.trim(),
+        stderr.trim()
+    );
+
+    if !output.status.success() {
+        return Err(format!("Failed to move worktree: {stderr}"));
+    }
+
     Ok(())
 }
 

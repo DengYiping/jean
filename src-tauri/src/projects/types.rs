@@ -128,6 +128,9 @@ pub struct Project {
     /// When set, worktrees go to <worktrees_dir>/<project-name>/<worktree-name>.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worktrees_dir: Option<String>,
+    /// Reuse fixed worktree paths for this project to preserve build and IDE artifacts.
+    #[serde(default)]
+    pub stable_worktree_slots_enabled: bool,
     /// Linear personal API key for fetching issues (per-project)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub linear_api_key: Option<String>,
@@ -156,6 +159,9 @@ pub struct Worktree {
     pub name: String,
     /// Absolute path to worktree (configurable base dir, defaults to ~/jean/<project>/<name>)
     pub path: String,
+    /// Stable slot ID when this worktree is occupying a reusable project slot.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stable_slot_id: Option<String>,
     /// Git branch name (same as workspace name)
     pub branch: String,
     /// Base branch this worktree was created from (None for legacy worktrees or base sessions)
@@ -268,11 +274,39 @@ pub struct Worktree {
     pub automation_owned: bool,
 }
 
+/// Lifecycle state for a reusable stable worktree slot.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum WorktreeSlotState {
+    Active,
+    Idle,
+    Error,
+}
+
+/// A fixed worktree path that can be reused across branches for one project.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorktreeSlot {
+    pub id: String,
+    pub project_id: String,
+    pub path: String,
+    pub state: WorktreeSlotState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    pub created_at: u64,
+    pub last_used_at: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_error: Option<String>,
+}
+
 /// Container for all persisted project data
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProjectsData {
     pub projects: Vec<Project>,
     pub worktrees: Vec<Worktree>,
+    #[serde(default)]
+    pub worktree_slots: Vec<WorktreeSlot>,
 }
 
 impl ProjectsData {

@@ -163,6 +163,9 @@ export const test = base.extend<TauriMockFixtures>({
             }
           },
           list_worktrees: () => structuredClone(worktreeStore),
+          list_worktree_slots: () => [],
+          reset_worktree_slot: () => null,
+          reset_idle_worktree_slots: () => null,
           get_worktree: args => {
             const worktree = worktreeStore.find(w => w.id === args?.worktreeId)
             return worktree ? structuredClone(worktree) : null
@@ -176,6 +179,7 @@ export const test = base.extend<TauriMockFixtures>({
               project_id: projectId,
               name,
               path: `/tmp/e2e-test-project/.worktrees/${name}`,
+              stable_slot_id: undefined,
               branch: name,
               base_branch: (args?.baseBranch as string | undefined) ?? 'main',
               created_at: Date.now() / 1000,

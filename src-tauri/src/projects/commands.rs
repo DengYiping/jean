@@ -33,10 +33,11 @@ use super::linear_issues::{
     linear_context_to_detail, LinearIssueContext,
 };
 use super::names::generate_unique_workspace_name;
+use super::slots;
 use super::storage::{get_project_worktrees_dir, load_projects_data, save_projects_data};
 use super::types::{
-    AutomationWorktreeMetadata, JeanConfig, MergeType, Project, SessionType, Worktree,
-    WorktreeArchivedEvent, WorktreeBranchExistsEvent, WorktreeCreateErrorEvent,
+    AutomationWorktreeMetadata, JeanConfig, MergeType, Project, ProjectsData, SessionType,
+    Worktree, WorktreeArchivedEvent, WorktreeBranchExistsEvent, WorktreeCreateErrorEvent,
     WorktreeCreatedEvent, WorktreeCreatingEvent, WorktreeDeleteErrorEvent, WorktreeDeletedEvent,
     WorktreeDeletingEvent, WorktreePathExistsEvent, WorktreePermanentlyDeletedEvent,
     WorktreeSetupCompleteEvent, WorktreeUnarchivedEvent,
@@ -371,6 +372,7 @@ pub async fn add_project(
         github_account_host: None,
         github_account_user: None,
         worktrees_dir: None,
+        stable_worktree_slots_enabled: false,
         linear_api_key: None,
         linear_team_id: None,
         default_editor: None,
@@ -535,6 +537,7 @@ pub async fn init_project(
         github_account_host: None,
         github_account_user: None,
         worktrees_dir: None,
+        stable_worktree_slots_enabled: false,
         linear_api_key: None,
         linear_team_id: None,
         default_editor: None,
@@ -593,6 +596,7 @@ pub async fn clone_project(
         github_account_host: None,
         github_account_user: None,
         worktrees_dir: None,
+        stable_worktree_slots_enabled: false,
         linear_api_key: None,
         linear_team_id: None,
         default_editor: None,
@@ -917,7 +921,7 @@ pub async fn create_worktree(
     }
     let folder_name = sanitize_folder_name(&name);
     let worktree_path = project_worktrees_dir.join(&folder_name);
-    let worktree_path_str = worktree_path
+    let mut worktree_path_str = worktree_path
         .to_str()
         .ok_or_else(|| "Invalid worktree path".to_string())?
         .to_string();
@@ -925,6 +929,13 @@ pub async fn create_worktree(
     // Generate ID upfront so we can track this worktree
     let worktree_id = Uuid::new_v4().to_string();
     let created_at = now();
+    let slot_reservation = {
+        let mut current_data = load_projects_data(&app)?;
+        slots::reserve_slot(&app, &mut current_data, &project, &worktree_id, &name)?
+    };
+    if let Some(slot) = &slot_reservation {
+        worktree_path_str = slot.path.clone();
+    }
 
     // Emit creating event immediately
     let creating_event = WorktreeCreatingEvent {
@@ -955,6 +966,7 @@ pub async fn create_worktree(
         project_id: project_id.clone(),
         name: name.clone(),
         path: worktree_path_str.clone(),
+        stable_slot_id: slot_reservation.as_ref().map(|slot| slot.slot_id.clone()),
         branch: name.clone(),
         base_branch: Some(base.clone()),
         created_at,
@@ -1010,6 +1022,7 @@ pub async fn create_worktree(
     let project_id_clone = project_id.clone();
     let name_clone = name.clone();
     let worktree_path_clone = worktree_path_str.clone();
+    let slot_reservation_clone = slot_reservation.clone();
     let base_clone = base.clone();
     let issue_context_clone = issue_context.clone();
     let pr_context_clone = pr_context.clone();
@@ -1057,7 +1070,11 @@ pub async fn create_worktree(
 
             // Check if path already exists
             let worktree_path = std::path::Path::new(&worktree_path_clone);
-            if worktree_path.exists() {
+            if worktree_path.exists()
+                && !slot_reservation_clone
+                    .as_ref()
+                    .is_some_and(|slot| slot.reused)
+            {
                 log::trace!("Background: Path already exists: {worktree_path_clone}");
 
                 // Check if this path matches an archived worktree
@@ -1097,6 +1114,16 @@ pub async fn create_worktree(
                 }
 
                 // Also emit error event to remove the pending worktree from UI
+                if let Some(slot) = &slot_reservation_clone {
+                    if let Ok(mut data) = load_projects_data(&app_clone) {
+                        let _ = slots::mark_slot_error(
+                            &app_clone,
+                            &mut data,
+                            &slot.slot_id,
+                            format!("Directory already exists: {worktree_path_clone}"),
+                        );
+                    }
+                }
                 let error_event = WorktreeCreateErrorEvent {
                     id: worktree_id_clone,
                     project_id: project_id_clone,
@@ -1161,6 +1188,16 @@ pub async fn create_worktree(
                         }
 
                         // Also emit error event to remove the pending worktree from UI
+                        if let Some(slot) = &slot_reservation_clone {
+                            if let Ok(mut data) = load_projects_data(&app_clone) {
+                                let _ = slots::mark_slot_error(
+                                    &app_clone,
+                                    &mut data,
+                                    &slot.slot_id,
+                                    format!("Branch already exists: {name_clone}"),
+                                );
+                            }
+                        }
                         let error_event = WorktreeCreateErrorEvent {
                             id: worktree_id_clone,
                             project_id: project_id_clone,
@@ -1174,14 +1211,58 @@ pub async fn create_worktree(
                     (name_clone.clone(), None, name_clone.clone())
                 };
 
+            if let Some(slot) = &slot_reservation_clone {
+                if slot.reused {
+                    if let Err(e) = slots::prepare_reused_slot(
+                        &project_path,
+                        &worktree_path_clone,
+                        &branch_for_worktree,
+                        &effective_base,
+                    ) {
+                        log::error!("Background: Failed to prepare stable slot: {e}");
+                        if let Ok(mut data) = load_projects_data(&app_clone) {
+                            let _ = slots::mark_slot_error(
+                                &app_clone,
+                                &mut data,
+                                &slot.slot_id,
+                                e.clone(),
+                            );
+                        }
+                        let error_event = WorktreeCreateErrorEvent {
+                            id: worktree_id_clone,
+                            project_id: project_id_clone,
+                            error: e,
+                        };
+                        if let Err(emit_err) = app_clone.emit_all("worktree:error", &error_event) {
+                            log::error!("Failed to emit worktree:error event: {emit_err}");
+                        }
+                        return;
+                    }
+                }
+            }
+
             // Create the git worktree (this is the slow operation)
-            if let Err(e) = git::create_worktree(
-                &project_path,
-                &worktree_path_clone,
-                &branch_for_worktree,
-                &effective_base,
-            ) {
+            let create_result = if slot_reservation_clone
+                .as_ref()
+                .is_some_and(|slot| slot.reused)
+            {
+                Ok(())
+            } else {
+                git::create_worktree(
+                    &project_path,
+                    &worktree_path_clone,
+                    &branch_for_worktree,
+                    &effective_base,
+                )
+            };
+            if let Err(e) = create_result {
                 log::error!("Background: Failed to create worktree: {e}");
+                if let Some(slot) = &slot_reservation_clone {
+                    if let Ok(mut data) = load_projects_data(&app_clone) {
+                        let _ =
+                            slots::mark_slot_error(&app_clone, &mut data, &slot.slot_id, e.clone());
+                    }
+                }
                 let error_event = WorktreeCreateErrorEvent {
                     id: worktree_id_clone,
                     project_id: project_id_clone,
@@ -1574,6 +1655,9 @@ pub async fn create_worktree(
                     project_id: project_id_clone.clone(),
                     name: name_clone.clone(),
                     path: worktree_path_clone.clone(),
+                    stable_slot_id: slot_reservation_clone
+                        .as_ref()
+                        .map(|slot| slot.slot_id.clone()),
                     branch: final_branch.clone(),
                     base_branch: Some(base_clone.clone()),
                     created_at,
@@ -1625,6 +1709,15 @@ pub async fn create_worktree(
                     automation_owned: automation_metadata_clone.is_some(),
                 };
 
+                if let Some(slot) = &slot_reservation_clone {
+                    if let Some(stored_slot) = data
+                        .worktree_slots
+                        .iter_mut()
+                        .find(|stored_slot| stored_slot.id == slot.slot_id)
+                    {
+                        stored_slot.branch = Some(final_branch.clone());
+                    }
+                }
                 data.add_worktree(worktree.clone());
                 if let Err(e) = save_projects_data(&app_clone, &data) {
                     log::error!("Background: Failed to save worktree data: {e}");
@@ -1758,7 +1851,7 @@ pub async fn create_worktree_from_existing_branch(
         get_project_worktrees_dir(&app, &project.name, project.worktrees_dir.as_deref())?;
     let folder_name = sanitize_folder_name(&name);
     let worktree_path = project_worktrees_dir.join(&folder_name);
-    let worktree_path_str = worktree_path
+    let mut worktree_path_str = worktree_path
         .to_str()
         .ok_or_else(|| "Invalid worktree path".to_string())?
         .to_string();
@@ -1766,6 +1859,13 @@ pub async fn create_worktree_from_existing_branch(
     // Generate ID upfront so we can track this worktree
     let worktree_id = Uuid::new_v4().to_string();
     let created_at = now();
+    let slot_reservation = {
+        let mut current_data = load_projects_data(&app)?;
+        slots::reserve_slot(&app, &mut current_data, &project, &worktree_id, &name)?
+    };
+    if let Some(slot) = &slot_reservation {
+        worktree_path_str = slot.path.clone();
+    }
 
     // Emit creating event immediately
     let creating_event = WorktreeCreatingEvent {
@@ -1792,6 +1892,7 @@ pub async fn create_worktree_from_existing_branch(
         project_id: project_id.clone(),
         name: name.clone(),
         path: worktree_path_str.clone(),
+        stable_slot_id: slot_reservation.as_ref().map(|slot| slot.slot_id.clone()),
         branch: name.clone(),
         base_branch: Some(branch_name.clone()),
         created_at,
@@ -1843,6 +1944,7 @@ pub async fn create_worktree_from_existing_branch(
     let project_id_clone = project_id.clone();
     let name_clone = name.clone();
     let worktree_path_clone = worktree_path_str.clone();
+    let slot_reservation_clone = slot_reservation.clone();
     let branch_name_clone = branch_name.clone();
     let issue_context_clone = issue_context.clone();
     let pr_context_clone = pr_context.clone();
@@ -1860,9 +1962,42 @@ pub async fn create_worktree_from_existing_branch(
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
             log::trace!("Background: Creating git worktree {name_clone} at {worktree_path_clone} using existing branch {branch_name_clone}");
 
+            if let Some(slot) = &slot_reservation_clone {
+                if slot.reused {
+                    if let Err(e) = slots::prepare_reused_slot(
+                        &project_path,
+                        &worktree_path_clone,
+                        &branch_name_clone,
+                        &branch_name_clone,
+                    ) {
+                        if let Ok(mut data) = load_projects_data(&app_clone) {
+                            let _ = slots::mark_slot_error(
+                                &app_clone,
+                                &mut data,
+                                &slot.slot_id,
+                                e.clone(),
+                            );
+                        }
+                        let error_event = WorktreeCreateErrorEvent {
+                            id: worktree_id_clone,
+                            project_id: project_id_clone,
+                            error: e,
+                        };
+                        if let Err(emit_err) = app_clone.emit_all("worktree:error", &error_event) {
+                            log::error!("Failed to emit worktree:error event: {emit_err}");
+                        }
+                        return;
+                    }
+                }
+            }
+
             // Check if path already exists
             let worktree_path = std::path::Path::new(&worktree_path_clone);
-            if worktree_path.exists() {
+            if worktree_path.exists()
+                && !slot_reservation_clone
+                    .as_ref()
+                    .is_some_and(|slot| slot.reused)
+            {
                 log::trace!("Background: Path already exists: {worktree_path_clone}");
 
                 // Check if this path matches an archived worktree
@@ -1913,11 +2048,19 @@ pub async fn create_worktree_from_existing_branch(
             }
 
             // Create the git worktree from existing branch
-            if let Err(e) = git::create_worktree_from_existing_branch(
-                &project_path,
-                &worktree_path_clone,
-                &branch_name_clone,
-            ) {
+            let create_result = if slot_reservation_clone
+                .as_ref()
+                .is_some_and(|slot| slot.reused)
+            {
+                Ok(())
+            } else {
+                git::create_worktree_from_existing_branch(
+                    &project_path,
+                    &worktree_path_clone,
+                    &branch_name_clone,
+                )
+            };
+            if let Err(e) = create_result {
                 log::error!("Background: Failed to create worktree: {e}");
                 let error_event = WorktreeCreateErrorEvent {
                     id: worktree_id_clone,
@@ -2192,8 +2335,11 @@ pub async fn create_worktree_from_existing_branch(
                     project_id: project_id_clone.clone(),
                     name: name_clone.clone(),
                     path: worktree_path_clone.clone(),
+                    stable_slot_id: slot_reservation_clone
+                        .as_ref()
+                        .map(|slot| slot.slot_id.clone()),
                     branch: branch_name_clone.clone(),
-                    base_branch: Some(branch_name_clone),
+                    base_branch: Some(branch_name_clone.clone()),
                     created_at,
                     setup_output,
                     setup_script,
@@ -2239,6 +2385,15 @@ pub async fn create_worktree_from_existing_branch(
                     automation_owned: false,
                 };
 
+                if let Some(slot) = &slot_reservation_clone {
+                    if let Some(stored_slot) = data
+                        .worktree_slots
+                        .iter_mut()
+                        .find(|stored_slot| stored_slot.id == slot.slot_id)
+                    {
+                        stored_slot.branch = Some(branch_name_clone.clone());
+                    }
+                }
                 data.add_worktree(worktree.clone());
                 if let Err(e) = save_projects_data(&app_clone, &data) {
                     log::error!("Background: Failed to save worktree data: {e}");
@@ -2493,6 +2648,7 @@ pub async fn checkout_pr(
         project_id: project_id.clone(),
         name: final_worktree_name.clone(),
         path: worktree_path_str.clone(),
+        stable_slot_id: None,
         branch: pr_detail.head_ref_name.clone(), // Use PR's actual branch name
         base_branch: None,
         created_at,
@@ -2807,6 +2963,7 @@ pub async fn checkout_pr(
                     project_id: project_id_clone.clone(),
                     name: worktree_name_clone.clone(),
                     path: worktree_path_clone.clone(),
+                    stable_slot_id: None,
                     branch: actual_branch.clone(),
                     base_branch: None,
                     created_at,
@@ -2944,6 +3101,108 @@ pub async fn delete_worktree(app: AppHandle, worktree_id: String) -> Result<(), 
     let teardown_script = git::read_jean_config(&worktree.path)
         .or_else(|| git::read_jean_config(&project.path))
         .and_then(|config| config.scripts.teardown);
+
+    if let Some(slot_id) = worktree.stable_slot_id.clone() {
+        let deleting_event = WorktreeDeletingEvent {
+            id: worktree_id.clone(),
+            project_id: worktree.project_id.clone(),
+        };
+        if let Err(e) = app.emit_all("worktree:deleting", &deleting_event) {
+            log::error!("Failed to emit worktree:deleting event: {e}");
+        }
+
+        let app_clone = app.clone();
+        let worktree_id_clone = worktree_id.clone();
+        let project_id_clone = worktree.project_id.clone();
+        let worktree_path = worktree.path.clone();
+        let worktree_branch = worktree.branch.clone();
+        let worktree_name = worktree.name.clone();
+        let project_clone = project.clone();
+
+        thread::spawn(move || {
+            let mut teardown_output: Option<String> = None;
+            if let Some(ref script) = teardown_script {
+                match git::run_teardown_script(
+                    &worktree_path,
+                    &project_clone.path,
+                    &worktree_branch,
+                    script,
+                ) {
+                    Ok(output) => {
+                        if !output.is_empty() {
+                            teardown_output = Some(output);
+                        }
+                    }
+                    Err(e) => {
+                        let error_event = WorktreeDeleteErrorEvent {
+                            id: worktree_id_clone,
+                            project_id: project_id_clone,
+                            error: format!("Teardown script failed: {e}"),
+                        };
+                        let _ = app_clone.emit_all("worktree:delete_error", &error_event);
+                        return;
+                    }
+                }
+            }
+
+            match load_projects_data(&app_clone) {
+                Ok(mut data) => {
+                    let release_result = slots::release_slot_for_worktree(
+                        &app_clone,
+                        &mut data,
+                        &project_clone,
+                        &worktree_id_clone,
+                        &worktree_branch,
+                        &slot_id,
+                        &worktree_path,
+                    );
+                    if let Err(e) = release_result {
+                        let _ = slots::mark_slot_error(&app_clone, &mut data, &slot_id, e.clone());
+                        let error_event = WorktreeDeleteErrorEvent {
+                            id: worktree_id_clone,
+                            project_id: project_id_clone,
+                            error: e,
+                        };
+                        let _ = app_clone.emit_all("worktree:delete_error", &error_event);
+                        return;
+                    }
+
+                    data.remove_worktree(&worktree_id_clone);
+                    if let Err(e) = save_projects_data(&app_clone, &data) {
+                        let error_event = WorktreeDeleteErrorEvent {
+                            id: worktree_id_clone,
+                            project_id: project_id_clone,
+                            error: format!("Failed to save worktree deletion: {e}"),
+                        };
+                        let _ = app_clone.emit_all("worktree:delete_error", &error_event);
+                        return;
+                    }
+                }
+                Err(e) => {
+                    let error_event = WorktreeDeleteErrorEvent {
+                        id: worktree_id_clone,
+                        project_id: project_id_clone,
+                        error: e,
+                    };
+                    let _ = app_clone.emit_all("worktree:delete_error", &error_event);
+                    return;
+                }
+            }
+
+            log::trace!("Background: Slotted worktree released successfully: {worktree_name}");
+            let deleted_event = WorktreeDeletedEvent {
+                id: worktree_id_clone,
+                project_id: project_id_clone,
+                teardown_output,
+            };
+            if let Err(e) = app_clone.emit_all("worktree:deleted", &deleted_event) {
+                log::error!("Failed to emit worktree:deleted event: {e}");
+            }
+        });
+
+        log::trace!("Slotted worktree deletion started in background: {worktree_id}");
+        return Ok(());
+    }
 
     // Remove from storage SYNCHRONOUSLY to avoid race conditions with other operations
     // (e.g., archive/unarchive could be overwritten if we save in background thread)
@@ -3110,6 +3369,7 @@ pub async fn create_base_session(app: AppHandle, project_id: String) -> Result<W
         project_id: project_id.clone(),
         name: project.default_branch.clone(),
         path: project.path.clone(), // Uses project's base directory directly
+        stable_slot_id: None,
         branch: project.default_branch.clone(),
         base_branch: None,
         created_at: now(),
@@ -3330,7 +3590,8 @@ async fn close_base_session_internal(
 /// Archive a worktree (keeps git worktree/branch on disk, just hides from UI)
 ///
 /// Unlike delete_worktree, this does NOT remove the git worktree or branch.
-/// It only marks the worktree as archived by setting archived_at timestamp.
+/// Slotted worktrees are moved out of the slot path before being archived so
+/// future worktrees can reuse the stable slot.
 ///
 /// Note: Base sessions cannot be archived - use close_base_session instead.
 #[tauri::command]
@@ -3343,7 +3604,7 @@ pub async fn archive_worktree(app: AppHandle, worktree_id: String) -> Result<(),
     let mut data = load_projects_data(&app)?;
 
     let worktree = data
-        .find_worktree_mut(&worktree_id)
+        .find_worktree(&worktree_id)
         .ok_or_else(|| format!("Worktree not found: {worktree_id}"))?;
 
     // Base sessions cannot be archived - they should be closed instead
@@ -3358,10 +3619,40 @@ pub async fn archive_worktree(app: AppHandle, worktree_id: String) -> Result<(),
         return Err("Worktree is already archived".to_string());
     }
 
+    let project = data
+        .find_project(&worktree.project_id)
+        .ok_or_else(|| format!("Project not found: {}", worktree.project_id))?
+        .clone();
     let project_id = worktree.project_id.clone();
+    let slot_id = worktree.stable_slot_id.clone();
+    let archive_path = if slot_id.is_some() {
+        Some(archived_slotted_worktree_path(
+            &app, &data, &project, worktree,
+        )?)
+    } else {
+        None
+    };
+
+    if let Some(path) = &archive_path {
+        git::move_worktree(&project.path, &worktree.path, path)?;
+        if Path::new(&worktree.path).exists() {
+            let _ = std::fs::remove_dir_all(&worktree.path);
+        }
+    }
+
+    let worktree = data
+        .find_worktree_mut(&worktree_id)
+        .ok_or_else(|| format!("Worktree not found: {worktree_id}"))?;
 
     // Set archived timestamp
     worktree.archived_at = Some(now());
+    if let Some(path) = archive_path {
+        worktree.path = path;
+        worktree.stable_slot_id = None;
+    }
+    if let Some(slot_id) = slot_id {
+        data.worktree_slots.retain(|slot| slot.id != slot_id);
+    }
 
     // Save the updated data
     save_projects_data(&app, &data)?;
@@ -3377,6 +3668,62 @@ pub async fn archive_worktree(app: AppHandle, worktree_id: String) -> Result<(),
 
     log::trace!("Successfully archived worktree: {worktree_id}");
     Ok(())
+}
+
+fn archived_slotted_worktree_path(
+    app: &AppHandle,
+    data: &ProjectsData,
+    project: &Project,
+    worktree: &Worktree,
+) -> Result<String, String> {
+    let project_worktrees_dir =
+        get_project_worktrees_dir(app, &project.name, project.worktrees_dir.as_deref())?;
+    let folder_name = sanitize_folder_name(&worktree.name);
+    let base_folder_name = if folder_name.is_empty() {
+        worktree.id.clone()
+    } else {
+        folder_name
+    };
+
+    for suffix in [None, Some(format!("archived-{}", short_id(&worktree.id)))] {
+        let candidate_name = match suffix {
+            Some(suffix) => format!("{base_folder_name}-{suffix}"),
+            None => base_folder_name.clone(),
+        };
+        let candidate = project_worktrees_dir.join(candidate_name);
+        let candidate_str = candidate
+            .to_str()
+            .ok_or_else(|| "Invalid archive path".to_string())?
+            .to_string();
+
+        if candidate_str == worktree.path {
+            continue;
+        }
+        if candidate.exists() || data.worktrees.iter().any(|w| w.path == candidate_str) {
+            continue;
+        }
+        return Ok(candidate_str);
+    }
+
+    let mut n = 2;
+    loop {
+        let candidate = project_worktrees_dir.join(format!(
+            "{base_folder_name}-archived-{}-{n}",
+            short_id(&worktree.id)
+        ));
+        let candidate_str = candidate
+            .to_str()
+            .ok_or_else(|| "Invalid archive path".to_string())?
+            .to_string();
+        if !candidate.exists() && !data.worktrees.iter().any(|w| w.path == candidate_str) {
+            return Ok(candidate_str);
+        }
+        n += 1;
+    }
+}
+
+fn short_id(id: &str) -> &str {
+    id.get(..8).unwrap_or(id)
 }
 
 /// Unarchive a worktree (restore to UI)
@@ -3513,6 +3860,7 @@ pub async fn import_worktree(
         project_id: project_id.clone(),
         name,
         path: path.clone(),
+        stable_slot_id: None,
         branch,
         base_branch: None,
         created_at: now(),
@@ -3596,6 +3944,59 @@ pub async fn permanently_delete_worktree(
         .find_project(&worktree.project_id)
         .ok_or_else(|| format!("Project not found: {}", worktree.project_id))?
         .clone();
+
+    if let Some(slot_id) = worktree.stable_slot_id.clone() {
+        crate::chat::registry::cancel_processes_for_worktree(&app, &worktree_id);
+
+        let app_clone = app.clone();
+        let worktree_id_clone = worktree_id.clone();
+        let project_id_clone = worktree.project_id.clone();
+        let worktree_path = worktree.path.clone();
+        let worktree_branch = worktree.branch.clone();
+        let worktree_name = worktree.name.clone();
+        let project_clone = project.clone();
+
+        thread::spawn(move || {
+            match load_projects_data(&app_clone) {
+                Ok(mut data) => {
+                    if let Err(e) = slots::release_slot_for_worktree(
+                        &app_clone,
+                        &mut data,
+                        &project_clone,
+                        &worktree_id_clone,
+                        &worktree_branch,
+                        &slot_id,
+                        &worktree_path,
+                    ) {
+                        let _ = slots::mark_slot_error(&app_clone, &mut data, &slot_id, e.clone());
+                        log::error!("Background: Failed to release slotted worktree: {e}");
+                        return;
+                    }
+                    data.remove_worktree(&worktree_id_clone);
+                    if let Err(e) = save_projects_data(&app_clone, &data) {
+                        log::error!("Failed to remove worktree from storage: {e}");
+                        return;
+                    }
+                }
+                Err(e) => {
+                    log::error!("Failed to load projects data for permanent delete: {e}");
+                    return;
+                }
+            }
+
+            log::trace!("Background: Slotted worktree permanently deleted: {worktree_name}");
+            let event = WorktreePermanentlyDeletedEvent {
+                id: worktree_id_clone,
+                project_id: project_id_clone,
+            };
+            if let Err(e) = app_clone.emit_all("worktree:permanently_deleted", &event) {
+                log::error!("Failed to emit worktree:permanently_deleted event: {e}");
+            }
+        });
+
+        log::trace!("Permanent deletion started in background for slotted worktree");
+        return Ok(());
+    }
 
     // Remove from storage SYNCHRONOUSLY to avoid race conditions with other operations
     // (e.g., archive/unarchive could be overwritten if we save in background thread)
@@ -4458,6 +4859,7 @@ pub async fn update_project_settings(
     github_account_host: Option<String>,
     github_account_user: Option<String>,
     worktrees_dir: Option<String>,
+    stable_worktree_slots_enabled: Option<bool>,
     linear_api_key: Option<String>,
     linear_team_id: Option<String>,
     hide_github_issues_and_prs: Option<bool>,
@@ -4542,6 +4944,11 @@ pub async fn update_project_settings(
         project.worktrees_dir = if dir.is_empty() { None } else { Some(dir) };
     }
 
+    if let Some(enabled) = stable_worktree_slots_enabled {
+        log::trace!("Updating stable_worktree_slots_enabled: {enabled}");
+        project.stable_worktree_slots_enabled = enabled;
+    }
+
     if let Some(key) = linear_api_key {
         let key = key.trim().to_string();
         log::trace!("Updating Linear API key ({} chars)", key.len());
@@ -4615,6 +5022,28 @@ pub async fn update_project_settings(
 
     log::trace!("Successfully updated project settings");
     Ok(updated_project)
+}
+
+#[tauri::command]
+pub async fn list_worktree_slots(
+    app: AppHandle,
+    project_id: String,
+) -> Result<Vec<super::types::WorktreeSlot>, String> {
+    slots::slots_for_project(&app, &project_id)
+}
+
+#[tauri::command]
+pub async fn reset_worktree_slot(
+    app: AppHandle,
+    project_id: String,
+    slot_id: String,
+) -> Result<(), String> {
+    slots::reset_slot(&app, &project_id, &slot_id)
+}
+
+#[tauri::command]
+pub async fn reset_idle_worktree_slots(app: AppHandle, project_id: String) -> Result<(), String> {
+    slots::reset_idle_slots(&app, &project_id)
 }
 
 /// Rebase a worktree's branch onto the base branch
@@ -8874,6 +9303,7 @@ pub async fn create_folder(
         github_account_host: None,
         github_account_user: None,
         worktrees_dir: None,
+        stable_worktree_slots_enabled: false,
         linear_api_key: None,
         linear_team_id: None,
         default_editor: None,
@@ -9946,6 +10376,7 @@ mod tests {
             project_id: project_id.to_string(),
             name: branch.to_string(),
             path: format!("/tmp/{id}"),
+            stable_slot_id: None,
             branch: branch.to_string(),
             base_branch: None,
             created_at: 0,
@@ -10005,6 +10436,7 @@ mod tests {
             github_account_host: None,
             github_account_user: None,
             worktrees_dir: None,
+            stable_worktree_slots_enabled: false,
             linear_api_key: None,
             linear_team_id: None,
             default_editor: None,

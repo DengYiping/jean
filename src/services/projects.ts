@@ -8,6 +8,7 @@ import { disposeAllWorktreeTerminals } from '@/lib/terminal-instances'
 import type {
   Project,
   Worktree,
+  WorktreeSlot,
   DetectPrResponse,
   WorktreeCreatingEvent,
   WorktreeCreatedEvent,
@@ -44,6 +45,8 @@ export const projectsQueryKeys = {
   detail: (id: string) => [...projectsQueryKeys.all, 'detail', id] as const,
   worktrees: (projectId: string) =>
     [...projectsQueryKeys.all, 'worktrees', projectId] as const,
+  worktreeSlots: (projectId: string) =>
+    [...projectsQueryKeys.all, 'worktree-slots', projectId] as const,
 }
 
 // ============================================================================
@@ -146,6 +149,67 @@ export function useWorktree(worktreeId: string | null) {
     enabled: !!worktreeId && !isPending,
     staleTime: 1000 * 30, // 30 seconds - PR info may change
     gcTime: 1000 * 60 * 5,
+  })
+}
+
+export function useWorktreeSlots(projectId: string | null) {
+  return useQuery({
+    queryKey: projectsQueryKeys.worktreeSlots(projectId ?? ''),
+    queryFn: async (): Promise<WorktreeSlot[]> => {
+      if (!isTauri() || !projectId) {
+        return []
+      }
+
+      return invoke<WorktreeSlot[]>('list_worktree_slots', { projectId })
+    },
+    enabled: !!projectId,
+    staleTime: 1000 * 30,
+  })
+}
+
+export function useResetWorktreeSlot() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({
+      projectId,
+      slotId,
+    }: {
+      projectId: string
+      slotId: string
+    }): Promise<void> => {
+      await invoke('reset_worktree_slot', { projectId, slotId })
+    },
+    onSuccess: (_data, { projectId }) => {
+      queryClient.invalidateQueries({
+        queryKey: projectsQueryKeys.worktreeSlots(projectId),
+      })
+      toast.success('Slot reset')
+    },
+    onError: error => {
+      const message = error instanceof Error ? error.message : String(error)
+      toast.error('Failed to reset slot', { description: message })
+    },
+  })
+}
+
+export function useResetIdleWorktreeSlots() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (projectId: string): Promise<void> => {
+      await invoke('reset_idle_worktree_slots', { projectId })
+    },
+    onSuccess: (_data, projectId) => {
+      queryClient.invalidateQueries({
+        queryKey: projectsQueryKeys.worktreeSlots(projectId),
+      })
+      toast.success('Warm slots reset')
+    },
+    onError: error => {
+      const message = error instanceof Error ? error.message : String(error)
+      toast.error('Failed to reset warm slots', { description: message })
+    },
   })
 }
 
@@ -1247,6 +1311,9 @@ export function useWorktreeEvents() {
             return old.filter(w => w.id !== id)
           }
         )
+        queryClient.invalidateQueries({
+          queryKey: projectsQueryKeys.worktreeSlots(project_id),
+        })
 
         // Clear chat if this worktree was active
         const { activeWorktreeId, clearActiveWorktree } =
@@ -1519,6 +1586,9 @@ export function useArchiveWorktree() {
 
       // Invalidate archived worktrees query so it shows up immediately
       queryClient.invalidateQueries({ queryKey: ['archived-worktrees'] })
+      queryClient.invalidateQueries({
+        queryKey: projectsQueryKeys.worktreeSlots(projectId),
+      })
 
       // Invalidate archived sessions query (worktree's sessions are also archived)
       queryClient.invalidateQueries({ queryKey: ['all-archived-sessions'] })
@@ -2525,6 +2595,7 @@ export function useUpdateProjectSettings() {
       githubAccountHost,
       githubAccountUser,
       worktreesDir,
+      stableWorktreeSlotsEnabled,
       linearApiKey,
       linearTeamId,
       hideGithubIssuesAndPRs,
@@ -2541,6 +2612,7 @@ export function useUpdateProjectSettings() {
       githubAccountHost?: string
       githubAccountUser?: string
       worktreesDir?: string
+      stableWorktreeSlotsEnabled?: boolean
       linearApiKey?: string
       linearTeamId?: string
       hideGithubIssuesAndPRs?: boolean
@@ -2568,6 +2640,7 @@ export function useUpdateProjectSettings() {
         githubAccountHost,
         githubAccountUser,
         worktreesDir,
+        stableWorktreeSlotsEnabled,
         linearApiKey,
         linearTeamId,
         hideGithubIssuesAndPrs: hideGithubIssuesAndPRs,

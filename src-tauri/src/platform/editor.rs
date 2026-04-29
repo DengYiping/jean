@@ -114,7 +114,6 @@ pub fn open_file_path_in_editor(
 fn build_project_open_args(editor: &str, path: &str) -> Vec<String> {
     match editor {
         "cursor" | "vscode" => vec!["--disable-workspace-trust".to_string(), path.to_string()],
-        "intellij" => vec!["--trust".to_string(), path.to_string()],
         _ => vec![path.to_string()],
     }
 }
@@ -146,7 +145,7 @@ fn build_file_open_args(editor: &str, path: &str, line_number: Option<u32>) -> V
             args
         }
         "intellij" => {
-            let mut args = vec!["--trust".to_string()];
+            let mut args = Vec::new();
             if let Some(line) = line_number {
                 args.push("--line".to_string());
                 args.push(line.to_string());
@@ -427,22 +426,22 @@ mod tests {
     }
 
     #[test]
-    fn intellij_project_open_marks_project_trusted() {
+    fn intellij_project_open_uses_plain_path() {
         assert_eq!(
             strings(build_project_open_args("intellij", "/tmp/demo")),
-            ["--trust", "/tmp/demo"]
+            ["/tmp/demo"]
         );
     }
 
     #[test]
-    fn intellij_file_open_marks_project_trusted_and_preserves_line() {
+    fn intellij_file_open_preserves_line_without_trust_flag() {
         assert_eq!(
             strings(build_file_open_args(
                 "intellij",
                 "/tmp/demo/src/main.java",
                 Some(42)
             )),
-            ["--trust", "--line", "42", "/tmp/demo/src/main.java"]
+            ["--line", "42", "/tmp/demo/src/main.java"]
         );
     }
 

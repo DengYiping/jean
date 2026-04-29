@@ -2156,8 +2156,6 @@ export default function useStreamingEvents({
         // This happens AFTER optimistic messages are in the cache, preventing flicker
         useChatStore.getState().cancelSession(session_id)
 
-        playNotificationSound(getWaitingSoundPreference(queryClient))
-
         // For restore path: override reviewing state based on whether messages remain
         if (shouldRestoreMessage) {
           const updatedSession = queryClient.getQueryData<Session>(

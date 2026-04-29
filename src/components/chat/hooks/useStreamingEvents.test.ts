@@ -969,7 +969,7 @@ describe('useStreamingEvents question notifications', () => {
     unmount()
   })
 
-  it('plays the waiting sound for cancelled runs', async () => {
+  it('does not play a sound for cancelled runs', async () => {
     useChatStore.setState({
       sessionWorktreeMap: { 'session-1': 'worktree-1' },
       worktreePaths: { 'worktree-1': '/tmp/worktree-1' },
@@ -991,7 +991,7 @@ describe('useStreamingEvents question notifications', () => {
       await Promise.resolve()
     })
 
-    expect(mockPlayNotificationSound).toHaveBeenCalledWith('work-work')
+    expect(mockPlayNotificationSound).not.toHaveBeenCalled()
     expect(
       queryClient.getQueryData(chatQueryKeys.session('session-1'))
     ).toMatchObject({

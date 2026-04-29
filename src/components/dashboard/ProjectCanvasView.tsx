@@ -2403,6 +2403,7 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
         <GitDiffModal
           diffRequest={canvasDiffRequest}
           onClose={() => setCanvasDiffRequest(null)}
+          preferredEditor={project?.default_editor}
         />
       </Suspense>
 

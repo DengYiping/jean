@@ -69,7 +69,7 @@ import {
 } from '@/services/git-status'
 import { invoke } from '@/lib/transport'
 import { toast } from 'sonner'
-import { resolveMagicPromptProvider } from '@/types/preferences'
+import { resolveMagicPromptProvider, type EditorApp } from '@/types/preferences'
 import type { CreateCommitResponse } from '@/types/projects'
 import {
   ContextMenu,
@@ -92,6 +92,7 @@ import { useUIStore } from '@/store/ui-store'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { usePreferences } from '@/services/preferences'
 import { CommitsTabView } from './CommitsTabView'
+import { OpenFileInEditorButton } from '@/components/open-in/OpenFileInEditorButton'
 import {
   MemoizedFileDiff,
   getStatusColor,
@@ -106,6 +107,10 @@ const EMPTY_ANNOTATIONS: DiffLineAnnotation<DiffComment>[] = []
 
 // Re-export for consumers that imported from this file
 export type { DiffComment, MemoizedFileDiffProps } from './MemoizedFileDiff'
+
+function joinWorktreePath(worktreePath: string, filePath: string): string {
+  return `${worktreePath.replace(/[/\\]+$/, '')}/${filePath.replace(/^[/\\]+/, '')}`
+}
 
 function getTouchedLinesFromFileDiff(fileDiff: FileDiffMetadata): number[] {
   const touchedLines = new Set<number>()
@@ -238,6 +243,8 @@ interface GitDiffModalProps {
   uncommittedStats?: DiffStats
   /** Branch diff stats (for switcher) */
   branchStats?: DiffStats
+  /** Project-level editor preference, when present */
+  preferredEditor?: EditorApp | null
 }
 
 type DiffStyle = 'split' | 'unified'
@@ -257,6 +264,7 @@ export function GitDiffModal({
   onExecutePrompt,
   uncommittedStats,
   branchStats,
+  preferredEditor,
 }: GitDiffModalProps) {
   const [diff, setDiff] = useState<GitDiff | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -747,6 +755,16 @@ export function GitDiffModal({
     selectedFile?.fileDiff.type === 'deleted' ||
     selectedBackendFile?.status === 'deleted'
   const isSelectedFileBinary = selectedBackendFile?.is_binary ?? false
+
+  const selectedFilePath = useMemo(() => {
+    if (!selectedFile || !diffRequest) return null
+    return joinWorktreePath(diffRequest.worktreePath, selectedFile.fileName)
+  }, [selectedFile, diffRequest])
+
+  const selectedFileOpenLineNumber = useMemo(() => {
+    if (!selectedFile || isSelectedFileDeleted) return undefined
+    return getTouchedLinesFromFileDiff(selectedFile.fileDiff)[0]
+  }, [selectedFile, isSelectedFileDeleted])
 
   // Fetch file content on demand for file-view mode
   const fetchFileContent = useCallback(
@@ -1466,6 +1484,14 @@ export function GitDiffModal({
               )}
             </div>
             <div className="ml-auto flex items-center gap-2">
+              {activeDiffType !== 'commits' && selectedFilePath && (
+                <OpenFileInEditorButton
+                  filePath={selectedFilePath}
+                  lineNumber={selectedFileOpenLineNumber}
+                  preferredEditor={preferredEditor}
+                  disabled={isSelectedFileDeleted}
+                />
+              )}
               {activeDiffType === 'uncommitted' &&
                 diff &&
                 filteredFiles.length > 0 && (

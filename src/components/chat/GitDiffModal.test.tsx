@@ -9,6 +9,7 @@ const mockReadFileContent = vi.fn()
 const mockReadGitFileContent = vi.fn()
 const mockMemoizedFileView = vi.fn()
 const mockMemoizedFileDiff = vi.fn()
+const mockOpenFileInEditorButton = vi.fn()
 
 vi.mock('@/services/git-status', () => ({
   getGitDiff: (...args: unknown[]) => mockGetGitDiff(...args),
@@ -24,6 +25,9 @@ vi.mock('@/services/preferences', () => ({
       syntax_theme_dark: 'vitesse-black',
       syntax_theme_light: 'github-light',
     },
+  }),
+  useAvailableEditors: () => ({
+    data: ['zed', 'cursor', 'vscode'],
   }),
 }))
 
@@ -70,6 +74,18 @@ vi.mock('./MemoizedFileView', () => ({
         </div>
       )
     })(),
+}))
+
+vi.mock('@/components/open-in/OpenFileInEditorButton', () => ({
+  OpenFileInEditorButton: (props: {
+    filePath: string
+    lineNumber?: number
+    preferredEditor?: string | null
+    disabled?: boolean
+  }) => {
+    mockOpenFileInEditorButton(props)
+    return <button type="button">Open file</button>
+  },
 }))
 
 vi.mock('@pierre/diffs', () => ({
@@ -276,5 +292,32 @@ describe('GitDiffModal', () => {
         })
       )
     })
+  })
+
+  it('passes the selected working-tree file path to the editor button', async () => {
+    mockGetGitDiff.mockResolvedValueOnce(buildDiff())
+
+    render(
+      <GitDiffModal
+        diffRequest={{
+          type: 'uncommitted',
+          worktreePath: '/tmp/worktree/',
+          baseBranch: 'main',
+        }}
+        preferredEditor="zed"
+        onClose={vi.fn()}
+      />
+    )
+
+    await screen.findByText('Diff view: src/example.ts')
+
+    expect(mockOpenFileInEditorButton).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filePath: '/tmp/worktree/src/example.ts',
+        lineNumber: 11,
+        preferredEditor: 'zed',
+        disabled: false,
+      })
+    )
   })
 })

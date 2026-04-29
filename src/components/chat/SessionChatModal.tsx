@@ -1441,6 +1441,7 @@ export function SessionChatModal({
                 added: branchDiffAdded,
                 removed: branchDiffRemoved,
               }}
+              preferredEditor={project?.default_editor}
             />
           </Suspense>
         )}

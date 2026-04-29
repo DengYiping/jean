@@ -3341,6 +3341,7 @@ export function ChatWindow({
               removed: uncommittedRemoved,
             }}
             branchStats={{ added: branchDiffAdded, removed: branchDiffRemoved }}
+            preferredEditor={project?.default_editor}
           />
         </Suspense>
 

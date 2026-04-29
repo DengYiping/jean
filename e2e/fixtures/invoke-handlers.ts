@@ -170,6 +170,7 @@ export const defaultResponses: Record<string, unknown> = {
     raw_patch: '',
   },
   read_git_file_content: '',
+  open_file_in_default_app: null,
   create_pr_with_ai_content: {
     pr_number: 123,
     pr_url: 'https://github.com/test/repo/pull/123',

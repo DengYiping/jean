@@ -1,8 +1,9 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { invoke } from '@/lib/transport'
 import { logger } from '@/lib/logger'
 import type { WorktreeFile } from '@/types/chat'
 import { isTauri } from '@/services/projects'
+import { toast } from 'sonner'
 
 // Query keys for files
 export const fileQueryKeys = {
@@ -39,5 +40,40 @@ export function useWorktreeFiles(worktreePath: string | null) {
     enabled: !!worktreePath,
     staleTime: 0, // Always refetch in background so newly added files appear
     gcTime: 1000 * 60 * 10, // Keep in memory for 10 minutes
+  })
+}
+
+/**
+ * Hook to open a file in the configured editor.
+ */
+export function useOpenFileInEditor() {
+  return useMutation({
+    mutationFn: async ({
+      path,
+      editor,
+      lineNumber,
+    }: {
+      path: string
+      editor?: string
+      lineNumber?: number
+    }): Promise<void> => {
+      if (!isTauri()) {
+        throw new Error('Not in Tauri context')
+      }
+
+      logger.debug('Opening file in editor', { path, editor, lineNumber })
+      await invoke('open_file_in_default_app', { path, editor, lineNumber })
+      logger.info('Opened file in editor')
+    },
+    onError: error => {
+      const message =
+        error instanceof Error
+          ? error.message
+          : typeof error === 'string'
+            ? error
+            : 'Unknown error occurred'
+      logger.error('Failed to open file in editor', { error })
+      toast.error('Failed to open file in editor', { description: message })
+    },
   })
 }

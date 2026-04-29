@@ -258,6 +258,7 @@ mod tests {
             github_account_host: None,
             github_account_user: None,
             worktrees_dir: None,
+            stable_worktree_slots_enabled: false,
             linear_api_key: None,
             linear_team_id: None,
             default_editor: None,

@@ -37,6 +37,9 @@ import {
   useAppDataDir,
   useSetProjectAvatar,
   useRemoveProjectAvatar,
+  useWorktreeSlots,
+  useResetWorktreeSlot,
+  useResetIdleWorktreeSlots,
 } from '@/services/projects'
 import { usePreferences } from '@/services/preferences'
 import { useLinearTeams, linearQueryKeys } from '@/services/linear'
@@ -102,6 +105,9 @@ export function GeneralPane({
   const profiles = preferences?.custom_cli_profiles ?? []
 
   const updateSettings = useUpdateProjectSettings()
+  const { data: worktreeSlots = [] } = useWorktreeSlots(projectId)
+  const resetWorktreeSlot = useResetWorktreeSlot()
+  const resetIdleWorktreeSlots = useResetIdleWorktreeSlots()
   const { data: appDataDir = '' } = useAppDataDir()
   const setProjectAvatar = useSetProjectAvatar()
   const removeProjectAvatar = useRemoveProjectAvatar()
@@ -256,6 +262,20 @@ export function GeneralPane({
       { onSuccess: () => setLocalWorktreesDir(null) }
     )
   }, [projectId, updateSettings])
+
+  const handleStableSlotsEnabledChange = useCallback(
+    (checked: boolean) => {
+      updateSettings.mutate({
+        projectId,
+        stableWorktreeSlotsEnabled: checked,
+      })
+    },
+    [projectId, updateSettings]
+  )
+
+  const resettableSlots = worktreeSlots.filter(
+    slot => slot.state === 'idle' || slot.state === 'error'
+  )
 
   const displayedLinearApiKey =
     localLinearApiKey ?? project?.linear_api_key ?? ''
@@ -657,6 +677,94 @@ export function GeneralPane({
               </Button>
             )}
           </div>
+        </InlineField>
+
+        <InlineField
+          label="Stable worktree slots"
+          description="Reuse fixed worktree paths for this project to keep build and editor artifacts warm."
+        >
+          <div className="flex items-center justify-between gap-4 rounded-lg border border-border px-3 py-3">
+            <div className="space-y-1">
+              <div className="text-sm font-medium text-foreground">
+                Use stable slots for new worktrees
+              </div>
+              <div className="text-xs text-muted-foreground">
+                Jean keeps up to four idle slots warm for reuse.
+              </div>
+            </div>
+            <Switch
+              checked={project?.stable_worktree_slots_enabled === true}
+              onCheckedChange={handleStableSlotsEnabledChange}
+              disabled={updateSettings.isPending}
+              aria-label="Use stable slots for new worktrees"
+            />
+          </div>
+          {worktreeSlots.length > 0 && (
+            <div className="space-y-2 rounded-lg border border-border p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-sm font-medium text-foreground">Slots</div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => resetIdleWorktreeSlots.mutate(projectId)}
+                  disabled={
+                    resettableSlots.length === 0 ||
+                    resetIdleWorktreeSlots.isPending
+                  }
+                >
+                  {resetIdleWorktreeSlots.isPending && (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  )}
+                  Reset warm slots
+                </Button>
+              </div>
+              <div className="space-y-2">
+                {worktreeSlots.map(slot => (
+                  <div
+                    key={slot.id}
+                    className="flex items-center justify-between gap-3 rounded-md bg-muted/40 px-3 py-2"
+                  >
+                    <div className="min-w-0 space-y-1">
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="font-medium text-foreground">
+                          {slot.state}
+                        </span>
+                        {slot.branch && (
+                          <span className="truncate text-muted-foreground">
+                            {slot.branch}
+                          </span>
+                        )}
+                      </div>
+                      <div className="truncate font-mono text-xs text-muted-foreground">
+                        {slot.path}
+                      </div>
+                      {slot.last_error && (
+                        <div className="text-xs text-destructive">
+                          {slot.last_error}
+                        </div>
+                      )}
+                    </div>
+                    {(slot.state === 'idle' || slot.state === 'error') && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() =>
+                          resetWorktreeSlot.mutate({
+                            projectId,
+                            slotId: slot.id,
+                          })
+                        }
+                        disabled={resetWorktreeSlot.isPending}
+                      >
+                        <RotateCcw className="h-4 w-4" />
+                        Reset
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </InlineField>
       </SettingsSection>
 

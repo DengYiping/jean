@@ -74,6 +74,11 @@ pub async fn dispatch_command(
             let result = crate::projects::list_worktrees(app.clone(), project_id).await?;
             to_value(result)
         }
+        "list_worktree_slots" => {
+            let project_id: String = field(&args, "projectId", "project_id")?;
+            let result = crate::projects::list_worktree_slots(app.clone(), project_id).await?;
+            to_value(result)
+        }
         "get_worktree" => {
             let worktree_id: String = field(&args, "worktreeId", "worktree_id")?;
             let result = crate::projects::get_worktree(app.clone(), worktree_id).await?;
@@ -144,6 +149,11 @@ pub async fn dispatch_command(
             let github_account_user: Option<String> =
                 field_opt(&args, "githubAccountUser", "github_account_user")?;
             let worktrees_dir: Option<String> = field_opt(&args, "worktreesDir", "worktrees_dir")?;
+            let stable_worktree_slots_enabled: Option<bool> = field_opt(
+                &args,
+                "stableWorktreeSlotsEnabled",
+                "stable_worktree_slots_enabled",
+            )?;
             let linear_api_key: Option<String> =
                 field_opt(&args, "linearApiKey", "linear_api_key")?;
             let linear_team_id: Option<String> =
@@ -172,6 +182,7 @@ pub async fn dispatch_command(
                 github_account_host,
                 github_account_user,
                 worktrees_dir,
+                stable_worktree_slots_enabled,
                 linear_api_key,
                 linear_team_id,
                 hide_github_issues_and_prs,
@@ -219,6 +230,19 @@ pub async fn dispatch_command(
             let worktree_id: String = field(&args, "worktreeId", "worktree_id")?;
             let label: Option<crate::chat::types::LabelData> = field_opt(&args, "label", "label")?;
             crate::projects::update_worktree_label(app.clone(), worktree_id, label).await?;
+            Ok(Value::Null)
+        }
+        "reset_worktree_slot" => {
+            let project_id: String = field(&args, "projectId", "project_id")?;
+            let slot_id: String = field(&args, "slotId", "slot_id")?;
+            crate::projects::reset_worktree_slot(app.clone(), project_id, slot_id).await?;
+            emit_cache_invalidation(app, &["projects"]);
+            Ok(Value::Null)
+        }
+        "reset_idle_worktree_slots" => {
+            let project_id: String = field(&args, "projectId", "project_id")?;
+            crate::projects::reset_idle_worktree_slots(app.clone(), project_id).await?;
+            emit_cache_invalidation(app, &["projects"]);
             Ok(Value::Null)
         }
         "has_uncommitted_changes" => {

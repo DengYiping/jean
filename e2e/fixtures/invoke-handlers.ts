@@ -40,6 +40,9 @@ export const defaultResponses: Record<string, unknown> = {
   // Projects
   list_projects: [project],
   list_worktrees: [worktree1, worktree2],
+  list_worktree_slots: [],
+  reset_worktree_slot: null,
+  reset_idle_worktree_slots: null,
   add_project: project,
   create_worktree: createWorktree(project.id, {
     name: 'new-worktree',

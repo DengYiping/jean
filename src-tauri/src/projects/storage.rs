@@ -4,7 +4,7 @@ use std::sync::Mutex;
 use once_cell::sync::Lazy;
 use tauri::{AppHandle, Manager};
 
-use super::types::{Project, ProjectsData};
+use super::types::{Project, ProjectsData, WorktreeSlotState};
 
 /// Global mutex to prevent concurrent read-modify-write races on projects.json.
 /// Multiple threads (e.g., fetch_worktrees_status) can call save_projects_data simultaneously,
@@ -163,13 +163,16 @@ fn load_projects_data_internal(app: &AppHandle) -> Result<ProjectsData, String> 
 
     let removed_count = original_count - valid_worktrees.len();
 
-    let data = ProjectsData {
+    let mut data = ProjectsData {
         projects: data.projects,
         worktrees: valid_worktrees,
+        worktree_slots: data.worktree_slots,
     };
 
+    let slots_changed = reconcile_worktree_slots(&mut data);
+
     // Save cleaned data if any orphans were removed
-    if removed_count > 0 {
+    if removed_count > 0 || slots_changed {
         log::trace!("Cleaned up {removed_count} orphaned worktree(s)");
         save_projects_data_internal(app, &data)?;
     }
@@ -180,6 +183,50 @@ fn load_projects_data_internal(app: &AppHandle) -> Result<ProjectsData, String> 
         data.worktrees.len()
     );
     Ok(data)
+}
+
+fn reconcile_worktree_slots(data: &mut ProjectsData) -> bool {
+    let mut changed = false;
+    let worktree_ids: std::collections::HashSet<String> =
+        data.worktrees.iter().map(|w| w.id.clone()).collect();
+
+    for slot in &mut data.worktree_slots {
+        match slot.state {
+            WorktreeSlotState::Active => {
+                let Some(worktree_id) = slot.worktree_id.as_ref() else {
+                    slot.state = WorktreeSlotState::Idle;
+                    slot.branch = None;
+                    slot.last_error = None;
+                    changed = true;
+                    continue;
+                };
+
+                if !worktree_ids.contains(worktree_id) {
+                    slot.state = WorktreeSlotState::Idle;
+                    slot.worktree_id = None;
+                    slot.branch = None;
+                    slot.last_error = None;
+                    changed = true;
+                    continue;
+                }
+
+                if !Path::new(&slot.path).exists() {
+                    slot.state = WorktreeSlotState::Error;
+                    slot.last_error = Some("Slot path no longer exists".to_string());
+                    changed = true;
+                }
+            }
+            WorktreeSlotState::Idle => {
+                if !Path::new(&slot.path).exists() {
+                    slot.state = WorktreeSlotState::Error;
+                    slot.last_error = Some("Slot path no longer exists".to_string());
+                    changed = true;
+                }
+            }
+            WorktreeSlotState::Error => {}
+        }
+    }
+    changed
 }
 
 /// Load projects data from disk (with locking for thread safety)
@@ -353,6 +400,7 @@ mod tests {
                     github_account_host: None,
                     github_account_user: None,
                     worktrees_dir: None,
+                    stable_worktree_slots_enabled: false,
                     linear_api_key: None,
                     linear_team_id: None,
                     hide_github_issues_and_prs: false,
@@ -377,6 +425,7 @@ mod tests {
                     github_account_host: None,
                     github_account_user: None,
                     worktrees_dir: None,
+                    stable_worktree_slots_enabled: false,
                     linear_api_key: None,
                     linear_team_id: None,
                     hide_github_issues_and_prs: false,
@@ -389,6 +438,7 @@ mod tests {
                 project_id: "project-1".to_string(),
                 name: "feature".to_string(),
                 path: "/tmp/demo/.worktrees/feature".to_string(),
+                stable_slot_id: None,
                 branch: "feature".to_string(),
                 base_branch: None,
                 created_at: 1,
@@ -427,6 +477,7 @@ mod tests {
                 automation_name: None,
                 automation_owned: false,
             }],
+            worktree_slots: vec![],
         };
 
         let project = find_project_for_path(&data, "/tmp/demo/src/main.ts").unwrap();
@@ -461,6 +512,7 @@ mod tests {
                 github_account_host: None,
                 github_account_user: None,
                 worktrees_dir: None,
+                stable_worktree_slots_enabled: false,
                 linear_api_key: None,
                 linear_team_id: None,
                 hide_github_issues_and_prs: false,
@@ -468,6 +520,7 @@ mod tests {
                 default_editor: Some("zed".to_string()),
             }],
             worktrees: vec![],
+            worktree_slots: vec![],
         };
 
         assert_eq!(

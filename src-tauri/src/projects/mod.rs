@@ -11,6 +11,7 @@ mod names;
 pub mod pr_status;
 mod release_notes;
 pub mod saved_contexts;
+pub mod slots;
 pub mod storage;
 pub mod types;
 

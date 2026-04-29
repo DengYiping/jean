@@ -57,6 +57,8 @@ export interface Project {
   github_account_user?: string | null
   /** Custom base directory for worktrees (undefined = use global default, which falls back to ~/jean) */
   worktrees_dir?: string | null
+  /** Reuse fixed worktree paths for this project */
+  stable_worktree_slots_enabled?: boolean
   /** Linear personal API key for fetching issues (per-project) */
   linear_api_key?: string | null
   /** Linear team ID to filter issues (undefined/null = show all teams) */
@@ -106,6 +108,8 @@ export interface Worktree {
   name: string
   /** Absolute path to worktree (configurable base dir, defaults to global/<project>/<name>, falling back to ~/jean/<project>/<name>) */
   path: string
+  /** Stable slot ID when this worktree occupies a reusable project slot */
+  stable_slot_id?: string
   /** Git branch name (same as workspace name) */
   branch: string
   /** Base branch this worktree was created from (undefined for legacy worktrees or base sessions) */
@@ -182,6 +186,20 @@ export interface Worktree {
   automation_name?: string
   /** Whether this worktree is owned by an automation */
   automation_owned?: boolean
+}
+
+export type WorktreeSlotState = 'active' | 'idle' | 'error'
+
+export interface WorktreeSlot {
+  id: string
+  project_id: string
+  path: string
+  state: WorktreeSlotState
+  worktree_id?: string
+  branch?: string
+  created_at: number
+  last_used_at: number
+  last_error?: string
 }
 
 // =============================================================================

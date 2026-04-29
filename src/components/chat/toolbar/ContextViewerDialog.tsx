@@ -1,14 +1,21 @@
-import { CircleDot, FolderOpen, GitPullRequest } from 'lucide-react'
+import { useEffect } from 'react'
+import {
+  CircleDot,
+  FolderOpen,
+  GitPullRequest,
+  Shield,
+  ShieldAlert,
+} from 'lucide-react'
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Shield, ShieldAlert } from 'lucide-react'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Markdown } from '@/components/ui/markdown'
 import { LinearIcon } from '@/components/icons/LinearIcon'
+import { useUIStore } from '@/store/ui-store'
 import type { ViewingContext } from '@/components/chat/toolbar/types'
 
 interface ContextViewerDialogProps {
@@ -20,6 +27,13 @@ export function ContextViewerDialog({
   viewingContext,
   onClose,
 }: ContextViewerDialogProps) {
+  const isOpen = !!viewingContext
+
+  useEffect(() => {
+    useUIStore.getState().setContextViewerOpen(isOpen)
+    return () => useUIStore.getState().setContextViewerOpen(false)
+  }, [isOpen])
+
   if (!viewingContext) return null
 
   return (

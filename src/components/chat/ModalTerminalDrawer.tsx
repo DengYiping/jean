@@ -62,6 +62,7 @@ export const ModalTerminalDrawer = memo(function ModalTerminalDrawer({
         showCloseButton={false}
         className="flex flex-col gap-0 p-0"
         style={{ width: `${width}px`, maxWidth: '95vw' }}
+        data-terminal-host="true"
       >
         {/* Resize handle on left edge */}
         <div

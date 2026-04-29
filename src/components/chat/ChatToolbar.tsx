@@ -96,6 +96,7 @@ export const ChatToolbar = memo(function ChatToolbar({
   onOpenPullRequestReview,
   onReview,
   onMerge,
+  onMergePr,
   onResolvePrConflicts,
   onResolveConflicts,
   hasOpenPr,
@@ -349,6 +350,7 @@ export const ChatToolbar = memo(function ChatToolbar({
           onOpenPullRequestReview={onOpenPullRequestReview}
           onReview={onReview}
           onMerge={onMerge}
+          onMergePr={onMergePr}
           onResolveConflicts={onResolveConflicts}
           installedBackends={installedBackends}
           onBackendChange={onBackendChange}

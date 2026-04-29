@@ -110,6 +110,7 @@ function createProps(
     onOpenPullRequestReview: vi.fn(),
     onReview: vi.fn(),
     onMerge: vi.fn(),
+    onMergePr: vi.fn(),
     onResolvePrConflicts: vi.fn(),
     onResolveConflicts: vi.fn(),
     hasOpenPr: false,

@@ -115,6 +115,7 @@ interface MobileToolbarMenuProps {
   onOpenPullRequestReview: () => void
   onReview: () => void
   onMerge: () => void
+  onMergePr: () => void
   onResolveConflicts: () => void
   installedBackends: ('claude' | 'codex' | 'opencode')[]
   onBackendChange: (backend: 'claude' | 'codex' | 'opencode') => void
@@ -164,6 +165,7 @@ export function MobileToolbarMenu({
   onOpenPullRequestReview,
   onReview,
   onMerge,
+  onMergePr,
   onResolveConflicts,
   installedBackends,
   onBackendChange,
@@ -305,12 +307,20 @@ export function MobileToolbarMenu({
               R
             </span>
           </DropdownMenuItem>
-          {hasOpenPr && (
-            <DropdownMenuItem onClick={onOpenPullRequestReview}>
-              <MessageSquare className="h-4 w-4" />
-              Review comments
-            </DropdownMenuItem>
-          )}
+          <DropdownMenuItem
+            disabled={!hasOpenPr}
+            onClick={onOpenPullRequestReview}
+          >
+            <MessageSquare className="h-4 w-4" />
+            PR Comments
+          </DropdownMenuItem>
+          <DropdownMenuItem disabled={!hasOpenPr} onClick={onMergePr}>
+            <GitMerge className="h-4 w-4" />
+            Merge
+            <span className="ml-auto text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+              N
+            </span>
+          </DropdownMenuItem>
           <DropdownMenuSeparator />
 
           <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">

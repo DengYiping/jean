@@ -2223,6 +2223,7 @@ export function ChatWindow({
     handleOpenPr,
     handleReview,
     handleMerge,
+    handleMergePr,
     handleResolveConflicts,
     handleResolvePrConflicts,
     executeMerge,
@@ -2387,6 +2388,7 @@ export function ChatWindow({
     handleOpenPr,
     handleReview,
     handleMerge,
+    handleMergePr,
     handleResolveConflicts,
     handleLinkedProjects: () =>
       useUIStore.getState().setLinkedProjectsModalOpen(true),
@@ -3192,6 +3194,7 @@ export function ChatWindow({
                             }
                             onReview={() => handleReview()}
                             onMerge={handleMerge}
+                            onMergePr={handleMergePr}
                             onResolvePrConflicts={handleResolvePrConflicts}
                             onResolveConflicts={handleResolveConflicts}
                             hasOpenPr={Boolean(worktree?.pr_url)}

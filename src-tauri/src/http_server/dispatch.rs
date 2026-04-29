@@ -94,6 +94,11 @@ pub async fn dispatch_command(
             let advisory_context = field_opt(&args, "advisoryContext", "advisory_context")?;
             let linear_context = field_opt(&args, "linearContext", "linear_context")?;
             let custom_name = field_opt(&args, "customName", "custom_name")?;
+            let copy_uncommitted_from_path = field_opt(
+                &args,
+                "copyUncommittedFromPath",
+                "copy_uncommitted_from_path",
+            )?;
             let automation_metadata =
                 field_opt(&args, "automationMetadata", "automation_metadata")?;
             let result = crate::projects::create_worktree(
@@ -107,6 +112,7 @@ pub async fn dispatch_command(
                 advisory_context,
                 linear_context,
                 custom_name,
+                copy_uncommitted_from_path,
                 automation_metadata,
             )
             .await?;
@@ -114,6 +120,12 @@ pub async fn dispatch_command(
             // (worktree:creating/created/error) that preserves the optimistic pending status.
             // Invalidating would refetch list_worktrees which overwrites status: 'pending',
             // preventing WorktreeSetupCard from appearing on the canvas.
+            to_value(result)
+        }
+        "fork_worktree" => {
+            let source_worktree_id: String =
+                field(&args, "sourceWorktreeId", "source_worktree_id")?;
+            let result = crate::projects::fork_worktree(app.clone(), source_worktree_id).await?;
             to_value(result)
         }
         "delete_worktree" => {

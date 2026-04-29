@@ -1,6 +1,8 @@
 use crate::gh_cli::apply_gh_account_env;
 use crate::platform::silent_command;
+use std::io::Write;
 use std::path::Path;
+use std::process::Stdio;
 
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
@@ -1219,6 +1221,88 @@ pub fn create_worktree(
     }
 
     log::trace!("Successfully created worktree at {worktree_path}");
+    Ok(())
+}
+
+/// Copy tracked and untracked uncommitted changes from one worktree into another.
+///
+/// The staging state is intentionally not preserved: copied changes land in the
+/// destination worktree as regular unstaged working-tree changes.
+pub fn copy_uncommitted_changes(source_path: &str, destination_path: &str) -> Result<(), String> {
+    let diff_output = silent_command("git")
+        .args(["diff", "--binary", "HEAD"])
+        .current_dir(source_path)
+        .output()
+        .map_err(|e| format!("Failed to collect source changes: {e}"))?;
+
+    if !diff_output.status.success() {
+        let stderr = String::from_utf8_lossy(&diff_output.stderr);
+        return Err(format!("Failed to collect source changes: {stderr}"));
+    }
+
+    if !diff_output.stdout.is_empty() {
+        let mut apply_child = silent_command("git")
+            .args(["apply", "--binary", "--whitespace=nowarn"])
+            .current_dir(destination_path)
+            .stdin(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("Failed to start git apply: {e}"))?;
+
+        if let Some(stdin) = apply_child.stdin.as_mut() {
+            stdin
+                .write_all(&diff_output.stdout)
+                .map_err(|e| format!("Failed to send patch to git apply: {e}"))?;
+        }
+
+        let apply_output = apply_child
+            .wait_with_output()
+            .map_err(|e| format!("Failed to wait for git apply: {e}"))?;
+
+        if !apply_output.status.success() {
+            let stderr = String::from_utf8_lossy(&apply_output.stderr);
+            return Err(format!("Failed to apply source changes: {stderr}"));
+        }
+    }
+
+    let untracked_output = silent_command("git")
+        .args(["ls-files", "--others", "--exclude-standard", "-z"])
+        .current_dir(source_path)
+        .output()
+        .map_err(|e| format!("Failed to list untracked source files: {e}"))?;
+
+    if !untracked_output.status.success() {
+        let stderr = String::from_utf8_lossy(&untracked_output.stderr);
+        return Err(format!("Failed to list untracked source files: {stderr}"));
+    }
+
+    let source_root = Path::new(source_path);
+    let destination_root = Path::new(destination_path);
+    for raw_path in untracked_output.stdout.split(|b| *b == 0) {
+        if raw_path.is_empty() {
+            continue;
+        }
+        let relative_path = String::from_utf8_lossy(raw_path);
+        let relative = Path::new(relative_path.as_ref());
+        if relative.is_absolute()
+            || relative
+                .components()
+                .any(|c| matches!(c, std::path::Component::ParentDir))
+        {
+            return Err(format!(
+                "Refusing to copy unsafe untracked path: {relative_path}"
+            ));
+        }
+
+        let source = source_root.join(relative);
+        let destination = destination_root.join(relative);
+        if let Some(parent) = destination.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create destination directory: {e}"))?;
+        }
+        std::fs::copy(&source, &destination)
+            .map_err(|e| format!("Failed to copy untracked file {relative_path}: {e}"))?;
+    }
+
     Ok(())
 }
 
@@ -2682,6 +2766,83 @@ mod tests {
         git(&collaborator, &["checkout", "feature/test-upstream"]).unwrap();
 
         (temp, remote, local, collaborator)
+    }
+
+    fn setup_uncommitted_copy_fixture() -> (TempDir, std::path::PathBuf, std::path::PathBuf) {
+        let temp = TempDir::new().unwrap();
+        let source = temp.path().join("source");
+        let destination = temp.path().join("destination");
+
+        std::fs::create_dir_all(&source).unwrap();
+        init_repo(&source);
+        commit_file(&source, "file.txt", "base\n", "initial commit");
+        create_worktree(
+            source.to_str().unwrap(),
+            destination.to_str().unwrap(),
+            "fork-copy-test",
+            "HEAD",
+        )
+        .unwrap();
+
+        (temp, source, destination)
+    }
+
+    #[test]
+    fn test_copy_uncommitted_changes_copies_tracked_modification() {
+        let (_temp, source, destination) = setup_uncommitted_copy_fixture();
+        std::fs::write(source.join("file.txt"), "base\nmodified\n").unwrap();
+
+        copy_uncommitted_changes(source.to_str().unwrap(), destination.to_str().unwrap()).unwrap();
+
+        let copied = std::fs::read_to_string(destination.join("file.txt")).unwrap();
+        assert_eq!(copied, "base\nmodified\n");
+    }
+
+    #[test]
+    fn test_copy_uncommitted_changes_copies_staged_change_as_unstaged() {
+        let (_temp, source, destination) = setup_uncommitted_copy_fixture();
+        std::fs::write(source.join("file.txt"), "base\nstaged\n").unwrap();
+        git(&source, &["add", "file.txt"]).unwrap();
+
+        copy_uncommitted_changes(source.to_str().unwrap(), destination.to_str().unwrap()).unwrap();
+
+        let copied = std::fs::read_to_string(destination.join("file.txt")).unwrap();
+        let status = git(&destination, &["status", "--short"]).unwrap();
+        assert_eq!(copied, "base\nstaged\n");
+        assert!(status.contains("M file.txt"), "unexpected status: {status}");
+    }
+
+    #[test]
+    fn test_copy_uncommitted_changes_copies_deletion() {
+        let (_temp, source, destination) = setup_uncommitted_copy_fixture();
+        std::fs::remove_file(source.join("file.txt")).unwrap();
+
+        copy_uncommitted_changes(source.to_str().unwrap(), destination.to_str().unwrap()).unwrap();
+
+        assert!(!destination.join("file.txt").exists());
+    }
+
+    #[test]
+    fn test_copy_uncommitted_changes_copies_untracked_file() {
+        let (_temp, source, destination) = setup_uncommitted_copy_fixture();
+        std::fs::write(source.join("new.txt"), "untracked\n").unwrap();
+
+        copy_uncommitted_changes(source.to_str().unwrap(), destination.to_str().unwrap()).unwrap();
+
+        let copied = std::fs::read_to_string(destination.join("new.txt")).unwrap();
+        assert_eq!(copied, "untracked\n");
+    }
+
+    #[test]
+    fn test_copy_uncommitted_changes_copies_nested_untracked_file() {
+        let (_temp, source, destination) = setup_uncommitted_copy_fixture();
+        std::fs::create_dir_all(source.join("nested/deep")).unwrap();
+        std::fs::write(source.join("nested/deep/new.txt"), "nested\n").unwrap();
+
+        copy_uncommitted_changes(source.to_str().unwrap(), destination.to_str().unwrap()).unwrap();
+
+        let copied = std::fs::read_to_string(destination.join("nested/deep/new.txt")).unwrap();
+        assert_eq!(copied, "nested\n");
     }
 
     // ========================================================================

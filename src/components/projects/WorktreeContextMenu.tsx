@@ -3,6 +3,7 @@ import {
   Code,
   FileJson,
   FolderOpen,
+  GitFork,
   Hammer,
   Play,
   Sparkles,
@@ -35,6 +36,7 @@ import { getEditorLabel, getTerminalLabel } from '@/types/preferences'
 import { isNativeApp } from '@/lib/environment'
 import { getFileManagerName } from '@/lib/platform'
 import { useWorktreeMenuActions } from './useWorktreeMenuActions'
+import { useForkWorktree } from '@/services/projects'
 
 interface WorktreeContextMenuProps {
   worktree: Worktree
@@ -69,6 +71,8 @@ export function WorktreeContextMenu({
     handleOpenJeanConfig,
     handleGenerateRecap,
   } = useWorktreeMenuActions({ worktree, projectId })
+  const forkWorktree = useForkWorktree()
+  const canForkWorktree = !worktree.status || worktree.status === 'ready'
 
   // Suppress unused variable warning
   void projectPath
@@ -77,6 +81,14 @@ export function WorktreeContextMenu({
     <ContextMenu>
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
       <ContextMenuContent className="w-48">
+        <ContextMenuItem
+          disabled={!canForkWorktree || forkWorktree.isPending}
+          onClick={() => forkWorktree.mutate({ sourceWorktreeId: worktree.id })}
+        >
+          <GitFork className="mr-2 h-4 w-4" />
+          Fork Worktree
+        </ContextMenuItem>
+
         {isNativeApp() && runScripts.length === 1 && (
           <ContextMenuItem onClick={handleRun}>
             <Play className="mr-2 h-4 w-4" />

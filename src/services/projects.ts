@@ -674,6 +674,62 @@ export function useCreateWorktree() {
   })
 }
 
+export function useForkWorktree() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({
+      sourceWorktreeId,
+    }: {
+      sourceWorktreeId: string
+    }): Promise<Worktree> => {
+      if (!isTauri()) {
+        throw new Error('Not in Tauri context')
+      }
+
+      logger.debug('Forking worktree', { sourceWorktreeId })
+      return invoke<Worktree>('fork_worktree', { sourceWorktreeId })
+    },
+    onSuccess: worktree => {
+      const pendingWorktree = { ...worktree, status: 'pending' as const }
+      logger.info('Worktree fork started (pending)', {
+        id: pendingWorktree.id,
+        name: pendingWorktree.name,
+      })
+
+      queryClient.setQueryData<Worktree[]>(
+        projectsQueryKeys.worktrees(worktree.project_id),
+        old => {
+          if (!old) return [pendingWorktree]
+          if (old.some(w => w.id === pendingWorktree.id)) return old
+          return [...old, pendingWorktree]
+        }
+      )
+      queryClient.setQueryData<Worktree>(
+        [...projectsQueryKeys.all, 'worktree', pendingWorktree.id],
+        pendingWorktree
+      )
+
+      const { expandProject, selectWorktree } = useProjectsStore.getState()
+      expandProject(worktree.project_id)
+      selectWorktree(pendingWorktree.id)
+      toast.loading('Forking worktree...', {
+        id: `worktree-creating-${pendingWorktree.id}`,
+      })
+    },
+    onError: error => {
+      const message =
+        typeof error === 'string'
+          ? error
+          : error instanceof Error
+            ? error.message
+            : String(error)
+      logger.error('Failed to fork worktree', { error, message })
+      toast.error('Failed to fork worktree', { description: message })
+    },
+  })
+}
+
 /**
  * Hook to create a worktree from an existing branch
  *

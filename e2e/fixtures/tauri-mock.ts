@@ -197,6 +197,41 @@ export const test = base.extend<TauriMockFixtures>({
             }, 0)
             return structuredClone(worktree)
           },
+          fork_worktree: args => {
+            const sourceWorktreeId = args?.sourceWorktreeId as
+              | string
+              | undefined
+            const source = worktreeStore.find(w => w.id === sourceWorktreeId)
+            const projectId =
+              (source?.project_id as string | undefined) ?? 'project-1'
+            const sourceName =
+              (source?.name as string | undefined) ?? 'worktree'
+            const sourceBranch =
+              (source?.branch as string | undefined) ?? sourceName
+            const name = `${sourceName}-fork`
+            const worktree = {
+              id: `worktree-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              project_id: projectId,
+              name,
+              path: `/tmp/e2e-test-project/.worktrees/${name}`,
+              stable_slot_id: undefined,
+              branch: name,
+              base_branch: sourceBranch,
+              created_at: Date.now() / 1000,
+              order: worktreeStore.length,
+              session_type: 'worktree',
+              status: 'ready',
+            }
+            worktreeStore.push(worktree)
+            window.setTimeout(() => {
+              eventEmitter.dispatchEvent(
+                new CustomEvent('worktree:created', {
+                  detail: { worktree: structuredClone(worktree) },
+                })
+              )
+            }, 0)
+            return structuredClone(worktree)
+          },
           create_session: args => {
             const wid = (args?.worktreeId as string) ?? 'unknown'
             const store = getWorktreeStore(wid)

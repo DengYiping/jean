@@ -212,6 +212,7 @@ async fn run_fresh_target(
         None,
         None,
         Some(build_fresh_worktree_name(&automation.name, now_secs())),
+        None,
         Some(AutomationWorktreeMetadata {
             automation_id: automation.id.clone(),
             automation_name: automation.name.clone(),

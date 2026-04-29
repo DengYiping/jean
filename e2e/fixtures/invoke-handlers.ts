@@ -49,6 +49,12 @@ export const defaultResponses: Record<string, unknown> = {
     branch: 'new-worktree',
     order: 2,
   }),
+  fork_worktree: createWorktree(project.id, {
+    name: 'fuzzy-tiger-fork',
+    branch: 'fuzzy-tiger-fork',
+    base_branch: 'fuzzy-tiger',
+    order: 2,
+  }),
   consume_pending_cli_yolo_requests: [],
   prepare_cli_yolo_from_pending_request: null,
 

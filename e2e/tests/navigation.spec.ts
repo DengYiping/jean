@@ -45,4 +45,23 @@ test.describe('Navigation', () => {
       mockPage.getByText('Your imagination is the only limit')
     ).not.toBeVisible({ timeout: 3000 })
   })
+
+  test('right-click worktree can fork it', async ({ mockPage }) => {
+    await expect(mockPage.getByText('Test Project')).toBeVisible({
+      timeout: 5000,
+    })
+
+    const projectsHeader = mockPage.getByText('PROJECTS')
+    if (!(await projectsHeader.isVisible().catch(() => false))) {
+      await mockPage.keyboard.press('Meta+b')
+      await mockPage.waitForTimeout(500)
+    }
+
+    await mockPage.getByText('fuzzy-tiger').click({ button: 'right' })
+    await mockPage.getByRole('menuitem', { name: 'Fork Worktree' }).click()
+
+    await expect(
+      mockPage.getByRole('button', { name: 'fuzzy-tiger-fork' }).last()
+    ).toBeVisible({ timeout: 3000 })
+  })
 })

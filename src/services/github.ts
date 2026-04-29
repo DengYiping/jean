@@ -8,6 +8,9 @@ import type {
   GitHubPullRequest,
   GitHubPullRequestDetail,
   GitHubPullRequestReviewData,
+  GitHubPullRequestReviewDiff,
+  GitHubPullRequestReviewFileContents,
+  GitHubPullRequestReviewSummary,
   LoadedIssueContext,
   LoadedPullRequestContext,
   DependabotAlert,
@@ -66,6 +69,27 @@ export const githubQueryKeys = {
     [...githubQueryKeys.all, 'pr', projectPath, prNumber] as const,
   prReviewData: (projectPath: string, prNumber: number) =>
     [...githubQueryKeys.all, 'pr-review-data', projectPath, prNumber] as const,
+  prReviewSummary: (projectPath: string, prNumber: number) =>
+    [
+      ...githubQueryKeys.all,
+      'pr-review-summary',
+      projectPath,
+      prNumber,
+    ] as const,
+  prReviewDiff: (projectPath: string, prNumber: number) =>
+    [...githubQueryKeys.all, 'pr-review-diff', projectPath, prNumber] as const,
+  prReviewFileContents: (
+    projectPath: string,
+    prNumber: number,
+    filePath: string
+  ) =>
+    [
+      ...githubQueryKeys.all,
+      'pr-review-file-contents',
+      projectPath,
+      prNumber,
+      filePath,
+    ] as const,
   loadedPrContexts: (sessionId: string, worktreeId?: string | null) =>
     worktreeId
       ? ([
@@ -548,6 +572,104 @@ export function usePullRequestReviewData(
     enabled: !!projectPath && !!prNumber,
     staleTime: 1000 * 30,
     gcTime: 1000 * 60 * 10,
+    retry: 1,
+  })
+}
+
+export function usePullRequestReviewSummary(
+  projectPath: string | null,
+  prNumber: number | null
+) {
+  return useQuery({
+    queryKey: githubQueryKeys.prReviewSummary(projectPath ?? '', prNumber ?? 0),
+    queryFn: async (): Promise<GitHubPullRequestReviewSummary> => {
+      if (!isTauri() || !projectPath || !prNumber) {
+        throw new Error('Missing required parameters')
+      }
+
+      const result = await invoke<GitHubPullRequestReviewSummary>(
+        'get_pull_request_review_summary',
+        {
+          projectPath,
+          prNumber,
+        }
+      )
+      logger.info('PR review summary loaded', {
+        projectPath,
+        prNumber,
+        threadCount: result.threads.length,
+      })
+      return result
+    },
+    enabled: !!projectPath && !!prNumber,
+    staleTime: 1000 * 30,
+    gcTime: 1000 * 60 * 10,
+    retry: 1,
+  })
+}
+
+export function usePullRequestReviewDiff(
+  projectPath: string | null,
+  prNumber: number | null
+) {
+  return useQuery({
+    queryKey: githubQueryKeys.prReviewDiff(projectPath ?? '', prNumber ?? 0),
+    queryFn: async (): Promise<GitHubPullRequestReviewDiff> => {
+      if (!isTauri() || !projectPath || !prNumber) {
+        throw new Error('Missing required parameters')
+      }
+
+      const result = await invoke<GitHubPullRequestReviewDiff>(
+        'get_pull_request_review_diff',
+        {
+          projectPath,
+          prNumber,
+        }
+      )
+      logger.info('PR review diff loaded', {
+        projectPath,
+        prNumber,
+        size: result.diff.length,
+      })
+      return result
+    },
+    enabled: !!projectPath && !!prNumber,
+    staleTime: 1000 * 30,
+    gcTime: 1000 * 60 * 10,
+    retry: 1,
+  })
+}
+
+export function usePullRequestReviewFileContents(
+  projectPath: string | null,
+  prNumber: number | null,
+  filePath: string | null,
+  options?: { enabled?: boolean }
+) {
+  return useQuery({
+    queryKey: githubQueryKeys.prReviewFileContents(
+      projectPath ?? '',
+      prNumber ?? 0,
+      filePath ?? ''
+    ),
+    queryFn: async (): Promise<GitHubPullRequestReviewFileContents> => {
+      if (!isTauri() || !projectPath || !prNumber || !filePath) {
+        throw new Error('Missing required parameters')
+      }
+
+      return invoke<GitHubPullRequestReviewFileContents>(
+        'get_pull_request_review_file_contents',
+        {
+          projectPath,
+          prNumber,
+          filePath,
+        }
+      )
+    },
+    enabled:
+      (options?.enabled ?? true) && !!projectPath && !!prNumber && !!filePath,
+    staleTime: 1000 * 60 * 5,
+    gcTime: 1000 * 60 * 15,
     retry: 1,
   })
 }

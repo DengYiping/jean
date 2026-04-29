@@ -30,6 +30,10 @@ export interface MemoizedFileDiffProps {
   syntaxThemeLight: SyntaxTheme
   diffStyle: 'split' | 'unified'
   enableLineSelection?: boolean
+  oldLines?: string[]
+  newLines?: string[]
+  expandUnchanged?: boolean
+  expansionLineCount?: number
   onLineSelected: (range: SelectedLineRange | null) => void
   onRemoveComment: (id: string) => void
 }
@@ -61,6 +65,10 @@ export const MemoizedFileDiff = memo(
     syntaxThemeLight,
     diffStyle,
     enableLineSelection: enableLineSelectionProp = true,
+    oldLines,
+    newLines,
+    expandUnchanged = false,
+    expansionLineCount = 200,
     onLineSelected,
     onRemoveComment,
   }: MemoizedFileDiffProps) {
@@ -78,6 +86,8 @@ export const MemoizedFileDiff = memo(
         diffStyle,
         overflow: 'wrap' as const,
         enableLineSelection: enableLineSelectionProp,
+        expandUnchanged,
+        expansionLineCount,
         onLineSelected,
         disableFileHeader: true, // We render file info in sidebar
         unsafeCSS: `
@@ -91,8 +101,22 @@ export const MemoizedFileDiff = memo(
         syntaxThemeLight,
         diffStyle,
         enableLineSelectionProp,
+        expandUnchanged,
+        expansionLineCount,
         onLineSelected,
       ]
+    )
+
+    const fileDiffWithLines = useMemo(
+      () =>
+        oldLines || newLines
+          ? {
+              ...fileDiff,
+              oldLines,
+              newLines,
+            }
+          : fileDiff,
+      [fileDiff, oldLines, newLines]
     )
 
     const renderAnnotation = useCallback(
@@ -188,7 +212,7 @@ export const MemoizedFileDiff = memo(
           </div>
         ) : (
           <FileDiff
-            fileDiff={fileDiff}
+            fileDiff={fileDiffWithLines}
             lineAnnotations={annotations}
             selectedLines={selectedLines}
             options={options}
@@ -221,6 +245,10 @@ export const MemoizedFileDiff = memo(
       prevProps.syntaxThemeDark === nextProps.syntaxThemeDark &&
       prevProps.syntaxThemeLight === nextProps.syntaxThemeLight &&
       prevProps.diffStyle === nextProps.diffStyle &&
+      prevProps.oldLines === nextProps.oldLines &&
+      prevProps.newLines === nextProps.newLines &&
+      prevProps.expandUnchanged === nextProps.expandUnchanged &&
+      prevProps.expansionLineCount === nextProps.expansionLineCount &&
       prevProps.onLineSelected === nextProps.onLineSelected &&
       prevProps.onRemoveComment === nextProps.onRemoveComment
     )

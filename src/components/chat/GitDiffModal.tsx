@@ -27,6 +27,8 @@ import {
   PanelLeft,
   Check,
   Eye,
+  ListCollapse,
+  ListPlus,
 } from 'lucide-react'
 import {
   parsePatchFiles,
@@ -50,6 +52,7 @@ import {
   ResizableHandle,
 } from '@/components/ui/resizable'
 import { cn } from '@/lib/utils'
+import { splitDiffFileLines } from '@/lib/diff-lines'
 import { generateId } from '@/lib/uuid'
 import { getFilename } from '@/lib/path-utils'
 import {
@@ -239,6 +242,11 @@ interface GitDiffModalProps {
 
 type DiffStyle = 'split' | 'unified'
 
+interface ExpandedDiffLines {
+  oldLines: string[]
+  newLines: string[]
+}
+
 /**
  * Modal dialog for viewing GitHub-style git diffs using @pierre/diffs
  */
@@ -309,6 +317,11 @@ export function GitDiffModal({
   )
   const [isLoadingFileContent, setIsLoadingFileContent] = useState(false)
   const [fileContentError, setFileContentError] = useState<string | null>(null)
+  const [expandUnchanged, setExpandUnchanged] = useState(false)
+  const [expandedDiffLineCache, setExpandedDiffLineCache] = useState<
+    Map<string, ExpandedDiffLines>
+  >(new Map())
+  const [isLoadingExpandedDiff, setIsLoadingExpandedDiff] = useState(false)
 
   // Resolve theme to actual dark/light value
   const resolvedThemeType = useMemo((): 'dark' | 'light' => {
@@ -339,6 +352,7 @@ export function GitDiffModal({
         setDiff(result)
         // Invalidate cached file contents since the working tree may have changed
         setFileContentCache(new Map())
+        setExpandedDiffLineCache(new Map())
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err))
       } finally {
@@ -473,6 +487,9 @@ export function GitDiffModal({
       setFileContentCache(new Map())
       setIsLoadingFileContent(false)
       setFileContentError(null)
+      setExpandUnchanged(false)
+      setExpandedDiffLineCache(new Map())
+      setIsLoadingExpandedDiff(false)
       if (switchTimeoutRef.current) {
         clearTimeout(switchTimeoutRef.current)
       }
@@ -763,6 +780,112 @@ export function GitDiffModal({
     []
   )
 
+  const readDiffContextSide = useCallback(
+    async (
+      filePath: string,
+      request: DiffRequest,
+      gitRef: string | null,
+      side: 'old' | 'new',
+      diffType: GitDiff['diff_type'],
+      fileStatus: string | null
+    ): Promise<string> => {
+      if (side === 'old' && fileStatus === 'added') return ''
+      if (side === 'new' && fileStatus === 'deleted') return ''
+
+      try {
+        if (diffType === 'branch') {
+          if (!gitRef) return ''
+          return await readGitFileContent(
+            request.worktreePath,
+            filePath,
+            gitRef
+          )
+        }
+
+        if (side === 'old') {
+          return await readGitFileContent(
+            request.worktreePath,
+            filePath,
+            'HEAD'
+          )
+        }
+
+        return await readFileContent(
+          `${request.worktreePath.replace(/[/\\]+$/, '')}/${filePath}`
+        )
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        if (
+          message.toLowerCase().includes('not found') ||
+          message.toLowerCase().includes('path does not exist') ||
+          message.toLowerCase().includes('exists on disk')
+        ) {
+          return ''
+        }
+        throw err
+      }
+    },
+    []
+  )
+
+  const fetchExpandedDiffLines = useCallback(
+    async (
+      filePath: string,
+      request: DiffRequest,
+      diffData: GitDiff,
+      fileStatus: string | null
+    ) => {
+      const cacheKey = [
+        diffData.diff_type,
+        diffData.base_ref,
+        diffData.target_ref,
+        filePath,
+      ].join(':')
+      if (expandedDiffLineCache.has(cacheKey)) return
+
+      setIsLoadingExpandedDiff(true)
+      try {
+        const oldRef =
+          diffData.diff_type === 'branch' ? diffData.base_ref : 'HEAD'
+        const newRef =
+          diffData.diff_type === 'branch' ? diffData.target_ref : null
+        const [oldContents, newContents] = await Promise.all([
+          readDiffContextSide(
+            filePath,
+            request,
+            oldRef,
+            'old',
+            diffData.diff_type,
+            fileStatus
+          ),
+          readDiffContextSide(
+            filePath,
+            request,
+            newRef,
+            'new',
+            diffData.diff_type,
+            fileStatus
+          ),
+        ])
+
+        setExpandedDiffLineCache(prev => {
+          if (prev.has(cacheKey)) return prev
+          const next = new Map(prev)
+          next.set(cacheKey, {
+            oldLines: splitDiffFileLines(oldContents),
+            newLines: splitDiffFileLines(newContents),
+          })
+          return next
+        })
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err))
+      } finally {
+        setIsLoadingExpandedDiff(false)
+      }
+    },
+    [expandedDiffLineCache, readDiffContextSide]
+  )
+
   useEffect(() => {
     if (viewMode !== 'file') return
     if (!selectedFile || !diffRequest) return
@@ -809,6 +932,40 @@ export function GitDiffModal({
 
     return getTouchedLinesFromFileDiff(selectedFile.fileDiff)
   }, [selectedFile, viewMode])
+
+  const selectedExpandedDiffCacheKey =
+    selectedFile && diff
+      ? [
+          diff.diff_type,
+          diff.base_ref,
+          diff.target_ref,
+          selectedFile.fileName,
+        ].join(':')
+      : null
+  const selectedExpandedDiffLines = selectedExpandedDiffCacheKey
+    ? expandedDiffLineCache.get(selectedExpandedDiffCacheKey)
+    : undefined
+
+  useEffect(() => {
+    if (!expandUnchanged || !selectedFile || !diffRequest || !diff) return
+    if (isSelectedFileBinary) return
+    void fetchExpandedDiffLines(
+      selectedFile.fileName,
+      diffRequest,
+      diff,
+      selectedBackendFile?.status ??
+        diffTypeToStatus(selectedFile.fileDiff.type)
+    )
+  }, [
+    expandUnchanged,
+    selectedFile,
+    diffRequest,
+    diff,
+    isSelectedFileBinary,
+    selectedBackendFile?.status,
+    diffTypeToStatus,
+    fetchExpandedDiffLines,
+  ])
 
   const toggleViewMode = useCallback(() => {
     setViewMode(prev => (prev === 'diff' ? 'file' : 'diff'))
@@ -880,21 +1037,33 @@ export function GitDiffModal({
     }
 
     return (
-      <MemoizedFileDiff
-        key={selectedFile.key}
-        fileDiff={selectedFile.fileDiff}
-        fileName={selectedFile.fileName}
-        annotations={getAnnotationsForFile(selectedFile.fileName)}
-        selectedLines={
-          activeFileName === selectedFile.fileName ? selectedRange : null
-        }
-        themeType={resolvedThemeType}
-        syntaxThemeDark={preferences?.syntax_theme_dark ?? 'vitesse-black'}
-        syntaxThemeLight={preferences?.syntax_theme_light ?? 'github-light'}
-        diffStyle={diffStyle}
-        onLineSelected={getLineSelectedCallback(selectedFile.fileName)}
-        onRemoveComment={handleRemoveComment}
-      />
+      <>
+        {expandUnchanged && isLoadingExpandedDiff && (
+          <div className="sticky top-0 z-20 flex items-center gap-2 border-b border-border bg-background px-3 py-2 text-xs text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Loading expanded context...
+          </div>
+        )}
+        <MemoizedFileDiff
+          key={selectedFile.key}
+          fileDiff={selectedFile.fileDiff}
+          fileName={selectedFile.fileName}
+          annotations={getAnnotationsForFile(selectedFile.fileName)}
+          selectedLines={
+            activeFileName === selectedFile.fileName ? selectedRange : null
+          }
+          themeType={resolvedThemeType}
+          syntaxThemeDark={preferences?.syntax_theme_dark ?? 'vitesse-black'}
+          syntaxThemeLight={preferences?.syntax_theme_light ?? 'github-light'}
+          diffStyle={diffStyle}
+          oldLines={selectedExpandedDiffLines?.oldLines}
+          newLines={selectedExpandedDiffLines?.newLines}
+          expandUnchanged={expandUnchanged}
+          expansionLineCount={200}
+          onLineSelected={getLineSelectedCallback(selectedFile.fileName)}
+          onRemoveComment={handleRemoveComment}
+        />
+      </>
     )
   }, [
     selectedFile,
@@ -905,6 +1074,9 @@ export function GitDiffModal({
     selectedFileContents,
     selectedTouchedLines,
     fileContentError,
+    expandUnchanged,
+    isLoadingExpandedDiff,
+    selectedExpandedDiffLines,
     resolvedThemeType,
     preferences?.syntax_theme_dark,
     preferences?.syntax_theme_light,
@@ -1168,6 +1340,39 @@ export function GitDiffModal({
               {/* Split/Unified toggle - only in diff mode */}
               {viewMode === 'diff' && (
                 <div className="flex min-h-10 items-center rounded-lg bg-muted p-1.5">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label={
+                          expandUnchanged
+                            ? 'Collapse unchanged lines'
+                            : 'Expand unchanged lines'
+                        }
+                        onClick={() => setExpandUnchanged(current => !current)}
+                        className={cn(
+                          'flex min-h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1.5 text-xs font-medium leading-none transition-colors sm:px-3',
+                          expandUnchanged
+                            ? 'bg-background shadow-sm text-foreground'
+                            : 'text-muted-foreground hover:text-foreground'
+                        )}
+                      >
+                        {expandUnchanged ? (
+                          <ListCollapse className="h-3.5 w-3.5 shrink-0" />
+                        ) : (
+                          <ListPlus className="h-3.5 w-3.5 shrink-0" />
+                        )}
+                        <span className="hidden sm:inline">
+                          {expandUnchanged ? 'Collapse' : 'Expand'}
+                        </span>
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {expandUnchanged
+                        ? 'Collapse unchanged lines'
+                        : 'Expand unchanged lines'}
+                    </TooltipContent>
+                  </Tooltip>
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <button

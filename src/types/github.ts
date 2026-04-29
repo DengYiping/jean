@@ -165,9 +165,24 @@ export interface SubmitPullRequestReviewInput {
   event: 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES'
 }
 
+export interface GitHubPullRequestReviewSummary {
+  pullRequest: GitHubPullRequest
+  headCommitSha: string
+  threads: GitHubReviewThread[]
+}
+
 export interface PullRequestReviewDialogRequest {
   projectPath: string
   prNumber: number
+}
+
+export interface GitHubPullRequestReviewDiff {
+  diff: string
+}
+
+export interface GitHubPullRequestReviewFileContents {
+  oldContents: string
+  newContents: string
 }
 
 export interface GitHubPullRequestDetail extends GitHubPullRequest {

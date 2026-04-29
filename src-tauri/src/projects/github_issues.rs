@@ -4,6 +4,8 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
 
+use base64::{engine::general_purpose::STANDARD, Engine};
+
 use super::git::get_repo_identifier;
 use crate::gh_cli::{apply_gh_account_env, build_gh_command};
 use crate::platform::silent_command;
@@ -1473,6 +1475,34 @@ pub struct GitHubPullRequestReviewData {
     pub threads: Vec<GitHubReviewThread>,
 }
 
+/// Light PR review data that excludes the raw patch so the dialog can render quickly.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitHubPullRequestReviewSummary {
+    pub pull_request: GitHubPullRequest,
+    pub head_commit_sha: String,
+    pub threads: Vec<GitHubReviewThread>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitHubPullRequestReviewDiff {
+    pub diff: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitHubPullRequestReviewFileContents {
+    pub old_contents: String,
+    pub new_contents: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct GitHubRepositoryContent {
+    content: String,
+    encoding: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreatePullRequestInlineCommentRequest {
@@ -1778,6 +1808,72 @@ fn run_github_api(
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+fn percent_encode_path_segment(segment: &str) -> String {
+    let mut encoded = String::with_capacity(segment.len());
+    for byte in segment.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                encoded.push(byte as char);
+            }
+            _ => encoded.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    encoded
+}
+
+fn percent_encode_path(path: &str) -> String {
+    path.split('/')
+        .map(percent_encode_path_segment)
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+fn get_repository_file_contents(
+    app: &AppHandle,
+    project_path: &str,
+    file_path: &str,
+    git_ref: &str,
+) -> Result<String, String> {
+    if git_ref.is_empty() {
+        return Ok(String::new());
+    }
+
+    let repo_id = get_repo_identifier(project_path)?;
+    let endpoint = format!(
+        "/repos/{}/{}/contents/{}?ref={}",
+        repo_id.owner,
+        repo_id.repo,
+        percent_encode_path(file_path),
+        percent_encode_path_segment(git_ref)
+    );
+
+    let stdout = match run_github_api(app, project_path, &[endpoint], "gh api") {
+        Ok(stdout) => stdout,
+        Err(error) if error.contains("GitHub resource not found") => return Ok(String::new()),
+        Err(error) => return Err(error),
+    };
+
+    let content: GitHubRepositoryContent =
+        serde_json::from_str(&stdout).map_err(|e| format!("Failed to parse gh response: {e}"))?;
+    if content.encoding != "base64" {
+        return Err(format!(
+            "Unsupported GitHub content encoding: {}",
+            content.encoding
+        ));
+    }
+
+    let compact_content: String = content
+        .content
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
+    let bytes = STANDARD
+        .decode(compact_content)
+        .map_err(|e| format!("Failed to decode GitHub file content: {e}"))?;
+
+    Ok(String::from_utf8_lossy(&bytes).to_string())
 }
 
 fn review_comment_to_thread_comment(raw: RawReviewComment) -> GitHubReviewThreadComment {
@@ -2136,12 +2232,28 @@ pub async fn get_pull_request_review_data(
 ) -> Result<GitHubPullRequestReviewData, String> {
     log::trace!("Getting PR review data for PR #{pr_number} in {project_path}");
 
-    let repo_id = get_repo_identifier(&project_path)?;
+    let summary = get_pull_request_review_summary_data(&app, &project_path, pr_number)?;
+    let diff = get_full_pr_diff(&app, &project_path, pr_number)?;
+
+    Ok(GitHubPullRequestReviewData {
+        pull_request: summary.pull_request,
+        head_commit_sha: summary.head_commit_sha,
+        diff,
+        threads: summary.threads,
+    })
+}
+
+fn get_pull_request_review_summary_data(
+    app: &AppHandle,
+    project_path: &str,
+    pr_number: u32,
+) -> Result<GitHubPullRequestReviewSummary, String> {
+    let repo_id = get_repo_identifier(project_path)?;
     let repo_owner = repo_id.owner.clone();
     let repo_name = repo_id.repo.clone();
     let response = run_github_graphql(
-        &app,
-        &project_path,
+        app,
+        project_path,
         &(GET_PULL_REQUEST_BY_NUMBER_QUERY.to_string() + PULL_REQUEST_FIELDS_FRAGMENT),
         &[
             ("owner", repo_id.owner),
@@ -2156,11 +2268,10 @@ pub async fn get_pull_request_review_data(
         .and_then(|repo| repo.pull_request)
         .ok_or_else(|| format!("PR #{pr_number} not found"))?;
 
-    let diff = get_full_pr_diff(&app, &project_path, pr_number)?;
-    let raw_comments = fetch_pr_review_comments_raw(&app, &project_path, pr_number)?;
+    let raw_comments = fetch_pr_review_comments_raw(app, project_path, pr_number)?;
     let review_threads_response = run_github_graphql(
-        &app,
-        &project_path,
+        app,
+        project_path,
         GET_PULL_REQUEST_REVIEW_THREADS_QUERY,
         &[
             ("owner", repo_owner),
@@ -2177,14 +2288,62 @@ pub async fn get_pull_request_review_data(
         .map(|pull_request| pull_request.review_threads.nodes)
         .unwrap_or_default();
 
-    Ok(GitHubPullRequestReviewData {
+    Ok(GitHubPullRequestReviewSummary {
         pull_request: map_graphql_pr(graphql_pr.clone()),
         head_commit_sha: graphql_pr.head_ref_oid.unwrap_or_default(),
-        diff,
         threads: apply_review_thread_statuses(
             group_review_comments_into_threads(raw_comments),
             &review_threads,
         ),
+    })
+}
+
+#[tauri::command]
+pub async fn get_pull_request_review_summary(
+    app: AppHandle,
+    project_path: String,
+    pr_number: u32,
+) -> Result<GitHubPullRequestReviewSummary, String> {
+    log::trace!("Getting PR review summary for PR #{pr_number} in {project_path}");
+    get_pull_request_review_summary_data(&app, &project_path, pr_number)
+}
+
+#[tauri::command]
+pub async fn get_pull_request_review_diff(
+    app: AppHandle,
+    project_path: String,
+    pr_number: u32,
+) -> Result<GitHubPullRequestReviewDiff, String> {
+    log::trace!("Getting PR review diff for PR #{pr_number} in {project_path}");
+    Ok(GitHubPullRequestReviewDiff {
+        diff: get_full_pr_diff(&app, &project_path, pr_number)?,
+    })
+}
+
+#[tauri::command]
+pub async fn get_pull_request_review_file_contents(
+    app: AppHandle,
+    project_path: String,
+    pr_number: u32,
+    file_path: String,
+) -> Result<GitHubPullRequestReviewFileContents, String> {
+    log::trace!(
+        "Getting PR review file contents for PR #{pr_number}, file {file_path} in {project_path}"
+    );
+
+    let summary = get_pull_request_review_summary_data(&app, &project_path, pr_number)?;
+    let old_contents = get_repository_file_contents(
+        &app,
+        &project_path,
+        &file_path,
+        &summary.pull_request.base_ref_name,
+    )?;
+    let new_contents =
+        get_repository_file_contents(&app, &project_path, &file_path, &summary.head_commit_sha)?;
+
+    Ok(GitHubPullRequestReviewFileContents {
+        old_contents,
+        new_contents,
     })
 }
 

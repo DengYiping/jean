@@ -11,6 +11,8 @@ import {
   Check,
   Columns2,
   GitPullRequest,
+  ListCollapse,
+  ListPlus,
   Loader2,
   MessageSquare,
   RefreshCw,
@@ -46,13 +48,16 @@ import {
 import { useUIStore } from '@/store/ui-store'
 import {
   useCreatePullRequestInlineComment,
-  usePullRequestReviewData,
+  usePullRequestReviewDiff,
+  usePullRequestReviewFileContents,
+  usePullRequestReviewSummary,
   useReplyToPullRequestReviewComment,
   useSubmitPullRequestReview,
 } from '@/services/github'
 import { useTheme } from '@/hooks/use-theme'
 import { usePreferences } from '@/services/preferences'
 import { cn } from '@/lib/utils'
+import { splitDiffFileLines } from '@/lib/diff-lines'
 import { getFilename } from '@/lib/path-utils'
 import type {
   GitHubReviewThread,
@@ -322,12 +327,19 @@ export function PullRequestReviewDialog() {
   const prNumber = dialogRequest?.prNumber ?? null
 
   const {
-    data: reviewData,
-    isLoading,
-    error,
-    refetch,
-    isRefetching,
-  } = usePullRequestReviewData(projectPath, prNumber)
+    data: reviewSummary,
+    isLoading: isLoadingSummary,
+    error: summaryError,
+    refetch: refetchSummary,
+    isRefetching: isRefetchingSummary,
+  } = usePullRequestReviewSummary(projectPath, prNumber)
+  const {
+    data: reviewDiff,
+    isLoading: isLoadingDiff,
+    error: diffError,
+    refetch: refetchDiff,
+    isRefetching: isRefetchingDiff,
+  } = usePullRequestReviewDiff(projectPath, prNumber)
 
   const createInlineComment = useCreatePullRequestInlineComment()
   const replyToComment = useReplyToPullRequestReviewComment()
@@ -349,6 +361,7 @@ export function PullRequestReviewDialog() {
   const [submittingReviewEvent, setSubmittingReviewEvent] = useState<
     SubmitPullRequestReviewInput['event'] | null
   >(null)
+  const [expandUnchanged, setExpandUnchanged] = useState(false)
   const lineSelectedCallbacksRef = useRef<
     Map<string, (range: SelectedLineRange | null) => void>
   >(new Map())
@@ -364,18 +377,19 @@ export function PullRequestReviewDialog() {
       setReplyingThreadId(null)
       setReviewBody('')
       setSubmittingReviewEvent(null)
+      setExpandUnchanged(false)
       lineSelectedCallbacksRef.current.clear()
     }
   }, [dialogRequest])
 
   const parsedFiles = useMemo(() => {
-    if (!reviewData?.diff) return []
+    if (!reviewDiff?.diff) return []
     try {
-      return parsePatchFiles(reviewData.diff)
+      return parsePatchFiles(reviewDiff.diff)
     } catch {
       return []
     }
-  }, [reviewData?.diff])
+  }, [reviewDiff?.diff])
 
   const flattenedFiles = useMemo(
     () =>
@@ -423,7 +437,7 @@ export function PullRequestReviewDialog() {
   const annotationsByFile = useMemo(() => {
     const map = new Map<string, DiffLineAnnotation<GitHubReviewThread>[]>()
 
-    for (const thread of reviewData?.threads ?? []) {
+    for (const thread of reviewSummary?.threads ?? []) {
       const lineNumber = getThreadLineNumber(thread)
       if (!thread.path || !lineNumber) continue
 
@@ -437,7 +451,7 @@ export function PullRequestReviewDialog() {
     }
 
     return map
-  }, [reviewData?.threads])
+  }, [reviewSummary?.threads])
 
   const getAnnotationsForFile = useCallback(
     (fileName: string) => annotationsByFile.get(fileName) ?? EMPTY_ANNOTATIONS,
@@ -481,21 +495,21 @@ export function PullRequestReviewDialog() {
         })
         setReplyDrafts(prev => ({ ...prev, [thread.id]: '' }))
         toast.success('Reply posted')
-        await refetch()
+        await refetchSummary()
       } catch (replyError) {
         toast.error(`Failed to post reply: ${replyError}`)
       } finally {
         setReplyingThreadId(null)
       }
     },
-    [projectPath, prNumber, replyDrafts, replyToComment, refetch]
+    [projectPath, prNumber, replyDrafts, replyToComment, refetchSummary]
   )
 
   const handleSubmitInlineComment = useCallback(async () => {
     if (
       !projectPath ||
       !prNumber ||
-      !reviewData?.headCommitSha ||
+      !reviewSummary?.headCommitSha ||
       !selectedRange ||
       !activeFileName
     ) {
@@ -517,7 +531,7 @@ export function PullRequestReviewDialog() {
         path: activeFileName,
         line: endLine,
         side,
-        headCommitSha: reviewData.headCommitSha,
+        headCommitSha: reviewSummary.headCommitSha,
         startLine: startLine !== endLine ? startLine : undefined,
         startSide: startLine !== endLine ? side : undefined,
       })
@@ -525,19 +539,19 @@ export function PullRequestReviewDialog() {
       setSelectedRange(null)
       setActiveFileName(null)
       toast.success('Inline comment posted')
-      await refetch()
+      await refetchSummary()
     } catch (commentError) {
       toast.error(`Failed to post comment: ${commentError}`)
     }
   }, [
     projectPath,
     prNumber,
-    reviewData?.headCommitSha,
+    reviewSummary?.headCommitSha,
     selectedRange,
     activeFileName,
     newCommentBody,
     createInlineComment,
-    refetch,
+    refetchSummary,
   ])
 
   const handleSubmitReview = useCallback(
@@ -560,14 +574,14 @@ export function PullRequestReviewDialog() {
               ? 'Review submitted with requested changes'
               : 'Review submitted'
         )
-        await refetch()
+        await refetchSummary()
       } catch (reviewError) {
         toast.error(`Failed to submit review: ${reviewError}`)
       } finally {
         setSubmittingReviewEvent(null)
       }
     },
-    [projectPath, prNumber, reviewBody, submitReview, refetch]
+    [projectPath, prNumber, reviewBody, submitReview, refetchSummary]
   )
 
   const handleReviewTextareaKeyDown = useCallback(
@@ -583,6 +597,26 @@ export function PullRequestReviewDialog() {
   const selectedFileAnnotations = selectedFile
     ? getAnnotationsForFile(selectedFile.fileName)
     : EMPTY_ANNOTATIONS
+  const selectedFileContents = usePullRequestReviewFileContents(
+    projectPath,
+    prNumber,
+    selectedFile?.fileName ?? null,
+    { enabled: expandUnchanged && !!selectedFile }
+  )
+  const selectedFileDiff = useMemo(() => {
+    if (!selectedFile) return null
+    if (!expandUnchanged || !selectedFileContents.data) {
+      return selectedFile.fileDiff
+    }
+
+    return {
+      ...selectedFile.fileDiff,
+      oldLines: splitDiffFileLines(selectedFileContents.data.oldContents),
+      newLines: splitDiffFileLines(selectedFileContents.data.newContents),
+    }
+  }, [expandUnchanged, selectedFile, selectedFileContents.data])
+  const isExpandedDiffLoading =
+    expandUnchanged && selectedFileContents.isLoading
 
   return (
     <Dialog
@@ -598,11 +632,11 @@ export function PullRequestReviewDialog() {
             <div className="min-w-0">
               <DialogTitle className="flex items-center gap-2">
                 <GitPullRequest className="h-4 w-4 text-green-500" />
-                {reviewData ? (
+                {reviewSummary ? (
                   <>
-                    #{reviewData.pullRequest.number}
+                    #{reviewSummary.pullRequest.number}
                     <span className="truncate">
-                      {reviewData.pullRequest.title}
+                      {reviewSummary.pullRequest.title}
                     </span>
                   </>
                 ) : prNumber ? (
@@ -611,21 +645,42 @@ export function PullRequestReviewDialog() {
                   'PR Review'
                 )}
               </DialogTitle>
-              {reviewData && (
+              {reviewSummary && (
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  <span>{reviewData.pullRequest.headRefName}</span>
+                  <span>{reviewSummary.pullRequest.headRefName}</span>
                   <span>→</span>
-                  <span>{reviewData.pullRequest.baseRefName}</span>
+                  <span>{reviewSummary.pullRequest.baseRefName}</span>
                   <span className="text-emerald-600">
-                    +{reviewData.pullRequest.additions}
+                    +{reviewSummary.pullRequest.additions}
                   </span>
                   <span className="text-red-600">
-                    -{reviewData.pullRequest.deletions}
+                    -{reviewSummary.pullRequest.deletions}
                   </span>
                 </div>
               )}
             </div>
             <div className="flex items-center gap-2">
+              <Button
+                size="icon"
+                variant="ghost"
+                aria-label={
+                  expandUnchanged
+                    ? 'Collapse unchanged lines'
+                    : 'Expand unchanged lines'
+                }
+                onClick={() => setExpandUnchanged(current => !current)}
+                title={
+                  expandUnchanged
+                    ? 'Collapse unchanged lines'
+                    : 'Expand unchanged lines'
+                }
+              >
+                {expandUnchanged ? (
+                  <ListCollapse className="h-4 w-4" />
+                ) : (
+                  <ListPlus className="h-4 w-4" />
+                )}
+              </Button>
               <Button
                 size="icon"
                 variant="ghost"
@@ -649,11 +704,14 @@ export function PullRequestReviewDialog() {
               <Button
                 size="icon"
                 variant="ghost"
-                onClick={() => void refetch()}
-                disabled={isRefetching}
+                onClick={() => {
+                  void refetchSummary()
+                  void refetchDiff()
+                }}
+                disabled={isRefetchingSummary || isRefetchingDiff}
                 title="Refresh review data"
               >
-                {isRefetching ? (
+                {isRefetchingSummary || isRefetchingDiff ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <RefreshCw className="h-4 w-4" />
@@ -663,15 +721,17 @@ export function PullRequestReviewDialog() {
           </div>
         </DialogHeader>
 
-        {isLoading ? (
+        {isLoadingSummary ? (
           <div className="flex flex-1 items-center justify-center">
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
           </div>
-        ) : error ? (
+        ) : summaryError ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
             <AlertCircle className="h-5 w-5 text-destructive" />
-            <div className="text-sm text-muted-foreground">{String(error)}</div>
-            <Button variant="outline" onClick={() => void refetch()}>
+            <div className="text-sm text-muted-foreground">
+              {String(summaryError)}
+            </div>
+            <Button variant="outline" onClick={() => void refetchSummary()}>
               Retry
             </Button>
           </div>
@@ -760,12 +820,36 @@ export function PullRequestReviewDialog() {
                 />
 
                 <div className="min-h-0 flex-1 overflow-hidden rounded-lg border border-border">
-                  {selectedFile ? (
-                    <ScrollArea className="h-full">
+                  {isLoadingDiff ? (
+                    <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Loading diff...
+                    </div>
+                  ) : diffError ? (
+                    <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
+                      <AlertCircle className="h-5 w-5 text-destructive" />
+                      <div className="text-sm text-muted-foreground">
+                        {String(diffError)}
+                      </div>
+                      <Button
+                        variant="outline"
+                        onClick={() => void refetchDiff()}
+                      >
+                        Retry
+                      </Button>
+                    </div>
+                  ) : selectedFile && selectedFileDiff ? (
+                    <div className="h-full overflow-y-auto">
                       <div className="p-1">
+                        {isExpandedDiffLoading && (
+                          <div className="sticky top-0 z-20 flex items-center gap-2 border-b border-border bg-background px-3 py-2 text-xs text-muted-foreground">
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            Loading expanded context...
+                          </div>
+                        )}
                         <FileDiff
                           key={selectedFile.key}
-                          fileDiff={selectedFile.fileDiff}
+                          fileDiff={selectedFileDiff}
                           lineAnnotations={selectedFileAnnotations}
                           selectedLines={
                             activeFileName === selectedFile.fileName
@@ -783,6 +867,8 @@ export function PullRequestReviewDialog() {
                             diffStyle,
                             overflow: 'wrap',
                             enableLineSelection: true,
+                            expandUnchanged,
+                            expansionLineCount: 200,
                             onLineSelected: getLineSelectedCallback(
                               selectedFile.fileName
                             ),
@@ -806,7 +892,7 @@ export function PullRequestReviewDialog() {
                           }}
                         />
                       </div>
-                    </ScrollArea>
+                    </div>
                   ) : (
                     <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
                       Select a file to review its diff

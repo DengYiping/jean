@@ -617,6 +617,15 @@ export function PullRequestReviewDialog() {
   }, [expandUnchanged, selectedFile, selectedFileContents.data])
   const isExpandedDiffLoading =
     expandUnchanged && selectedFileContents.isLoading
+  const hasViewerApproved = reviewSummary?.viewerApproved === true
+  const hasOtherReviewerApproved = reviewSummary?.otherReviewerApproved === true
+  const approvalIndicatorLabel = hasViewerApproved
+    ? hasOtherReviewerApproved
+      ? 'Approved by you and reviewer'
+      : 'Approved by you'
+    : hasOtherReviewerApproved
+      ? 'Approved by reviewer'
+      : null
 
   return (
     <Dialog
@@ -656,6 +665,12 @@ export function PullRequestReviewDialog() {
                   <span className="text-red-600">
                     -{reviewSummary.pullRequest.deletions}
                   </span>
+                  {approvalIndicatorLabel && (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 font-medium text-emerald-600">
+                      <Check className="h-3 w-3" />
+                      {approvalIndicatorLabel}
+                    </span>
+                  )}
                 </div>
               )}
             </div>
@@ -923,9 +938,9 @@ export function PullRequestReviewDialog() {
                     onClick={handleSubmitReview}
                   />
                   <ReviewActionButton
-                    label="Approve"
+                    label={hasViewerApproved ? 'Approved by you' : 'Approve'}
                     event="APPROVE"
-                    disabled={submitReview.isPending}
+                    disabled={submitReview.isPending || hasViewerApproved}
                     isSubmitting={submittingReviewEvent === 'APPROVE'}
                     onClick={handleSubmitReview}
                   />

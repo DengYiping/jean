@@ -1312,12 +1312,28 @@ struct GraphqlPullRequest {
     review_decision: Option<String>,
     #[serde(default)]
     status_check_rollup: Option<GraphqlStatusCheckRollup>,
+    #[serde(default)]
+    latest_opinionated_reviews: GraphqlPullRequestReviewConnection,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GraphqlStatusCheckRollup {
     state: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct GraphqlPullRequestReviewConnection {
+    #[serde(default)]
+    nodes: Vec<GraphqlPullRequestReview>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GraphqlPullRequestReview {
+    state: String,
+    author: Option<GitHubAuthor>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -1403,7 +1419,14 @@ struct PullRequestSearchResponse {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RepositoryPullRequestResponse {
+    #[serde(default)]
+    viewer: Option<GraphqlViewer>,
     repository: Option<RepositoryPullRequestNode>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GraphqlViewer {
+    login: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1472,6 +1495,8 @@ pub struct GitHubPullRequestReviewData {
     pub pull_request: GitHubPullRequest,
     pub head_commit_sha: String,
     pub diff: String,
+    pub viewer_approved: bool,
+    pub other_reviewer_approved: bool,
     pub threads: Vec<GitHubReviewThread>,
 }
 
@@ -1481,6 +1506,8 @@ pub struct GitHubPullRequestReviewData {
 pub struct GitHubPullRequestReviewSummary {
     pub pull_request: GitHubPullRequest,
     pub head_commit_sha: String,
+    pub viewer_approved: bool,
+    pub other_reviewer_approved: bool,
     pub threads: Vec<GitHubReviewThread>,
 }
 
@@ -1630,6 +1657,46 @@ fn normalize_check_status(state: &Option<String>) -> Option<String> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PullRequestApprovalState {
+    viewer_approved: bool,
+    other_reviewer_approved: bool,
+}
+
+fn compute_pull_request_approval_state(
+    viewer_login: Option<&str>,
+    latest_reviews: &[GraphqlPullRequestReview],
+) -> PullRequestApprovalState {
+    let viewer_login = viewer_login.and_then(|login| {
+        let trimmed = login.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
+    });
+    let mut viewer_approved = false;
+    let mut other_reviewer_approved = false;
+
+    for review in latest_reviews {
+        if !review.state.eq_ignore_ascii_case("APPROVED") {
+            continue;
+        }
+
+        let author_login = review.author.as_ref().map(|author| author.login.as_str());
+        if viewer_login.is_some() && author_login == viewer_login {
+            viewer_approved = true;
+        } else {
+            other_reviewer_approved = true;
+        }
+    }
+
+    PullRequestApprovalState {
+        viewer_approved,
+        other_reviewer_approved,
+    }
+}
+
 fn map_graphql_pr(pr: GraphqlPullRequest) -> GitHubPullRequest {
     GitHubPullRequest {
         number: pr.number,
@@ -1745,9 +1812,20 @@ query($searchQuery:String!, $count:Int!) {
 
 const GET_PULL_REQUEST_BY_NUMBER_QUERY: &str = r#"
 query($owner:String!, $repo:String!, $prNumber:Int!) {
+  viewer {
+    login
+  }
   repository(owner:$owner, name:$repo) {
     pullRequest(number:$prNumber) {
       ...PullRequestFields
+      latestOpinionatedReviews(first:100) {
+        nodes {
+          state
+          author {
+            login
+          }
+        }
+      }
     }
   }
 }
@@ -2239,6 +2317,8 @@ pub async fn get_pull_request_review_data(
         pull_request: summary.pull_request,
         head_commit_sha: summary.head_commit_sha,
         diff,
+        viewer_approved: summary.viewer_approved,
+        other_reviewer_approved: summary.other_reviewer_approved,
         threads: summary.threads,
     })
 }
@@ -2267,6 +2347,10 @@ fn get_pull_request_review_summary_data(
         .repository
         .and_then(|repo| repo.pull_request)
         .ok_or_else(|| format!("PR #{pr_number} not found"))?;
+    let approval_state = compute_pull_request_approval_state(
+        data.viewer.as_ref().map(|viewer| viewer.login.as_str()),
+        &graphql_pr.latest_opinionated_reviews.nodes,
+    );
 
     let raw_comments = fetch_pr_review_comments_raw(app, project_path, pr_number)?;
     let review_threads_response = run_github_graphql(
@@ -2291,6 +2375,8 @@ fn get_pull_request_review_summary_data(
     Ok(GitHubPullRequestReviewSummary {
         pull_request: map_graphql_pr(graphql_pr.clone()),
         head_commit_sha: graphql_pr.head_ref_oid.unwrap_or_default(),
+        viewer_approved: approval_state.viewer_approved,
+        other_reviewer_approved: approval_state.other_reviewer_approved,
         threads: apply_review_thread_statuses(
             group_review_comments_into_threads(raw_comments),
             &review_threads,
@@ -3909,6 +3995,60 @@ mod tests {
             Some("https://example.com/reviewer.png")
         );
         assert_eq!(thread.comments[1].in_reply_to_id, Some(12));
+    }
+
+    #[test]
+    fn test_compute_pull_request_approval_state_tracks_viewer_and_other_reviewers() {
+        let reviews = vec![
+            GraphqlPullRequestReview {
+                state: "APPROVED".to_string(),
+                author: Some(GitHubAuthor {
+                    login: "ydeng".to_string(),
+                    avatar_url: None,
+                }),
+            },
+            GraphqlPullRequestReview {
+                state: "APPROVED".to_string(),
+                author: Some(GitHubAuthor {
+                    login: "teammate".to_string(),
+                    avatar_url: None,
+                }),
+            },
+            GraphqlPullRequestReview {
+                state: "CHANGES_REQUESTED".to_string(),
+                author: Some(GitHubAuthor {
+                    login: "reviewer".to_string(),
+                    avatar_url: None,
+                }),
+            },
+        ];
+
+        assert_eq!(
+            compute_pull_request_approval_state(Some("ydeng"), &reviews),
+            PullRequestApprovalState {
+                viewer_approved: true,
+                other_reviewer_approved: true,
+            }
+        );
+    }
+
+    #[test]
+    fn test_compute_pull_request_approval_state_does_not_treat_other_approval_as_viewer_approval() {
+        let reviews = vec![GraphqlPullRequestReview {
+            state: "APPROVED".to_string(),
+            author: Some(GitHubAuthor {
+                login: "teammate".to_string(),
+                avatar_url: None,
+            }),
+        }];
+
+        assert_eq!(
+            compute_pull_request_approval_state(Some("ydeng"), &reviews),
+            PullRequestApprovalState {
+                viewer_approved: false,
+                other_reviewer_approved: true,
+            }
+        );
     }
 
     #[test]

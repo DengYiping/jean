@@ -687,6 +687,12 @@ export function useCreatePullRequestInlineComment() {
           variables.prNumber
         ),
       })
+      queryClient.invalidateQueries({
+        queryKey: githubQueryKeys.prReviewSummary(
+          variables.projectPath,
+          variables.prNumber
+        ),
+      })
     },
   })
 }

@@ -2,12 +2,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor } from '@/test/test-utils'
 import { useUIStore } from '@/store/ui-store'
 import { PullRequestReviewDialog } from './PullRequestReviewDialog'
-import type { GitHubPullRequestReviewData } from '@/types/github'
+import type {
+  GitHubPullRequestReviewData,
+  GitHubPullRequestReviewFileContents,
+  GitHubPullRequestReviewSummary,
+} from '@/types/github'
 
 const refetchMock = vi.fn()
 const createInlineCommentMock = vi.fn()
 const replyToCommentMock = vi.fn()
 const submitReviewMock = vi.fn()
+const usePullRequestReviewSummaryMock = vi.fn()
+const usePullRequestReviewDiffMock = vi.fn()
+const usePullRequestReviewFileContentsMock = vi.fn()
+const fileDiffRenderMock = vi.fn()
 
 vi.mock('@/hooks/use-theme', () => ({
   useTheme: () => ({ theme: 'light' }),
@@ -29,7 +37,10 @@ vi.mock('@pierre/diffs', () => ({
         {
           name: 'src/example.ts',
           prevName: undefined,
+          type: 'change',
           hunks: [{ additionCount: 4, deletionCount: 1 }],
+          splitLineCount: 5,
+          unifiedLineCount: 5,
         },
       ],
     },
@@ -38,35 +49,43 @@ vi.mock('@pierre/diffs', () => ({
 
 vi.mock('@pierre/diffs/react', () => ({
   FileDiff: ({
+    fileDiff,
     lineAnnotations,
     renderAnnotation,
     options,
   }: {
+    fileDiff: { oldLines?: string[]; newLines?: string[] }
     lineAnnotations: { metadata?: unknown }[]
     renderAnnotation?: (annotation: { metadata?: unknown }) => React.ReactNode
-    options?: { onLineSelected?: (range: unknown) => void }
-  }) => (
-    <div>
-      <button
-        type="button"
-        onClick={() =>
-          options?.onLineSelected?.({
-            start: 3,
-            end: 3,
-            side: 'additions',
-          })
-        }
-      >
-        select-line
-      </button>
-      {lineAnnotations.map((annotation, index) => (
-        <div key={index}>{renderAnnotation?.(annotation)}</div>
-      ))}
-    </div>
-  ),
+    options?: {
+      expandUnchanged?: boolean
+      onLineSelected?: (range: unknown) => void
+    }
+  }) => {
+    fileDiffRenderMock({ fileDiff, options })
+    return (
+      <div>
+        <button
+          type="button"
+          onClick={() =>
+            options?.onLineSelected?.({
+              start: 3,
+              end: 3,
+              side: 'additions',
+            })
+          }
+        >
+          select-line
+        </button>
+        {lineAnnotations.map((annotation, index) => (
+          <div key={index}>{renderAnnotation?.(annotation)}</div>
+        ))}
+      </div>
+    )
+  },
 }))
 
-const reviewData: GitHubPullRequestReviewData = {
+const reviewSummary: GitHubPullRequestReviewSummary = {
   pullRequest: {
     number: 42,
     title: 'Render PR review inline',
@@ -85,7 +104,6 @@ const reviewData: GitHubPullRequestReviewData = {
     checkStatus: 'pending',
   },
   headCommitSha: 'abc123',
-  diff: 'diff --git a/src/example.ts b/src/example.ts',
   threads: [
     {
       id: 101,
@@ -112,7 +130,23 @@ const reviewData: GitHubPullRequestReviewData = {
   ],
 }
 
+const reviewData: GitHubPullRequestReviewData = {
+  ...reviewSummary,
+  diff: 'diff --git a/src/example.ts b/src/example.ts',
+}
+
+const reviewFileContents: GitHubPullRequestReviewFileContents = {
+  oldContents: 'old first\nold second\n',
+  newContents: 'new first\nnew second\n',
+}
+
 vi.mock('@/services/github', () => ({
+  usePullRequestReviewSummary: (...args: unknown[]) =>
+    usePullRequestReviewSummaryMock(...args),
+  usePullRequestReviewDiff: (...args: unknown[]) =>
+    usePullRequestReviewDiffMock(...args),
+  usePullRequestReviewFileContents: (...args: unknown[]) =>
+    usePullRequestReviewFileContentsMock(...args),
   usePullRequestReviewData: () => ({
     data: reviewData,
     isLoading: false,
@@ -140,6 +174,25 @@ describe('PullRequestReviewDialog', () => {
     createInlineCommentMock.mockResolvedValue(undefined)
     replyToCommentMock.mockResolvedValue(undefined)
     submitReviewMock.mockResolvedValue(undefined)
+    usePullRequestReviewSummaryMock.mockReturnValue({
+      data: reviewSummary,
+      isLoading: false,
+      error: null,
+      refetch: refetchMock,
+      isRefetching: false,
+    })
+    usePullRequestReviewDiffMock.mockReturnValue({
+      data: { diff: reviewData.diff },
+      isLoading: false,
+      error: null,
+      refetch: refetchMock,
+      isRefetching: false,
+    })
+    usePullRequestReviewFileContentsMock.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: null,
+    })
     act(() => {
       useUIStore.getState().openPullRequestReviewDialog({
         projectPath: '/tmp/project',
@@ -231,5 +284,56 @@ describe('PullRequestReviewDialog', () => {
     })
 
     expect(refetchMock).toHaveBeenCalled()
+  })
+
+  it('renders PR metadata while the heavy diff is still loading', () => {
+    usePullRequestReviewDiffMock.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      error: null,
+      refetch: refetchMock,
+      isRefetching: false,
+    })
+
+    render(<PullRequestReviewDialog />)
+
+    expect(screen.getByText('Render PR review inline')).toBeInTheDocument()
+    expect(screen.getByText('Loading diff...')).toBeInTheDocument()
+  })
+
+  it('loads full file contents when expanding diff context', async () => {
+    usePullRequestReviewFileContentsMock.mockReturnValue({
+      data: reviewFileContents,
+      isLoading: false,
+      error: null,
+    })
+
+    render(<PullRequestReviewDialog />)
+
+    fireEvent.click(
+      screen.getByRole('button', { name: /expand unchanged lines/i })
+    )
+
+    await waitFor(() => {
+      expect(fileDiffRenderMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          fileDiff: expect.objectContaining({
+            oldLines: ['old first\n', 'old second\n'],
+            newLines: ['new first\n', 'new second\n'],
+          }),
+          options: expect.objectContaining({
+            expandUnchanged: true,
+            expansionLineCount: expect.any(Number),
+          }),
+        })
+      )
+    })
+
+    expect(usePullRequestReviewFileContentsMock).toHaveBeenCalledWith(
+      '/tmp/project',
+      42,
+      'src/example.ts',
+      expect.objectContaining({ enabled: true })
+    )
   })
 })

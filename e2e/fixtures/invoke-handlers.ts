@@ -207,6 +207,16 @@ export const defaultResponses: Record<string, unknown> = {
     diff: '',
     threads: [],
   },
+  get_pull_request_review_summary: {
+    pullRequest: null,
+    headCommitSha: '',
+    threads: [],
+  },
+  get_pull_request_review_diff: { diff: '' },
+  get_pull_request_review_file_contents: {
+    oldContents: '',
+    newContents: '',
+  },
   create_pull_request_inline_comment: null,
   reply_to_pull_request_review_comment: null,
   submit_pull_request_review: null,

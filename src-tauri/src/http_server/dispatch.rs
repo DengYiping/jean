@@ -544,6 +544,38 @@ pub async fn dispatch_command(
                     .await?;
             to_value(result)
         }
+        "get_pull_request_review_summary" => {
+            let project_path: String = field(&args, "projectPath", "project_path")?;
+            let pr_number: u32 = field(&args, "prNumber", "pr_number")?;
+            let result = crate::projects::get_pull_request_review_summary(
+                app.clone(),
+                project_path,
+                pr_number,
+            )
+            .await?;
+            to_value(result)
+        }
+        "get_pull_request_review_diff" => {
+            let project_path: String = field(&args, "projectPath", "project_path")?;
+            let pr_number: u32 = field(&args, "prNumber", "pr_number")?;
+            let result =
+                crate::projects::get_pull_request_review_diff(app.clone(), project_path, pr_number)
+                    .await?;
+            to_value(result)
+        }
+        "get_pull_request_review_file_contents" => {
+            let project_path: String = field(&args, "projectPath", "project_path")?;
+            let pr_number: u32 = field(&args, "prNumber", "pr_number")?;
+            let file_path: String = field(&args, "filePath", "file_path")?;
+            let result = crate::projects::get_pull_request_review_file_contents(
+                app.clone(),
+                project_path,
+                pr_number,
+                file_path,
+            )
+            .await?;
+            to_value(result)
+        }
         "create_pull_request_inline_comment" => {
             let request: crate::projects::CreatePullRequestInlineCommentRequest =
                 field(&args, "request", "request")?;

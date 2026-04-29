@@ -8,6 +8,7 @@ const mockGetGitDiff = vi.fn()
 const mockReadFileContent = vi.fn()
 const mockReadGitFileContent = vi.fn()
 const mockMemoizedFileView = vi.fn()
+const mockMemoizedFileDiff = vi.fn()
 
 vi.mock('@/services/git-status', () => ({
   getGitDiff: (...args: unknown[]) => mockGetGitDiff(...args),
@@ -39,9 +40,15 @@ vi.mock('./CommitsTabView', () => ({
 }))
 
 vi.mock('./MemoizedFileDiff', () => ({
-  MemoizedFileDiff: ({ fileName }: { fileName: string }) => (
-    <div data-testid="diff-view">Diff view: {fileName}</div>
-  ),
+  MemoizedFileDiff: (props: {
+    fileName: string
+    oldLines?: string[]
+    newLines?: string[]
+    expandUnchanged?: boolean
+  }) => {
+    mockMemoizedFileDiff(props)
+    return <div data-testid="diff-view">Diff view: {props.fileName}</div>
+  },
   getStatusColor: () => 'text-blue-500',
 }))
 
@@ -228,5 +235,46 @@ describe('GitDiffModal', () => {
     ).toBeInTheDocument()
     expect(mockReadFileContent).not.toHaveBeenCalled()
     expect(mockReadGitFileContent).not.toHaveBeenCalled()
+  })
+
+  it('loads old and new file contents when expanding uncommitted diff context', async () => {
+    mockGetGitDiff.mockResolvedValueOnce(buildDiff())
+    mockReadGitFileContent.mockResolvedValueOnce('old line\n')
+    mockReadFileContent.mockResolvedValueOnce('new line\n')
+
+    render(
+      <GitDiffModal
+        diffRequest={{
+          type: 'uncommitted',
+          worktreePath: '/tmp/worktree',
+          baseBranch: 'main',
+        }}
+        onClose={vi.fn()}
+      />
+    )
+
+    await screen.findByText('Diff view: src/example.ts')
+
+    fireEvent.click(
+      screen.getByRole('button', { name: /expand unchanged lines/i })
+    )
+
+    await waitFor(() => {
+      expect(mockReadGitFileContent).toHaveBeenCalledWith(
+        '/tmp/worktree',
+        'src/example.ts',
+        'HEAD'
+      )
+      expect(mockReadFileContent).toHaveBeenCalledWith(
+        '/tmp/worktree/src/example.ts'
+      )
+      expect(mockMemoizedFileDiff).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          oldLines: ['old line\n'],
+          newLines: ['new line\n'],
+          expandUnchanged: true,
+        })
+      )
+    })
   })
 })

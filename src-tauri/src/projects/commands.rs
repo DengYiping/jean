@@ -745,6 +745,7 @@ pub async fn create_worktree(
     advisory_context: Option<AdvisoryContext>,
     linear_context: Option<LinearIssueContext>,
     custom_name: Option<String>,
+    copy_uncommitted_from_path: Option<String>,
     automation_metadata: Option<AutomationWorktreeMetadata>,
 ) -> Result<Worktree, String> {
     log::trace!("Creating worktree for project: {project_id}");
@@ -1030,6 +1031,7 @@ pub async fn create_worktree(
     let security_context_clone = security_context.clone();
     let advisory_context_clone = advisory_context.clone();
     let linear_context_clone = linear_context.clone();
+    let copy_uncommitted_from_path_clone = copy_uncommitted_from_path.clone();
     let automation_metadata_clone = automation_metadata.clone();
 
     // Spawn background thread for git operations
@@ -1357,6 +1359,36 @@ pub async fn create_worktree(
             } else {
                 actual_branch_name
             };
+
+            if let Some(source_path) = &copy_uncommitted_from_path_clone {
+                log::trace!(
+                    "Background: Copying uncommitted changes from {source_path} to {worktree_path_clone}"
+                );
+                if let Err(e) = git::copy_uncommitted_changes(source_path, &worktree_path_clone) {
+                    log::error!("Background: Failed to copy uncommitted changes: {e}");
+                    let _ = git::remove_worktree(&project_path, &worktree_path_clone);
+                    let _ = git::delete_branch(&project_path, &branch_for_worktree);
+                    if let Some(slot) = &slot_reservation_clone {
+                        if let Ok(mut data) = load_projects_data(&app_clone) {
+                            let _ = slots::mark_slot_error(
+                                &app_clone,
+                                &mut data,
+                                &slot.slot_id,
+                                e.clone(),
+                            );
+                        }
+                    }
+                    let error_event = WorktreeCreateErrorEvent {
+                        id: worktree_id_clone,
+                        project_id: project_id_clone,
+                        error: e,
+                    };
+                    if let Err(emit_err) = app_clone.emit_all("worktree:error", &error_event) {
+                        log::error!("Failed to emit worktree:error event: {emit_err}");
+                    }
+                    return;
+                }
+            }
 
             // Write issue context file if provided (to shared git-context directory)
             if let Some(ctx) = &issue_context_clone {
@@ -1813,6 +1845,57 @@ pub async fn create_worktree(
 
     log::trace!("Returning pending worktree: {}", pending_worktree.name);
     Ok(pending_worktree)
+}
+
+/// Fork an existing worktree into a new worktree, including uncommitted changes.
+#[tauri::command]
+pub async fn fork_worktree(app: AppHandle, source_worktree_id: String) -> Result<Worktree, String> {
+    log::trace!("Forking worktree: {source_worktree_id}");
+
+    let data = load_projects_data(&app)?;
+    let source_worktree = data
+        .find_worktree(&source_worktree_id)
+        .ok_or_else(|| format!("Worktree not found: {source_worktree_id}"))?
+        .clone();
+
+    if source_worktree.archived_at.is_some() {
+        return Err("Cannot fork an archived worktree".to_string());
+    }
+
+    let project = data
+        .find_project(&source_worktree.project_id)
+        .ok_or_else(|| format!("Project not found: {}", source_worktree.project_id))?
+        .clone();
+
+    let source_branch = git::get_current_branch(&source_worktree.path)?;
+    if source_branch == "HEAD" {
+        return Err("Cannot fork worktree: source HEAD is detached".to_string());
+    }
+
+    let preferred_name = format!("{}-fork", source_worktree.name);
+    let fork_name = if !data.worktree_name_exists(&project.id, &preferred_name)
+        && !git::branch_exists(&project.path, &preferred_name)
+    {
+        preferred_name
+    } else {
+        generate_unique_suffix_name(&preferred_name, &project.path, &project.id, Some(&data))
+    };
+
+    create_worktree(
+        app,
+        project.id,
+        Some(source_branch),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(fork_name),
+        Some(source_worktree.path),
+        None,
+    )
+    .await
 }
 
 /// Create a worktree from an existing branch (runs in background)

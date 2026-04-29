@@ -3274,6 +3274,7 @@ pub fn run() {
             projects::list_worktree_slots,
             projects::get_worktree,
             projects::create_worktree,
+            projects::fork_worktree,
             projects::create_worktree_from_existing_branch,
             projects::checkout_pr,
             projects::delete_worktree,

@@ -104,6 +104,8 @@ const reviewSummary: GitHubPullRequestReviewSummary = {
     checkStatus: 'pending',
   },
   headCommitSha: 'abc123',
+  viewerApproved: false,
+  otherReviewerApproved: false,
   threads: [
     {
       id: 101,
@@ -335,5 +337,75 @@ describe('PullRequestReviewDialog', () => {
       'src/example.ts',
       expect.objectContaining({ enabled: true })
     )
+  })
+
+  it('disables approve when the current viewer already approved', async () => {
+    usePullRequestReviewSummaryMock.mockReturnValue({
+      data: {
+        ...reviewSummary,
+        viewerApproved: true,
+      },
+      isLoading: false,
+      error: null,
+      refetch: refetchMock,
+      isRefetching: false,
+    })
+
+    render(<PullRequestReviewDialog />)
+
+    expect(screen.getAllByText('Approved by you').length).toBeGreaterThan(0)
+    const approveButton = screen.getByRole('button', {
+      name: 'Approved by you',
+    })
+    expect(approveButton).toBeDisabled()
+
+    await act(async () => {
+      fireEvent.click(approveButton)
+    })
+
+    expect(submitReviewMock).not.toHaveBeenCalled()
+  })
+
+  it('shows someone else approval without disabling approve', async () => {
+    usePullRequestReviewSummaryMock.mockReturnValue({
+      data: {
+        ...reviewSummary,
+        pullRequest: {
+          ...reviewSummary.pullRequest,
+          reviewDecision: 'approved',
+        },
+        otherReviewerApproved: true,
+      },
+      isLoading: false,
+      error: null,
+      refetch: refetchMock,
+      isRefetching: false,
+    })
+
+    render(<PullRequestReviewDialog />)
+
+    expect(screen.getByText('Approved by reviewer')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeEnabled()
+  })
+
+  it('shows combined approval indicator and disables approve when both approved', () => {
+    usePullRequestReviewSummaryMock.mockReturnValue({
+      data: {
+        ...reviewSummary,
+        viewerApproved: true,
+        otherReviewerApproved: true,
+      },
+      isLoading: false,
+      error: null,
+      refetch: refetchMock,
+      isRefetching: false,
+    })
+
+    render(<PullRequestReviewDialog />)
+
+    expect(screen.getByText('Approved by you and reviewer')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Approved by you' })
+    ).toBeDisabled()
   })
 })

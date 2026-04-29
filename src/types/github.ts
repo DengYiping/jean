@@ -136,6 +136,8 @@ export interface GitHubPullRequestReviewData {
   pullRequest: GitHubPullRequest
   headCommitSha: string
   diff: string
+  viewerApproved: boolean
+  otherReviewerApproved: boolean
   threads: GitHubReviewThread[]
 }
 
@@ -168,6 +170,8 @@ export interface SubmitPullRequestReviewInput {
 export interface GitHubPullRequestReviewSummary {
   pullRequest: GitHubPullRequest
   headCommitSha: string
+  viewerApproved: boolean
+  otherReviewerApproved: boolean
   threads: GitHubReviewThread[]
 }
 

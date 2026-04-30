@@ -535,20 +535,6 @@ kbd {
   filter: invert(1);
 }
 
-/* Chat search highlights (CSS Custom Highlight API) */
-::highlight(chat-search) {
-  background-color: rgba(250, 204, 21, 0.4);
-}
-::highlight(chat-search-active) {
-  background-color: rgba(251, 146, 60, 0.75);
-}
-.dark ::highlight(chat-search) {
-  background-color: rgba(250, 204, 21, 0.3);
-}
-.dark ::highlight(chat-search-active) {
-  background-color: rgba(251, 146, 60, 0.6);
-}
-
 /* Global custom scrollbar — applies to every scrollable element so Windows
    WebView2 doesn't render its native gray scrollbar. */
 *::-webkit-scrollbar {

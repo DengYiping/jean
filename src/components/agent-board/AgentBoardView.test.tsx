@@ -160,6 +160,8 @@ describe('AgentBoardView', () => {
   })
 
   it('opens the associated workspace session when a card is clicked', async () => {
+    const listener = vi.fn()
+    window.addEventListener('open-session-modal', listener)
     render(<AgentBoardView />)
 
     const card = screen
@@ -185,8 +187,8 @@ describe('AgentBoardView', () => {
       expect(useUIStore.getState().activeMainView).toBe('workspace')
       expect(useProjectsStore.getState().selectedProjectId).toBe(project.id)
       expect(useProjectsStore.getState().selectedWorktreeId).toBe('worktree-1')
-      expect(useChatStore.getState().activeWorktreeId).toBe('worktree-1')
-      expect(useChatStore.getState().activeWorktreePath).toBe('/tmp/worktree')
+      expect(useChatStore.getState().activeWorktreeId).toBeNull()
+      expect(useChatStore.getState().activeWorktreePath).toBeNull()
       expect(useChatStore.getState().activeSessionIds['worktree-1']).toBe(
         'session-1'
       )
@@ -194,7 +196,21 @@ describe('AgentBoardView', () => {
         worktreeId: 'worktree-1',
         sessionId: 'session-1',
       })
+      expect(
+        useUIStore.getState().autoOpenSessionWorktreeIds.has('worktree-1')
+      ).toBe(true)
+      expect(
+        useUIStore.getState().pendingAutoOpenSessionIds['worktree-1']
+      ).toBe('session-1')
+      expect(listener).toHaveBeenCalledTimes(1)
+      const event = listener.mock.calls[0]?.[0] as CustomEvent
+      expect(event.detail).toEqual({
+        sessionId: 'session-1',
+        worktreeId: 'worktree-1',
+        worktreePath: '/tmp/worktree',
+      })
     })
+    window.removeEventListener('open-session-modal', listener)
   })
 
   it('refreshes a stale card before reporting that it has no session', async () => {

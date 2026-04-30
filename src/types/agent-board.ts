@@ -91,7 +91,7 @@ export function canMoveAgentBoardItem(
     todo: ['planning', 'implementing', 'yoloing'],
     planning: ['planned', 'implementing', 'yoloing'],
     planned: ['implementing', 'yoloing'],
-    implementing: ['implemented', 'planning', 'yoloing'],
+    implementing: ['implemented', 'yoloing'],
     implemented: ['implementing', 'pr_opened', 'yoloing'],
     pr_opened: ['archived'],
     yoloing: ['yoloed', 'implementing'],

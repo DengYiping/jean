@@ -184,14 +184,19 @@ describe('agent board service', () => {
           role: 'assistant',
           content: 'Plan',
           timestamp: 10,
-          tool_calls: [],
+          tool_calls: [
+            {
+              id: 'tool-1',
+              name: 'ExitPlanMode',
+              input: { plan: 'Plan' },
+            },
+          ],
           plan_approved: false,
         },
       ],
       approved_plan_message_ids: [],
       waiting_for_input: true,
       waiting_for_input_type: 'plan',
-      pending_plan_message_id: 'plan-msg-1',
       session_derived_state: {
         status: 'waiting',
         effective_execution_mode: 'plan',
@@ -212,6 +217,7 @@ describe('agent board service', () => {
       ...todoItem(),
       lane: 'planned',
       planning_session_id: session.id,
+      active_run_status: 'completed',
     }
     queryClient.setQueryData(agentBoardQueryKeys.all, [item])
     queryClient.setQueryData<WorktreeSessions>(chatQueryKeys.sessions('wt-1'), {
@@ -254,6 +260,10 @@ describe('agent board service', () => {
       const updatedSession = queryClient.getQueryData<WorktreeSessions>(
         chatQueryKeys.sessions('wt-1')
       )?.sessions[0]
+      const updatedItem = queryClient.getQueryData<AgentBoardItem[]>(
+        agentBoardQueryKeys.all
+      )?.[0]
+      expect(updatedItem?.active_run_status).toBeUndefined()
       expect(updatedSession?.waiting_for_input).toBe(false)
       expect(updatedSession?.approved_plan_message_ids).toEqual(['plan-msg-1'])
       expect(updatedSession?.messages[0]?.plan_approved).toBe(true)

@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type KeyboardEvent,
   type PointerEvent,
 } from 'react'
 import {
@@ -100,7 +101,6 @@ function NewAgentTodoDialog({
   const [projectId, setProjectId] = useState('')
   const [backend, setBackend] = useState<Backend>('codex')
   const [effortLevel, setEffortLevel] = useState<EffortLevel>('high')
-  const [title, setTitle] = useState('')
   const [prompt, setPrompt] = useState('')
 
   useEffect(() => {
@@ -110,22 +110,30 @@ function NewAgentTodoDialog({
   }, [open, projectId, realProjects])
 
   const handleSubmit = useCallback(async () => {
-    if (!projectId || !prompt.trim()) return
+    if (!projectId || !prompt.trim() || createItem.isPending) return
     try {
       await createItem.mutateAsync({
         project_id: projectId,
-        title: title.trim() || undefined,
         prompt: prompt.trim(),
         backend,
         effort_level: effortLevel,
       })
-      setTitle('')
       setPrompt('')
       onOpenChange(false)
     } catch (error) {
       toast.error(`Failed to create todo: ${error}`)
     }
-  }, [backend, createItem, effortLevel, onOpenChange, projectId, prompt, title])
+  }, [backend, createItem, effortLevel, onOpenChange, projectId, prompt])
+
+  const handlePromptKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLTextAreaElement>) => {
+      if (event.key === 'Enter' && event.shiftKey) {
+        event.preventDefault()
+        void handleSubmit()
+      }
+    },
+    [handleSubmit]
+  )
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -134,16 +142,12 @@ function NewAgentTodoDialog({
           <DialogTitle>New agent todo</DialogTitle>
         </DialogHeader>
         <div className="grid gap-3">
-          <Input
-            placeholder="Title (optional)"
-            value={title}
-            onChange={event => setTitle(event.target.value)}
-          />
           <Textarea
             className="min-h-32 resize-none"
             placeholder="Describe the work..."
             value={prompt}
             onChange={event => setPrompt(event.target.value)}
+            onKeyDown={handlePromptKeyDown}
           />
           <div className="grid grid-cols-3 gap-2">
             <NativeSelect

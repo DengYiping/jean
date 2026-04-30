@@ -163,6 +163,13 @@ mod tests {
     }
 
     #[test]
+    fn lane_validation_blocks_implementing_to_planning() {
+        assert!(
+            validate_lane_move(AgentBoardLane::Implementing, AgentBoardLane::Planning).is_err()
+        );
+    }
+
+    #[test]
     fn implementation_restart_sync_returns_to_implementing() {
         let mut item = item(AgentBoardLane::Implemented);
         item.lane = AgentBoardLane::Implementing;

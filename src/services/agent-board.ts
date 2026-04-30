@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { invoke } from '@/lib/transport'
 import { chatQueryKeys } from '@/services/chat'
 import { useChatStore } from '@/store/chat-store'
+import { isExitPlanMode } from '@/types/chat'
 import type {
   AgentBoardItem,
   AgentBoardLane,
@@ -90,7 +91,21 @@ export function useDeleteAgentBoardItem() {
 
 function clearSessionAttention(session: Session): Session {
   const now = Math.floor(Date.now() / 1000)
-  const pendingPlanMessageId = session.pending_plan_message_id
+  let latestExitPlanMessageId: string | undefined
+  for (let index = session.messages.length - 1; index >= 0; index -= 1) {
+    const message = session.messages[index]
+    if (
+      message?.role === 'assistant' &&
+      message.tool_calls?.some(isExitPlanMode)
+    ) {
+      latestExitPlanMessageId = message.id
+      break
+    }
+  }
+  const pendingPlanMessageId =
+    session.pending_plan_message_id ??
+    session.session_derived_state?.pending_plan_message_id ??
+    latestExitPlanMessageId
   const approvedPlanMessageIds =
     pendingPlanMessageId &&
     !(session.approved_plan_message_ids ?? []).includes(pendingPlanMessageId)
@@ -266,6 +281,7 @@ export function useMoveAgentBoardItem() {
               ? {
                   ...item,
                   lane,
+                  active_run_status: undefined,
                   updated_at: Math.floor(Date.now() / 1000),
                   last_error: undefined,
                 }

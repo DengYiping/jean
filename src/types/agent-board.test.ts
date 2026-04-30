@@ -21,6 +21,10 @@ describe('canMoveAgentBoardItem', () => {
     expect(canMoveAgentBoardItem('planned', 'yoloing')).toBe(true)
   })
 
+  it('blocks active implementation cards from moving back to plan', () => {
+    expect(canMoveAgentBoardItem('implementing', 'planning')).toBe(false)
+  })
+
   it('allows completed yolo cards to move to PR', () => {
     expect(canMoveAgentBoardItem('yoloing', 'pr_opened')).toBe(false)
     expect(canMoveAgentBoardItem('yoloed', 'pr_opened')).toBe(true)

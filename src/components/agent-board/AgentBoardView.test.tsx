@@ -111,6 +111,7 @@ describe('AgentBoardView', () => {
     render(<AgentBoardView />)
 
     fireEvent.click(screen.getByRole('button', { name: /add todo/i }))
+    expect(screen.queryByPlaceholderText('Title (optional)')).toBeNull()
     fireEvent.change(screen.getByPlaceholderText('Describe the work...'), {
       target: { value: 'Investigate session effort' },
     })
@@ -130,6 +131,29 @@ describe('AgentBoardView', () => {
           project_id: project.id,
           backend: 'codex',
           effort_level: 'max',
+        })
+      )
+      expect(mockCreateAgentBoardItem.mock.calls[0]?.[0]).not.toHaveProperty(
+        'title'
+      )
+    })
+  })
+
+  it('creates a todo with Shift+Enter from the prompt field', async () => {
+    render(<AgentBoardView />)
+
+    fireEvent.click(screen.getByRole('button', { name: /add todo/i }))
+    const promptInput = screen.getByPlaceholderText('Describe the work...')
+    fireEvent.change(promptInput, {
+      target: { value: 'Create todo from keyboard' },
+    })
+    fireEvent.keyDown(promptInput, { key: 'Enter', shiftKey: true })
+
+    await waitFor(() => {
+      expect(mockCreateAgentBoardItem).toHaveBeenCalledWith(
+        expect.objectContaining({
+          prompt: 'Create todo from keyboard',
+          project_id: project.id,
         })
       )
     })

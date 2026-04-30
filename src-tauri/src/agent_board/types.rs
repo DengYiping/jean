@@ -28,7 +28,7 @@ impl AgentBoardLane {
             (Todo, Planning | Implementing | Yoloing) => true,
             (Planning, Planned | Implementing | Yoloing) => true,
             (Planned, Implementing | Yoloing) => true,
-            (Implementing, Implemented | Planning | Yoloing) => true,
+            (Implementing, Implemented | Yoloing) => true,
             (Implemented, Implementing | PrOpened | Yoloing) => true,
             (Yoloing, Yoloed | Implementing) => true,
             (Yoloed, Yoloing | Implementing | PrOpened) => true,

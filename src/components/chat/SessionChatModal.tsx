@@ -16,6 +16,8 @@ import {
   EyeOff,
   FileText,
   FolderOpen,
+  GitBranchPlus,
+  GitPullRequestArrow,
   Github,
   Hammer,
   MoreHorizontal,
@@ -60,6 +62,7 @@ import {
   useRunScript,
   useWorktree,
 } from '@/services/projects'
+import { useGitHubPRs } from '@/services/github'
 import {
   useGitStatus,
   gitPush,
@@ -325,6 +328,11 @@ export function SessionChatModal({
   const project = worktree
     ? projects?.find(p => p.id === worktree.project_id)
     : null
+  const { data: openPRs } = useGitHubPRs(project?.path ?? null, 'open')
+  const stackedOnPR =
+    worktree?.base_branch && worktree.base_branch !== project?.default_branch
+      ? openPRs?.find(pr => pr.headRefName === worktree.base_branch)
+      : undefined
   const isBase = worktree ? isBaseSession(worktree) : false
   const { data: gitStatus } = useGitStatus(worktreeId)
   const behindCount =

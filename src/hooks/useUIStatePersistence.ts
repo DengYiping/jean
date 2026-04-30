@@ -88,7 +88,8 @@ export function useUIStatePersistence() {
       dashboardWorktreeCollapseOverrides,
       projectCanvasSettings,
     } = useProjectsStore.getState()
-    const { leftSidebarSize, leftSidebarVisible } = useUIStore.getState()
+    const { activeMainView, leftSidebarSize, leftSidebarVisible } =
+      useUIStore.getState()
     const { modalTerminalOpen, modalTerminalWidth } =
       useTerminalStore.getState()
     const browserState = useBrowserStore.getState()
@@ -100,6 +101,7 @@ export function useUIStatePersistence() {
     )
 
     return {
+      active_main_view: activeMainView,
       active_worktree_id: activeWorktreeId,
       active_worktree_path: activeWorktreePath,
       last_active_worktree_id: lastActiveWorktreeId,
@@ -166,6 +168,10 @@ export function useUIStatePersistence() {
     }
 
     logger.info('Initializing UI state from persisted state', { uiState })
+
+    if (uiState.active_main_view) {
+      useUIStore.getState().setActiveMainView(uiState.active_main_view)
+    }
 
     // Restore expanded projects (filter to only projects that still exist)
     // Defensive: ensure expanded_project_ids is an array (might be null/undefined from backend)
@@ -509,6 +515,7 @@ export function useUIStatePersistence() {
       useProjectsStore.getState().projectCanvasSettings
     let prevLeftSidebarSize = useUIStore.getState().leftSidebarSize
     let prevLeftSidebarVisible = useUIStore.getState().leftSidebarVisible
+    let prevActiveMainView = useUIStore.getState().activeMainView
     let prevWorktreeId = useChatStore.getState().activeWorktreeId
     let prevWorktreePath = useChatStore.getState().activeWorktreePath
     let prevLastActiveWorktreeId = useChatStore.getState().lastActiveWorktreeId
@@ -572,10 +579,12 @@ export function useUIStatePersistence() {
       const sizeChanged = state.leftSidebarSize !== prevLeftSidebarSize
       const visibilityChanged =
         state.leftSidebarVisible !== prevLeftSidebarVisible
+      const activeMainViewChanged = state.activeMainView !== prevActiveMainView
 
-      if (sizeChanged || visibilityChanged) {
+      if (sizeChanged || visibilityChanged || activeMainViewChanged) {
         prevLeftSidebarSize = state.leftSidebarSize
         prevLeftSidebarVisible = state.leftSidebarVisible
+        prevActiveMainView = state.activeMainView
         const currentState = getCurrentUIState()
         debouncedSaveRef.current?.(currentState)
       }

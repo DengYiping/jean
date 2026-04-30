@@ -8,6 +8,7 @@ import { useChatStore } from '@/store/chat-store'
 import { useProjectsStore } from '@/store/projects-store'
 import { useUIStore } from '@/store/ui-store'
 import { chatQueryKeys } from '@/services/chat'
+import { agentBoardQueryKeys } from '@/services/agent-board'
 import { saveWorktreePr, projectsQueryKeys } from '@/services/projects'
 import {
   gitPush,
@@ -397,6 +398,7 @@ export function useGitOperations({
       queryClient.invalidateQueries({
         queryKey: [...projectsQueryKeys.all, 'worktree', activeWorktreeId],
       })
+      queryClient.invalidateQueries({ queryKey: agentBoardQueryKeys.all })
 
       toast.success(
         result.existing

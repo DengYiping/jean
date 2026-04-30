@@ -8,6 +8,7 @@ import { githubCommands } from './github-commands'
 import { gitCommands } from './git-commands'
 import { maintenanceCommands } from './maintenance-commands'
 import { windowCommands } from './window-commands'
+import { agentBoardCommands } from './agent-board-commands'
 import { registerCommands } from './registry'
 
 /**
@@ -22,6 +23,7 @@ export function initializeCommandSystem(): void {
   registerCommands(gitCommands)
   registerCommands(maintenanceCommands)
   registerCommands(windowCommands)
+  registerCommands(agentBoardCommands)
 }
 
 export {
@@ -32,4 +34,5 @@ export {
   gitCommands,
   maintenanceCommands,
   windowCommands,
+  agentBoardCommands,
 }

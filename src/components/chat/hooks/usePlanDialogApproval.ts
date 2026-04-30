@@ -7,6 +7,7 @@ import {
   markPlanApproved as markPlanApprovedService,
   persistEnqueue,
 } from '@/services/chat'
+import { agentBoardQueryKeys } from '@/services/agent-board'
 import { invoke } from '@/lib/transport'
 import { buildMcpConfigJson } from '@/services/mcp'
 import { usePreferences } from '@/services/preferences'
@@ -19,6 +20,7 @@ import type {
 } from '@/types/chat'
 import type { Session } from '@/types/chat'
 import type { McpServerInfo } from '@/types/chat'
+import type { AgentBoardItem } from '@/types/agent-board'
 import { buildPlanApprovalMessage } from '../plan-approval-message'
 import { applyOptimisticPlanApproval } from './optimistic-plan-approval'
 
@@ -164,6 +166,18 @@ export function usePlanDialogApproval({
             waitingForInputType: null,
             selectedExecutionMode: mode,
           })
+        )
+        .then(() =>
+          invoke<AgentBoardItem[]>('refresh_agent_board_items')
+            .then(items => {
+              queryClient.setQueryData(agentBoardQueryKeys.all, items)
+            })
+            .catch(err => {
+              logger.error(
+                '[usePlanDialogApproval] Failed to refresh board:',
+                err
+              )
+            })
         )
         .then(() => {
           invoke('broadcast_session_setting', {

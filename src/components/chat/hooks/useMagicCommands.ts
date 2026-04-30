@@ -197,6 +197,9 @@ export function useMagicCommands({
 
     const handlers = handlersRef.current
     switch (pendingMagicCommand.command) {
+      case 'open-pr':
+        handlers.handleOpenPr()
+        break
       case 'merge':
         handlers.handleMerge()
         break

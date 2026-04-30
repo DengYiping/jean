@@ -12,6 +12,7 @@ export interface ProjectCanvasSettingsState {
 }
 
 export type ModalBrowserDockMode = 'floating' | 'left' | 'right' | 'bottom'
+export type MainView = 'workspace' | 'agent_board'
 
 export interface BrowserTabPersisted {
   id: string
@@ -20,6 +21,7 @@ export interface BrowserTabPersisted {
 }
 
 export interface UIState {
+  active_main_view?: MainView
   active_worktree_id: string | null
   active_worktree_path: string | null
   last_active_worktree_id: string | null
@@ -75,6 +77,7 @@ export interface UIState {
 }
 
 export const defaultUIState: UIState = {
+  active_main_view: 'workspace',
   active_worktree_id: null,
   active_worktree_path: null,
   last_active_worktree_id: null,

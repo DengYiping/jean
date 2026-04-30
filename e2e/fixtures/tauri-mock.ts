@@ -48,6 +48,11 @@ export const test = base.extend<TauriMockFixtures>({
           (responseMap.list_worktrees as Array<Record<string, unknown>>) ?? []
         )
         const automationStore: Array<Record<string, unknown>> = []
+        const agentBoardStore: Array<Record<string, unknown>> = structuredClone(
+          (responseMap.list_agent_board_items as
+            | Array<Record<string, unknown>>
+            | undefined) ?? []
+        )
 
         function getWorktreeStore(worktreeId: string) {
           if (!sessionStore[worktreeId]) {
@@ -145,11 +150,238 @@ export const test = base.extend<TauriMockFixtures>({
           return cloned
         }
 
+        function createAgentBoardWorktree(projectId: string, suffix: string) {
+          const index = worktreeStore.length + 1
+          const name = `agent-${suffix}-${index}`
+          const worktree = {
+            id: `worktree-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            project_id: projectId,
+            name,
+            path: `/tmp/e2e-test-project/.worktrees/${name}`,
+            stable_slot_id: undefined,
+            branch: name,
+            base_branch: 'main',
+            created_at: Date.now() / 1000,
+            order: worktreeStore.length,
+            session_type: 'worktree',
+            status: 'ready',
+          }
+          worktreeStore.push(worktree)
+          return worktree
+        }
+
+        function createAgentBoardSession(
+          worktreeId: string,
+          item: Record<string, unknown>,
+          suffix: string
+        ) {
+          const store = getWorktreeStore(worktreeId)
+          const session = {
+            id: `session-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            name: `${String(item.title)} ${suffix}`,
+            order: store.sessions.length,
+            created_at: Date.now() / 1000,
+            updated_at: Date.now() / 1000,
+            messages: [],
+            backend: (item.backend as string | undefined) ?? 'codex',
+            agent_board_item_id: item.id,
+          }
+          store.sessions.unshift(session)
+          store.active_session_id = session.id
+          return session
+        }
+
+        function syncAgentBoardItem(item: Record<string, unknown>) {
+          const planningSessionId = item.planning_session_id as
+            | string
+            | undefined
+          const implementationSessionId = item.implementation_session_id as
+            | string
+            | undefined
+          const yoloSessionId = item.yolo_session_id as string | undefined
+
+          for (const store of Object.values(sessionStore)) {
+            for (const session of store.sessions) {
+              if (
+                planningSessionId &&
+                session.id === planningSessionId &&
+                session.waiting_for_input &&
+                session.waiting_for_input_type === 'plan'
+              ) {
+                item.lane = 'planned'
+              }
+              if (
+                implementationSessionId &&
+                session.id === implementationSessionId
+              ) {
+                if (
+                  item.lane === 'implemented' &&
+                  (session.last_run_status === 'running' ||
+                    session.last_run_status === 'resumable')
+                ) {
+                  item.lane = 'implementing'
+                } else if (
+                  item.lane === 'implementing' &&
+                  session.last_run_status === 'completed'
+                ) {
+                  item.lane = 'implemented'
+                }
+              }
+              if (yoloSessionId && session.id === yoloSessionId) {
+                if (
+                  item.lane === 'yoloed' &&
+                  (session.last_run_status === 'running' ||
+                    session.last_run_status === 'resumable')
+                ) {
+                  item.lane = 'yoloing'
+                } else if (
+                  item.lane === 'yoloing' &&
+                  ['completed', 'cancelled', 'crashed'].includes(
+                    String(session.last_run_status)
+                  )
+                ) {
+                  item.lane = 'yoloed'
+                }
+              }
+            }
+          }
+        }
+
         // Commands that need dynamic responses based on args
         const dynamicHandlers: Record<
           string,
           (args?: Record<string, unknown>) => unknown
         > = {
+          list_agent_board_items: () => {
+            agentBoardStore.forEach(syncAgentBoardItem)
+            return structuredClone(agentBoardStore)
+          },
+          refresh_agent_board_items: () => {
+            agentBoardStore.forEach(syncAgentBoardItem)
+            return structuredClone(agentBoardStore)
+          },
+          create_agent_board_item: args => {
+            const request =
+              (args?.request as Record<string, unknown> | undefined) ?? {}
+            const prompt = String(request.prompt ?? '')
+            const title =
+              typeof request.title === 'string' && request.title.trim()
+                ? request.title.trim()
+                : prompt.split(/\s+/).filter(Boolean).slice(0, 7).join(' ') ||
+                  'Untitled task'
+            const now = Date.now() / 1000
+            const item = {
+              id: `agent-board-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              title,
+              prompt,
+              project_id: request.project_id ?? 'project-1',
+              backend: request.backend ?? 'codex',
+              effort_level: request.effort_level ?? 'high',
+              lane: 'todo',
+              created_at: now,
+              updated_at: now,
+            }
+            agentBoardStore.push(item)
+            return structuredClone(item)
+          },
+          update_agent_board_item: args => {
+            const item = agentBoardStore.find(
+              candidate => candidate.id === args?.itemId
+            )
+            if (!item) return null
+            const patch =
+              (args?.patch as Record<string, unknown> | undefined) ?? {}
+            Object.assign(item, patch, { updated_at: Date.now() / 1000 })
+            return structuredClone(item)
+          },
+          delete_agent_board_item: args => {
+            const index = agentBoardStore.findIndex(
+              candidate => candidate.id === args?.itemId
+            )
+            if (index >= 0) {
+              agentBoardStore.splice(index, 1)
+            }
+            return null
+          },
+          move_agent_board_item: args => {
+            const item = agentBoardStore.find(
+              candidate => candidate.id === args?.itemId
+            )
+            if (!item) return null
+            const lane = String(args?.lane)
+            item.lane = lane
+            item.updated_at = Date.now() / 1000
+
+            if (lane === 'planning') {
+              if (!item.worktree_id) {
+                item.worktree_id = createAgentBoardWorktree(
+                  String(item.project_id),
+                  'plan'
+                ).id
+              }
+              if (!item.planning_session_id) {
+                item.planning_session_id = createAgentBoardSession(
+                  String(item.worktree_id),
+                  item,
+                  'plan'
+                ).id
+              }
+            } else if (lane === 'implementing') {
+              if (!item.worktree_id) {
+                item.worktree_id = createAgentBoardWorktree(
+                  String(item.project_id),
+                  'build'
+                ).id
+              }
+              if (!item.implementation_session_id) {
+                item.implementation_session_id =
+                  item.planning_session_id ??
+                  createAgentBoardSession(
+                    String(item.worktree_id),
+                    item,
+                    'build'
+                  ).id
+              }
+            } else if (lane === 'pr_opened') {
+              item.pr_url = 'https://github.com/test/repo/pull/123'
+            } else if (lane === 'yoloing') {
+              if (!item.yolo_worktree_id) {
+                item.yolo_worktree_id = createAgentBoardWorktree(
+                  String(item.project_id),
+                  'yolo'
+                ).id
+              }
+              if (!item.yolo_session_id) {
+                item.yolo_session_id = createAgentBoardSession(
+                  String(item.yolo_worktree_id),
+                  item,
+                  'yolo'
+                ).id
+              }
+            } else if (lane === 'archived') {
+              item.archived_at = Date.now() / 1000
+            }
+
+            return structuredClone(item)
+          },
+          get_agent_board_item_for_session: args => {
+            const sessionId = args?.sessionId
+            for (const item of agentBoardStore) {
+              if (item.planning_session_id === sessionId) {
+                return { item: structuredClone(item), session_role: 'planning' }
+              }
+              if (item.implementation_session_id === sessionId) {
+                return {
+                  item: structuredClone(item),
+                  session_role: 'implementation',
+                }
+              }
+              if (item.yolo_session_id === sessionId) {
+                return { item: structuredClone(item), session_role: 'yolo' }
+              }
+            }
+            return null
+          },
           get_sessions: args => {
             const wid = (args?.worktreeId as string) ?? 'unknown'
             const store = getWorktreeStore(wid)

@@ -176,6 +176,9 @@ import {
 } from '@/services/projects'
 import { isNativeApp } from '@/lib/environment'
 import { isWindows } from '@/lib/platform'
+import { Button } from '@/components/ui/button'
+import { Kanban, PanelsTopLeft } from 'lucide-react'
+import { openWorkspaceView } from '@/lib/workspace-navigation'
 
 // Left sidebar resize constraints (pixels)
 const MIN_SIDEBAR_WIDTH = 150
@@ -193,9 +196,59 @@ function useRetainedMount(active: boolean) {
   return shouldMount
 }
 
+function AppNavRail() {
+  const activeMainView = useUIStore(state => state.activeMainView)
+  const setActiveMainView = useUIStore(state => state.setActiveMainView)
+
+  const entries = [
+    {
+      view: 'agent_board' as const,
+      label: 'Agent Board',
+      icon: Kanban,
+    },
+    {
+      view: 'workspace' as const,
+      label: 'Workspace',
+      icon: PanelsTopLeft,
+    },
+  ]
+
+  return (
+    <nav className="flex h-full w-14 shrink-0 flex-col items-center border-r bg-muted/20 py-2">
+      {entries.map(entry => {
+        const Icon = entry.icon
+        const active = activeMainView === entry.view
+        return (
+          <Button
+            key={entry.view}
+            variant={active ? 'secondary' : 'ghost'}
+            size="icon"
+            className={cn(
+              'mb-1 h-10 w-10',
+              active && 'border border-border bg-background shadow-xs'
+            )}
+            aria-label={entry.label}
+            title={entry.label}
+            onClick={() => {
+              if (entry.view === 'workspace') {
+                openWorkspaceView({ reopenSessionModal: true })
+              } else {
+                setActiveMainView(entry.view)
+              }
+            }}
+          >
+            <Icon className="h-4 w-4" />
+          </Button>
+        )
+      })}
+    </nav>
+  )
+}
+
 export function MainWindow() {
   const isMaximized = useWindowMaximized()
   const toasterOffset = useToasterOffset()
+  const activeMainView = useUIStore(state => state.activeMainView)
   const leftSidebarVisible = useUIStore(state => state.leftSidebarVisible)
   const leftSidebarSize = useUIStore(state => state.leftSidebarSize)
   const setLeftSidebarSize = useUIStore(state => state.setLeftSidebarSize)
@@ -425,6 +478,8 @@ export function MainWindow() {
   const roundedClass = isWindows
     ? !isMaximized && 'rounded-sm'
     : isNativeApp() && 'rounded-xl'
+  const showWorkspaceSidebar =
+    activeMainView === 'workspace' && leftSidebarVisible && isInitialized
 
   return (
     <div
@@ -459,8 +514,10 @@ export function MainWindow() {
 
       {/* Main Content Area */}
       <div className="flex flex-1 overflow-hidden pt-8">
+        {!isMobile && <AppNavRail />}
+
         {/* Left Sidebar with pixel-based width - only render after UI state is initialized */}
-        {leftSidebarVisible && isInitialized && (
+        {showWorkspaceSidebar && (
           <SidebarWidthProvider value={leftSidebarSize}>
             <div
               ref={sidebarRef}
@@ -475,7 +532,7 @@ export function MainWindow() {
         )}
 
         {/* Custom resize handle for left sidebar */}
-        {leftSidebarVisible && isInitialized && (
+        {showWorkspaceSidebar && (
           <div
             className="relative h-full w-px bg-border"
             onMouseDown={handleResizeStart}

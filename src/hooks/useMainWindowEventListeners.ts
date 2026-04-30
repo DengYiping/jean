@@ -437,6 +437,13 @@ function executeKeybindingAction(
     case 'open_usage_dropdown':
       window.dispatchEvent(new CustomEvent('toggle-usage-menu'))
       break
+    case 'open_agent_board':
+      useUIStore.getState().setActiveMainView('agent_board')
+      break
+    case 'new_agent_todo':
+      useUIStore.getState().setActiveMainView('agent_board')
+      window.dispatchEvent(new CustomEvent('agent-board:new-todo'))
+      break
     case 'toggle_session_label': {
       logger.debug('Keybinding: toggle_session_label')
       // Works when a session is active (modal open or in session view) or on project canvas
@@ -860,6 +867,11 @@ export function useMainWindowEventListeners() {
                 case 'automations':
                   queryClient.invalidateQueries({
                     queryKey: ['automations'],
+                  })
+                  break
+                case 'agent-board':
+                  queryClient.invalidateQueries({
+                    queryKey: ['agent-board'],
                   })
                   break
               }

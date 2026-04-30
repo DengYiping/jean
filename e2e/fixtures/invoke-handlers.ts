@@ -120,6 +120,15 @@ export const defaultResponses: Record<string, unknown> = {
   load_ui_state: uiState,
   save_ui_state: null,
 
+  // Agent board
+  list_agent_board_items: [],
+  create_agent_board_item: null,
+  update_agent_board_item: null,
+  delete_agent_board_item: null,
+  move_agent_board_item: null,
+  refresh_agent_board_items: [],
+  get_agent_board_item_for_session: null,
+
   // CLI checks
   check_claude_cli_installed: { installed: true, version: '1.0.0' },
   check_claude_cli_auth: { authenticated: true },

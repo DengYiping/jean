@@ -90,4 +90,28 @@ describe('eventToShortcutString', () => {
       category: 'navigation',
     })
   })
+
+  it('registers agent board shortcuts in defaults and settings metadata', () => {
+    expect(DEFAULT_KEYBINDINGS.open_agent_board).toBe('mod+shift+k')
+    expect(DEFAULT_KEYBINDINGS.new_agent_todo).toBe('mod+shift+a')
+
+    expect(
+      KEYBINDING_DEFINITIONS.find(
+        definition => definition.action === 'open_agent_board'
+      )
+    ).toMatchObject({
+      label: 'Agent Board',
+      default_shortcut: 'mod+shift+k',
+      category: 'navigation',
+    })
+    expect(
+      KEYBINDING_DEFINITIONS.find(
+        definition => definition.action === 'new_agent_todo'
+      )
+    ).toMatchObject({
+      label: 'New agent todo',
+      default_shortcut: 'mod+shift+a',
+      category: 'navigation',
+    })
+  })
 })

@@ -559,6 +559,9 @@ pub struct Session {
     /// Whether this session is owned by an automation run loop.
     #[serde(default)]
     pub automation_owned: bool,
+    /// Agent board card that owns this session, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_board_item_id: Option<String>,
 
     // ========================================================================
     // Session-specific UI state (moved from ui-state.json)
@@ -726,6 +729,7 @@ impl Session {
             automation_name: None,
             automation_target_worktree_id: None,
             automation_owned: false,
+            agent_board_item_id: None,
             // Session-specific UI state
             answered_questions: vec![],
             submitted_answers: HashMap::new(),
@@ -1035,6 +1039,7 @@ impl SessionMetadata {
             automation_name: self.automation_name.clone(),
             automation_target_worktree_id: self.automation_target_worktree_id.clone(),
             automation_owned: self.automation_owned,
+            agent_board_item_id: self.agent_board_item_id.clone(),
             answered_questions: self.answered_questions.clone(),
             submitted_answers: self.submitted_answers.clone(),
             fixed_findings: self.fixed_findings.clone(),
@@ -1086,6 +1091,7 @@ impl SessionMetadata {
         self.automation_name = session.automation_name.clone();
         self.automation_target_worktree_id = session.automation_target_worktree_id.clone();
         self.automation_owned = session.automation_owned;
+        self.agent_board_item_id = session.agent_board_item_id.clone();
         self.answered_questions = session.answered_questions.clone();
         self.submitted_answers = session.submitted_answers.clone();
         self.fixed_findings = session.fixed_findings.clone();
@@ -1480,6 +1486,9 @@ pub struct SessionMetadata {
     /// Whether this session is owned by an automation run loop.
     #[serde(default)]
     pub automation_owned: bool,
+    /// Agent board card that owns this session, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_board_item_id: Option<String>,
 
     /// Run history - each entry corresponds to one Claude CLI execution
     #[serde(default)]
@@ -1589,6 +1598,7 @@ impl SessionMetadata {
             automation_name: None,
             automation_target_worktree_id: None,
             automation_owned: false,
+            agent_board_item_id: None,
             runs: vec![],
             scheduled_wakeup: None,
             version: 1,
@@ -2122,6 +2132,43 @@ mod tests {
                 .map(|state| &state.status),
             Some(&SessionDerivedStatus::Completed)
         );
+    }
+
+    #[test]
+    fn test_session_metadata_attention_timestamp_makes_waiting_session_unread() {
+        let mut metadata = SessionMetadata::new(
+            "sess-123".to_string(),
+            "wt-456".to_string(),
+            "Test".to_string(),
+            0,
+        );
+        metadata.created_at = 100;
+        metadata.last_opened_at = Some(200);
+        metadata.waiting_for_input = true;
+        metadata.waiting_for_input_type = Some("plan".to_string());
+        metadata.attention_updated_at = Some(250);
+        metadata.runs.push(RunEntry {
+            run_id: "run-1".to_string(),
+            user_message_id: "msg-1".to_string(),
+            user_message: "Plan this".to_string(),
+            model: None,
+            execution_mode: Some("plan".to_string()),
+            thinking_level: None,
+            effort_level: None,
+            started_at: 150,
+            ended_at: Some(180),
+            status: RunStatus::Completed,
+            assistant_message_id: Some("assistant-1".to_string()),
+            cancelled: false,
+            recovered: false,
+            claude_session_id: None,
+            pid: None,
+            usage: None,
+        });
+
+        let session = metadata.to_session();
+        assert_eq!(session.updated_at, 250);
+        assert!(session.is_unread());
     }
 
     #[test]

@@ -5,6 +5,7 @@ import {
   Eye,
   EyeOff,
   FileText,
+  Kanban,
   Pencil,
   Shield,
   Sparkles,
@@ -21,6 +22,7 @@ import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
 import { StatusIndicator } from '@/components/ui/status-indicator'
 import { formatShortcutDisplay, DEFAULT_KEYBINDINGS } from '@/types/keybindings'
+import { openAgentBoardItem } from '@/lib/agent-board-navigation'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -63,6 +65,7 @@ export const SessionListRow = forwardRef<HTMLDivElement, SessionCardProps>(
     const config = statusConfig[card.status]
     const hasRecap = card.hasRecap
     const hasPlan = !!(card.planFilePath || card.planContent)
+    const agentBoardItemId = card.session.agent_board_item_id
     const resumeCommand = getResumeCommand(card.session)
     const renameInputRef = useCallback((node: HTMLInputElement | null) => {
       if (node) {
@@ -135,6 +138,21 @@ export const SessionListRow = forwardRef<HTMLDivElement, SessionCardProps>(
                 <Bot className="h-3 w-3" />
                 {card.automationName ?? 'Automation'}
               </Badge>
+            )}
+
+            {agentBoardItemId && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-5 shrink-0 gap-1 border border-emerald-500/30 bg-emerald-500/10 px-1.5 text-[10px] text-emerald-700 hover:bg-emerald-500/15 dark:text-emerald-300"
+                onClick={e => {
+                  e.stopPropagation()
+                  openAgentBoardItem(agentBoardItemId)
+                }}
+              >
+                <Kanban className="h-3 w-3" />
+                Kanban managed
+              </Button>
             )}
 
             {/* Blocked badge */}
@@ -280,6 +298,14 @@ export const SessionListRow = forwardRef<HTMLDivElement, SessionCardProps>(
                   Mark for Review
                 </>
               )}
+            </ContextMenuItem>
+          )}
+          {agentBoardItemId && (
+            <ContextMenuItem
+              onSelect={() => openAgentBoardItem(agentBoardItemId)}
+            >
+              <Kanban className="mr-2 h-4 w-4" />
+              Open in Agent Board
             </ContextMenuItem>
           )}
           <ContextMenuItem onSelect={onArchive}>

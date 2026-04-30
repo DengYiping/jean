@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createElement, type ReactNode } from 'react'
 import { chatQueryKeys } from '@/services/chat'
+import { agentBoardQueryKeys } from '@/services/agent-board'
 import { projectsQueryKeys } from '@/services/projects'
 import { preferencesQueryKeys } from '@/services/preferences'
 import { defaultPreferences } from '@/types/preferences'
@@ -178,6 +179,7 @@ function resetStores() {
   })
 
   useUIStore.setState({
+    activeMainView: 'workspace',
     sessionChatModalOpen: false,
     sessionChatModalWorktreeId: null,
     loadContextModalOpen: false,
@@ -252,6 +254,21 @@ function seedSessionCaches(queryClient: QueryClient) {
       },
     ],
   })
+  queryClient.setQueryData(agentBoardQueryKeys.all, [
+    {
+      id: 'item-1',
+      title: 'Plan task',
+      prompt: 'Plan task',
+      project_id: 'project-1',
+      backend: 'codex',
+      lane: 'planning',
+      worktree_id: 'worktree-1',
+      planning_session_id: 'session-1',
+      created_at: 1,
+      updated_at: 1,
+      active_run_status: 'completed',
+    },
+  ])
 }
 
 async function setupHook() {
@@ -370,6 +387,160 @@ describe('useStreamingEvents question notifications', () => {
       waitingForInputType: 'question',
       isReviewing: false,
     })
+    unmount()
+  })
+
+  it('refreshes unread queries for active workspace questions while the agent board is visible', async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === 'get_worktree') {
+        return Promise.resolve({ path: '/tmp/worktree-1' })
+      }
+      return Promise.resolve(undefined)
+    })
+    useChatStore.setState({
+      activeWorktreeId: 'worktree-1',
+      activeSessionIds: { 'worktree-1': 'session-1' },
+      worktreePaths: { 'worktree-1': '/tmp/worktree-1' },
+    })
+    useUIStore.setState({ activeMainView: 'agent_board' })
+
+    const { handlers, queryClient, unmount } = await setupHook()
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+
+    await act(async () => {
+      handlers.get('chat:tool_use')?.({
+        payload: {
+          session_id: 'session-1',
+          worktree_id: 'worktree-1',
+          id: 'tool-question',
+          name: 'AskUserQuestion',
+          input: {
+            questions: [
+              {
+                question: 'Need approval?',
+                multiSelect: false,
+                options: [{ label: 'Yes' }, { label: 'No' }],
+              },
+            ],
+            rpcId: 123,
+          },
+        },
+      })
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(mockInvoke).not.toHaveBeenCalledWith('set_session_last_opened', {
+      sessionId: 'session-1',
+    })
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: chatQueryKeys.unreadSessions(),
+    })
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: chatQueryKeys.unreadCount(),
+    })
+    unmount()
+  })
+
+  it('marks visible immediate question waits as opened before refreshing unread queries', async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === 'get_worktree') {
+        return Promise.resolve({ path: '/tmp/worktree-1' })
+      }
+      return Promise.resolve(undefined)
+    })
+    useChatStore.setState({
+      activeWorktreeId: 'worktree-1',
+      activeSessionIds: { 'worktree-1': 'session-1' },
+      worktreePaths: { 'worktree-1': '/tmp/worktree-1' },
+    })
+
+    const { handlers, queryClient, unmount } = await setupHook()
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+
+    await act(async () => {
+      handlers.get('chat:tool_use')?.({
+        payload: {
+          session_id: 'session-1',
+          worktree_id: 'worktree-1',
+          id: 'tool-question',
+          name: 'AskUserQuestion',
+          input: {
+            questions: [
+              {
+                question: 'Need approval?',
+                multiSelect: false,
+                options: [{ label: 'Yes' }, { label: 'No' }],
+              },
+            ],
+            rpcId: 123,
+          },
+        },
+      })
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(mockInvoke).toHaveBeenCalledWith('set_session_last_opened', {
+      sessionId: 'session-1',
+    })
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: chatQueryKeys.unreadCount(),
+    })
+    unmount()
+  })
+
+  it('marks board-managed sessions running when a resumed send starts', async () => {
+    const { handlers, queryClient, unmount } = await setupHook()
+
+    await act(async () => {
+      handlers.get('chat:sending')?.({
+        payload: {
+          session_id: 'session-1',
+          worktree_id: 'worktree-1',
+          user_message: 'resume plan',
+        },
+      })
+    })
+
+    expect(queryClient.getQueryData(agentBoardQueryKeys.all)).toMatchObject([
+      { active_run_status: 'running' },
+    ])
+    unmount()
+  })
+
+  it('does not mark the active workspace session read while the agent board is visible', async () => {
+    useChatStore.setState({
+      activeWorktreeId: 'worktree-1',
+      activeSessionIds: { 'worktree-1': 'session-1' },
+      sessionWorktreeMap: { 'session-1': 'worktree-1' },
+      worktreePaths: { 'worktree-1': '/tmp/worktree-1' },
+      streamingContents: {
+        'session-1': 'Done',
+      },
+    })
+    useUIStore.setState({ activeMainView: 'agent_board' })
+
+    const { handlers, queryClient, unmount } = await setupHook()
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+
+    await act(async () => {
+      handlers.get('chat:done')?.({
+        payload: {
+          session_id: 'session-1',
+          worktree_id: 'worktree-1',
+        },
+      })
+      await Promise.resolve()
+    })
+
+    expect(mockInvoke).not.toHaveBeenCalledWith('set_session_last_opened', {
+      sessionId: 'session-1',
+    })
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: chatQueryKeys.unreadCount(),
+    })
+    expect(mockPlayNotificationSound).toHaveBeenCalledWith('work-work')
     unmount()
   })
 
@@ -552,6 +723,55 @@ describe('useStreamingEvents question notifications', () => {
     })
 
     expect(mockToastInfo).not.toHaveBeenCalled()
+    unmount()
+  })
+
+  it('persists background plan-ready waits and refreshes unread state', async () => {
+    useChatStore.setState({
+      activeWorktreeId: 'worktree-1',
+      activeSessionIds: { 'worktree-1': 'session-1' },
+      worktreePaths: { 'worktree-1': '/tmp/worktree-1' },
+      streamingContents: {
+        'session-1': 'Plan ready',
+      },
+    })
+    useUIStore.setState({ activeMainView: 'agent_board' })
+
+    const { handlers, queryClient, unmount } = await setupHook()
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+
+    await act(async () => {
+      handlers.get('chat:done')?.({
+        payload: {
+          session_id: 'session-1',
+          worktree_id: 'worktree-1',
+          waiting_for_plan: true,
+        },
+      })
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(mockInvoke).toHaveBeenCalledWith(
+      'update_session_state',
+      expect.objectContaining({
+        worktreeId: 'worktree-1',
+        worktreePath: '/tmp/worktree-1',
+        sessionId: 'session-1',
+        waitingForInput: true,
+        waitingForInputType: 'plan',
+        pendingPlanMessageId: expect.any(String),
+      })
+    )
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: chatQueryKeys.unreadSessions(),
+    })
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: chatQueryKeys.unreadCount(),
+    })
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: agentBoardQueryKeys.all,
+    })
     unmount()
   })
 

@@ -883,7 +883,7 @@ fn apply_session_name(
     let worktree_path_str = request.worktree_path.to_string_lossy();
     let new_name_owned = new_name.to_string();
 
-    with_sessions_mut(app, &worktree_path_str, &request.worktree_id, |sessions| {
+    let result = with_sessions_mut(app, &worktree_path_str, &request.worktree_id, |sessions| {
         let session = sessions
             .find_session_mut(&request.session_id)
             .ok_or_else(|| "Session not found".to_string())?;
@@ -913,7 +913,26 @@ fn apply_session_name(
         worktree_id: request.worktree_id.clone(),
         error: e,
         stage: NamingStage::SessionStorage,
-    })
+    })?;
+
+    if result.old_name != result.new_name {
+        match crate::agent_board::storage::update_agent_board_title_for_session(
+            app,
+            &request.session_id,
+            &result.new_name,
+        ) {
+            Ok(true) => crate::agent_board::emit_agent_board_cache_invalidation(app),
+            Ok(false) => {}
+            Err(error) => {
+                log::warn!(
+                    "Failed to sync agent board title for renamed session {}: {error}",
+                    request.session_id
+                );
+            }
+        }
+    }
+
+    Ok(result)
 }
 
 /// Apply branch name via git rename

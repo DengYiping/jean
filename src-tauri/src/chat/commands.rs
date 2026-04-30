@@ -119,7 +119,7 @@ fn find_neighbor_non_archived_session_id(
     None
 }
 
-fn emit_sessions_cache_invalidation(app: &AppHandle) {
+pub(crate) fn emit_sessions_cache_invalidation(app: &AppHandle) {
     if let Err(e) = app.emit_all(
         "cache:invalidate",
         &serde_json::json!({ "keys": ["sessions"] }),
@@ -470,6 +470,7 @@ pub async fn rename_session(
     new_name: String,
 ) -> Result<(), String> {
     log::trace!("Renaming session {session_id} to: {new_name}");
+    let board_title = new_name.clone();
 
     with_sessions_mut(&app, &worktree_path, &worktree_id, |sessions| {
         if let Some(session) = sessions.find_session_mut(&session_id) {
@@ -478,7 +479,23 @@ pub async fn rename_session(
         } else {
             Err(format!("Session not found: {session_id}"))
         }
-    })
+    })?;
+
+    match crate::agent_board::storage::update_agent_board_title_for_session(
+        &app,
+        &session_id,
+        &board_title,
+    ) {
+        Ok(true) => crate::agent_board::emit_agent_board_cache_invalidation(&app),
+        Ok(false) => {}
+        Err(error) => {
+            log::warn!(
+                "Failed to sync agent board title for renamed session {session_id}: {error}"
+            );
+        }
+    }
+
+    Ok(())
 }
 
 /// Regenerate session name using AI based on the first user message
@@ -567,6 +584,12 @@ pub async fn update_session_state(
     with_sessions_mut(&app, &worktree_path, &worktree_id, |sessions| {
         if let Some(session) = sessions.find_session_mut(&session_id) {
             let clear_waiting_metadata = matches!(waiting_for_input, Some(false));
+            let approval_clears_waiting = clear_waiting_metadata
+                && selected_execution_mode
+                    .as_ref()
+                    .and_then(|mode| mode.as_deref())
+                    .is_some_and(|mode| mode == "build" || mode == "yolo");
+            let was_waiting_for_input = session.waiting_for_input;
             let had_pending_permission_denials = !session.pending_permission_denials.is_empty()
                 || !session.pending_codex_mcp_elicitations.is_empty();
             if let Some(v) = answered_questions {
@@ -628,15 +651,28 @@ pub async fn update_session_state(
             }
             let has_pending_permission_denials = !session.pending_permission_denials.is_empty()
                 || !session.pending_codex_mcp_elicitations.is_empty();
-            if !had_pending_permission_denials && has_pending_permission_denials {
-                session.updated_at = std::time::SystemTime::now()
+            let became_waiting_for_input =
+                matches!(waiting_for_input, Some(true)) && !was_waiting_for_input;
+            if became_waiting_for_input
+                || (!had_pending_permission_denials && has_pending_permission_denials)
+            {
+                let now = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs();
+                session.updated_at = now;
             }
             if clear_waiting_metadata {
                 session.waiting_for_input_type = None;
                 session.pending_plan_message_id = None;
+                if approval_clears_waiting {
+                    session.last_opened_at = Some(
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs(),
+                    );
+                }
             }
             Ok(())
         } else {
@@ -2856,21 +2892,24 @@ pub async fn send_chat_message(
             if was_cancelled {
                 // Cancelled: don't change waiting/reviewing state
             } else if has_blocking_tool {
+                let attention_now = now();
                 session.waiting_for_input = true;
                 session.is_reviewing = false;
-                session.waiting_for_input_type = Some(
-                    if has_question_tool {
-                        "question"
-                    } else {
-                        "plan"
-                    }
-                    .to_string(),
-                );
+                if has_question_tool {
+                    session.waiting_for_input_type = Some("question".to_string());
+                } else {
+                    session.waiting_for_input_type = Some("plan".to_string());
+                    session.pending_plan_message_id = Some(assistant_msg_id.clone());
+                }
+                session.updated_at = attention_now;
             } else if is_plan_mode_with_content {
                 // Codex/OpenCode plan-mode with content → waiting for plan approval
+                let attention_now = now();
                 session.waiting_for_input = true;
                 session.is_reviewing = false;
                 session.waiting_for_input_type = Some("plan".to_string());
+                session.pending_plan_message_id = Some(assistant_msg_id.clone());
+                session.updated_at = attention_now;
             } else {
                 // Normal completion
                 session.waiting_for_input = false;
@@ -4956,10 +4995,13 @@ pub async fn resume_session(
                     } else {
                         Some(resume_id.as_str())
                     };
-                    if let Err(e) =
+                    let result = if cancelled {
+                        writer.cancel(Some(&assistant_message_id), resume_sid)
+                    } else {
                         writer.complete(&assistant_message_id, resume_sid, usage.clone())
-                    {
-                        log::error!("Failed to mark run as completed: {e}");
+                    };
+                    if let Err(e) = result {
+                        log::error!("Failed to finalize resumed run: {e}");
                     }
 
                     // Clean up input file if it exists

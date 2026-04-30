@@ -21,8 +21,10 @@ export type OnboardingStartStep = 'claude' | 'gh' | null
 export type CliUpdateModalType = 'claude' | 'gh' | 'codex' | 'opencode' | null
 
 export type CliLoginModalType = 'claude' | 'gh' | 'codex' | 'opencode' | null
+export type MainView = 'workspace' | 'agent_board'
 
 interface UIState {
+  activeMainView: MainView
   leftSidebarVisible: boolean
   leftSidebarSize: number // Width in pixels, persisted across sessions
   rightSidebarVisible: boolean
@@ -172,6 +174,7 @@ interface UIState {
   setUIStateInitialized: (initialized: boolean) => void
   setPendingUpdateVersion: (version: string | null) => void
   setUpdateModalVersion: (version: string | null) => void
+  setActiveMainView: (view: MainView) => void
   githubDashboardOpen: boolean
   setGitHubDashboardOpen: (open: boolean) => void
 }
@@ -187,6 +190,7 @@ export function getRemotePickerCallback() {
 export const useUIStore = create<UIState>()(
   devtools(
     (set, get) => ({
+      activeMainView: 'workspace',
       leftSidebarVisible: false,
       leftSidebarSize: 250, // Default width in pixels
       rightSidebarVisible: false,
@@ -734,6 +738,9 @@ export const useUIStore = create<UIState>()(
           undefined,
           'setUpdateModalVersion'
         ),
+
+      setActiveMainView: (view: MainView) =>
+        set({ activeMainView: view }, undefined, 'setActiveMainView'),
 
       setGitHubDashboardOpen: (open: boolean) =>
         set({ githubDashboardOpen: open }, undefined, 'setGitHubDashboardOpen'),

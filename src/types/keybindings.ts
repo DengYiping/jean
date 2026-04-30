@@ -41,6 +41,8 @@ export type KeybindingAction =
   | 'open_github_dashboard'
   | 'open_quick_menu'
   | 'open_usage_dropdown'
+  | 'open_agent_board'
+  | 'new_agent_todo'
 
 // Shortcut string format: "mod+key" where mod is cmd/ctrl
 // Examples: "mod+l", "mod+shift+p", "mod+1"
@@ -101,6 +103,8 @@ export const DEFAULT_KEYBINDINGS: KeybindingsMap = {
   open_github_dashboard: 'mod+shift+d',
   open_quick_menu: 'mod+period',
   open_usage_dropdown: 'mod+u',
+  open_agent_board: 'mod+shift+k',
+  new_agent_todo: 'mod+shift+a',
 }
 
 // UI definitions for the settings pane
@@ -393,6 +397,20 @@ export const KEYBINDING_DEFINITIONS: KeybindingDefinition[] = [
     label: 'Usage dropdown',
     description: 'Open the floating usage dropdown',
     default_shortcut: 'mod+u',
+    category: 'navigation',
+  },
+  {
+    action: 'open_agent_board',
+    label: 'Agent Board',
+    description: 'Open the global agent board',
+    default_shortcut: 'mod+shift+k',
+    category: 'navigation',
+  },
+  {
+    action: 'new_agent_todo',
+    label: 'New agent todo',
+    description: 'Create a new todo card on the agent board',
+    default_shortcut: 'mod+shift+a',
     category: 'navigation',
   },
 ]

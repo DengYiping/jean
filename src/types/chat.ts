@@ -226,6 +226,8 @@ export interface Session {
   automation_target_worktree_id?: string
   /** Whether this session is owned by an automation. */
   automation_owned?: boolean
+  /** Agent board card that owns this session, if any. */
+  agent_board_item_id?: string
   /** Status of the last run (for immediate status on app restart) */
   last_run_status?: RunStatus
   /** Execution mode of the last run (plan/build/yolo) */

@@ -4,9 +4,11 @@ import { logger } from '@/lib/logger'
 import { useChatStore } from '@/store/chat-store'
 import { usePreferences } from '@/services/preferences'
 import { useSendMessage, markPlanApproved } from '@/services/chat'
+import { agentBoardQueryKeys } from '@/services/agent-board'
 import { invoke } from '@/lib/transport'
 import { useClaudeCliStatus } from '@/services/claude-cli'
 import { supportsAdaptiveThinking } from '@/lib/model-utils'
+import type { AgentBoardItem } from '@/types/agent-board'
 import type { EffortLevel, ThinkingLevel } from '@/types/chat'
 import type { SessionCardData } from '../session-card-utils'
 import { buildPlanApprovalMessage } from '../plan-approval-message'
@@ -195,6 +197,15 @@ export function usePlanApproval({
             selectedExecutionMode: 'build',
           })
         )
+        .then(() =>
+          invoke<AgentBoardItem[]>('refresh_agent_board_items')
+            .then(items => {
+              queryClient.setQueryData(agentBoardQueryKeys.all, items)
+            })
+            .catch(err => {
+              logger.error('[usePlanApproval] Failed to refresh board:', err)
+            })
+        )
         .then(() => {
           invoke('broadcast_session_setting', {
             sessionId,
@@ -378,6 +389,15 @@ export function usePlanApproval({
             waitingForInputType: null,
             selectedExecutionMode: 'yolo',
           })
+        )
+        .then(() =>
+          invoke<AgentBoardItem[]>('refresh_agent_board_items')
+            .then(items => {
+              queryClient.setQueryData(agentBoardQueryKeys.all, items)
+            })
+            .catch(err => {
+              logger.error('[usePlanApproval] Failed to refresh board:', err)
+            })
         )
         .catch(err => {
           logger.error('[usePlanApproval] Failed to clear waiting state:', err)

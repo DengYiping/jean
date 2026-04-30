@@ -44,6 +44,50 @@ pub async fn dispatch_command(
             emit_cache_invalidation(app, &["ui-state"]);
             Ok(Value::Null)
         }
+        "list_agent_board_items" => {
+            let result = crate::agent_board::list_agent_board_items(app.clone()).await?;
+            to_value(result)
+        }
+        "create_agent_board_item" => {
+            let request = field(&args, "request", "request")?;
+            let result = crate::agent_board::create_agent_board_item(app.clone(), request).await?;
+            emit_cache_invalidation(app, &["agent-board"]);
+            to_value(result)
+        }
+        "update_agent_board_item" => {
+            let item_id: String = field(&args, "itemId", "item_id")?;
+            let patch = field(&args, "patch", "patch")?;
+            let result =
+                crate::agent_board::update_agent_board_item(app.clone(), item_id, patch).await?;
+            emit_cache_invalidation(app, &["agent-board"]);
+            to_value(result)
+        }
+        "delete_agent_board_item" => {
+            let item_id: String = field(&args, "itemId", "item_id")?;
+            crate::agent_board::delete_agent_board_item(app.clone(), item_id).await?;
+            emit_cache_invalidation(app, &["agent-board", "projects", "sessions"]);
+            Ok(Value::Null)
+        }
+        "move_agent_board_item" => {
+            let item_id: String = field(&args, "itemId", "item_id")?;
+            let lane = field(&args, "lane", "lane")?;
+            let result =
+                crate::agent_board::move_agent_board_item(app.clone(), item_id, lane).await?;
+            emit_cache_invalidation(app, &["agent-board", "sessions", "projects"]);
+            to_value(result)
+        }
+        "refresh_agent_board_items" => {
+            let result = crate::agent_board::refresh_agent_board_items(app.clone()).await?;
+            emit_cache_invalidation(app, &["agent-board"]);
+            to_value(result)
+        }
+        "get_agent_board_item_for_session" => {
+            let session_id: String = field(&args, "sessionId", "session_id")?;
+            let result =
+                crate::agent_board::get_agent_board_item_for_session(app.clone(), session_id)
+                    .await?;
+            to_value(result)
+        }
 
         // =====================================================================
         // Projects

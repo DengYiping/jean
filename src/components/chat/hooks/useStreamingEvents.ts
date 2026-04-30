@@ -6,6 +6,10 @@ import type { QueryClient } from '@tanstack/react-query'
 import { useChatStore } from '@/store/chat-store'
 import { useUIStore } from '@/store/ui-store'
 import { chatQueryKeys } from '@/services/chat'
+import {
+  agentBoardQueryKeys,
+  setCachedAgentBoardSessionRunStatus,
+} from '@/services/agent-board'
 import { isTauri, saveWorktreePr, projectsQueryKeys } from '@/services/projects'
 import { preferencesQueryKeys } from '@/services/preferences'
 import type { AppPreferences, NotificationSound } from '@/types/preferences'
@@ -120,15 +124,18 @@ function shouldPlayWaitingStateTransitionSound(options: {
 
 function isSessionCurrentlyViewing(
   sessionId: string,
-  worktreeId: string
+  worktreeId: string | null | undefined
 ): boolean {
+  if (!worktreeId) return false
+
   const { activeWorktreeId, activeSessionIds } = useChatStore.getState()
   const isActiveWorktree = worktreeId === activeWorktreeId
   const isActiveSession = activeSessionIds[worktreeId] === sessionId
-  const isViewingInFullView = isActiveWorktree && isActiveSession
 
-  const { sessionChatModalOpen, sessionChatModalWorktreeId } =
+  const { activeMainView, sessionChatModalOpen, sessionChatModalWorktreeId } =
     useUIStore.getState()
+  const isViewingInFullView =
+    activeMainView === 'workspace' && isActiveWorktree && isActiveSession
   const isViewingInModal =
     sessionChatModalOpen &&
     sessionChatModalWorktreeId === worktreeId &&
@@ -345,6 +352,7 @@ export default function useStreamingEvents({
       user_message: string
     }>('chat:sending', event => {
       const { session_id, worktree_id: wtId, user_message } = event.payload
+      setCachedAgentBoardSessionRunStatus(queryClient, session_id, 'running')
       // Check if THIS client initiated the send (sender calls addSendingSession
       // before sendMessage.mutate, so it's already in sendingSessionIds).
       const isSender = !!useChatStore.getState().sendingSessionIds[session_id]
@@ -524,9 +532,9 @@ export default function useStreamingEvents({
         )
 
         resolveWorktreePath(worktree_id)
-          .then(worktreePath => {
+          .then(async worktreePath => {
             if (!worktreePath) return
-            return invoke('update_session_state', {
+            await invoke('update_session_state', {
               worktreeId: worktree_id,
               worktreePath,
               sessionId: session_id,
@@ -534,6 +542,15 @@ export default function useStreamingEvents({
               waitingForInputType: 'question',
               isReviewing: false,
             })
+            if (isCurrentlyViewing) {
+              await invoke('set_session_last_opened', {
+                sessionId: session_id,
+              })
+              window.dispatchEvent(new CustomEvent('session-opened'))
+            }
+          })
+          .finally(() => {
+            invalidateUnreadQueries(queryClient)
           })
           .catch(err => {
             logger.error(
@@ -914,6 +931,8 @@ export default function useStreamingEvents({
     const unlistenDone = listen<DoneEvent>('chat:done', event => {
       const sessionId = event.payload.session_id
       const worktreeId = event.payload.worktree_id
+      setCachedAgentBoardSessionRunStatus(queryClient, sessionId, 'completed')
+      queryClient.invalidateQueries({ queryKey: agentBoardQueryKeys.all })
 
       // Flush any buffered chunks so streamingContents is up to date
       if (chunkRafId !== null) {
@@ -1751,8 +1770,6 @@ export default function useStreamingEvents({
         setInputDraft,
         clearLastSentMessage,
         setError,
-        activeWorktreeId,
-        activeSessionIds,
         markSessionNeedsDigest,
       } = useChatStore.getState()
 
@@ -1760,21 +1777,10 @@ export default function useStreamingEvents({
       // Look up the worktree from sessionWorktreeMap since ErrorEvent may not have it
       const sessionWorktreeId =
         useChatStore.getState().sessionWorktreeMap[session_id]
-      const isActiveWorktree = sessionWorktreeId === activeWorktreeId
-      const isActiveSession = sessionWorktreeId
-        ? activeSessionIds[sessionWorktreeId] === session_id
-        : false
-      const isViewingInFullView = isActiveWorktree && isActiveSession
-
-      // Also check if viewing in modal (modal doesn't change activeWorktreeId)
-      const { sessionChatModalOpen, sessionChatModalWorktreeId } =
-        useUIStore.getState()
-      const isViewingInModal =
-        sessionChatModalOpen &&
-        sessionChatModalWorktreeId === sessionWorktreeId &&
-        isActiveSession
-
-      const isCurrentlyViewing = isViewingInFullView || isViewingInModal
+      const isCurrentlyViewing = isSessionCurrentlyViewing(
+        session_id,
+        sessionWorktreeId
+      )
 
       // If user is currently viewing this session, bump last_opened_at so it
       // doesn't appear as "unread" (updated_at will be newer after the run ends).
@@ -1868,6 +1874,8 @@ export default function useStreamingEvents({
       useChatStore.getState().restoreAttachments(session_id)
 
       // Optimistically update last_run_status BEFORE clearing state (same pattern as chat:done)
+      setCachedAgentBoardSessionRunStatus(queryClient, session_id, 'crashed')
+      queryClient.invalidateQueries({ queryKey: agentBoardQueryKeys.all })
       queryClient.setQueryData<Session>(
         chatQueryKeys.session(session_id),
         old => (old ? { ...old, last_run_status: 'crashed' as const } : old)
@@ -1930,8 +1938,6 @@ export default function useStreamingEvents({
           streamingThinkingContent,
           activeToolCalls,
           streamingContentBlocks,
-          activeWorktreeId,
-          activeSessionIds,
           markSessionNeedsDigest,
         } = useChatStore.getState()
         const sendStarted = sendStartedAt[session_id] ?? 0
@@ -1948,21 +1954,10 @@ export default function useStreamingEvents({
         // Check if this session is currently being viewed
         const sessionWorktreeId =
           useChatStore.getState().sessionWorktreeMap[session_id]
-        const isActiveWorktree = sessionWorktreeId === activeWorktreeId
-        const isActiveSession = sessionWorktreeId
-          ? activeSessionIds[sessionWorktreeId] === session_id
-          : false
-        const isViewingInFullView = isActiveWorktree && isActiveSession
-
-        // Also check if viewing in modal (modal doesn't change activeWorktreeId)
-        const { sessionChatModalOpen, sessionChatModalWorktreeId } =
-          useUIStore.getState()
-        const isViewingInModal =
-          sessionChatModalOpen &&
-          sessionChatModalWorktreeId === sessionWorktreeId &&
-          isActiveSession
-
-        const isCurrentlyViewing = isViewingInFullView || isViewingInModal
+        const isCurrentlyViewing = isSessionCurrentlyViewing(
+          session_id,
+          sessionWorktreeId
+        )
 
         // If user is currently viewing this session, bump last_opened_at so it
         // doesn't appear as "unread" (updated_at will be newer after the run ends).
@@ -2046,6 +2041,12 @@ export default function useStreamingEvents({
         // This ensures the persisted message exists before StreamingMessage unmounts
 
         // Optimistically update last_run_status so "restored session" indicator hides
+        setCachedAgentBoardSessionRunStatus(
+          queryClient,
+          session_id,
+          'cancelled'
+        )
+        queryClient.invalidateQueries({ queryKey: agentBoardQueryKeys.all })
         queryClient.setQueryData<Session>(
           chatQueryKeys.session(session_id),
           old => (old ? { ...old, last_run_status: 'cancelled' } : old)

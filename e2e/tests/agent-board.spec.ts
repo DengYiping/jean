@@ -3,11 +3,11 @@ import type { Page } from '@playwright/test'
 
 async function createTodo(mockPage: Page) {
   await mockPage.getByRole('button', { name: 'Add todo' }).click()
-  await mockPage.getByPlaceholder('Title (optional)').fill('Fix board flow')
-  await mockPage
-    .getByPlaceholder('Describe the work...')
-    .fill('Plan and implement the board flow')
+  await mockPage.getByPlaceholder('Describe the work...').fill('Fix board flow')
   await mockPage.getByRole('button', { name: 'Create' }).click()
+  await expect(
+    mockPage.getByRole('dialog', { name: 'New agent todo' })
+  ).toBeHidden()
   await expect(mockPage.getByText('Fix board flow')).toBeVisible({
     timeout: 3000,
   })
@@ -37,11 +37,13 @@ test.describe('Agent board', () => {
     await mockPage.getByRole('button', { name: 'Agent Board' }).click()
     await mockPage.getByRole('button', { name: 'Add todo' }).click()
     await expect(mockPage.getByRole('dialog')).toBeVisible()
-    await mockPage.getByPlaceholder('Title (optional)').fill('Fix board flow')
     await mockPage
       .getByPlaceholder('Describe the work...')
-      .fill('Plan and implement the board flow')
+      .fill('Fix board flow')
     await mockPage.getByRole('button', { name: 'Create' }).click()
+    await expect(
+      mockPage.getByRole('dialog', { name: 'New agent todo' })
+    ).toBeHidden()
 
     const todoLane = mockPage.locator('section').filter({ hasText: 'Todo' })
     await expect(todoLane.getByText('Fix board flow')).toBeVisible()
@@ -57,15 +59,21 @@ test.describe('Agent board', () => {
       .locator('article')
       .filter({ hasText: 'Fix board flow' })
     const planningLane = mockPage.locator('section').filter({
-      has: mockPage.getByRole('heading', { name: 'Planning' }),
+      has: mockPage.getByRole('heading', { name: 'Plan' }),
     })
 
     await card.dragTo(planningLane)
-    await expect(planningLane.getByText('Fix board flow')).toBeVisible({
-      timeout: 3000,
-    })
+    await expect(
+      planningLane.getByRole('heading', { name: 'Fix board flow' })
+    ).toBeVisible({ timeout: 3000 })
 
     await planningLane.getByRole('button', { name: 'Open' }).click()
+    await expect(
+      mockPage
+        .locator('h2')
+        .filter({ hasText: 'Test Project' })
+        .filter({ hasText: /agent-plan-/ })
+    ).toBeVisible({ timeout: 3000 })
     await expect(
       mockPage.getByPlaceholder('Planning: Plan a task, @mention files...')
     ).toBeVisible({ timeout: 3000 })

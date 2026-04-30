@@ -21,9 +21,8 @@ import { toast } from 'sonner'
 import { invoke } from '@/lib/transport'
 import { cn } from '@/lib/utils'
 import { AGENT_BOARD_FOCUS_EVENT } from '@/lib/agent-board-navigation'
-import { useChatStore } from '@/store/chat-store'
+import { openWorkspaceSession } from '@/lib/workspace-navigation'
 import { useProjectsStore } from '@/store/projects-store'
-import { useUIStore } from '@/store/ui-store'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -409,19 +408,13 @@ export function AgentBoardView() {
       const worktree = await invoke<Worktree>('get_worktree', {
         worktreeId: target.worktreeId,
       })
-      useUIStore.getState().setActiveMainView('workspace')
-      useProjectsStore.getState().selectProject(worktree.project_id)
       useProjectsStore.getState().expandProject(worktree.project_id)
-      useProjectsStore.getState().selectWorktree(worktree.id)
-      useChatStore.getState().setActiveWorktree(worktree.id, worktree.path)
-      useChatStore.getState().setActiveSession(worktree.id, target.sessionId)
-      useChatStore
-        .getState()
-        .setLastOpenedForProject(
-          worktree.project_id,
-          worktree.id,
-          target.sessionId
-        )
+      openWorkspaceSession({
+        projectId: worktree.project_id,
+        worktreeId: worktree.id,
+        worktreePath: worktree.path,
+        sessionId: target.sessionId,
+      })
     } catch (error) {
       toast.error(`Failed to open session: ${error}`)
     }

@@ -16,8 +16,13 @@ describe('canMoveAgentBoardItem', () => {
     expect(canMoveAgentBoardItem('yoloed', 'yoloing')).toBe(true)
   })
 
-  it('allows yolo cards to move to PR', () => {
-    expect(canMoveAgentBoardItem('yoloing', 'pr_opened')).toBe(true)
+  it('allows plan cards to move to yolo', () => {
+    expect(canMoveAgentBoardItem('planning', 'yoloing')).toBe(true)
+    expect(canMoveAgentBoardItem('planned', 'yoloing')).toBe(true)
+  })
+
+  it('allows completed yolo cards to move to PR', () => {
+    expect(canMoveAgentBoardItem('yoloing', 'pr_opened')).toBe(false)
     expect(canMoveAgentBoardItem('yoloed', 'pr_opened')).toBe(true)
   })
 })

@@ -470,6 +470,7 @@ pub async fn rename_session(
     new_name: String,
 ) -> Result<(), String> {
     log::trace!("Renaming session {session_id} to: {new_name}");
+    let board_title = new_name.clone();
 
     with_sessions_mut(&app, &worktree_path, &worktree_id, |sessions| {
         if let Some(session) = sessions.find_session_mut(&session_id) {
@@ -478,7 +479,23 @@ pub async fn rename_session(
         } else {
             Err(format!("Session not found: {session_id}"))
         }
-    })
+    })?;
+
+    match crate::agent_board::storage::update_agent_board_title_for_session(
+        &app,
+        &session_id,
+        &board_title,
+    ) {
+        Ok(true) => crate::agent_board::emit_agent_board_cache_invalidation(&app),
+        Ok(false) => {}
+        Err(error) => {
+            log::warn!(
+                "Failed to sync agent board title for renamed session {session_id}: {error}"
+            );
+        }
+    }
+
+    Ok(())
 }
 
 /// Regenerate session name using AI based on the first user message

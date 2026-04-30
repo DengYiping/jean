@@ -126,15 +126,27 @@ function clearSessionAttention(session: Session): Session {
   }
 }
 
-function clearCachedSessionAttention(
-  queryClient: ReturnType<typeof useQueryClient>,
-  sessionId: string
-) {
-  useChatStore.getState().setWaitingForInput(sessionId, false)
-  useChatStore.getState().setExecutionMode(sessionId, 'build')
+function markSessionRead(session: Session): Session {
+  const now = Math.floor(Date.now() / 1000)
+  return {
+    ...session,
+    last_opened_at: now,
+    session_derived_state: session.session_derived_state
+      ? {
+          ...session.session_derived_state,
+          is_unread: false,
+        }
+      : session.session_derived_state,
+  }
+}
 
+function updateCachedSession(
+  queryClient: ReturnType<typeof useQueryClient>,
+  sessionId: string,
+  updateSession: (session: Session) => Session
+) {
   queryClient.setQueryData<Session>(chatQueryKeys.session(sessionId), old =>
-    old ? clearSessionAttention(old) : old
+    old ? updateSession(old) : old
   )
   queryClient.setQueriesData<WorktreeSessions>(
     { queryKey: [...chatQueryKeys.all, 'sessions'] },
@@ -143,9 +155,7 @@ function clearCachedSessionAttention(
         ? {
             ...old,
             sessions: old.sessions.map(session =>
-              session.id === sessionId
-                ? clearSessionAttention(session)
-                : session
+              session.id === sessionId ? updateSession(session) : session
             ),
           }
         : old
@@ -157,29 +167,69 @@ function clearCachedSessionAttention(
           entries: old.entries.map(entry => ({
             ...entry,
             sessions: entry.sessions.map(session =>
-              session.id === sessionId
-                ? clearSessionAttention(session)
-                : session
+              session.id === sessionId ? updateSession(session) : session
             ),
           })),
         }
       : old
   )
+}
+
+function removeSessionsFromUnreadCaches(
+  queryClient: ReturnType<typeof useQueryClient>,
+  sessionIds: string[]
+) {
+  if (sessionIds.length === 0) return
+  const sessionIdSet = new Set(sessionIds)
+  let removedCount = 0
   queryClient.setQueryData<UnreadSessionsResponse>(
     chatQueryKeys.unreadSessions(),
-    old =>
-      old
-        ? {
-            ...old,
-            entries: old.entries.filter(
-              entry => entry.session.id !== sessionId
-            ),
-          }
-        : old
+    old => {
+      if (!old) return old
+      const entries = old.entries.filter(entry => {
+        const remove = sessionIdSet.has(entry.session.id)
+        if (remove) removedCount += 1
+        return !remove
+      })
+      return { ...old, entries }
+    }
   )
-  queryClient.setQueryData<number>(chatQueryKeys.unreadCount(), old =>
-    old == null ? old : Math.max(0, old - 1)
-  )
+  if (removedCount > 0) {
+    queryClient.setQueryData<number>(chatQueryKeys.unreadCount(), old =>
+      old == null ? old : Math.max(0, old - removedCount)
+    )
+  }
+}
+
+function associatedSessionIds(item?: AgentBoardItem | null) {
+  if (!item) return []
+  return [
+    item.planning_session_id,
+    item.implementation_session_id,
+    item.yolo_session_id,
+  ].filter((sessionId, index, sessionIds): sessionId is string => {
+    return Boolean(sessionId) && sessionIds.indexOf(sessionId) === index
+  })
+}
+
+function markCachedSessionsRead(
+  queryClient: ReturnType<typeof useQueryClient>,
+  sessionIds: string[]
+) {
+  for (const sessionId of sessionIds) {
+    updateCachedSession(queryClient, sessionId, markSessionRead)
+  }
+  removeSessionsFromUnreadCaches(queryClient, sessionIds)
+}
+
+function clearCachedSessionAttention(
+  queryClient: ReturnType<typeof useQueryClient>,
+  sessionId: string
+) {
+  useChatStore.getState().setWaitingForInput(sessionId, false)
+  useChatStore.getState().setExecutionMode(sessionId, 'build')
+  updateCachedSession(queryClient, sessionId, clearSessionAttention)
+  removeSessionsFromUnreadCaches(queryClient, [sessionId])
 }
 
 export function useMoveAgentBoardItem() {
@@ -193,6 +243,7 @@ export function useMoveAgentBoardItem() {
         agentBoardQueryKeys.all
       )
       const movingItem = previousItems?.find(item => item.id === itemId)
+      const sessionIds = associatedSessionIds(movingItem)
       const startedSessionId =
         lane === 'implementing'
           ? (movingItem?.implementation_session_id ??
@@ -200,6 +251,12 @@ export function useMoveAgentBoardItem() {
           : null
       if (startedSessionId) {
         clearCachedSessionAttention(queryClient, startedSessionId)
+        markCachedSessionsRead(
+          queryClient,
+          sessionIds.filter(sessionId => sessionId !== startedSessionId)
+        )
+      } else {
+        markCachedSessionsRead(queryClient, sessionIds)
       }
       queryClient.setQueryData<AgentBoardItem[]>(
         agentBoardQueryKeys.all,

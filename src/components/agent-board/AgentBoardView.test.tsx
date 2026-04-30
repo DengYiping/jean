@@ -267,6 +267,12 @@ describe('AgentBoardView', () => {
     ).toHaveAttribute('href', 'https://github.com/acme/repo/pull/123')
   })
 
+  it('renders the lane selector as a compact non-clipping control', () => {
+    render(<AgentBoardView />)
+
+    expect(screen.getByRole('combobox')).toHaveClass('h-7', 'py-0', 'leading-7')
+  })
+
   it('does not show a spinner when the associated session was cancelled', () => {
     item.lane = 'implementing'
     item.implementation_session_id = 'session-1'

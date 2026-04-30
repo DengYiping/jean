@@ -390,6 +390,15 @@ export function usePlanApproval({
             selectedExecutionMode: 'yolo',
           })
         )
+        .then(() =>
+          invoke<AgentBoardItem[]>('refresh_agent_board_items')
+            .then(items => {
+              queryClient.setQueryData(agentBoardQueryKeys.all, items)
+            })
+            .catch(err => {
+              logger.error('[usePlanApproval] Failed to refresh board:', err)
+            })
+        )
         .catch(err => {
           logger.error('[usePlanApproval] Failed to clear waiting state:', err)
         })

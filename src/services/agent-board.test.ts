@@ -270,4 +270,85 @@ describe('agent board service', () => {
       expect(queryClient.getQueryData(chatQueryKeys.unreadCount())).toBe(0)
     })
   })
+
+  it('marks associated sessions read when moving between lanes', async () => {
+    const { invoke } = await import('@/lib/transport')
+    const session: Session = {
+      id: 'session-1',
+      name: 'Session 1',
+      order: 0,
+      created_at: 1,
+      updated_at: 10,
+      messages: [],
+      session_derived_state: {
+        status: 'completed',
+        effective_execution_mode: 'build',
+        is_waiting: false,
+        waiting_type: null,
+        has_question: false,
+        has_exit_plan: false,
+        pending_plan_message_id: null,
+        plan_file_path: null,
+        plan_content: null,
+        permission_denial_count: 0,
+        has_recap: false,
+        latest_activity_at: 10,
+        is_unread: true,
+      },
+    }
+    const item: AgentBoardItem = {
+      ...todoItem(),
+      lane: 'implemented',
+      implementation_session_id: session.id,
+    }
+    queryClient.setQueryData(agentBoardQueryKeys.all, [item])
+    queryClient.setQueryData<WorktreeSessions>(chatQueryKeys.sessions('wt-1'), {
+      worktree_id: 'wt-1',
+      sessions: [session],
+      active_session_id: session.id,
+      version: 1,
+    })
+    queryClient.setQueryData<UnreadSessionsResponse>(
+      chatQueryKeys.unreadSessions(),
+      {
+        entries: [
+          {
+            session,
+            project_id: 'project-1',
+            project_name: 'Project',
+            worktree_id: 'wt-1',
+            worktree_name: 'Worktree',
+            worktree_path: '/tmp/worktree',
+          },
+        ],
+      }
+    )
+    queryClient.setQueryData(chatQueryKeys.unreadCount(), 1)
+
+    vi.mocked(invoke).mockReturnValue(
+      new Promise<AgentBoardItem>(() => undefined)
+    )
+
+    const { result } = renderHook(() => useMoveAgentBoardItem(), {
+      wrapper: createWrapper(queryClient),
+    })
+
+    act(() => {
+      result.current.mutate({ itemId: item.id, lane: 'pr_opened' })
+    })
+
+    await waitFor(() => {
+      const updatedSession = queryClient.getQueryData<WorktreeSessions>(
+        chatQueryKeys.sessions('wt-1')
+      )?.sessions[0]
+      expect(updatedSession?.last_opened_at).toBeDefined()
+      expect(updatedSession?.session_derived_state?.is_unread).toBe(false)
+      expect(
+        queryClient.getQueryData<UnreadSessionsResponse>(
+          chatQueryKeys.unreadSessions()
+        )?.entries
+      ).toEqual([])
+      expect(queryClient.getQueryData(chatQueryKeys.unreadCount())).toBe(0)
+    })
+  })
 })

@@ -17,6 +17,8 @@ const WORKTREE_READY_TIMEOUT: Duration = Duration::from_secs(60);
 const WORKTREE_READY_POLL_INTERVAL: Duration = Duration::from_millis(250);
 const DEFAULT_PLAN_APPROVAL_BUILD_PROMPT: &str =
     "Plan approved. Begin implementing the changes now. Do not re-explain the plan - start writing code.";
+const DEFAULT_PLAN_APPROVAL_YOLO_PROMPT: &str =
+    "Plan approved (yolo mode). Begin implementing all changes immediately without asking for confirmation. Do not re-explain the plan - start writing code.";
 const DEFAULT_PLAN_APPROVAL_CODEX_PROMPT: &str =
     "Execute the plan you created. Implement all changes described.";
 
@@ -92,7 +94,7 @@ fn associate_session(app: &AppHandle, session_id: &str, item_id: &str) -> Result
     Ok(())
 }
 
-fn emit_agent_board_cache_invalidation(app: &AppHandle) {
+pub(crate) fn emit_agent_board_cache_invalidation(app: &AppHandle) {
     if let Err(e) = app.emit_all(
         "cache:invalidate",
         &serde_json::json!({ "keys": ["agent-board", "sessions", "projects"] }),
@@ -114,10 +116,17 @@ fn persist_agent_board_item_snapshot(
     Ok(())
 }
 
-fn configured_plan_approval_message(app: &AppHandle, backend: &Backend) -> String {
+fn configured_plan_approval_message(
+    app: &AppHandle,
+    backend: &Backend,
+    execution_mode: &str,
+) -> String {
     let preferences = crate::load_preferences_sync(app).unwrap_or_default();
     let configured = match backend {
         Backend::Codex => preferences.magic_prompts.plan_approval_codex,
+        Backend::Claude | Backend::Opencode if execution_mode == "yolo" => {
+            preferences.magic_prompts.plan_approval_yolo
+        }
         Backend::Claude | Backend::Opencode => preferences.magic_prompts.plan_approval_build,
     };
 
@@ -132,6 +141,9 @@ fn configured_plan_approval_message(app: &AppHandle, backend: &Backend) -> Strin
         })
         .unwrap_or_else(|| match backend {
             Backend::Codex => DEFAULT_PLAN_APPROVAL_CODEX_PROMPT.to_string(),
+            Backend::Claude | Backend::Opencode if execution_mode == "yolo" => {
+                DEFAULT_PLAN_APPROVAL_YOLO_PROMPT.to_string()
+            }
             Backend::Claude | Backend::Opencode => DEFAULT_PLAN_APPROVAL_BUILD_PROMPT.to_string(),
         })
 }
@@ -140,6 +152,7 @@ fn clear_board_session_attention_for_run(
     metadata: &mut SessionMetadata,
     now: u64,
     approve_pending_plan: bool,
+    execution_mode: &str,
 ) {
     if approve_pending_plan {
         if let Some(message_id) = metadata.pending_plan_message_id.clone() {
@@ -153,7 +166,7 @@ fn clear_board_session_attention_for_run(
     metadata.pending_plan_message_id = None;
     metadata.attention_updated_at = None;
     metadata.last_opened_at = Some(now);
-    metadata.selected_execution_mode = Some("build".to_string());
+    metadata.selected_execution_mode = Some(execution_mode.to_string());
 }
 
 fn attached_worktree_ids(item: &AgentBoardItem) -> Vec<String> {
@@ -169,20 +182,58 @@ fn attached_worktree_ids(item: &AgentBoardItem) -> Vec<String> {
     worktree_ids
 }
 
+fn attached_session_ids(item: &AgentBoardItem) -> Vec<String> {
+    let mut session_ids = Vec::new();
+    for session_id in [
+        &item.planning_session_id,
+        &item.implementation_session_id,
+        &item.yolo_session_id,
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if !session_ids.contains(session_id) {
+            session_ids.push(session_id.clone());
+        }
+    }
+    session_ids
+}
+
+fn mark_attached_sessions_read(app: &AppHandle, item: &AgentBoardItem) -> Result<bool, String> {
+    let now = now_seconds();
+    let mut changed = false;
+    for session_id in attached_session_ids(item) {
+        if let Some(mut metadata) = load_metadata(app, &session_id)? {
+            if metadata.last_opened_at != Some(now) {
+                metadata.last_opened_at = Some(now);
+                save_metadata(app, &metadata)?;
+                changed = true;
+            }
+        }
+    }
+    Ok(changed)
+}
+
 async fn mark_board_session_started(
     app: &AppHandle,
     session_id: &str,
     approve_pending_plan: bool,
+    execution_mode: &str,
 ) -> Result<(), String> {
     if let Some(mut metadata) = load_metadata(app, session_id)? {
-        clear_board_session_attention_for_run(&mut metadata, now_seconds(), approve_pending_plan);
+        clear_board_session_attention_for_run(
+            &mut metadata,
+            now_seconds(),
+            approve_pending_plan,
+            execution_mode,
+        );
         save_metadata(app, &metadata)?;
         crate::chat::emit_sessions_cache_invalidation(app);
         let _ = crate::chat::broadcast_session_setting(
             app.clone(),
             session_id.to_string(),
             "executionMode".to_string(),
-            "build".to_string(),
+            execution_mode.to_string(),
         )
         .await;
         let _ = crate::chat::broadcast_session_setting(
@@ -342,9 +393,9 @@ async fn run_lane_side_effect(
             let session_id = item.implementation_session_id.clone().expect("session set");
             let approve_pending_plan = from_lane == AgentBoardLane::Planned
                 && item.planning_session_id.as_deref() == Some(session_id.as_str());
-            let message_override =
-                approve_pending_plan.then(|| configured_plan_approval_message(&app, &item.backend));
-            mark_board_session_started(&app, &session_id, approve_pending_plan).await?;
+            let message_override = approve_pending_plan
+                .then(|| configured_plan_approval_message(&app, &item.backend, "build"));
+            mark_board_session_started(&app, &session_id, approve_pending_plan, "build").await?;
             send_board_prompt(
                 app,
                 item,
@@ -384,6 +435,40 @@ async fn run_lane_side_effect(
             item.pr_url = Some(result.pr_url);
         }
         AgentBoardLane::Yoloing => {
+            if matches!(
+                from_lane,
+                AgentBoardLane::Planning | AgentBoardLane::Planned
+            ) {
+                if item.worktree_id.is_none() {
+                    let worktree = create_board_worktree(app.clone(), item, "plan").await?;
+                    item.worktree_id = Some(worktree.id);
+                }
+                if item.planning_session_id.is_none() {
+                    let worktree_id = item.worktree_id.clone().expect("worktree set");
+                    let session =
+                        create_board_session(app.clone(), item, &worktree_id, "plan").await?;
+                    item.planning_session_id = Some(session.id);
+                }
+                let worktree_id = item.worktree_id.clone().expect("worktree set");
+                let session_id = item.planning_session_id.clone().expect("session set");
+                item.yolo_worktree_id = Some(worktree_id.clone());
+                item.yolo_session_id = Some(session_id.clone());
+                persist_agent_board_item_snapshot(&app, item)?;
+                mark_board_session_started(&app, &session_id, true, "yolo").await?;
+                let message_override =
+                    configured_plan_approval_message(&app, &item.backend, "yolo");
+                send_board_prompt(
+                    app,
+                    item,
+                    &worktree_id,
+                    &session_id,
+                    "yolo",
+                    Some(message_override),
+                )
+                .await?;
+                return Ok(());
+            }
+
             if item.yolo_worktree_id.is_none() {
                 let worktree = create_board_worktree(app.clone(), item, "yolo").await?;
                 item.yolo_worktree_id = Some(worktree.id);
@@ -492,6 +577,38 @@ fn sync_item_from_planning_session(item: &mut AgentBoardItem, metadata: &Session
 
     let latest_run = latest_run(metadata);
     let latest_run_status = latest_run_status(metadata);
+    let latest_run_is_yolo =
+        latest_run.and_then(|run| run.execution_mode.as_deref()) == Some("yolo");
+    let completed_plan_approved_for_yolo = metadata.selected_execution_mode.as_deref()
+        == Some("yolo")
+        && latest_run.and_then(|run| run.execution_mode.as_deref()) == Some("plan")
+        && matches!(latest_run_status, Some(RunStatus::Completed));
+    let session_is_yolo = latest_run_is_yolo || completed_plan_approved_for_yolo;
+    if session_is_yolo
+        && matches!(
+            item.lane,
+            AgentBoardLane::Planning | AgentBoardLane::Planned
+        )
+    {
+        if item.yolo_worktree_id.is_none() {
+            item.yolo_worktree_id = item.worktree_id.clone();
+        }
+        if item.yolo_session_id.is_none() {
+            item.yolo_session_id = item.planning_session_id.clone();
+        }
+        if latest_run_is_yolo
+            && matches!(
+                latest_run_status,
+                Some(RunStatus::Completed | RunStatus::Cancelled | RunStatus::Crashed)
+            )
+        {
+            item.lane = AgentBoardLane::Yoloed;
+        } else {
+            item.lane = AgentBoardLane::Yoloing;
+        }
+        return;
+    }
+
     let latest_run_is_build =
         latest_run.and_then(|run| run.execution_mode.as_deref()) == Some("build");
     let completed_plan_approved_for_build = metadata.selected_execution_mode.as_deref()
@@ -712,6 +829,16 @@ pub async fn move_agent_board_item(
         return Err(error);
     }
 
+    match mark_attached_sessions_read(&app, item) {
+        Ok(true) => crate::chat::emit_sessions_cache_invalidation(&app),
+        Ok(false) => {}
+        Err(error) => {
+            log::warn!(
+                "[AgentBoard] failed to mark sessions read for moved item {item_id}: {error}"
+            );
+        }
+    }
+
     let result = item.clone();
     save_agent_board_data(&app, &data)?;
     log::info!(
@@ -883,6 +1010,19 @@ mod tests {
     }
 
     #[test]
+    fn attached_session_ids_deduplicates_reused_sessions() {
+        let mut item = test_item(AgentBoardLane::Yoloing);
+        item.planning_session_id = Some("session-1".to_string());
+        item.yolo_session_id = Some("session-1".to_string());
+        item.implementation_session_id = Some("session-2".to_string());
+
+        assert_eq!(
+            attached_session_ids(&item),
+            vec!["session-1".to_string(), "session-2".to_string()]
+        );
+    }
+
+    #[test]
     fn clear_board_session_attention_for_run_clears_waiting_and_unread_marker() {
         let mut metadata = SessionMetadata::new(
             "session-1".to_string(),
@@ -896,7 +1036,7 @@ mod tests {
         metadata.attention_updated_at = Some(metadata.created_at + 1);
 
         let opened_at = metadata.created_at + 2;
-        clear_board_session_attention_for_run(&mut metadata, opened_at, false);
+        clear_board_session_attention_for_run(&mut metadata, opened_at, false, "build");
 
         assert!(!metadata.waiting_for_input);
         assert_eq!(metadata.waiting_for_input_type, None);
@@ -920,7 +1060,7 @@ mod tests {
         metadata.pending_plan_message_id = Some("plan-msg-1".to_string());
 
         let opened_at = metadata.created_at + 1;
-        clear_board_session_attention_for_run(&mut metadata, opened_at, true);
+        clear_board_session_attention_for_run(&mut metadata, opened_at, true, "build");
 
         assert_eq!(metadata.approved_plan_message_ids, vec!["plan-msg-1"]);
         assert_eq!(metadata.pending_plan_message_id, None);
@@ -940,7 +1080,7 @@ mod tests {
             .push("plan-msg-1".to_string());
 
         let opened_at = metadata.created_at + 1;
-        clear_board_session_attention_for_run(&mut metadata, opened_at, true);
+        clear_board_session_attention_for_run(&mut metadata, opened_at, true, "build");
 
         assert_eq!(metadata.approved_plan_message_ids, vec!["plan-msg-1"]);
     }
@@ -956,6 +1096,32 @@ mod tests {
 
         assert_eq!(item.lane, AgentBoardLane::Implementing);
         assert_eq!(item.implementation_session_id.as_deref(), Some("session-1"));
+    }
+
+    #[test]
+    fn planning_session_yolo_selection_moves_card_to_yoloing() {
+        let mut item = test_item(AgentBoardLane::Planned);
+        let mut metadata = test_metadata();
+        metadata.selected_execution_mode = Some("yolo".to_string());
+        metadata.runs.push(test_run("plan", RunStatus::Completed));
+
+        sync_item_from_planning_session(&mut item, &metadata);
+
+        assert_eq!(item.lane, AgentBoardLane::Yoloing);
+        assert_eq!(item.yolo_worktree_id.as_deref(), Some("worktree-1"));
+        assert_eq!(item.yolo_session_id.as_deref(), Some("session-1"));
+    }
+
+    #[test]
+    fn completed_yolo_run_from_planning_session_moves_card_to_yoloed() {
+        let mut item = test_item(AgentBoardLane::Planned);
+        let mut metadata = test_metadata();
+        metadata.runs.push(test_run("yolo", RunStatus::Completed));
+
+        sync_item_from_planning_session(&mut item, &metadata);
+
+        assert_eq!(item.lane, AgentBoardLane::Yoloed);
+        assert_eq!(item.yolo_session_id.as_deref(), Some("session-1"));
     }
 
     #[test]

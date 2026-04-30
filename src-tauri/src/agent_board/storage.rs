@@ -75,6 +75,40 @@ pub fn validate_lane_move(from: AgentBoardLane, to: AgentBoardLane) -> Result<()
     }
 }
 
+pub fn update_agent_board_title_for_session(
+    app: &AppHandle,
+    session_id: &str,
+    title: &str,
+) -> Result<bool, String> {
+    let mut data = load_agent_board_data(app)?;
+    let changed =
+        update_agent_board_title_for_session_data(&mut data, session_id, title, now_seconds());
+    if changed {
+        save_agent_board_data(app, &data)?;
+    }
+    Ok(changed)
+}
+
+fn update_agent_board_title_for_session_data(
+    data: &mut AgentBoardData,
+    session_id: &str,
+    title: &str,
+    updated_at: u64,
+) -> bool {
+    let mut changed = false;
+    for item in &mut data.items {
+        let matches_session = item.planning_session_id.as_deref() == Some(session_id)
+            || item.implementation_session_id.as_deref() == Some(session_id)
+            || item.yolo_session_id.as_deref() == Some(session_id);
+        if matches_session && item.title != title {
+            item.title = title.to_string();
+            item.updated_at = updated_at;
+            changed = true;
+        }
+    }
+    changed
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -117,9 +151,15 @@ mod tests {
     }
 
     #[test]
-    fn lane_validation_allows_yolo_to_pr_opened() {
-        assert!(validate_lane_move(AgentBoardLane::Yoloing, AgentBoardLane::PrOpened).is_ok());
+    fn lane_validation_allows_completed_yolo_to_pr_opened() {
+        assert!(validate_lane_move(AgentBoardLane::Yoloing, AgentBoardLane::PrOpened).is_err());
         assert!(validate_lane_move(AgentBoardLane::Yoloed, AgentBoardLane::PrOpened).is_ok());
+    }
+
+    #[test]
+    fn lane_validation_allows_plan_to_yolo() {
+        assert!(validate_lane_move(AgentBoardLane::Planning, AgentBoardLane::Yoloing).is_ok());
+        assert!(validate_lane_move(AgentBoardLane::Planned, AgentBoardLane::Yoloing).is_ok());
     }
 
     #[test]
@@ -142,5 +182,36 @@ mod tests {
         item.lane = AgentBoardLane::Archived;
         item.archived_at = Some(123);
         assert_eq!(item.archived_at, Some(123));
+    }
+
+    #[test]
+    fn updates_title_for_associated_session() {
+        let mut data = AgentBoardData {
+            version: 1,
+            items: vec![item(AgentBoardLane::Planned)],
+        };
+        data.items[0].planning_session_id = Some("session-1".to_string());
+
+        let changed =
+            update_agent_board_title_for_session_data(&mut data, "session-1", "New title", 456);
+
+        assert!(changed);
+        assert_eq!(data.items[0].title, "New title");
+        assert_eq!(data.items[0].updated_at, 456);
+    }
+
+    #[test]
+    fn ignores_unassociated_session_title_updates() {
+        let mut data = AgentBoardData {
+            version: 1,
+            items: vec![item(AgentBoardLane::Planned)],
+        };
+        data.items[0].planning_session_id = Some("session-1".to_string());
+
+        let changed =
+            update_agent_board_title_for_session_data(&mut data, "session-2", "New title", 456);
+
+        assert!(!changed);
+        assert_eq!(data.items[0].title, "Test");
     }
 }

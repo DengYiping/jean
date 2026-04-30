@@ -89,12 +89,12 @@ export function canMoveAgentBoardItem(
 
   const allowed: Record<AgentBoardLane, AgentBoardLane[]> = {
     todo: ['planning', 'implementing', 'yoloing'],
-    planning: ['planned', 'implementing'],
+    planning: ['planned', 'implementing', 'yoloing'],
     planned: ['implementing', 'yoloing'],
     implementing: ['implemented', 'planning', 'yoloing'],
     implemented: ['implementing', 'pr_opened', 'yoloing'],
     pr_opened: ['archived'],
-    yoloing: ['yoloed', 'implementing', 'pr_opened'],
+    yoloing: ['yoloed', 'implementing'],
     yoloed: ['yoloing', 'implementing', 'pr_opened'],
     archived: [],
   }

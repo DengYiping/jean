@@ -720,7 +720,7 @@ function AgentBoardCard({
           Open
         </Button>
         <NativeSelect
-          className="h-7 text-xs"
+          className="h-7 w-24 py-0 pl-2 pr-7 text-xs leading-7"
           value={currentColumn}
           onChange={event => onMove(event.target.value as AgentBoardColumnId)}
         >

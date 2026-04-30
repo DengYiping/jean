@@ -117,6 +117,12 @@ mod tests {
     }
 
     #[test]
+    fn lane_validation_allows_yolo_to_pr_opened() {
+        assert!(validate_lane_move(AgentBoardLane::Yoloing, AgentBoardLane::PrOpened).is_ok());
+        assert!(validate_lane_move(AgentBoardLane::Yoloed, AgentBoardLane::PrOpened).is_ok());
+    }
+
+    #[test]
     fn implementation_restart_sync_returns_to_implementing() {
         let mut item = item(AgentBoardLane::Implemented);
         item.lane = AgentBoardLane::Implementing;

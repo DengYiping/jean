@@ -32,9 +32,11 @@ import { markWorktreeSilentReady } from '@/services/worktree-silent-ready'
 import { getCodexPermissionApprovalMode } from '../permission-approval-utils'
 import { generateId } from '@/lib/uuid'
 import { preferencesQueryKeys } from '@/services/preferences'
+import { agentBoardQueryKeys } from '@/services/agent-board'
 import { useProjectsStore } from '@/store/projects-store'
 import { useUIStore } from '@/store/ui-store'
 import type { AppPreferences } from '@/types/preferences'
+import type { AgentBoardItem } from '@/types/agent-board'
 import type {
   Worktree,
   WorktreeCreatedEvent,
@@ -49,6 +51,19 @@ export const GIT_ALLOWED_TOOLS = [
   'Bash(git:*)', // All git commands
   // gh-cli/claude-cli are auto-allowed via --allowedTools in build_claude_args()
 ]
+
+function refreshAgentBoardAfterPlanApproval(
+  queryClient: QueryClient,
+  source: string
+) {
+  return invoke<AgentBoardItem[]>('refresh_agent_board_items')
+    .then(items => {
+      queryClient.setQueryData(agentBoardQueryKeys.all, items)
+    })
+    .catch(err => {
+      logger.error(`[${source}] Failed to refresh board:`, err)
+    })
+}
 
 function commandFromBashPattern(pattern: string): string | null {
   const match = pattern.match(/^Bash\((.+)\)$/)
@@ -721,6 +736,9 @@ export function useMessageHandlers({
             selectedExecutionMode: 'build',
           })
         )
+        .then(() =>
+          refreshAgentBoardAfterPlanApproval(queryClient, 'useMessageHandlers')
+        )
         .catch(err => {
           console.error(
             '[useMessageHandlers] Failed to clear waiting state:',
@@ -874,6 +892,9 @@ export function useMessageHandlers({
             waitingForInputType: null,
             selectedExecutionMode: 'yolo',
           })
+        )
+        .then(() =>
+          refreshAgentBoardAfterPlanApproval(queryClient, 'useMessageHandlers')
         )
         .catch(err => {
           console.error(

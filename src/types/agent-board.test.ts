@@ -15,4 +15,9 @@ describe('canMoveAgentBoardItem', () => {
     expect(canMoveAgentBoardItem('implemented', 'implementing')).toBe(true)
     expect(canMoveAgentBoardItem('yoloed', 'yoloing')).toBe(true)
   })
+
+  it('allows yolo cards to move to PR', () => {
+    expect(canMoveAgentBoardItem('yoloing', 'pr_opened')).toBe(true)
+    expect(canMoveAgentBoardItem('yoloed', 'pr_opened')).toBe(true)
+  })
 })

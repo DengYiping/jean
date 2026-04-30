@@ -124,15 +124,18 @@ function shouldPlayWaitingStateTransitionSound(options: {
 
 function isSessionCurrentlyViewing(
   sessionId: string,
-  worktreeId: string
+  worktreeId: string | null | undefined
 ): boolean {
+  if (!worktreeId) return false
+
   const { activeWorktreeId, activeSessionIds } = useChatStore.getState()
   const isActiveWorktree = worktreeId === activeWorktreeId
   const isActiveSession = activeSessionIds[worktreeId] === sessionId
-  const isViewingInFullView = isActiveWorktree && isActiveSession
 
-  const { sessionChatModalOpen, sessionChatModalWorktreeId } =
+  const { activeMainView, sessionChatModalOpen, sessionChatModalWorktreeId } =
     useUIStore.getState()
+  const isViewingInFullView =
+    activeMainView === 'workspace' && isActiveWorktree && isActiveSession
   const isViewingInModal =
     sessionChatModalOpen &&
     sessionChatModalWorktreeId === worktreeId &&
@@ -529,9 +532,9 @@ export default function useStreamingEvents({
         )
 
         resolveWorktreePath(worktree_id)
-          .then(worktreePath => {
+          .then(async worktreePath => {
             if (!worktreePath) return
-            return invoke('update_session_state', {
+            await invoke('update_session_state', {
               worktreeId: worktree_id,
               worktreePath,
               sessionId: session_id,
@@ -539,6 +542,15 @@ export default function useStreamingEvents({
               waitingForInputType: 'question',
               isReviewing: false,
             })
+            if (isCurrentlyViewing) {
+              await invoke('set_session_last_opened', {
+                sessionId: session_id,
+              })
+              window.dispatchEvent(new CustomEvent('session-opened'))
+            }
+          })
+          .finally(() => {
+            invalidateUnreadQueries(queryClient)
           })
           .catch(err => {
             logger.error(
@@ -1758,8 +1770,6 @@ export default function useStreamingEvents({
         setInputDraft,
         clearLastSentMessage,
         setError,
-        activeWorktreeId,
-        activeSessionIds,
         markSessionNeedsDigest,
       } = useChatStore.getState()
 
@@ -1767,21 +1777,10 @@ export default function useStreamingEvents({
       // Look up the worktree from sessionWorktreeMap since ErrorEvent may not have it
       const sessionWorktreeId =
         useChatStore.getState().sessionWorktreeMap[session_id]
-      const isActiveWorktree = sessionWorktreeId === activeWorktreeId
-      const isActiveSession = sessionWorktreeId
-        ? activeSessionIds[sessionWorktreeId] === session_id
-        : false
-      const isViewingInFullView = isActiveWorktree && isActiveSession
-
-      // Also check if viewing in modal (modal doesn't change activeWorktreeId)
-      const { sessionChatModalOpen, sessionChatModalWorktreeId } =
-        useUIStore.getState()
-      const isViewingInModal =
-        sessionChatModalOpen &&
-        sessionChatModalWorktreeId === sessionWorktreeId &&
-        isActiveSession
-
-      const isCurrentlyViewing = isViewingInFullView || isViewingInModal
+      const isCurrentlyViewing = isSessionCurrentlyViewing(
+        session_id,
+        sessionWorktreeId
+      )
 
       // If user is currently viewing this session, bump last_opened_at so it
       // doesn't appear as "unread" (updated_at will be newer after the run ends).
@@ -1939,8 +1938,6 @@ export default function useStreamingEvents({
           streamingThinkingContent,
           activeToolCalls,
           streamingContentBlocks,
-          activeWorktreeId,
-          activeSessionIds,
           markSessionNeedsDigest,
         } = useChatStore.getState()
         const sendStarted = sendStartedAt[session_id] ?? 0
@@ -1957,21 +1954,10 @@ export default function useStreamingEvents({
         // Check if this session is currently being viewed
         const sessionWorktreeId =
           useChatStore.getState().sessionWorktreeMap[session_id]
-        const isActiveWorktree = sessionWorktreeId === activeWorktreeId
-        const isActiveSession = sessionWorktreeId
-          ? activeSessionIds[sessionWorktreeId] === session_id
-          : false
-        const isViewingInFullView = isActiveWorktree && isActiveSession
-
-        // Also check if viewing in modal (modal doesn't change activeWorktreeId)
-        const { sessionChatModalOpen, sessionChatModalWorktreeId } =
-          useUIStore.getState()
-        const isViewingInModal =
-          sessionChatModalOpen &&
-          sessionChatModalWorktreeId === sessionWorktreeId &&
-          isActiveSession
-
-        const isCurrentlyViewing = isViewingInFullView || isViewingInModal
+        const isCurrentlyViewing = isSessionCurrentlyViewing(
+          session_id,
+          sessionWorktreeId
+        )
 
         // If user is currently viewing this session, bump last_opened_at so it
         // doesn't appear as "unread" (updated_at will be newer after the run ends).

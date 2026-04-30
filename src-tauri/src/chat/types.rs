@@ -2135,6 +2135,43 @@ mod tests {
     }
 
     #[test]
+    fn test_session_metadata_attention_timestamp_makes_waiting_session_unread() {
+        let mut metadata = SessionMetadata::new(
+            "sess-123".to_string(),
+            "wt-456".to_string(),
+            "Test".to_string(),
+            0,
+        );
+        metadata.created_at = 100;
+        metadata.last_opened_at = Some(200);
+        metadata.waiting_for_input = true;
+        metadata.waiting_for_input_type = Some("plan".to_string());
+        metadata.attention_updated_at = Some(250);
+        metadata.runs.push(RunEntry {
+            run_id: "run-1".to_string(),
+            user_message_id: "msg-1".to_string(),
+            user_message: "Plan this".to_string(),
+            model: None,
+            execution_mode: Some("plan".to_string()),
+            thinking_level: None,
+            effort_level: None,
+            started_at: 150,
+            ended_at: Some(180),
+            status: RunStatus::Completed,
+            assistant_message_id: Some("assistant-1".to_string()),
+            cancelled: false,
+            recovered: false,
+            claude_session_id: None,
+            pid: None,
+            usage: None,
+        });
+
+        let session = metadata.to_session();
+        assert_eq!(session.updated_at, 250);
+        assert!(session.is_unread());
+    }
+
+    #[test]
     fn test_session_metadata_deserializes_without_attention_timestamp() {
         let metadata = SessionMetadata::new(
             "sess-123".to_string(),

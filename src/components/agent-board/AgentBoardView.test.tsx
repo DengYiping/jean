@@ -9,6 +9,7 @@ import type { UnreadSessionsResponse } from '@/types/chat'
 import type { Project, Worktree } from '@/types/projects'
 
 const mockInvoke = vi.hoisted(() => vi.fn())
+const mockCreateAgentBoardItem = vi.hoisted(() => vi.fn())
 const mockDeleteAgentBoardItem = vi.hoisted(() => vi.fn())
 const mockUnreadSessions = vi.hoisted(
   (): UnreadSessionsResponse => ({ entries: [] })
@@ -47,7 +48,10 @@ vi.mock('@/services/projects', () => ({
 
 vi.mock('@/services/agent-board', () => ({
   useAgentBoardItems: () => ({ data: [item], isLoading: false }),
-  useCreateAgentBoardItem: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useCreateAgentBoardItem: () => ({
+    mutateAsync: mockCreateAgentBoardItem,
+    isPending: false,
+  }),
   useDeleteAgentBoardItem: () => ({
     mutateAsync: mockDeleteAgentBoardItem,
     isPending: false,
@@ -70,8 +74,10 @@ describe('AgentBoardView', () => {
     item.implementation_session_id = undefined
     item.yolo_worktree_id = undefined
     item.yolo_session_id = undefined
+    item.pr_url = undefined
     item.active_run_status = undefined
     item.archived_at = undefined
+    mockCreateAgentBoardItem.mockResolvedValue(undefined)
     mockDeleteAgentBoardItem.mockResolvedValue(undefined)
     Element.prototype.setPointerCapture = vi.fn()
     Element.prototype.releasePointerCapture = vi.fn()
@@ -99,6 +105,34 @@ describe('AgentBoardView', () => {
       created_at: 1,
       order: 0,
     } satisfies Worktree)
+  })
+
+  it('creates todos with the selected effort level', async () => {
+    render(<AgentBoardView />)
+
+    fireEvent.click(screen.getByRole('button', { name: /add todo/i }))
+    fireEvent.change(screen.getByPlaceholderText('Describe the work...'), {
+      target: { value: 'Investigate session effort' },
+    })
+    const effortSelect = screen.getAllByRole('combobox')[2]
+    if (!effortSelect) {
+      throw new Error('Expected effort select to render')
+    }
+    fireEvent.change(effortSelect, {
+      target: { value: 'max' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+
+    await waitFor(() => {
+      expect(mockCreateAgentBoardItem).toHaveBeenCalledWith(
+        expect.objectContaining({
+          prompt: 'Investigate session effort',
+          project_id: project.id,
+          backend: 'codex',
+          effort_level: 'max',
+        })
+      )
+    })
   })
 
   it('opens the associated workspace session when a card is clicked', async () => {
@@ -218,6 +252,19 @@ describe('AgentBoardView', () => {
     render(<AgentBoardView />)
 
     expect(screen.getByLabelText('Work in progress')).toBeInTheDocument()
+  })
+
+  it('shows the PR URL directly when a card has an opened PR', () => {
+    item.lane = 'pr_opened'
+    item.pr_url = 'https://github.com/acme/repo/pull/123'
+
+    render(<AgentBoardView />)
+
+    expect(
+      screen.getByRole('link', {
+        name: 'https://github.com/acme/repo/pull/123',
+      })
+    ).toHaveAttribute('href', 'https://github.com/acme/repo/pull/123')
   })
 
   it('does not show a spinner when the associated session was cancelled', () => {

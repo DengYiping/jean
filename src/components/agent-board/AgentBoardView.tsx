@@ -698,9 +698,10 @@ function AgentBoardCard({
           href={item.pr_url}
           target="_blank"
           rel="noreferrer"
-          className="mb-2 inline-flex items-center gap-1 text-xs text-primary underline-offset-2 hover:underline"
+          className="mb-2 flex min-w-0 items-center gap-1 text-xs text-primary underline-offset-2 hover:underline"
         >
-          PR <ExternalLink className="h-3 w-3" />
+          <ExternalLink className="h-3 w-3 shrink-0" />
+          <span className="truncate">{item.pr_url}</span>
         </a>
       )}
       {item.last_error && (

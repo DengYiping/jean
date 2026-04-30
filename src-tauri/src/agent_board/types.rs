@@ -30,7 +30,7 @@ impl AgentBoardLane {
             (Planned, Implementing | Yoloing) => true,
             (Implementing, Implemented | Planning | Yoloing) => true,
             (Implemented, Implementing | PrOpened | Yoloing) => true,
-            (Yoloing, Yoloed | Implementing) => true,
+            (Yoloing, Yoloed | Implementing | PrOpened) => true,
             (Yoloed, Yoloing | Implementing | PrOpened) => true,
             (Archived, _) => false,
             _ => false,

@@ -268,6 +268,18 @@ async fn send_board_prompt(
         item.prompt.clone()
     };
 
+    if let Some(effort_level) = item.effort_level.clone() {
+        crate::chat::set_session_effort_level(
+            app.clone(),
+            worktree.id.clone(),
+            worktree.path.clone(),
+            session_id.to_string(),
+            effort_level,
+        )
+        .await?;
+        crate::chat::emit_sessions_cache_invalidation(&app);
+    }
+
     crate::chat::send_chat_message(
         app,
         session_id.to_string(),
@@ -349,15 +361,27 @@ async fn run_lane_side_effect(
                 .clone()
                 .or_else(|| item.yolo_worktree_id.clone())
                 .ok_or_else(|| "Cannot open a PR before work starts".to_string())?;
-            let url = crate::projects::open_pull_request(
+            let worktree = worktree_for_id(&app, &worktree_id)?;
+            let session_id = if item.yolo_worktree_id.as_deref() == Some(worktree_id.as_str()) {
+                item.yolo_session_id.clone()
+            } else {
+                item.implementation_session_id
+                    .clone()
+                    .or_else(|| item.planning_session_id.clone())
+            };
+            let preferences = crate::load_preferences_sync(&app).unwrap_or_default();
+            let result = crate::projects::create_pr_with_ai_content(
                 app,
-                worktree_id,
-                Some(item.title.clone()),
-                Some(item.prompt.clone()),
+                worktree.path,
+                session_id,
+                preferences.magic_prompts.pr_content,
+                Some(preferences.magic_prompt_models.pr_content_model),
+                preferences.magic_prompt_providers.pr_content_provider,
+                preferences.magic_prompt_efforts.pr_content_effort,
                 Some(false),
             )
             .await?;
-            item.pr_url = Some(url);
+            item.pr_url = Some(result.pr_url);
         }
         AgentBoardLane::Yoloing => {
             if item.yolo_worktree_id.is_none() {
@@ -411,6 +435,34 @@ fn sync_item_from_sessions(app: &AppHandle, item: &mut AgentBoardItem) {
     }
 }
 
+fn sync_item_from_worktree_prs(
+    item: &mut AgentBoardItem,
+    worktrees: &[crate::projects::types::Worktree],
+) {
+    if !matches!(
+        item.lane,
+        AgentBoardLane::Implementing
+            | AgentBoardLane::Implemented
+            | AgentBoardLane::Yoloing
+            | AgentBoardLane::Yoloed
+            | AgentBoardLane::PrOpened
+    ) {
+        return;
+    }
+
+    for worktree_id in attached_worktree_ids(item) {
+        let Some(worktree) = worktrees.iter().find(|worktree| worktree.id == worktree_id) else {
+            continue;
+        };
+        let Some(pr_url) = worktree.pr_url.as_ref().filter(|url| !url.is_empty()) else {
+            continue;
+        };
+        item.pr_url = Some(pr_url.clone());
+        item.lane = AgentBoardLane::PrOpened;
+        return;
+    }
+}
+
 fn latest_run(metadata: &SessionMetadata) -> Option<&RunEntry> {
     metadata.runs.last()
 }
@@ -428,7 +480,12 @@ fn latest_execution_mode(metadata: &SessionMetadata) -> Option<&str> {
 fn sync_item_from_planning_session(item: &mut AgentBoardItem, metadata: &SessionMetadata) {
     item.active_run_status = latest_run_status(metadata).cloned();
 
-    if metadata.waiting_for_input && metadata.waiting_for_input_type.as_deref() == Some("plan") {
+    if matches!(
+        item.lane,
+        AgentBoardLane::Planning | AgentBoardLane::Planned
+    ) && metadata.waiting_for_input
+        && metadata.waiting_for_input_type.as_deref() == Some("plan")
+    {
         item.lane = AgentBoardLane::Planned;
         return;
     }
@@ -668,11 +725,16 @@ pub async fn move_agent_board_item(
 #[tauri::command]
 pub async fn refresh_agent_board_items(app: AppHandle) -> Result<Vec<AgentBoardItem>, String> {
     let mut data = load_agent_board_data(&app)?;
+    let projects_data = crate::projects::storage::load_projects_data(&app)?;
     for item in &mut data.items {
         let before = item.lane;
         let before_implementation_session_id = item.implementation_session_id.clone();
+        let before_pr_url = item.pr_url.clone();
         sync_item_from_sessions(&app, item);
-        if item.lane != before || item.implementation_session_id != before_implementation_session_id
+        sync_item_from_worktree_prs(item, &projects_data.worktrees);
+        if item.lane != before
+            || item.implementation_session_id != before_implementation_session_id
+            || item.pr_url != before_pr_url
         {
             item.updated_at = now_seconds();
         }
@@ -770,6 +832,53 @@ mod tests {
             claude_session_id: None,
             pid: None,
             usage: None,
+        }
+    }
+
+    fn test_worktree(pr_url: Option<String>) -> crate::projects::types::Worktree {
+        crate::projects::types::Worktree {
+            id: "worktree-1".to_string(),
+            project_id: "project-1".to_string(),
+            name: "Worktree".to_string(),
+            path: "/tmp/worktree".to_string(),
+            stable_slot_id: None,
+            branch: "branch".to_string(),
+            base_branch: Some("main".to_string()),
+            created_at: 1,
+            setup_output: None,
+            setup_script: None,
+            setup_success: None,
+            session_type: crate::projects::types::SessionType::Worktree,
+            pr_number: pr_url.as_ref().map(|_| 123),
+            pr_url,
+            issue_number: None,
+            linear_issue_identifier: None,
+            security_alert_number: None,
+            security_alert_url: None,
+            advisory_ghsa_id: None,
+            advisory_url: None,
+            cached_pr_status: None,
+            cached_check_status: None,
+            cached_behind_count: None,
+            cached_ahead_count: None,
+            cached_status_at: None,
+            cached_uncommitted_added: None,
+            cached_uncommitted_removed: None,
+            cached_branch_diff_added: None,
+            cached_branch_diff_removed: None,
+            cached_base_branch_ahead_count: None,
+            cached_base_branch_behind_count: None,
+            cached_worktree_ahead_count: None,
+            cached_unpushed_count: None,
+            pr_push_remote: None,
+            pr_push_branch: None,
+            order: 0,
+            label: None,
+            archived_at: None,
+            last_opened_at: None,
+            automation_id: None,
+            automation_name: None,
+            automation_owned: false,
         }
     }
 
@@ -889,6 +998,21 @@ mod tests {
     }
 
     #[test]
+    fn stale_plan_waiting_state_does_not_move_implementation_back_to_plan() {
+        let mut item = test_item(AgentBoardLane::Implementing);
+        item.implementation_session_id = Some("session-1".to_string());
+        let mut metadata = test_metadata();
+        metadata.waiting_for_input = true;
+        metadata.waiting_for_input_type = Some("plan".to_string());
+        metadata.runs.push(test_run("build", RunStatus::Completed));
+
+        sync_item_from_planning_session(&mut item, &metadata);
+        sync_item_from_implementation_session(&mut item, &metadata);
+
+        assert_eq!(item.lane, AgentBoardLane::Implemented);
+    }
+
+    #[test]
     fn cancelled_build_run_updates_active_status_without_marking_complete() {
         let mut item = test_item(AgentBoardLane::Implementing);
         item.implementation_session_id = Some("session-1".to_string());
@@ -907,5 +1031,31 @@ mod tests {
         item.yolo_worktree_id = Some("worktree-1".to_string());
 
         assert_eq!(attached_worktree_ids(&item), vec!["worktree-1"]);
+    }
+
+    #[test]
+    fn worktree_pr_sync_moves_implemented_card_to_pr_opened() {
+        let mut item = test_item(AgentBoardLane::Implemented);
+        item.implementation_session_id = Some("session-1".to_string());
+        let worktree = test_worktree(Some("https://github.com/acme/repo/pull/123".to_string()));
+
+        sync_item_from_worktree_prs(&mut item, &[worktree]);
+
+        assert_eq!(item.lane, AgentBoardLane::PrOpened);
+        assert_eq!(
+            item.pr_url.as_deref(),
+            Some("https://github.com/acme/repo/pull/123")
+        );
+    }
+
+    #[test]
+    fn worktree_pr_sync_leaves_plan_card_in_plan() {
+        let mut item = test_item(AgentBoardLane::Planned);
+        let worktree = test_worktree(Some("https://github.com/acme/repo/pull/123".to_string()));
+
+        sync_item_from_worktree_prs(&mut item, &[worktree]);
+
+        assert_eq!(item.lane, AgentBoardLane::Planned);
+        assert_eq!(item.pr_url, None);
     }
 }

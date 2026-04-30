@@ -61,6 +61,7 @@ import {
 } from '@/types/preferences'
 import { useRemotePicker } from '@/hooks/useRemotePicker'
 import { chatQueryKeys } from '@/services/chat'
+import { agentBoardQueryKeys } from '@/services/agent-board'
 import { prStatusQueryKeys } from '@/services/pr-status'
 import { projectsQueryKeys } from '@/services/projects'
 import { useQueryClient } from '@tanstack/react-query'
@@ -502,6 +503,7 @@ export function MagicModal() {
               selectedWorktreeId,
             ],
           })
+          queryClient.invalidateQueries({ queryKey: agentBoardQueryKeys.all })
           triggerImmediateGitPoll()
           if (worktree.project_id) fetchWorktreesStatus(worktree.project_id)
           toast.success(

@@ -559,6 +559,9 @@ pub struct Session {
     /// Whether this session is owned by an automation run loop.
     #[serde(default)]
     pub automation_owned: bool,
+    /// Agent board card that owns this session, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_board_item_id: Option<String>,
 
     // ========================================================================
     // Session-specific UI state (moved from ui-state.json)
@@ -726,6 +729,7 @@ impl Session {
             automation_name: None,
             automation_target_worktree_id: None,
             automation_owned: false,
+            agent_board_item_id: None,
             // Session-specific UI state
             answered_questions: vec![],
             submitted_answers: HashMap::new(),
@@ -1035,6 +1039,7 @@ impl SessionMetadata {
             automation_name: self.automation_name.clone(),
             automation_target_worktree_id: self.automation_target_worktree_id.clone(),
             automation_owned: self.automation_owned,
+            agent_board_item_id: self.agent_board_item_id.clone(),
             answered_questions: self.answered_questions.clone(),
             submitted_answers: self.submitted_answers.clone(),
             fixed_findings: self.fixed_findings.clone(),
@@ -1086,6 +1091,7 @@ impl SessionMetadata {
         self.automation_name = session.automation_name.clone();
         self.automation_target_worktree_id = session.automation_target_worktree_id.clone();
         self.automation_owned = session.automation_owned;
+        self.agent_board_item_id = session.agent_board_item_id.clone();
         self.answered_questions = session.answered_questions.clone();
         self.submitted_answers = session.submitted_answers.clone();
         self.fixed_findings = session.fixed_findings.clone();
@@ -1480,6 +1486,9 @@ pub struct SessionMetadata {
     /// Whether this session is owned by an automation run loop.
     #[serde(default)]
     pub automation_owned: bool,
+    /// Agent board card that owns this session, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_board_item_id: Option<String>,
 
     /// Run history - each entry corresponds to one Claude CLI execution
     #[serde(default)]
@@ -1589,6 +1598,7 @@ impl SessionMetadata {
             automation_name: None,
             automation_target_worktree_id: None,
             automation_owned: false,
+            agent_board_item_id: None,
             runs: vec![],
             scheduled_wakeup: None,
             version: 1,

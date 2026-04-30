@@ -26,6 +26,12 @@ const ProjectCanvasView = lazy(() =>
   }))
 )
 
+const AgentBoardView = lazy(() =>
+  import('@/components/agent-board/AgentBoardView').then(mod => ({
+    default: mod.AgentBoardView,
+  }))
+)
+
 interface MainWindowContentProps {
   children?: React.ReactNode
   className?: string
@@ -37,6 +43,7 @@ export function MainWindowContent({
 }: MainWindowContentProps) {
   const activeWorktreePath = useChatStore(state => state.activeWorktreePath)
   const isMobile = useIsMobile()
+  const activeMainView = useUIStore(state => state.activeMainView)
   const swipeBackCallback = useCallback(() => {
     useChatStore.getState().clearActiveWorktree()
   }, [])
@@ -101,7 +108,17 @@ export function MainWindowContent({
         className
       )}
     >
-      {activeWorktreePath ? (
+      {activeMainView === 'agent_board' ? (
+        <Suspense
+          fallback={
+            <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+              Loading agent board…
+            </div>
+          }
+        >
+          <AgentBoardView />
+        </Suspense>
+      ) : activeWorktreePath ? (
         <div
           ref={isMobile ? swipe.containerRef : undefined}
           className="relative h-full w-full"

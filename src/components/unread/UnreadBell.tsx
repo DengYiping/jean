@@ -10,11 +10,9 @@ import { cn } from '@/lib/utils'
 import { invoke } from '@/lib/transport'
 import { useQueryClient } from '@tanstack/react-query'
 import { chatQueryKeys, useUnreadSessions } from '@/services/chat'
-import { useProjectsStore } from '@/store/projects-store'
-import { useChatStore } from '@/store/chat-store'
-import { useUIStore } from '@/store/ui-store'
 import { useUnreadCount } from './useUnreadCount'
 import { formatShortcutDisplay } from '@/types/keybindings'
+import { openWorkspaceSession } from '@/lib/workspace-navigation'
 import type {
   Session,
   UnreadSessionEntry,
@@ -165,44 +163,17 @@ export function UnreadBell({ title, hideTitle }: UnreadBellProps) {
 
   const handleSelect = useCallback(
     (item: UnreadItem) => {
-      const { selectedProjectId, selectProject } = useProjectsStore.getState()
-      const { setActiveSession, clearActiveWorktree, setLastOpenedForProject } =
-        useChatStore.getState()
-
       const projectId = item.project_id
       const worktreeId = item.worktree_id
       const worktreePath = item.worktree_path
-      const crossProject = selectedProjectId !== projectId
-      if (crossProject) {
-        selectProject(projectId)
-      }
-
-      // Navigate to ProjectCanvasView
-      clearActiveWorktree()
-      setActiveSession(worktreeId, item.session.id)
-      setLastOpenedForProject(projectId, worktreeId, item.session.id)
+      openWorkspaceSession({
+        projectId,
+        worktreeId,
+        worktreePath,
+        sessionId: item.session.id,
+      })
       markSessionsReadOptimistically([item.session.id])
       setOpen(false)
-
-      if (crossProject) {
-        // Component remounts with new projectId key — use store-based auto-open
-        useUIStore
-          .getState()
-          .markWorktreeForAutoOpenSession(worktreeId, item.session.id)
-      } else {
-        // Same project, component stays mounted — use event
-        setTimeout(() => {
-          window.dispatchEvent(
-            new CustomEvent('open-session-modal', {
-              detail: {
-                sessionId: item.session.id,
-                worktreeId,
-                worktreePath,
-              },
-            })
-          )
-        }, 50)
-      }
     },
     [markSessionsReadOptimistically]
   )

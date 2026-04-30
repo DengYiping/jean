@@ -8,6 +8,7 @@ use tauri::{AppHandle, Emitter, Manager};
 #[cfg(target_os = "macos")]
 use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
 
+mod agent_board;
 mod automations;
 mod background_tasks;
 mod browser;
@@ -1538,6 +1539,10 @@ fn migrate_loaded_preferences(preferences: &mut AppPreferences) -> bool {
 // stored in the Session files. See update_session_state command.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UIState {
+    /// Active top-level view: workspace or agent_board
+    #[serde(default)]
+    pub active_main_view: Option<String>,
+
     /// Last opened worktree ID (to restore active worktree)
     #[serde(default)]
     pub active_worktree_id: Option<String>,
@@ -1677,6 +1682,7 @@ pub struct ProjectCanvasSettings {
 impl Default for UIState {
     fn default() -> Self {
         Self {
+            active_main_view: Some("workspace".to_string()),
             active_worktree_id: None,
             active_worktree_path: None,
             last_active_worktree_id: None,
@@ -3252,6 +3258,12 @@ pub fn run() {
             delete_cli_profile,
             load_ui_state,
             save_ui_state,
+            agent_board::list_agent_board_items,
+            agent_board::create_agent_board_item,
+            agent_board::update_agent_board_item,
+            agent_board::move_agent_board_item,
+            agent_board::refresh_agent_board_items,
+            agent_board::get_agent_board_item_for_session,
             send_native_notification,
             save_emergency_data,
             load_emergency_data,

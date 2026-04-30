@@ -146,6 +146,7 @@ describe('useMainWindowEventListeners terminal shortcuts', () => {
       planDialogOpen: false,
       gitDiffModalOpen: false,
       githubDashboardOpen: false,
+      activeMainView: 'workspace',
     })
 
     useProjectsStore.setState({
@@ -341,6 +342,30 @@ describe('useMainWindowEventListeners terminal shortcuts', () => {
     )
 
     expect(useProjectsStore.getState().addProjectDialogOpen).toBe(true)
+  })
+
+  it('opens the agent board todo dialog when the shortcut is pressed', () => {
+    const listener = vi.fn()
+    window.addEventListener('agent-board:new-todo', listener)
+
+    renderHook(() => useMainWindowEventListeners(), {
+      wrapper: createWrapper(),
+    })
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'A',
+        code: 'KeyA',
+        metaKey: true,
+        shiftKey: true,
+        bubbles: true,
+      })
+    )
+
+    expect(useUIStore.getState().activeMainView).toBe('agent_board')
+    expect(listener).toHaveBeenCalledTimes(1)
+
+    window.removeEventListener('agent-board:new-todo', listener)
   })
 
   it('does not retrigger the new project shortcut while the add-project flow is open', () => {

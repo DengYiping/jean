@@ -1,0 +1,611 @@
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent,
+} from 'react'
+import {
+  Archive,
+  ExternalLink,
+  Kanban,
+  Loader2,
+  Plus,
+  RefreshCw,
+  Settings2,
+} from 'lucide-react'
+import { toast } from 'sonner'
+import { invoke } from '@/lib/transport'
+import { cn } from '@/lib/utils'
+import { AGENT_BOARD_FOCUS_EVENT } from '@/lib/agent-board-navigation'
+import { useChatStore } from '@/store/chat-store'
+import { useProjectsStore } from '@/store/projects-store'
+import { useUIStore } from '@/store/ui-store'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { NativeSelect } from '@/components/ui/native-select'
+import {
+  AGENT_BOARD_LANE_LABELS,
+  AGENT_BOARD_LANES,
+  canMoveAgentBoardItem,
+  type AgentBoardItem,
+  type AgentBoardLane,
+} from '@/types/agent-board'
+import type { Backend, EffortLevel } from '@/types/chat'
+import type { Project, Worktree } from '@/types/projects'
+import { useProjects } from '@/services/projects'
+import {
+  useAgentBoardItems,
+  useCreateAgentBoardItem,
+  useMoveAgentBoardItem,
+  useRefreshAgentBoardItems,
+} from '@/services/agent-board'
+import { DEFAULT_KEYBINDINGS, formatShortcutDisplay } from '@/types/keybindings'
+
+const POINTER_DRAG_THRESHOLD_PX = 6
+
+interface NewAgentTodoDialogProps {
+  open: boolean
+  defaultLane?: AgentBoardLane
+  projects: Project[]
+  onOpenChange: (open: boolean) => void
+}
+
+function NewAgentTodoDialog({
+  open,
+  defaultLane = 'todo',
+  projects,
+  onOpenChange,
+}: NewAgentTodoDialogProps) {
+  const createItem = useCreateAgentBoardItem()
+  const moveItem = useMoveAgentBoardItem()
+  const realProjects = projects.filter(project => !project.is_folder)
+  const [projectId, setProjectId] = useState('')
+  const [backend, setBackend] = useState<Backend>('codex')
+  const [effortLevel, setEffortLevel] = useState<EffortLevel>('high')
+  const [title, setTitle] = useState('')
+  const [prompt, setPrompt] = useState('')
+
+  useEffect(() => {
+    if (open && !projectId && realProjects[0]) {
+      setProjectId(realProjects[0].id)
+    }
+  }, [open, projectId, realProjects])
+
+  const handleSubmit = useCallback(async () => {
+    if (!projectId || !prompt.trim()) return
+    try {
+      const item = await createItem.mutateAsync({
+        project_id: projectId,
+        title: title.trim() || undefined,
+        prompt: prompt.trim(),
+        backend,
+        effort_level: effortLevel,
+      })
+      if (defaultLane !== 'todo') {
+        await moveItem.mutateAsync({ itemId: item.id, lane: defaultLane })
+      }
+      setTitle('')
+      setPrompt('')
+      onOpenChange(false)
+    } catch (error) {
+      toast.error(`Failed to create todo: ${error}`)
+    }
+  }, [
+    backend,
+    createItem,
+    defaultLane,
+    effortLevel,
+    moveItem,
+    onOpenChange,
+    projectId,
+    prompt,
+    title,
+  ])
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle>New agent todo</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-3">
+          <Input
+            placeholder="Title (optional)"
+            value={title}
+            onChange={event => setTitle(event.target.value)}
+          />
+          <Textarea
+            className="min-h-32 resize-none"
+            placeholder="Describe the work..."
+            value={prompt}
+            onChange={event => setPrompt(event.target.value)}
+          />
+          <div className="grid grid-cols-3 gap-2">
+            <NativeSelect
+              value={projectId}
+              onChange={event => setProjectId(event.target.value)}
+            >
+              {realProjects.map(project => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
+            </NativeSelect>
+            <NativeSelect
+              value={backend}
+              onChange={event => setBackend(event.target.value as Backend)}
+            >
+              <option value="codex">Codex</option>
+              <option value="claude">Claude</option>
+              <option value="opencode">OpenCode</option>
+            </NativeSelect>
+            <NativeSelect
+              value={effortLevel}
+              onChange={event =>
+                setEffortLevel(event.target.value as EffortLevel)
+              }
+            >
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="max">Max</option>
+            </NativeSelect>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSubmit}
+            disabled={!projectId || !prompt.trim() || createItem.isPending}
+          >
+            {createItem.isPending && (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            )}
+            Create
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function planPreview(item: AgentBoardItem) {
+  return item.prompt
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+    .slice(0, 3)
+}
+
+function isAgentBoardLane(value: string | undefined): value is AgentBoardLane {
+  return AGENT_BOARD_LANES.includes(value as AgentBoardLane)
+}
+
+function laneFromPoint(clientX: number, clientY: number) {
+  const element = document.elementFromPoint(clientX, clientY)
+  const laneElement = element?.closest<HTMLElement>('[data-agent-board-lane]')
+  const lane = laneElement?.dataset.agentBoardLane
+  return isAgentBoardLane(lane) ? lane : undefined
+}
+
+function isInteractiveCardTarget(target: EventTarget | null) {
+  return target instanceof HTMLElement
+    ? Boolean(target.closest('button,a,input,textarea,select,[role="button"]'))
+    : false
+}
+
+function isStartingLaneSideEffect(item: AgentBoardItem) {
+  return (
+    (item.lane === 'planning' && !item.planning_session_id) ||
+    (item.lane === 'implementing' && !item.implementation_session_id) ||
+    (item.lane === 'yoloing' && !item.yolo_session_id)
+  )
+}
+
+export function AgentBoardView() {
+  const { data: items = [], isLoading } = useAgentBoardItems()
+  const { data: projects = [] } = useProjects()
+  const moveItem = useMoveAgentBoardItem()
+  const refreshItems = useRefreshAgentBoardItems()
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [dialogLane, setDialogLane] = useState<AgentBoardLane>('todo')
+  const [query, setQuery] = useState('')
+  const [highlightItemId, setHighlightItemId] = useState<string | null>(null)
+  const [draggingItemId, setDraggingItemId] = useState<string | null>(null)
+
+  useEffect(() => {
+    const handler = () => {
+      setDialogLane('todo')
+      setDialogOpen(true)
+    }
+    window.addEventListener('agent-board:new-todo', handler)
+    return () => window.removeEventListener('agent-board:new-todo', handler)
+  }, [])
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const itemId = (event as CustomEvent<{ itemId?: string }>).detail?.itemId
+      if (!itemId) return
+      setHighlightItemId(itemId)
+      window.setTimeout(() => {
+        document
+          .querySelector(`[data-agent-board-item-id="${CSS.escape(itemId)}"]`)
+          ?.scrollIntoView({ block: 'center', inline: 'center' })
+      }, 0)
+      window.setTimeout(() => {
+        setHighlightItemId(current => (current === itemId ? null : current))
+      }, 2500)
+    }
+    window.addEventListener(AGENT_BOARD_FOCUS_EVENT, handler)
+    return () => window.removeEventListener(AGENT_BOARD_FOCUS_EVENT, handler)
+  }, [])
+
+  const projectById = useMemo(
+    () => new Map(projects.map(project => [project.id, project])),
+    [projects]
+  )
+
+  const filteredItems = useMemo(() => {
+    const search = query.trim().toLowerCase()
+    if (!search) return items
+    return items.filter(item => {
+      const project = projectById.get(item.project_id)
+      return (
+        item.title.toLowerCase().includes(search) ||
+        item.prompt.toLowerCase().includes(search) ||
+        project?.name.toLowerCase().includes(search)
+      )
+    })
+  }, [items, projectById, query])
+
+  const grouped = useMemo(() => {
+    const lanes = new Map<AgentBoardLane, AgentBoardItem[]>()
+    for (const lane of AGENT_BOARD_LANES) lanes.set(lane, [])
+    for (const item of filteredItems) {
+      lanes.get(item.lane)?.push(item)
+    }
+    return lanes
+  }, [filteredItems])
+
+  const openSession = useCallback(async (item: AgentBoardItem) => {
+    const sessionId =
+      item.implementation_session_id ??
+      item.planning_session_id ??
+      item.yolo_session_id
+    const worktreeId =
+      item.implementation_session_id || item.planning_session_id
+        ? item.worktree_id
+        : item.yolo_worktree_id
+    if (!sessionId || !worktreeId) {
+      toast.info('This card does not have a session yet')
+      return
+    }
+    try {
+      const worktree = await invoke<Worktree>('get_worktree', { worktreeId })
+      useUIStore.getState().setActiveMainView('workspace')
+      useProjectsStore.getState().selectProject(worktree.project_id)
+      useProjectsStore.getState().selectWorktree(worktree.id)
+      useChatStore.getState().setActiveWorktree(worktree.id, worktree.path)
+      useChatStore.getState().setActiveSession(worktree.id, sessionId)
+    } catch (error) {
+      toast.error(`Failed to open session: ${error}`)
+    }
+  }, [])
+
+  const move = useCallback(
+    async (item: AgentBoardItem, lane: AgentBoardLane) => {
+      try {
+        await moveItem.mutateAsync({ itemId: item.id, lane })
+      } catch (error) {
+        toast.error(`Failed to move card: ${error}`)
+      }
+    },
+    [moveItem]
+  )
+
+  const openDialogForLane = useCallback((lane: AgentBoardLane) => {
+    setDialogLane(lane)
+    setDialogOpen(true)
+  }, [])
+
+  return (
+    <div className="flex h-full min-w-0 flex-col bg-background">
+      <div className="flex shrink-0 items-center justify-between border-b px-4 py-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-base font-semibold">Global Board</h1>
+            <Kanban className="h-4 w-4 text-muted-foreground" />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            AI agent work across all repositories
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => refreshItems.mutate()}
+          >
+            <RefreshCw className="h-4 w-4" />
+            Refresh
+          </Button>
+          <Button size="sm" onClick={() => openDialogForLane('todo')}>
+            <Plus className="h-4 w-4" />
+            Add todo
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex shrink-0 items-center gap-2 border-b px-4 py-2">
+        <Input
+          className="h-8 max-w-sm"
+          placeholder="Filter tasks..."
+          value={query}
+          onChange={event => setQuery(event.target.value)}
+        />
+        <Badge variant="outline" className="h-7 gap-1 font-normal">
+          {formatShortcutDisplay(DEFAULT_KEYBINDINGS.new_agent_todo)}
+        </Badge>
+        <Button variant="ghost" size="icon" className="ml-auto h-8 w-8">
+          <Settings2 className="h-4 w-4" />
+        </Button>
+      </div>
+
+      <div className="flex min-h-0 flex-1 gap-2 overflow-x-auto p-3">
+        {AGENT_BOARD_LANES.map(lane => {
+          const laneItems = grouped.get(lane) ?? []
+          return (
+            <section
+              key={lane}
+              data-agent-board-lane={lane}
+              className="flex w-64 shrink-0 flex-col rounded-md border bg-muted/20"
+            >
+              <div className="flex h-10 shrink-0 items-center gap-2 border-b px-2">
+                <h2 className="text-xs font-semibold">
+                  {AGENT_BOARD_LANE_LABELS[lane]}
+                </h2>
+                <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
+                  {laneItems.length}
+                </Badge>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="ml-auto h-7 w-7"
+                  onClick={() => openDialogForLane(lane)}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2">
+                {isLoading ? (
+                  <div className="flex items-center gap-2 p-2 text-xs text-muted-foreground">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Loading
+                  </div>
+                ) : (
+                  laneItems.map(item => (
+                    <AgentBoardCard
+                      key={item.id}
+                      item={item}
+                      project={projectById.get(item.project_id)}
+                      highlighted={highlightItemId === item.id}
+                      dragging={draggingItemId === item.id}
+                      onDragStart={() => setDraggingItemId(item.id)}
+                      onDragEnd={() => setDraggingItemId(null)}
+                      onPointerLaneDrop={lane => move(item, lane)}
+                      onMove={lane => move(item, lane)}
+                      onOpenSession={() => openSession(item)}
+                    />
+                  ))
+                )}
+              </div>
+            </section>
+          )
+        })}
+      </div>
+
+      <NewAgentTodoDialog
+        open={dialogOpen}
+        defaultLane={dialogLane}
+        projects={projects}
+        onOpenChange={setDialogOpen}
+      />
+    </div>
+  )
+}
+
+function AgentBoardCard({
+  item,
+  project,
+  highlighted,
+  dragging,
+  onDragStart,
+  onDragEnd,
+  onPointerLaneDrop,
+  onMove,
+  onOpenSession,
+}: {
+  item: AgentBoardItem
+  project?: Project
+  highlighted?: boolean
+  dragging?: boolean
+  onDragStart: () => void
+  onDragEnd: () => void
+  onPointerLaneDrop: (lane: AgentBoardLane) => void
+  onMove: (lane: AgentBoardLane) => void
+  onOpenSession: () => void
+}) {
+  const pointerDragRef = useRef<{
+    pointerId: number
+    startX: number
+    startY: number
+    moved: boolean
+  } | null>(null)
+  const preview = planPreview(item)
+  const hasSession =
+    item.planning_session_id ||
+    item.implementation_session_id ||
+    item.yolo_session_id
+  const starting = isStartingLaneSideEffect(item)
+
+  const handlePointerDown = (event: PointerEvent<HTMLElement>) => {
+    if (event.button !== 0 || isInteractiveCardTarget(event.target)) return
+    pointerDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      moved: false,
+    }
+    event.currentTarget.setPointerCapture(event.pointerId)
+    onDragStart()
+  }
+
+  const handlePointerMove = (event: PointerEvent<HTMLElement>) => {
+    const drag = pointerDragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    const distance = Math.hypot(
+      event.clientX - drag.startX,
+      event.clientY - drag.startY
+    )
+    if (distance >= POINTER_DRAG_THRESHOLD_PX) {
+      drag.moved = true
+    }
+  }
+
+  const handlePointerUp = (event: PointerEvent<HTMLElement>) => {
+    const drag = pointerDragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    pointerDragRef.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+    onDragEnd()
+
+    if (!drag.moved) return
+    const lane = laneFromPoint(event.clientX, event.clientY)
+    if (lane && canMoveAgentBoardItem(item.lane, lane)) {
+      onPointerLaneDrop(lane)
+    }
+  }
+
+  const handlePointerCancel = (event: PointerEvent<HTMLElement>) => {
+    const drag = pointerDragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    pointerDragRef.current = null
+    onDragEnd()
+  }
+
+  return (
+    <article
+      data-agent-board-item-id={item.id}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
+      className={cn(
+        'cursor-grab touch-none rounded-md border bg-background p-2 shadow-sm transition-colors hover:border-foreground/20 active:cursor-grabbing',
+        highlighted && 'border-primary shadow-md ring-2 ring-primary/25',
+        dragging && 'opacity-75 ring-2 ring-primary/20',
+        item.last_error && 'border-destructive/50'
+      )}
+    >
+      <div className="mb-2 text-[11px] text-muted-foreground">
+        {project?.name ?? 'Unknown repo'}
+      </div>
+      <h3 className="mb-2 line-clamp-3 text-sm font-medium leading-snug">
+        {item.title}
+      </h3>
+      <div className="mb-2 flex flex-wrap gap-1">
+        {starting && (
+          <Badge variant="outline" className="h-5 gap-1 px-1.5 text-[10px]">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            Starting
+          </Badge>
+        )}
+        <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
+          {item.backend}
+        </Badge>
+        {item.effort_level && (
+          <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+            {item.effort_level}
+          </Badge>
+        )}
+      </div>
+      {(item.lane === 'planned' || item.lane === 'planning') &&
+        preview.length > 0 && (
+          <div className="mb-2 rounded border bg-muted/30 px-2 py-1.5">
+            <div className="mb-1 text-[10px] font-medium">Plan preview</div>
+            <ul className="space-y-1 text-[11px] text-muted-foreground">
+              {preview.map(line => (
+                <li key={line} className="line-clamp-1">
+                  - {line}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      {item.pr_url && (
+        <a
+          href={item.pr_url}
+          target="_blank"
+          rel="noreferrer"
+          className="mb-2 inline-flex items-center gap-1 text-xs text-primary underline-offset-2 hover:underline"
+        >
+          PR <ExternalLink className="h-3 w-3" />
+        </a>
+      )}
+      {item.last_error && (
+        <p className="mb-2 line-clamp-2 text-[11px] text-destructive">
+          {item.last_error}
+        </p>
+      )}
+      <div className="flex items-center gap-1">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 text-xs"
+          disabled={!hasSession}
+          onClick={onOpenSession}
+        >
+          Open
+        </Button>
+        <NativeSelect
+          className="h-7 text-xs"
+          value={item.lane}
+          onChange={event => onMove(event.target.value as AgentBoardLane)}
+        >
+          {AGENT_BOARD_LANES.map(lane => (
+            <option
+              key={lane}
+              value={lane}
+              disabled={!canMoveAgentBoardItem(item.lane, lane)}
+            >
+              {AGENT_BOARD_LANE_LABELS[lane]}
+            </option>
+          ))}
+        </NativeSelect>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7"
+          onClick={() => onMove('archived')}
+        >
+          <Archive className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </article>
+  )
+}

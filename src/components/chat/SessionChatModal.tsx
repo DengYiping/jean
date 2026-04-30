@@ -782,6 +782,7 @@ export function SessionChatModal({
               <div className="flex items-center gap-2 min-w-0">
                 <h2 className="text-sm font-medium min-w-0 flex-1 truncate">
                   {project && (
+                  {project && (
                     <span className="text-muted-foreground font-normal">
                       <button
                         type="button"

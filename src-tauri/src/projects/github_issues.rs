@@ -110,7 +110,7 @@ pub async fn list_github_issues(
             "--json",
             "number,title,body,state,labels,createdAt,author",
             "-L",
-            "100",
+            "1000",
             "--state",
             &state_arg,
         ])
@@ -200,7 +200,7 @@ pub async fn search_github_issues(
             "--json",
             "number,title,body,state,labels,createdAt,author",
             "-L",
-            "30",
+            "100",
             "--state",
             "all",
         ])
@@ -2152,7 +2152,7 @@ pub async fn list_github_prs(
         &[
             ("owner", repo_id.owner),
             ("repo", repo_id.repo),
-            ("count", "100".to_string()),
+            ("count", "1000".to_string()),
         ],
         "gh api graphql",
     )?;
@@ -2196,7 +2196,7 @@ pub async fn search_github_prs(
                     query.trim()
                 ),
             ),
-            ("count", "30".to_string()),
+            ("count", "100".to_string()),
         ],
         "gh api graphql",
     )?;

@@ -151,6 +151,14 @@ export interface InitialData {
 let initialDataPromise: Promise<InitialData | null> | null = null
 let initialDataResolved = false
 
+function hasBrowserTransportGlobals(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof localStorage !== 'undefined' &&
+    typeof WebSocket !== 'undefined'
+  )
+}
+
 /**
  * Build the /api/init URL with the given query params.
  * Centralizes token + selected_project + active_sessions encoding.
@@ -278,6 +286,7 @@ interface WsMessage {
   error?: string
   event?: string
   payload?: unknown
+  seq?: number
 }
 
 class WsTransport {
@@ -307,6 +316,14 @@ class WsTransport {
   private _lastConnectTime = 0
   private _reconnectPrefetch: Promise<InitialData | null> | null = null
   private _subscribers = new Set<() => void>()
+  /** Track last seen seq per session for replay on reconnect. */
+  private _lastSeqBySession = new Map<string, number>()
+  /** Sessions that were actively streaming when we disconnected. */
+  private _activeStreamingSessions = new Set<string>()
+  /** Track last seen seq per terminal for replay on reconnect. */
+  private _lastSeqByTerminal = new Map<string, number>()
+  /** Terminals that were running when we (potentially) disconnected. */
+  private _activeTerminals = new Set<string>()
 
   get connected(): boolean {
     return this._connected
@@ -380,6 +397,10 @@ class WsTransport {
 
   /** Connect to the WebSocket server (validates token first). */
   connect(): void {
+    // Reconnect timers can outlive a jsdom test environment; bail once the
+    // browser globals are gone instead of throwing during teardown.
+    if (!hasBrowserTransportGlobals()) return
+
     if (
       this._connecting ||
       this.ws?.readyState === WebSocket.OPEN ||
@@ -476,6 +497,33 @@ class WsTransport {
       this.setConnected(true)
       this.reconnectAttempt = 0
 
+      // Replay missed events for sessions that were actively streaming
+      for (const sessionId of this._activeStreamingSessions) {
+        const lastSeq = this._lastSeqBySession.get(sessionId)
+        if (lastSeq != null) {
+          this.ws?.send(
+            JSON.stringify({
+              type: 'replay',
+              session_id: sessionId,
+              last_seq: lastSeq,
+            })
+          )
+        }
+      }
+
+      // Replay missed terminal output (heals output gap during disconnect)
+      for (const terminalId of this._activeTerminals) {
+        const lastSeq = this._lastSeqByTerminal.get(terminalId)
+        if (lastSeq != null) {
+          this.ws?.send(
+            JSON.stringify({
+              type: 'terminal_replay',
+              terminal_id: terminalId,
+              last_seq: lastSeq,
+            })
+          )
+        }
+      }
       // Flush queued messages
       for (const item of this.queue) {
         this.ws?.send(item.data)
@@ -673,6 +721,44 @@ class WsTransport {
         pending.reject(new Error(msg.error || 'Unknown error'))
       }
     } else if (msg.type === 'event' && msg.event) {
+      // Track seq per session for replay dedup + reconnect
+      if (msg.seq != null && msg.payload) {
+        const payload = msg.payload as Record<string, unknown>
+        const sessionId = payload.session_id as string | undefined
+        if (sessionId) {
+          const lastSeen = this._lastSeqBySession.get(sessionId)
+          if (lastSeen != null && msg.seq <= lastSeen) {
+            return // Already processed — skip duplicate from replay
+          }
+          this._lastSeqBySession.set(sessionId, msg.seq)
+          // Track actively streaming sessions
+          if (msg.event === 'chat:chunk' || msg.event === 'chat:thinking') {
+            this._activeStreamingSessions.add(sessionId)
+          } else if (
+            msg.event === 'chat:done' ||
+            msg.event === 'chat:cancelled'
+          ) {
+            this._activeStreamingSessions.delete(sessionId)
+            this._lastSeqBySession.delete(sessionId)
+          }
+        }
+
+        // Track terminal seq for replay on reconnect (output gap healing)
+        const terminalId = payload.terminal_id as string | undefined
+        if (terminalId && msg.event.startsWith('terminal:')) {
+          const lastSeen = this._lastSeqByTerminal.get(terminalId)
+          if (lastSeen != null && msg.seq <= lastSeen) {
+            return // Duplicate from replay — skip
+          }
+          this._lastSeqByTerminal.set(terminalId, msg.seq)
+          if (msg.event === 'terminal:started') {
+            this._activeTerminals.add(terminalId)
+          } else if (msg.event === 'terminal:stopped') {
+            this._activeTerminals.delete(terminalId)
+            this._lastSeqByTerminal.delete(terminalId)
+          }
+        }
+      }
       const handlers = this.listeners.get(msg.event)
       if (handlers && handlers.size > 0) {
         for (const handler of handlers) {
@@ -739,7 +825,7 @@ const wsTransport = new WsTransport()
 // Auto-connect in browser mode (skip when E2E mocks are active)
 if (
   !isNativeApp() &&
-  typeof window !== 'undefined' &&
+  hasBrowserTransportGlobals() &&
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   !(window as any).__JEAN_E2E_MOCK__
 ) {
@@ -796,6 +882,26 @@ export function setWsDataReady(value: boolean): void {
  */
 export function consumeReconnectData(): Promise<InitialData | null> | null {
   return wsTransport.consumeReconnectData()
+}
+
+/**
+ * Imperative connection check for non-React paths (e.g. xterm onData handler).
+ * Native Tauri / E2E mock: always true (no transport drop concept).
+ * Web mode: reflects current WebSocket connected state.
+ */
+export function isTransportConnected(): boolean {
+  if (isNativeApp() || isE2eMocked) return true
+  return wsTransport.connected
+}
+
+/**
+ * Subscribe to transport connection state changes. No-op on native / E2E.
+ * Used by non-React modules (e.g. terminal-instances.ts banner).
+ * Returns unsubscribe.
+ */
+export function subscribeTransportStatus(cb: () => void): () => void {
+  if (isNativeApp() || isE2eMocked) return noopSubscribe()
+  return wsTransport.subscribe(cb)
 }
 
 /**

@@ -3261,6 +3261,7 @@ pub fn run() {
             agent_board::list_agent_board_items,
             agent_board::create_agent_board_item,
             agent_board::update_agent_board_item,
+            agent_board::delete_agent_board_item,
             agent_board::move_agent_board_item,
             agent_board::refresh_agent_board_items,
             agent_board::get_agent_board_item_for_session,

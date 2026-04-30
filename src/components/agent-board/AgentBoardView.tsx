@@ -14,6 +14,7 @@ import {
   Plus,
   RefreshCw,
   Settings2,
+  Trash2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { invoke } from '@/lib/transport'
@@ -45,6 +46,7 @@ import { useProjects } from '@/services/projects'
 import {
   useAgentBoardItems,
   useCreateAgentBoardItem,
+  useDeleteAgentBoardItem,
   useMoveAgentBoardItem,
   useRefreshAgentBoardItems,
 } from '@/services/agent-board'
@@ -239,6 +241,13 @@ function isStartingLaneSideEffect(item: AgentBoardItem) {
 }
 
 function isAgentBoardItemInProgress(item: AgentBoardItem) {
+  if (item.active_run_status) {
+    return (
+      item.active_run_status === 'running' ||
+      item.active_run_status === 'resumable'
+    )
+  }
+
   return (
     item.lane === 'planning' ||
     item.lane === 'implementing' ||
@@ -267,11 +276,25 @@ function targetLaneForColumn(
   return target && canMoveAgentBoardItem(item.lane, target) ? target : null
 }
 
+function sessionTargetForItem(item: AgentBoardItem) {
+  const sessionId =
+    item.implementation_session_id ??
+    item.planning_session_id ??
+    item.yolo_session_id
+  const worktreeId =
+    item.implementation_session_id || item.planning_session_id
+      ? item.worktree_id
+      : item.yolo_worktree_id
+
+  return sessionId && worktreeId ? { sessionId, worktreeId } : null
+}
+
 export function AgentBoardView() {
   const { data: items = [], isLoading } = useAgentBoardItems()
   const { data: unreadSessions } = useUnreadSessions(true)
   const { data: projects = [] } = useProjects()
   const moveItem = useMoveAgentBoardItem()
+  const deleteItem = useDeleteAgentBoardItem()
   const refreshItems = useRefreshAgentBoardItems()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -359,29 +382,42 @@ export function AgentBoardView() {
   }, [items, unreadSessions])
 
   const openSession = useCallback(async (item: AgentBoardItem) => {
-    const sessionId =
-      item.implementation_session_id ??
-      item.planning_session_id ??
-      item.yolo_session_id
-    const worktreeId =
-      item.implementation_session_id || item.planning_session_id
-        ? item.worktree_id
-        : item.yolo_worktree_id
-    if (!sessionId || !worktreeId) {
+    let target = sessionTargetForItem(item)
+    if (!target) {
+      try {
+        const latestItems = await invoke<AgentBoardItem[]>(
+          'refresh_agent_board_items'
+        )
+        const latestItem = latestItems.find(
+          candidate => candidate.id === item.id
+        )
+        target = latestItem ? sessionTargetForItem(latestItem) : null
+      } catch {
+        target = null
+      }
+    }
+
+    if (!target) {
       toast.info('This card does not have a session yet')
       return
     }
     try {
-      const worktree = await invoke<Worktree>('get_worktree', { worktreeId })
+      const worktree = await invoke<Worktree>('get_worktree', {
+        worktreeId: target.worktreeId,
+      })
       useUIStore.getState().setActiveMainView('workspace')
       useProjectsStore.getState().selectProject(worktree.project_id)
       useProjectsStore.getState().expandProject(worktree.project_id)
       useProjectsStore.getState().selectWorktree(worktree.id)
       useChatStore.getState().setActiveWorktree(worktree.id, worktree.path)
-      useChatStore.getState().setActiveSession(worktree.id, sessionId)
+      useChatStore.getState().setActiveSession(worktree.id, target.sessionId)
       useChatStore
         .getState()
-        .setLastOpenedForProject(worktree.project_id, worktree.id, sessionId)
+        .setLastOpenedForProject(
+          worktree.project_id,
+          worktree.id,
+          target.sessionId
+        )
     } catch (error) {
       toast.error(`Failed to open session: ${error}`)
     }
@@ -397,6 +433,18 @@ export function AgentBoardView() {
       }
     },
     [moveItem]
+  )
+
+  const deleteArchivedItem = useCallback(
+    async (item: AgentBoardItem) => {
+      try {
+        await deleteItem.mutateAsync(item.id)
+        toast.success('Archived worktree delete started')
+      } catch (error) {
+        toast.error(`Failed to delete archived worktree: ${error}`)
+      }
+    },
+    [deleteItem]
   )
 
   return (
@@ -482,6 +530,8 @@ export function AgentBoardView() {
                         const targetLane = targetLaneForColumn(item, column)
                         if (targetLane) move(item, targetLane)
                       }}
+                      onDelete={() => deleteArchivedItem(item)}
+                      deleting={deleteItem.isPending}
                       onOpenSession={() => openSession(item)}
                     />
                   ))
@@ -511,6 +561,8 @@ function AgentBoardCard({
   onDragEnd,
   onPointerColumnDrop,
   onMove,
+  onDelete,
+  deleting,
   onOpenSession,
 }: {
   item: AgentBoardItem
@@ -522,6 +574,8 @@ function AgentBoardCard({
   onDragEnd: () => void
   onPointerColumnDrop: (column: AgentBoardColumnId) => void
   onMove: (column: AgentBoardColumnId) => void
+  onDelete: () => void
+  deleting?: boolean
   onOpenSession: () => void
 }) {
   const pointerDragRef = useRef<{
@@ -679,14 +733,32 @@ function AgentBoardCard({
             </option>
           ))}
         </NativeSelect>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7"
-          onClick={() => onMove('archive')}
-        >
-          <Archive className="h-3.5 w-3.5" />
-        </Button>
+        {item.lane === 'archived' ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-destructive hover:text-destructive"
+            aria-label="Delete archived worktree"
+            disabled={deleting}
+            onClick={onDelete}
+          >
+            {deleting ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Trash2 className="h-3.5 w-3.5" />
+            )}
+          </Button>
+        ) : (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            aria-label="Archive card"
+            onClick={() => onMove('archive')}
+          >
+            <Archive className="h-3.5 w-3.5" />
+          </Button>
+        )}
       </div>
     </article>
   )

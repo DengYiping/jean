@@ -294,6 +294,15 @@ export const test = base.extend<TauriMockFixtures>({
             Object.assign(item, patch, { updated_at: Date.now() / 1000 })
             return structuredClone(item)
           },
+          delete_agent_board_item: args => {
+            const index = agentBoardStore.findIndex(
+              candidate => candidate.id === args?.itemId
+            )
+            if (index >= 0) {
+              agentBoardStore.splice(index, 1)
+            }
+            return null
+          },
           move_agent_board_item: args => {
             const item = agentBoardStore.find(
               candidate => candidate.id === args?.itemId

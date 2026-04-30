@@ -7,7 +7,8 @@ use super::types::{
     UpdateAgentBoardItemRequest,
 };
 use crate::chat::storage::{load_metadata, save_metadata};
-use crate::chat::types::{Backend, RunStatus, SessionMetadata};
+use crate::chat::types::{Backend, RunEntry, RunStatus, SessionMetadata};
+use crate::http_server::EmitExt;
 use std::time::{Duration, Instant};
 use tauri::AppHandle;
 use uuid::Uuid;
@@ -91,6 +92,28 @@ fn associate_session(app: &AppHandle, session_id: &str, item_id: &str) -> Result
     Ok(())
 }
 
+fn emit_agent_board_cache_invalidation(app: &AppHandle) {
+    if let Err(e) = app.emit_all(
+        "cache:invalidate",
+        &serde_json::json!({ "keys": ["agent-board", "sessions", "projects"] }),
+    ) {
+        log::error!("Failed to emit cache:invalidate for agent board: {e}");
+    }
+}
+
+fn persist_agent_board_item_snapshot(
+    app: &AppHandle,
+    snapshot: &AgentBoardItem,
+) -> Result<(), String> {
+    with_agent_board_data_mut(app, |data| {
+        let item = find_item_mut(data, &snapshot.id)?;
+        *item = snapshot.clone();
+        Ok(())
+    })?;
+    emit_agent_board_cache_invalidation(app);
+    Ok(())
+}
+
 fn configured_plan_approval_message(app: &AppHandle, backend: &Backend) -> String {
     let preferences = crate::load_preferences_sync(app).unwrap_or_default();
     let configured = match backend {
@@ -131,6 +154,19 @@ fn clear_board_session_attention_for_run(
     metadata.attention_updated_at = None;
     metadata.last_opened_at = Some(now);
     metadata.selected_execution_mode = Some("build".to_string());
+}
+
+fn attached_worktree_ids(item: &AgentBoardItem) -> Vec<String> {
+    let mut worktree_ids = Vec::new();
+    for worktree_id in [&item.worktree_id, &item.yolo_worktree_id]
+        .into_iter()
+        .flatten()
+    {
+        if !worktree_ids.contains(worktree_id) {
+            worktree_ids.push(worktree_id.clone());
+        }
+    }
+    worktree_ids
 }
 
 async fn mark_board_session_started(
@@ -270,6 +306,7 @@ async fn run_lane_side_effect(
                 let session = create_board_session(app.clone(), item, &worktree_id, "plan").await?;
                 item.planning_session_id = Some(session.id);
             }
+            persist_agent_board_item_snapshot(&app, item)?;
             let worktree_id = item.worktree_id.clone().expect("worktree set");
             let session_id = item.planning_session_id.clone().expect("session set");
             send_board_prompt(app, item, &worktree_id, &session_id, "plan", None).await?;
@@ -288,6 +325,7 @@ async fn run_lane_side_effect(
                     create_board_session(app.clone(), item, &worktree_id, "build").await?;
                 item.implementation_session_id = Some(session.id);
             }
+            persist_agent_board_item_snapshot(&app, item)?;
             let worktree_id = item.worktree_id.clone().expect("worktree set");
             let session_id = item.implementation_session_id.clone().expect("session set");
             let approve_pending_plan = from_lane == AgentBoardLane::Planned
@@ -331,6 +369,7 @@ async fn run_lane_side_effect(
                 let session = create_board_session(app.clone(), item, &worktree_id, "yolo").await?;
                 item.yolo_session_id = Some(session.id);
             }
+            persist_agent_board_item_snapshot(&app, item)?;
             let worktree_id = item.yolo_worktree_id.clone().expect("worktree set");
             let session_id = item.yolo_session_id.clone().expect("session set");
             send_board_prompt(app, item, &worktree_id, &session_id, "yolo", None).await?;
@@ -351,50 +390,124 @@ async fn run_lane_side_effect(
 }
 
 fn sync_item_from_sessions(app: &AppHandle, item: &mut AgentBoardItem) {
+    item.active_run_status = None;
+
     if let Some(session_id) = item.planning_session_id.as_deref() {
         if let Ok(Some(metadata)) = load_metadata(app, session_id) {
-            if metadata.waiting_for_input
-                && metadata.waiting_for_input_type.as_deref() == Some("plan")
-            {
-                item.lane = AgentBoardLane::Planned;
-            }
+            sync_item_from_planning_session(item, &metadata);
         }
     }
 
     if let Some(session_id) = item.implementation_session_id.as_deref() {
         if let Ok(Some(metadata)) = load_metadata(app, session_id) {
-            match metadata.runs.last().map(|run| &run.status) {
-                Some(RunStatus::Running | RunStatus::Resumable) => {
-                    if item.lane == AgentBoardLane::Implemented {
-                        item.lane = AgentBoardLane::Implementing;
-                    }
-                }
-                Some(RunStatus::Completed) => {
-                    if item.lane == AgentBoardLane::Implementing {
-                        item.lane = AgentBoardLane::Implemented;
-                    }
-                }
-                _ => {}
-            }
+            sync_item_from_implementation_session(item, &metadata);
         }
     }
 
     if let Some(session_id) = item.yolo_session_id.as_deref() {
         if let Ok(Some(metadata)) = load_metadata(app, session_id) {
-            match metadata.runs.last().map(|run| &run.status) {
-                Some(RunStatus::Running | RunStatus::Resumable) => {
-                    if item.lane == AgentBoardLane::Yoloed {
-                        item.lane = AgentBoardLane::Yoloing;
-                    }
-                }
-                Some(RunStatus::Completed | RunStatus::Cancelled | RunStatus::Crashed) => {
-                    if item.lane == AgentBoardLane::Yoloing {
-                        item.lane = AgentBoardLane::Yoloed;
-                    }
-                }
-                _ => {}
+            sync_item_from_yolo_session(item, &metadata);
+        }
+    }
+}
+
+fn latest_run(metadata: &SessionMetadata) -> Option<&RunEntry> {
+    metadata.runs.last()
+}
+
+fn latest_run_status(metadata: &SessionMetadata) -> Option<&RunStatus> {
+    latest_run(metadata).map(|run| &run.status)
+}
+
+fn latest_execution_mode(metadata: &SessionMetadata) -> Option<&str> {
+    latest_run(metadata)
+        .and_then(|run| run.execution_mode.as_deref())
+        .or(metadata.selected_execution_mode.as_deref())
+}
+
+fn sync_item_from_planning_session(item: &mut AgentBoardItem, metadata: &SessionMetadata) {
+    item.active_run_status = latest_run_status(metadata).cloned();
+
+    if metadata.waiting_for_input && metadata.waiting_for_input_type.as_deref() == Some("plan") {
+        item.lane = AgentBoardLane::Planned;
+        return;
+    }
+
+    let latest_run = latest_run(metadata);
+    let latest_run_status = latest_run_status(metadata);
+    let latest_run_is_build =
+        latest_run.and_then(|run| run.execution_mode.as_deref()) == Some("build");
+    let completed_plan_approved_for_build = metadata.selected_execution_mode.as_deref()
+        == Some("build")
+        && latest_run.and_then(|run| run.execution_mode.as_deref()) == Some("plan")
+        && matches!(latest_run_status, Some(RunStatus::Completed));
+    let session_is_build = latest_run_is_build || completed_plan_approved_for_build;
+    if !session_is_build {
+        return;
+    }
+
+    if matches!(
+        item.lane,
+        AgentBoardLane::Planning | AgentBoardLane::Planned
+    ) {
+        if item.implementation_session_id.is_none() {
+            item.implementation_session_id = item.planning_session_id.clone();
+        }
+        if latest_run_is_build && matches!(latest_run_status, Some(RunStatus::Completed)) {
+            item.lane = AgentBoardLane::Implemented;
+        } else {
+            item.lane = AgentBoardLane::Implementing;
+        }
+    }
+}
+
+fn sync_item_from_implementation_session(item: &mut AgentBoardItem, metadata: &SessionMetadata) {
+    item.active_run_status = latest_run_status(metadata).cloned();
+
+    let latest_run = latest_run(metadata);
+    let latest_run_is_build =
+        latest_run.and_then(|run| run.execution_mode.as_deref()) == Some("build");
+    let legacy_selected_build_run = latest_run.is_some_and(|run| run.execution_mode.is_none())
+        && metadata.selected_execution_mode.as_deref() == Some("build");
+
+    if !latest_run_is_build && !legacy_selected_build_run {
+        return;
+    }
+
+    match latest_run_status(metadata) {
+        Some(RunStatus::Running | RunStatus::Resumable) => {
+            if item.lane == AgentBoardLane::Implemented {
+                item.lane = AgentBoardLane::Implementing;
             }
         }
+        Some(RunStatus::Completed) => {
+            if latest_run_is_build && item.lane == AgentBoardLane::Implementing {
+                item.lane = AgentBoardLane::Implemented;
+            }
+        }
+        _ => {}
+    }
+}
+
+fn sync_item_from_yolo_session(item: &mut AgentBoardItem, metadata: &SessionMetadata) {
+    item.active_run_status = latest_run_status(metadata).cloned();
+
+    if latest_execution_mode(metadata).is_some_and(|mode| mode != "yolo") {
+        return;
+    }
+
+    match latest_run_status(metadata) {
+        Some(RunStatus::Running | RunStatus::Resumable) => {
+            if item.lane == AgentBoardLane::Yoloed {
+                item.lane = AgentBoardLane::Yoloing;
+            }
+        }
+        Some(RunStatus::Completed | RunStatus::Cancelled | RunStatus::Crashed) => {
+            if item.lane == AgentBoardLane::Yoloing {
+                item.lane = AgentBoardLane::Yoloed;
+            }
+        }
+        _ => {}
     }
 }
 
@@ -431,6 +544,7 @@ pub async fn create_agent_board_item(
         updated_at: now,
         archived_at: None,
         last_error: None,
+        active_run_status: None,
     };
 
     with_agent_board_data_mut(&app, |data| {
@@ -467,6 +581,41 @@ pub async fn update_agent_board_item(
         }
         item.updated_at = now_seconds();
         Ok(item.clone())
+    })
+}
+
+#[tauri::command]
+pub async fn delete_agent_board_item(app: AppHandle, item_id: String) -> Result<(), String> {
+    let data = load_agent_board_data(&app)?;
+    let item = data
+        .items
+        .iter()
+        .find(|item| item.id == item_id)
+        .cloned()
+        .ok_or_else(|| format!("Agent board item not found: {item_id}"))?;
+    if item.lane != AgentBoardLane::Archived {
+        return Err("Only archived agent board items can be deleted".to_string());
+    }
+
+    for worktree_id in attached_worktree_ids(&item) {
+        match crate::projects::permanently_delete_worktree(app.clone(), worktree_id.clone()).await {
+            Ok(()) => {}
+            Err(error) if error.starts_with("Worktree not found:") => {
+                log::warn!(
+                    "[AgentBoard] archived item {item_id} references missing worktree {worktree_id}; removing card anyway"
+                );
+            }
+            Err(error) => return Err(error),
+        }
+    }
+
+    with_agent_board_data_mut(&app, |data| {
+        let before = data.items.len();
+        data.items.retain(|item| item.id != item_id);
+        if data.items.len() == before {
+            return Err(format!("Agent board item not found: {item_id}"));
+        }
+        Ok(())
     })
 }
 
@@ -521,8 +670,10 @@ pub async fn refresh_agent_board_items(app: AppHandle) -> Result<Vec<AgentBoardI
     let mut data = load_agent_board_data(&app)?;
     for item in &mut data.items {
         let before = item.lane;
+        let before_implementation_session_id = item.implementation_session_id.clone();
         sync_item_from_sessions(&app, item);
-        if item.lane != before {
+        if item.lane != before || item.implementation_session_id != before_implementation_session_id
+        {
             item.updated_at = now_seconds();
         }
     }
@@ -568,6 +719,59 @@ pub async fn get_agent_board_item_for_session(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_item(lane: AgentBoardLane) -> AgentBoardItem {
+        AgentBoardItem {
+            id: "item-1".to_string(),
+            title: "Test".to_string(),
+            prompt: "Do the thing".to_string(),
+            project_id: "project-1".to_string(),
+            backend: Backend::Codex,
+            effort_level: None,
+            lane,
+            worktree_id: Some("worktree-1".to_string()),
+            planning_session_id: Some("session-1".to_string()),
+            implementation_session_id: None,
+            yolo_worktree_id: None,
+            yolo_session_id: None,
+            pr_url: None,
+            created_at: 1,
+            updated_at: 1,
+            archived_at: None,
+            last_error: None,
+            active_run_status: None,
+        }
+    }
+
+    fn test_metadata() -> SessionMetadata {
+        SessionMetadata::new(
+            "session-1".to_string(),
+            "worktree-1".to_string(),
+            "Session 1".to_string(),
+            0,
+        )
+    }
+
+    fn test_run(execution_mode: &str, status: RunStatus) -> RunEntry {
+        RunEntry {
+            run_id: "run-1".to_string(),
+            user_message_id: "message-1".to_string(),
+            user_message: "message".to_string(),
+            model: None,
+            execution_mode: Some(execution_mode.to_string()),
+            thinking_level: None,
+            effort_level: None,
+            started_at: 1,
+            ended_at: None,
+            status,
+            assistant_message_id: None,
+            cancelled: false,
+            recovered: false,
+            claude_session_id: None,
+            pid: None,
+            usage: None,
+        }
+    }
 
     #[test]
     fn clear_board_session_attention_for_run_clears_waiting_and_unread_marker() {
@@ -630,5 +834,78 @@ mod tests {
         clear_board_session_attention_for_run(&mut metadata, opened_at, true);
 
         assert_eq!(metadata.approved_plan_message_ids, vec!["plan-msg-1"]);
+    }
+
+    #[test]
+    fn planning_session_build_selection_moves_card_to_implementing() {
+        let mut item = test_item(AgentBoardLane::Planned);
+        let mut metadata = test_metadata();
+        metadata.selected_execution_mode = Some("build".to_string());
+        metadata.runs.push(test_run("plan", RunStatus::Completed));
+
+        sync_item_from_planning_session(&mut item, &metadata);
+
+        assert_eq!(item.lane, AgentBoardLane::Implementing);
+        assert_eq!(item.implementation_session_id.as_deref(), Some("session-1"));
+    }
+
+    #[test]
+    fn completed_plan_run_does_not_mark_implementation_complete() {
+        let mut item = test_item(AgentBoardLane::Implementing);
+        item.implementation_session_id = Some("session-1".to_string());
+        let mut metadata = test_metadata();
+        metadata.selected_execution_mode = Some("build".to_string());
+        metadata.runs.push(test_run("plan", RunStatus::Completed));
+
+        sync_item_from_implementation_session(&mut item, &metadata);
+
+        assert_eq!(item.lane, AgentBoardLane::Implementing);
+    }
+
+    #[test]
+    fn cancelled_plan_run_with_build_selected_stays_in_plan() {
+        let mut item = test_item(AgentBoardLane::Planned);
+        let mut metadata = test_metadata();
+        metadata.selected_execution_mode = Some("build".to_string());
+        metadata.runs.push(test_run("plan", RunStatus::Cancelled));
+
+        sync_item_from_planning_session(&mut item, &metadata);
+
+        assert_eq!(item.lane, AgentBoardLane::Planned);
+        assert_eq!(item.implementation_session_id, None);
+        assert_eq!(item.active_run_status, Some(RunStatus::Cancelled));
+    }
+
+    #[test]
+    fn completed_build_run_moves_card_to_implemented() {
+        let mut item = test_item(AgentBoardLane::Implementing);
+        item.implementation_session_id = Some("session-1".to_string());
+        let mut metadata = test_metadata();
+        metadata.runs.push(test_run("build", RunStatus::Completed));
+
+        sync_item_from_implementation_session(&mut item, &metadata);
+
+        assert_eq!(item.lane, AgentBoardLane::Implemented);
+    }
+
+    #[test]
+    fn cancelled_build_run_updates_active_status_without_marking_complete() {
+        let mut item = test_item(AgentBoardLane::Implementing);
+        item.implementation_session_id = Some("session-1".to_string());
+        let mut metadata = test_metadata();
+        metadata.runs.push(test_run("build", RunStatus::Cancelled));
+
+        sync_item_from_implementation_session(&mut item, &metadata);
+
+        assert_eq!(item.lane, AgentBoardLane::Implementing);
+        assert_eq!(item.active_run_status, Some(RunStatus::Cancelled));
+    }
+
+    #[test]
+    fn attached_worktree_ids_deduplicates_planning_and_yolo_worktrees() {
+        let mut item = test_item(AgentBoardLane::Archived);
+        item.yolo_worktree_id = Some("worktree-1".to_string());
+
+        assert_eq!(attached_worktree_ids(&item), vec!["worktree-1"]);
     }
 }

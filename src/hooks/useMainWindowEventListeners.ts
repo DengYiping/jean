@@ -869,6 +869,11 @@ export function useMainWindowEventListeners() {
                     queryKey: ['automations'],
                   })
                   break
+                case 'agent-board':
+                  queryClient.invalidateQueries({
+                    queryKey: ['agent-board'],
+                  })
+                  break
               }
             }
             pendingKeys.clear()

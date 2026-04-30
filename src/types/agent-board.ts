@@ -1,4 +1,4 @@
-import type { Backend, EffortLevel } from '@/types/chat'
+import type { Backend, EffortLevel, RunStatus } from '@/types/chat'
 
 export type AgentBoardLane =
   | 'todo'
@@ -29,6 +29,7 @@ export interface AgentBoardItem {
   updated_at: number
   archived_at?: number
   last_error?: string
+  active_run_status?: RunStatus
 }
 
 export interface CreateAgentBoardItemRequest {

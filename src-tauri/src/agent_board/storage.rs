@@ -35,7 +35,11 @@ pub fn load_agent_board_data(app: &AppHandle) -> Result<AgentBoardData, String> 
 pub fn save_agent_board_data(app: &AppHandle, data: &AgentBoardData) -> Result<(), String> {
     let path = get_agent_board_path(app)?;
     let tmp_path = path.with_extension("tmp");
-    let json = serde_json::to_string_pretty(data)
+    let mut data_for_storage = data.clone();
+    for item in &mut data_for_storage.items {
+        item.active_run_status = None;
+    }
+    let json = serde_json::to_string_pretty(&data_for_storage)
         .map_err(|e| format!("Failed to serialize board file: {e}"))?;
     std::fs::write(&tmp_path, json).map_err(|e| format!("Failed to write board file: {e}"))?;
     std::fs::rename(&tmp_path, &path).map_err(|e| format!("Failed to save board file: {e}"))
@@ -95,6 +99,7 @@ mod tests {
             updated_at: 1,
             archived_at: None,
             last_error: None,
+            active_run_status: None,
         }
     }
 

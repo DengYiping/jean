@@ -1,4 +1,4 @@
-use crate::chat::types::{Backend, EffortLevel};
+use crate::chat::types::{Backend, EffortLevel, RunStatus};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -66,6 +66,8 @@ pub struct AgentBoardItem {
     pub archived_at: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_run_status: Option<RunStatus>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

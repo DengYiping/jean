@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createElement, type ReactNode } from 'react'
 import { chatQueryKeys } from '@/services/chat'
+import { agentBoardQueryKeys } from '@/services/agent-board'
 import { projectsQueryKeys } from '@/services/projects'
 import { preferencesQueryKeys } from '@/services/preferences'
 import { defaultPreferences } from '@/types/preferences'
@@ -252,6 +253,21 @@ function seedSessionCaches(queryClient: QueryClient) {
       },
     ],
   })
+  queryClient.setQueryData(agentBoardQueryKeys.all, [
+    {
+      id: 'item-1',
+      title: 'Plan task',
+      prompt: 'Plan task',
+      project_id: 'project-1',
+      backend: 'codex',
+      lane: 'planning',
+      worktree_id: 'worktree-1',
+      planning_session_id: 'session-1',
+      created_at: 1,
+      updated_at: 1,
+      active_run_status: 'completed',
+    },
+  ])
 }
 
 async function setupHook() {
@@ -370,6 +386,25 @@ describe('useStreamingEvents question notifications', () => {
       waitingForInputType: 'question',
       isReviewing: false,
     })
+    unmount()
+  })
+
+  it('marks board-managed sessions running when a resumed send starts', async () => {
+    const { handlers, queryClient, unmount } = await setupHook()
+
+    await act(async () => {
+      handlers.get('chat:sending')?.({
+        payload: {
+          session_id: 'session-1',
+          worktree_id: 'worktree-1',
+          user_message: 'resume plan',
+        },
+      })
+    })
+
+    expect(queryClient.getQueryData(agentBoardQueryKeys.all)).toMatchObject([
+      { active_run_status: 'running' },
+    ])
     unmount()
   })
 

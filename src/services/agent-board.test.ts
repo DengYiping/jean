@@ -4,6 +4,8 @@ import { createElement } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   agentBoardQueryKeys,
+  setCachedAgentBoardSessionRunStatus,
+  useDeleteAgentBoardItem,
   useMoveAgentBoardItem,
 } from '@/services/agent-board'
 import { chatQueryKeys } from '@/services/chat'
@@ -92,6 +94,79 @@ describe('agent board service', () => {
     })
 
     resolveMove({ ...item, lane: 'planning' })
+  })
+
+  it('merges backend-created planning session ids after moving to planning', async () => {
+    const { invoke } = await import('@/lib/transport')
+    const item = todoItem()
+    queryClient.setQueryData(agentBoardQueryKeys.all, [item])
+
+    vi.mocked(invoke).mockResolvedValue({
+      ...item,
+      lane: 'planning',
+      worktree_id: 'worktree-1',
+      planning_session_id: 'session-1',
+      updated_at: 2,
+    })
+
+    const { result } = renderHook(() => useMoveAgentBoardItem(), {
+      wrapper: createWrapper(queryClient),
+    })
+
+    act(() => {
+      result.current.mutate({ itemId: item.id, lane: 'planning' })
+    })
+
+    await waitFor(() => {
+      const updatedItem = queryClient.getQueryData<AgentBoardItem[]>(
+        agentBoardQueryKeys.all
+      )?.[0]
+      expect(updatedItem?.lane).toBe('planning')
+      expect(updatedItem?.worktree_id).toBe('worktree-1')
+      expect(updatedItem?.planning_session_id).toBe('session-1')
+    })
+  })
+
+  it('updates cached board run status for matching sessions', () => {
+    const item = {
+      ...todoItem(),
+      lane: 'implementing' as const,
+      implementation_session_id: 'session-1',
+      active_run_status: 'running' as const,
+    }
+    queryClient.setQueryData(agentBoardQueryKeys.all, [item])
+
+    setCachedAgentBoardSessionRunStatus(queryClient, 'session-1', 'cancelled')
+
+    expect(
+      queryClient.getQueryData<AgentBoardItem[]>(agentBoardQueryKeys.all)?.[0]
+        ?.active_run_status
+    ).toBe('cancelled')
+  })
+
+  it('removes a deleted archived board item from cache', async () => {
+    const { invoke } = await import('@/lib/transport')
+    const item = {
+      ...todoItem(),
+      lane: 'archived' as const,
+      archived_at: 2,
+    }
+    queryClient.setQueryData(agentBoardQueryKeys.all, [item])
+    vi.mocked(invoke).mockResolvedValue(null)
+
+    const { result } = renderHook(() => useDeleteAgentBoardItem(), {
+      wrapper: createWrapper(queryClient),
+    })
+
+    act(() => {
+      result.current.mutate('item-1')
+    })
+
+    await waitFor(() => {
+      expect(
+        queryClient.getQueryData<AgentBoardItem[]>(agentBoardQueryKeys.all)
+      ).toEqual([])
+    })
   })
 
   it('clears the planned session attention state when moving to implementing', async () => {

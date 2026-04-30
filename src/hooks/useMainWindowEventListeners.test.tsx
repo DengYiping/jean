@@ -1,7 +1,7 @@
 import React from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { renderHook } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { useChatStore } from '@/store/chat-store'
 import { useProjectsStore } from '@/store/projects-store'
 import { useTerminalStore } from '@/store/terminal-store'
@@ -366,6 +366,50 @@ describe('useMainWindowEventListeners terminal shortcuts', () => {
     expect(listener).toHaveBeenCalledTimes(1)
 
     window.removeEventListener('agent-board:new-todo', listener)
+  })
+
+  it('invalidates the agent board query from cache events', async () => {
+    let cacheInvalidateHandler:
+      | ((event: { payload: { keys: string[] } }) => void)
+      | undefined
+    mockListen.mockImplementation(async (event, handler) => {
+      if (event === 'cache:invalidate') {
+        cacheInvalidateHandler = handler
+      }
+      return () => undefined
+    })
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    })
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+    const Wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
+
+    try {
+      renderHook(() => useMainWindowEventListeners(), {
+        wrapper: Wrapper,
+      })
+
+      await waitFor(() => {
+        expect(cacheInvalidateHandler).toBeDefined()
+      })
+
+      vi.useFakeTimers()
+      act(() => {
+        cacheInvalidateHandler?.({ payload: { keys: ['agent-board'] } })
+        vi.advanceTimersByTime(250)
+      })
+
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: ['agent-board'],
+      })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('does not retrigger the new project shortcut while the add-project flow is open', () => {

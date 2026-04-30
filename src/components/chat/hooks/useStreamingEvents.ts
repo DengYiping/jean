@@ -6,6 +6,10 @@ import type { QueryClient } from '@tanstack/react-query'
 import { useChatStore } from '@/store/chat-store'
 import { useUIStore } from '@/store/ui-store'
 import { chatQueryKeys } from '@/services/chat'
+import {
+  agentBoardQueryKeys,
+  setCachedAgentBoardSessionRunStatus,
+} from '@/services/agent-board'
 import { isTauri, saveWorktreePr, projectsQueryKeys } from '@/services/projects'
 import { preferencesQueryKeys } from '@/services/preferences'
 import type { AppPreferences, NotificationSound } from '@/types/preferences'
@@ -345,6 +349,7 @@ export default function useStreamingEvents({
       user_message: string
     }>('chat:sending', event => {
       const { session_id, worktree_id: wtId, user_message } = event.payload
+      setCachedAgentBoardSessionRunStatus(queryClient, session_id, 'running')
       // Check if THIS client initiated the send (sender calls addSendingSession
       // before sendMessage.mutate, so it's already in sendingSessionIds).
       const isSender = !!useChatStore.getState().sendingSessionIds[session_id]
@@ -914,6 +919,8 @@ export default function useStreamingEvents({
     const unlistenDone = listen<DoneEvent>('chat:done', event => {
       const sessionId = event.payload.session_id
       const worktreeId = event.payload.worktree_id
+      setCachedAgentBoardSessionRunStatus(queryClient, sessionId, 'completed')
+      queryClient.invalidateQueries({ queryKey: agentBoardQueryKeys.all })
 
       // Flush any buffered chunks so streamingContents is up to date
       if (chunkRafId !== null) {
@@ -1868,6 +1875,8 @@ export default function useStreamingEvents({
       useChatStore.getState().restoreAttachments(session_id)
 
       // Optimistically update last_run_status BEFORE clearing state (same pattern as chat:done)
+      setCachedAgentBoardSessionRunStatus(queryClient, session_id, 'crashed')
+      queryClient.invalidateQueries({ queryKey: agentBoardQueryKeys.all })
       queryClient.setQueryData<Session>(
         chatQueryKeys.session(session_id),
         old => (old ? { ...old, last_run_status: 'crashed' as const } : old)
@@ -2046,6 +2055,12 @@ export default function useStreamingEvents({
         // This ensures the persisted message exists before StreamingMessage unmounts
 
         // Optimistically update last_run_status so "restored session" indicator hides
+        setCachedAgentBoardSessionRunStatus(
+          queryClient,
+          session_id,
+          'cancelled'
+        )
+        queryClient.invalidateQueries({ queryKey: agentBoardQueryKeys.all })
         queryClient.setQueryData<Session>(
           chatQueryKeys.session(session_id),
           old => (old ? { ...old, last_run_status: 'cancelled' } : old)

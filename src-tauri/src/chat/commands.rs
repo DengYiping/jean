@@ -4956,10 +4956,13 @@ pub async fn resume_session(
                     } else {
                         Some(resume_id.as_str())
                     };
-                    if let Err(e) =
+                    let result = if cancelled {
+                        writer.cancel(Some(&assistant_message_id), resume_sid)
+                    } else {
                         writer.complete(&assistant_message_id, resume_sid, usage.clone())
-                    {
-                        log::error!("Failed to mark run as completed: {e}");
+                    };
+                    if let Err(e) = result {
+                        log::error!("Failed to finalize resumed run: {e}");
                     }
 
                     // Clean up input file if it exists

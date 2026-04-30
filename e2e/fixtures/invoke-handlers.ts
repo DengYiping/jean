@@ -124,6 +124,7 @@ export const defaultResponses: Record<string, unknown> = {
   list_agent_board_items: [],
   create_agent_board_item: null,
   update_agent_board_item: null,
+  delete_agent_board_item: null,
   move_agent_board_item: null,
   refresh_agent_board_items: [],
   get_agent_board_item_for_session: null,

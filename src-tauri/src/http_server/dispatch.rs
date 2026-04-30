@@ -62,6 +62,12 @@ pub async fn dispatch_command(
             emit_cache_invalidation(app, &["agent-board"]);
             to_value(result)
         }
+        "delete_agent_board_item" => {
+            let item_id: String = field(&args, "itemId", "item_id")?;
+            crate::agent_board::delete_agent_board_item(app.clone(), item_id).await?;
+            emit_cache_invalidation(app, &["agent-board", "projects", "sessions"]);
+            Ok(Value::Null)
+        }
         "move_agent_board_item" => {
             let item_id: String = field(&args, "itemId", "item_id")?;
             let lane = field(&args, "lane", "lane")?;

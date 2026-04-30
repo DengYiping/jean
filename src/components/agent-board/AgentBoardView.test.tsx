@@ -9,6 +9,7 @@ import type { UnreadSessionsResponse } from '@/types/chat'
 import type { Project, Worktree } from '@/types/projects'
 
 const mockInvoke = vi.hoisted(() => vi.fn())
+const mockDeleteAgentBoardItem = vi.hoisted(() => vi.fn())
 const mockUnreadSessions = vi.hoisted(
   (): UnreadSessionsResponse => ({ entries: [] })
 )
@@ -47,6 +48,10 @@ vi.mock('@/services/projects', () => ({
 vi.mock('@/services/agent-board', () => ({
   useAgentBoardItems: () => ({ data: [item], isLoading: false }),
   useCreateAgentBoardItem: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDeleteAgentBoardItem: () => ({
+    mutateAsync: mockDeleteAgentBoardItem,
+    isPending: false,
+  }),
   useMoveAgentBoardItem: () => ({ mutateAsync: vi.fn() }),
   useRefreshAgentBoardItems: () => ({ mutate: vi.fn() }),
 }))
@@ -65,6 +70,9 @@ describe('AgentBoardView', () => {
     item.implementation_session_id = undefined
     item.yolo_worktree_id = undefined
     item.yolo_session_id = undefined
+    item.active_run_status = undefined
+    item.archived_at = undefined
+    mockDeleteAgentBoardItem.mockResolvedValue(undefined)
     Element.prototype.setPointerCapture = vi.fn()
     Element.prototype.releasePointerCapture = vi.fn()
     Element.prototype.hasPointerCapture = vi.fn(() => true)
@@ -131,6 +139,59 @@ describe('AgentBoardView', () => {
     })
   })
 
+  it('refreshes a stale card before reporting that it has no session', async () => {
+    item.worktree_id = undefined
+    item.planning_session_id = undefined
+    mockInvoke.mockImplementation(command => {
+      if (command === 'refresh_agent_board_items') {
+        return Promise.resolve([
+          {
+            ...item,
+            worktree_id: 'worktree-1',
+            planning_session_id: 'session-1',
+          },
+        ])
+      }
+      return Promise.resolve({
+        id: 'worktree-1',
+        project_id: project.id,
+        name: 'Worktree',
+        path: '/tmp/worktree',
+        branch: 'worktree-1',
+        created_at: 1,
+        order: 0,
+      } satisfies Worktree)
+    })
+
+    render(<AgentBoardView />)
+
+    const card = screen
+      .getByText('Implement board navigation')
+      .closest('[data-agent-board-item-id]')
+
+    if (!card) {
+      throw new Error('Expected agent board card to render')
+    }
+    fireEvent.pointerDown(card, {
+      button: 0,
+      pointerId: 1,
+      clientX: 10,
+      clientY: 10,
+    })
+    fireEvent.pointerUp(card, {
+      pointerId: 1,
+      clientX: 10,
+      clientY: 10,
+    })
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith('refresh_agent_board_items')
+      expect(useChatStore.getState().activeSessionIds['worktree-1']).toBe(
+        'session-1'
+      )
+    })
+  })
+
   it('shows consolidated board columns', () => {
     render(<AgentBoardView />)
 
@@ -157,6 +218,30 @@ describe('AgentBoardView', () => {
     render(<AgentBoardView />)
 
     expect(screen.getByLabelText('Work in progress')).toBeInTheDocument()
+  })
+
+  it('does not show a spinner when the associated session was cancelled', () => {
+    item.lane = 'implementing'
+    item.implementation_session_id = 'session-1'
+    item.active_run_status = 'cancelled'
+
+    render(<AgentBoardView />)
+
+    expect(screen.queryByLabelText('Work in progress')).not.toBeInTheDocument()
+  })
+
+  it('shows delete instead of archive for archived cards and deletes the board item', async () => {
+    item.lane = 'archived'
+    item.archived_at = 2
+
+    render(<AgentBoardView />)
+
+    expect(screen.queryByLabelText('Archive card')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByLabelText('Delete archived worktree'))
+
+    await waitFor(() => {
+      expect(mockDeleteAgentBoardItem).toHaveBeenCalledWith('item-1')
+    })
   })
 
   it('flashes an item while its associated session is unread', () => {

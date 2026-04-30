@@ -11,6 +11,7 @@ import type {
 } from '@/types/agent-board'
 import type {
   AllSessionsResponse,
+  RunStatus,
   Session,
   UnreadSessionsResponse,
   WorktreeSessions,
@@ -27,6 +28,22 @@ export function useAgentBoardItems() {
     queryKey: agentBoardQueryKeys.all,
     queryFn: () => invoke<AgentBoardItem[]>('list_agent_board_items'),
   })
+}
+
+export function setCachedAgentBoardSessionRunStatus(
+  queryClient: ReturnType<typeof useQueryClient>,
+  sessionId: string,
+  status: RunStatus
+) {
+  queryClient.setQueryData<AgentBoardItem[]>(agentBoardQueryKeys.all, items =>
+    items?.map(item =>
+      item.planning_session_id === sessionId ||
+      item.implementation_session_id === sessionId ||
+      item.yolo_session_id === sessionId
+        ? { ...item, active_run_status: status }
+        : item
+    )
+  )
 }
 
 export function useCreateAgentBoardItem() {
@@ -51,6 +68,23 @@ export function useUpdateAgentBoardItem() {
     }) => invoke<AgentBoardItem>('update_agent_board_item', { itemId, patch }),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: agentBoardQueryKeys.all }),
+  })
+}
+
+export function useDeleteAgentBoardItem() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (itemId: string) =>
+      invoke('delete_agent_board_item', { itemId }),
+    onSuccess: (_result, itemId) => {
+      queryClient.setQueryData<AgentBoardItem[]>(
+        agentBoardQueryKeys.all,
+        current => current?.filter(item => item.id !== itemId) ?? current
+      )
+      queryClient.invalidateQueries({ queryKey: agentBoardQueryKeys.all })
+      queryClient.invalidateQueries({ queryKey: ['projects'] })
+      queryClient.invalidateQueries({ queryKey: chatQueryKeys.all })
+    },
   })
 }
 
@@ -188,7 +222,14 @@ export function useMoveAgentBoardItem() {
         queryClient.setQueryData(agentBoardQueryKeys.all, context.previousItems)
       }
     },
-    onSuccess: () => {
+    onSuccess: item => {
+      queryClient.setQueryData<AgentBoardItem[]>(
+        agentBoardQueryKeys.all,
+        current =>
+          current?.map(existing =>
+            existing.id === item.id ? item : existing
+          ) ?? [item]
+      )
       queryClient.invalidateQueries({ queryKey: agentBoardQueryKeys.all })
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       queryClient.invalidateQueries({ queryKey: chatQueryKeys.all })

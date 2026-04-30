@@ -1647,6 +1647,31 @@ fn normalize_review_decision(review_decision: &Option<String>) -> Option<String>
     }
 }
 
+fn resolve_review_decision(
+    review_decision: &Option<String>,
+    latest_reviews: &[GraphqlPullRequestReview],
+) -> Option<String> {
+    if let Some(normalized) = normalize_review_decision(review_decision) {
+        return Some(normalized);
+    }
+
+    if latest_reviews
+        .iter()
+        .any(|review| review.state.eq_ignore_ascii_case("CHANGES_REQUESTED"))
+    {
+        return Some("changes_requested".to_string());
+    }
+
+    if latest_reviews
+        .iter()
+        .any(|review| review.state.eq_ignore_ascii_case("APPROVED"))
+    {
+        return Some("approved".to_string());
+    }
+
+    None
+}
+
 fn normalize_check_status(state: &Option<String>) -> Option<String> {
     match state.as_deref().map(|s| s.to_ascii_uppercase()) {
         Some(s) if s == "SUCCESS" => Some("success".to_string()),
@@ -1715,7 +1740,10 @@ fn map_graphql_pr(pr: GraphqlPullRequest) -> GitHubPullRequest {
         labels: pr.labels.nodes,
         additions: pr.additions,
         deletions: pr.deletions,
-        review_decision: normalize_review_decision(&pr.review_decision),
+        review_decision: resolve_review_decision(
+            &pr.review_decision,
+            &pr.latest_opinionated_reviews.nodes,
+        ),
         check_status: normalize_check_status(
             &pr.status_check_rollup.and_then(|rollup| rollup.state),
         ),
@@ -1773,6 +1801,14 @@ fragment PullRequestFields on PullRequest {
     }
   }
   reviewDecision
+  latestOpinionatedReviews(first:100) {
+    nodes {
+      state
+      author {
+        login
+      }
+    }
+  }
   statusCheckRollup {
     state
   }
@@ -1818,14 +1854,6 @@ query($owner:String!, $repo:String!, $prNumber:Int!) {
   repository(owner:$owner, name:$repo) {
     pullRequest(number:$prNumber) {
       ...PullRequestFields
-      latestOpinionatedReviews(first:100) {
-        nodes {
-          state
-          author {
-            login
-          }
-        }
-      }
     }
   }
 }
@@ -4049,6 +4077,76 @@ mod tests {
                 other_reviewer_approved: true,
             }
         );
+    }
+
+    #[test]
+    fn test_resolve_review_decision_prefers_graphql_decision() {
+        let reviews = vec![GraphqlPullRequestReview {
+            state: "APPROVED".to_string(),
+            author: Some(GitHubAuthor {
+                login: "teammate".to_string(),
+                avatar_url: None,
+            }),
+        }];
+
+        assert_eq!(
+            resolve_review_decision(&Some("CHANGES_REQUESTED".to_string()), &reviews),
+            Some("changes_requested".to_string())
+        );
+    }
+
+    #[test]
+    fn test_resolve_review_decision_falls_back_to_approved_review() {
+        let reviews = vec![GraphqlPullRequestReview {
+            state: "APPROVED".to_string(),
+            author: Some(GitHubAuthor {
+                login: "teammate".to_string(),
+                avatar_url: None,
+            }),
+        }];
+
+        assert_eq!(
+            resolve_review_decision(&None, &reviews),
+            Some("approved".to_string())
+        );
+    }
+
+    #[test]
+    fn test_resolve_review_decision_changes_requested_overrides_approval_fallback() {
+        let reviews = vec![
+            GraphqlPullRequestReview {
+                state: "APPROVED".to_string(),
+                author: Some(GitHubAuthor {
+                    login: "teammate".to_string(),
+                    avatar_url: None,
+                }),
+            },
+            GraphqlPullRequestReview {
+                state: "CHANGES_REQUESTED".to_string(),
+                author: Some(GitHubAuthor {
+                    login: "reviewer".to_string(),
+                    avatar_url: None,
+                }),
+            },
+        ];
+
+        assert_eq!(
+            resolve_review_decision(&None, &reviews),
+            Some("changes_requested".to_string())
+        );
+    }
+
+    #[test]
+    fn test_resolve_review_decision_leaves_unreviewed_pr_unset() {
+        let reviews = vec![GraphqlPullRequestReview {
+            state: "COMMENTED".to_string(),
+            author: Some(GitHubAuthor {
+                login: "teammate".to_string(),
+                avatar_url: None,
+            }),
+        }];
+
+        assert_eq!(resolve_review_decision(&None, &reviews), None);
     }
 
     #[test]

@@ -67,6 +67,23 @@ describe('PRRow', () => {
     expect(screen.getByText('-18')).toBeInTheDocument()
   })
 
+  it('renders an approval badge when the PR is approved', () => {
+    render(
+      <PRRow
+        pr={{ ...pr, baseRefName: 'parent-branch', reviewDecision: 'approved' }}
+        isCreating={false}
+        isStacking={false}
+        onClick={vi.fn()}
+        onPreview={vi.fn()}
+        onOpenReview={vi.fn()}
+        onInvestigate={vi.fn()}
+        onStack={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('Approved')).toBeInTheDocument()
+  })
+
   it('opens the PR URL without triggering row actions', () => {
     const onClick = vi.fn()
     const onPreview = vi.fn()

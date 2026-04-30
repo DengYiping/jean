@@ -119,7 +119,7 @@ fn find_neighbor_non_archived_session_id(
     None
 }
 
-fn emit_sessions_cache_invalidation(app: &AppHandle) {
+pub(crate) fn emit_sessions_cache_invalidation(app: &AppHandle) {
     if let Err(e) = app.emit_all(
         "cache:invalidate",
         &serde_json::json!({ "keys": ["sessions"] }),

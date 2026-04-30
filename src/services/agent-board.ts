@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { invoke } from '@/lib/transport'
+import { chatQueryKeys } from '@/services/chat'
+import { useChatStore } from '@/store/chat-store'
 import type {
   AgentBoardItem,
   AgentBoardLane,
@@ -7,6 +9,12 @@ import type {
   SessionAgentBoardAssociation,
   UpdateAgentBoardItemRequest,
 } from '@/types/agent-board'
+import type {
+  AllSessionsResponse,
+  Session,
+  UnreadSessionsResponse,
+  WorktreeSessions,
+} from '@/types/chat'
 
 export const agentBoardQueryKeys = {
   all: ['agent-board'] as const,
@@ -46,6 +54,100 @@ export function useUpdateAgentBoardItem() {
   })
 }
 
+function clearSessionAttention(session: Session): Session {
+  const now = Math.floor(Date.now() / 1000)
+  const pendingPlanMessageId = session.pending_plan_message_id
+  const approvedPlanMessageIds =
+    pendingPlanMessageId &&
+    !(session.approved_plan_message_ids ?? []).includes(pendingPlanMessageId)
+      ? [...(session.approved_plan_message_ids ?? []), pendingPlanMessageId]
+      : session.approved_plan_message_ids
+  return {
+    ...session,
+    waiting_for_input: false,
+    waiting_for_input_type: null,
+    pending_plan_message_id: undefined,
+    approved_plan_message_ids: approvedPlanMessageIds,
+    messages: session.messages.map(message =>
+      message.id === pendingPlanMessageId
+        ? { ...message, plan_approved: true }
+        : message
+    ),
+    last_opened_at: now,
+    session_derived_state: session.session_derived_state
+      ? {
+          ...session.session_derived_state,
+          status:
+            session.session_derived_state.status === 'waiting'
+              ? 'completed'
+              : session.session_derived_state.status,
+          is_waiting: false,
+          waiting_type: null,
+          has_question: false,
+          has_exit_plan: false,
+          pending_plan_message_id: null,
+          is_unread: false,
+        }
+      : session.session_derived_state,
+  }
+}
+
+function clearCachedSessionAttention(
+  queryClient: ReturnType<typeof useQueryClient>,
+  sessionId: string
+) {
+  useChatStore.getState().setWaitingForInput(sessionId, false)
+  useChatStore.getState().setExecutionMode(sessionId, 'build')
+
+  queryClient.setQueryData<Session>(chatQueryKeys.session(sessionId), old =>
+    old ? clearSessionAttention(old) : old
+  )
+  queryClient.setQueriesData<WorktreeSessions>(
+    { queryKey: [...chatQueryKeys.all, 'sessions'] },
+    old =>
+      old
+        ? {
+            ...old,
+            sessions: old.sessions.map(session =>
+              session.id === sessionId
+                ? clearSessionAttention(session)
+                : session
+            ),
+          }
+        : old
+  )
+  queryClient.setQueryData<AllSessionsResponse>(['all-sessions'], old =>
+    old
+      ? {
+          ...old,
+          entries: old.entries.map(entry => ({
+            ...entry,
+            sessions: entry.sessions.map(session =>
+              session.id === sessionId
+                ? clearSessionAttention(session)
+                : session
+            ),
+          })),
+        }
+      : old
+  )
+  queryClient.setQueryData<UnreadSessionsResponse>(
+    chatQueryKeys.unreadSessions(),
+    old =>
+      old
+        ? {
+            ...old,
+            entries: old.entries.filter(
+              entry => entry.session.id !== sessionId
+            ),
+          }
+        : old
+  )
+  queryClient.setQueryData<number>(chatQueryKeys.unreadCount(), old =>
+    old == null ? old : Math.max(0, old - 1)
+  )
+}
+
 export function useMoveAgentBoardItem() {
   const queryClient = useQueryClient()
   return useMutation({
@@ -56,6 +158,15 @@ export function useMoveAgentBoardItem() {
       const previousItems = queryClient.getQueryData<AgentBoardItem[]>(
         agentBoardQueryKeys.all
       )
+      const movingItem = previousItems?.find(item => item.id === itemId)
+      const startedSessionId =
+        lane === 'implementing'
+          ? (movingItem?.implementation_session_id ??
+            movingItem?.planning_session_id)
+          : null
+      if (startedSessionId) {
+        clearCachedSessionAttention(queryClient, startedSessionId)
+      }
       queryClient.setQueryData<AgentBoardItem[]>(
         agentBoardQueryKeys.all,
         current =>
@@ -80,7 +191,7 @@ export function useMoveAgentBoardItem() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: agentBoardQueryKeys.all })
       queryClient.invalidateQueries({ queryKey: ['projects'] })
-      queryClient.invalidateQueries({ queryKey: ['sessions'] })
+      queryClient.invalidateQueries({ queryKey: chatQueryKeys.all })
     },
   })
 }

@@ -7,13 +7,17 @@ use super::types::{
     UpdateAgentBoardItemRequest,
 };
 use crate::chat::storage::{load_metadata, save_metadata};
-use crate::chat::types::{Backend, RunStatus};
+use crate::chat::types::{Backend, RunStatus, SessionMetadata};
 use std::time::{Duration, Instant};
 use tauri::AppHandle;
 use uuid::Uuid;
 
 const WORKTREE_READY_TIMEOUT: Duration = Duration::from_secs(60);
 const WORKTREE_READY_POLL_INTERVAL: Duration = Duration::from_millis(250);
+const DEFAULT_PLAN_APPROVAL_BUILD_PROMPT: &str =
+    "Plan approved. Begin implementing the changes now. Do not re-explain the plan - start writing code.";
+const DEFAULT_PLAN_APPROVAL_CODEX_PROMPT: &str =
+    "Execute the plan you created. Implement all changes described.";
 
 fn backend_arg(backend: &Backend) -> String {
     match backend {
@@ -87,6 +91,75 @@ fn associate_session(app: &AppHandle, session_id: &str, item_id: &str) -> Result
     Ok(())
 }
 
+fn configured_plan_approval_message(app: &AppHandle, backend: &Backend) -> String {
+    let preferences = crate::load_preferences_sync(app).unwrap_or_default();
+    let configured = match backend {
+        Backend::Codex => preferences.magic_prompts.plan_approval_codex,
+        Backend::Claude | Backend::Opencode => preferences.magic_prompts.plan_approval_build,
+    };
+
+    configured
+        .and_then(|value| {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        })
+        .unwrap_or_else(|| match backend {
+            Backend::Codex => DEFAULT_PLAN_APPROVAL_CODEX_PROMPT.to_string(),
+            Backend::Claude | Backend::Opencode => DEFAULT_PLAN_APPROVAL_BUILD_PROMPT.to_string(),
+        })
+}
+
+fn clear_board_session_attention_for_run(
+    metadata: &mut SessionMetadata,
+    now: u64,
+    approve_pending_plan: bool,
+) {
+    if approve_pending_plan {
+        if let Some(message_id) = metadata.pending_plan_message_id.clone() {
+            if !metadata.approved_plan_message_ids.contains(&message_id) {
+                metadata.approved_plan_message_ids.push(message_id);
+            }
+        }
+    }
+    metadata.waiting_for_input = false;
+    metadata.waiting_for_input_type = None;
+    metadata.pending_plan_message_id = None;
+    metadata.attention_updated_at = None;
+    metadata.last_opened_at = Some(now);
+    metadata.selected_execution_mode = Some("build".to_string());
+}
+
+async fn mark_board_session_started(
+    app: &AppHandle,
+    session_id: &str,
+    approve_pending_plan: bool,
+) -> Result<(), String> {
+    if let Some(mut metadata) = load_metadata(app, session_id)? {
+        clear_board_session_attention_for_run(&mut metadata, now_seconds(), approve_pending_plan);
+        save_metadata(app, &metadata)?;
+        crate::chat::emit_sessions_cache_invalidation(app);
+        let _ = crate::chat::broadcast_session_setting(
+            app.clone(),
+            session_id.to_string(),
+            "executionMode".to_string(),
+            "build".to_string(),
+        )
+        .await;
+        let _ = crate::chat::broadcast_session_setting(
+            app.clone(),
+            session_id.to_string(),
+            "waitingForInput".to_string(),
+            "false".to_string(),
+        )
+        .await;
+    }
+    Ok(())
+}
+
 async fn create_board_worktree(
     app: AppHandle,
     item: &AgentBoardItem,
@@ -145,9 +218,12 @@ async fn send_board_prompt(
     worktree_id: &str,
     session_id: &str,
     execution_mode: &str,
+    message_override: Option<String>,
 ) -> Result<(), String> {
     let worktree = worktree_for_id(&app, worktree_id)?;
-    let message = if execution_mode == "build" {
+    let message = if let Some(message) = message_override {
+        message
+    } else if execution_mode == "build" {
         format!(
             "{}\n\nInstruction: implement this without asking follow-up questions unless blocked by missing credentials or destructive actions.",
             item.prompt
@@ -178,7 +254,11 @@ async fn send_board_prompt(
     .map(|_| ())
 }
 
-async fn run_lane_side_effect(app: AppHandle, item: &mut AgentBoardItem) -> Result<(), String> {
+async fn run_lane_side_effect(
+    app: AppHandle,
+    item: &mut AgentBoardItem,
+    from_lane: AgentBoardLane,
+) -> Result<(), String> {
     match item.lane {
         AgentBoardLane::Planning => {
             if item.worktree_id.is_none() {
@@ -192,7 +272,7 @@ async fn run_lane_side_effect(app: AppHandle, item: &mut AgentBoardItem) -> Resu
             }
             let worktree_id = item.worktree_id.clone().expect("worktree set");
             let session_id = item.planning_session_id.clone().expect("session set");
-            send_board_prompt(app, item, &worktree_id, &session_id, "plan").await?;
+            send_board_prompt(app, item, &worktree_id, &session_id, "plan", None).await?;
         }
         AgentBoardLane::Implementing => {
             if item.worktree_id.is_none() {
@@ -210,7 +290,20 @@ async fn run_lane_side_effect(app: AppHandle, item: &mut AgentBoardItem) -> Resu
             }
             let worktree_id = item.worktree_id.clone().expect("worktree set");
             let session_id = item.implementation_session_id.clone().expect("session set");
-            send_board_prompt(app, item, &worktree_id, &session_id, "build").await?;
+            let approve_pending_plan = from_lane == AgentBoardLane::Planned
+                && item.planning_session_id.as_deref() == Some(session_id.as_str());
+            let message_override =
+                approve_pending_plan.then(|| configured_plan_approval_message(&app, &item.backend));
+            mark_board_session_started(&app, &session_id, approve_pending_plan).await?;
+            send_board_prompt(
+                app,
+                item,
+                &worktree_id,
+                &session_id,
+                "build",
+                message_override,
+            )
+            .await?;
         }
         AgentBoardLane::PrOpened => {
             let worktree_id = item
@@ -240,7 +333,7 @@ async fn run_lane_side_effect(app: AppHandle, item: &mut AgentBoardItem) -> Resu
             }
             let worktree_id = item.yolo_worktree_id.clone().expect("worktree set");
             let session_id = item.yolo_session_id.clone().expect("session set");
-            send_board_prompt(app, item, &worktree_id, &session_id, "yolo").await?;
+            send_board_prompt(app, item, &worktree_id, &session_id, "yolo", None).await?;
         }
         AgentBoardLane::Archived => {
             let now = now_seconds();
@@ -402,7 +495,7 @@ pub async fn move_agent_board_item(
     save_agent_board_data(&app, &data)?;
 
     let item = &mut data.items[item_index];
-    if let Err(error) = run_lane_side_effect(app.clone(), item).await {
+    if let Err(error) = run_lane_side_effect(app.clone(), item, from_lane).await {
         log::warn!(
             "[AgentBoard] move item {item_id} from {:?} to {:?} failed: {error}",
             from_lane,
@@ -470,4 +563,72 @@ pub async fn get_agent_board_item_for_session(
         item,
         session_role: session_role.to_string(),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clear_board_session_attention_for_run_clears_waiting_and_unread_marker() {
+        let mut metadata = SessionMetadata::new(
+            "session-1".to_string(),
+            "worktree-1".to_string(),
+            "Session 1".to_string(),
+            0,
+        );
+        metadata.waiting_for_input = true;
+        metadata.waiting_for_input_type = Some("plan".to_string());
+        metadata.pending_plan_message_id = Some("plan-msg-1".to_string());
+        metadata.attention_updated_at = Some(metadata.created_at + 1);
+
+        let opened_at = metadata.created_at + 2;
+        clear_board_session_attention_for_run(&mut metadata, opened_at, false);
+
+        assert!(!metadata.waiting_for_input);
+        assert_eq!(metadata.waiting_for_input_type, None);
+        assert_eq!(metadata.pending_plan_message_id, None);
+        assert_eq!(metadata.attention_updated_at, None);
+        assert_eq!(metadata.last_opened_at, Some(opened_at));
+        assert_eq!(metadata.selected_execution_mode.as_deref(), Some("build"));
+        assert!(metadata.approved_plan_message_ids.is_empty());
+    }
+
+    #[test]
+    fn clear_board_session_attention_for_run_marks_pending_plan_approved() {
+        let mut metadata = SessionMetadata::new(
+            "session-1".to_string(),
+            "worktree-1".to_string(),
+            "Session 1".to_string(),
+            0,
+        );
+        metadata.waiting_for_input = true;
+        metadata.waiting_for_input_type = Some("plan".to_string());
+        metadata.pending_plan_message_id = Some("plan-msg-1".to_string());
+
+        let opened_at = metadata.created_at + 1;
+        clear_board_session_attention_for_run(&mut metadata, opened_at, true);
+
+        assert_eq!(metadata.approved_plan_message_ids, vec!["plan-msg-1"]);
+        assert_eq!(metadata.pending_plan_message_id, None);
+    }
+
+    #[test]
+    fn clear_board_session_attention_for_run_does_not_duplicate_approved_plan_ids() {
+        let mut metadata = SessionMetadata::new(
+            "session-1".to_string(),
+            "worktree-1".to_string(),
+            "Session 1".to_string(),
+            0,
+        );
+        metadata.pending_plan_message_id = Some("plan-msg-1".to_string());
+        metadata
+            .approved_plan_message_ids
+            .push("plan-msg-1".to_string());
+
+        let opened_at = metadata.created_at + 1;
+        clear_board_session_attention_for_run(&mut metadata, opened_at, true);
+
+        assert_eq!(metadata.approved_plan_message_ids, vec!["plan-msg-1"]);
+    }
 }

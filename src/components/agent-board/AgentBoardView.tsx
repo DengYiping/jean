@@ -35,8 +35,6 @@ import {
 } from '@/components/ui/dialog'
 import { NativeSelect } from '@/components/ui/native-select'
 import {
-  AGENT_BOARD_LANE_LABELS,
-  AGENT_BOARD_LANES,
   canMoveAgentBoardItem,
   type AgentBoardItem,
   type AgentBoardLane,
@@ -50,25 +48,52 @@ import {
   useMoveAgentBoardItem,
   useRefreshAgentBoardItems,
 } from '@/services/agent-board'
+import { useUnreadSessions } from '@/services/chat'
 import { DEFAULT_KEYBINDINGS, formatShortcutDisplay } from '@/types/keybindings'
 
 const POINTER_DRAG_THRESHOLD_PX = 6
 
+type AgentBoardColumnId =
+  | 'todo'
+  | 'plan'
+  | 'implement'
+  | 'pr'
+  | 'yolo'
+  | 'archive'
+
+const AGENT_BOARD_COLUMNS: {
+  id: AgentBoardColumnId
+  label: string
+  lanes: AgentBoardLane[]
+}[] = [
+  { id: 'todo', label: 'Todo', lanes: ['todo'] },
+  { id: 'plan', label: 'Plan', lanes: ['planning', 'planned'] },
+  {
+    id: 'implement',
+    label: 'Implement',
+    lanes: ['implementing', 'implemented'],
+  },
+  { id: 'pr', label: 'PR', lanes: ['pr_opened'] },
+  { id: 'yolo', label: 'Yolo', lanes: ['yoloing', 'yoloed'] },
+  { id: 'archive', label: 'Archive', lanes: ['archived'] },
+]
+
+const AGENT_BOARD_COLUMN_LABELS = Object.fromEntries(
+  AGENT_BOARD_COLUMNS.map(column => [column.id, column.label])
+) as Record<AgentBoardColumnId, string>
+
 interface NewAgentTodoDialogProps {
   open: boolean
-  defaultLane?: AgentBoardLane
   projects: Project[]
   onOpenChange: (open: boolean) => void
 }
 
 function NewAgentTodoDialog({
   open,
-  defaultLane = 'todo',
   projects,
   onOpenChange,
 }: NewAgentTodoDialogProps) {
   const createItem = useCreateAgentBoardItem()
-  const moveItem = useMoveAgentBoardItem()
   const realProjects = projects.filter(project => !project.is_folder)
   const [projectId, setProjectId] = useState('')
   const [backend, setBackend] = useState<Backend>('codex')
@@ -85,33 +110,20 @@ function NewAgentTodoDialog({
   const handleSubmit = useCallback(async () => {
     if (!projectId || !prompt.trim()) return
     try {
-      const item = await createItem.mutateAsync({
+      await createItem.mutateAsync({
         project_id: projectId,
         title: title.trim() || undefined,
         prompt: prompt.trim(),
         backend,
         effort_level: effortLevel,
       })
-      if (defaultLane !== 'todo') {
-        await moveItem.mutateAsync({ itemId: item.id, lane: defaultLane })
-      }
       setTitle('')
       setPrompt('')
       onOpenChange(false)
     } catch (error) {
       toast.error(`Failed to create todo: ${error}`)
     }
-  }, [
-    backend,
-    createItem,
-    defaultLane,
-    effortLevel,
-    moveItem,
-    onOpenChange,
-    projectId,
-    prompt,
-    title,
-  ])
+  }, [backend, createItem, effortLevel, onOpenChange, projectId, prompt, title])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -190,15 +202,26 @@ function planPreview(item: AgentBoardItem) {
     .slice(0, 3)
 }
 
-function isAgentBoardLane(value: string | undefined): value is AgentBoardLane {
-  return AGENT_BOARD_LANES.includes(value as AgentBoardLane)
+function columnForLane(lane: AgentBoardLane): AgentBoardColumnId {
+  for (const column of AGENT_BOARD_COLUMNS) {
+    if (column.lanes.includes(lane)) return column.id
+  }
+  return 'todo'
 }
 
-function laneFromPoint(clientX: number, clientY: number) {
+function isAgentBoardColumnId(
+  value: string | undefined
+): value is AgentBoardColumnId {
+  return AGENT_BOARD_COLUMNS.some(column => column.id === value)
+}
+
+function columnFromPoint(clientX: number, clientY: number) {
   const element = document.elementFromPoint(clientX, clientY)
-  const laneElement = element?.closest<HTMLElement>('[data-agent-board-lane]')
-  const lane = laneElement?.dataset.agentBoardLane
-  return isAgentBoardLane(lane) ? lane : undefined
+  const columnElement = element?.closest<HTMLElement>(
+    '[data-agent-board-column]'
+  )
+  const column = columnElement?.dataset.agentBoardColumn
+  return isAgentBoardColumnId(column) ? column : undefined
 }
 
 function isInteractiveCardTarget(target: EventTarget | null) {
@@ -215,20 +238,48 @@ function isStartingLaneSideEffect(item: AgentBoardItem) {
   )
 }
 
+function isAgentBoardItemInProgress(item: AgentBoardItem) {
+  return (
+    item.lane === 'planning' ||
+    item.lane === 'implementing' ||
+    item.lane === 'yoloing' ||
+    isStartingLaneSideEffect(item)
+  )
+}
+
+function targetLaneForColumn(
+  item: AgentBoardItem,
+  column: AgentBoardColumnId
+): AgentBoardLane | null {
+  if (columnForLane(item.lane) === column) {
+    return item.lane
+  }
+
+  const targetByColumn: Record<AgentBoardColumnId, AgentBoardLane | null> = {
+    todo: null,
+    plan: 'planning',
+    implement: 'implementing',
+    pr: 'pr_opened',
+    yolo: 'yoloing',
+    archive: 'archived',
+  }
+  const target = targetByColumn[column]
+  return target && canMoveAgentBoardItem(item.lane, target) ? target : null
+}
+
 export function AgentBoardView() {
   const { data: items = [], isLoading } = useAgentBoardItems()
+  const { data: unreadSessions } = useUnreadSessions(true)
   const { data: projects = [] } = useProjects()
   const moveItem = useMoveAgentBoardItem()
   const refreshItems = useRefreshAgentBoardItems()
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [dialogLane, setDialogLane] = useState<AgentBoardLane>('todo')
   const [query, setQuery] = useState('')
   const [highlightItemId, setHighlightItemId] = useState<string | null>(null)
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null)
 
   useEffect(() => {
     const handler = () => {
-      setDialogLane('todo')
       setDialogOpen(true)
     }
     window.addEventListener('agent-board:new-todo', handler)
@@ -272,13 +323,40 @@ export function AgentBoardView() {
   }, [items, projectById, query])
 
   const grouped = useMemo(() => {
-    const lanes = new Map<AgentBoardLane, AgentBoardItem[]>()
-    for (const lane of AGENT_BOARD_LANES) lanes.set(lane, [])
+    const columns = new Map<AgentBoardColumnId, AgentBoardItem[]>()
+    for (const column of AGENT_BOARD_COLUMNS) columns.set(column.id, [])
     for (const item of filteredItems) {
-      lanes.get(item.lane)?.push(item)
+      columns.get(columnForLane(item.lane))?.push(item)
     }
-    return lanes
+    return columns
   }, [filteredItems])
+
+  const attentionItemIds = useMemo(() => {
+    const sessionToItemId = new Map<string, string>()
+    for (const item of items) {
+      for (const sessionId of [
+        item.planning_session_id,
+        item.implementation_session_id,
+        item.yolo_session_id,
+      ]) {
+        if (sessionId) {
+          sessionToItemId.set(sessionId, item.id)
+        }
+      }
+    }
+
+    const ids = new Set<string>()
+    for (const entry of unreadSessions?.entries ?? []) {
+      if (entry.session.agent_board_item_id) {
+        ids.add(entry.session.agent_board_item_id)
+      }
+      const itemId = sessionToItemId.get(entry.session.id)
+      if (itemId) {
+        ids.add(itemId)
+      }
+    }
+    return ids
+  }, [items, unreadSessions])
 
   const openSession = useCallback(async (item: AgentBoardItem) => {
     const sessionId =
@@ -297,9 +375,13 @@ export function AgentBoardView() {
       const worktree = await invoke<Worktree>('get_worktree', { worktreeId })
       useUIStore.getState().setActiveMainView('workspace')
       useProjectsStore.getState().selectProject(worktree.project_id)
+      useProjectsStore.getState().expandProject(worktree.project_id)
       useProjectsStore.getState().selectWorktree(worktree.id)
       useChatStore.getState().setActiveWorktree(worktree.id, worktree.path)
       useChatStore.getState().setActiveSession(worktree.id, sessionId)
+      useChatStore
+        .getState()
+        .setLastOpenedForProject(worktree.project_id, worktree.id, sessionId)
     } catch (error) {
       toast.error(`Failed to open session: ${error}`)
     }
@@ -307,6 +389,7 @@ export function AgentBoardView() {
 
   const move = useCallback(
     async (item: AgentBoardItem, lane: AgentBoardLane) => {
+      if (lane === item.lane) return
       try {
         await moveItem.mutateAsync({ itemId: item.id, lane })
       } catch (error) {
@@ -315,11 +398,6 @@ export function AgentBoardView() {
     },
     [moveItem]
   )
-
-  const openDialogForLane = useCallback((lane: AgentBoardLane) => {
-    setDialogLane(lane)
-    setDialogOpen(true)
-  }, [])
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-background">
@@ -342,7 +420,7 @@ export function AgentBoardView() {
             <RefreshCw className="h-4 w-4" />
             Refresh
           </Button>
-          <Button size="sm" onClick={() => openDialogForLane('todo')}>
+          <Button size="sm" onClick={() => setDialogOpen(true)}>
             <Plus className="h-4 w-4" />
             Add todo
           </Button>
@@ -365,29 +443,19 @@ export function AgentBoardView() {
       </div>
 
       <div className="flex min-h-0 flex-1 gap-2 overflow-x-auto p-3">
-        {AGENT_BOARD_LANES.map(lane => {
-          const laneItems = grouped.get(lane) ?? []
+        {AGENT_BOARD_COLUMNS.map(column => {
+          const columnItems = grouped.get(column.id) ?? []
           return (
             <section
-              key={lane}
-              data-agent-board-lane={lane}
+              key={column.id}
+              data-agent-board-column={column.id}
               className="flex w-64 shrink-0 flex-col rounded-md border bg-muted/20"
             >
               <div className="flex h-10 shrink-0 items-center gap-2 border-b px-2">
-                <h2 className="text-xs font-semibold">
-                  {AGENT_BOARD_LANE_LABELS[lane]}
-                </h2>
+                <h2 className="text-xs font-semibold">{column.label}</h2>
                 <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
-                  {laneItems.length}
+                  {columnItems.length}
                 </Badge>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="ml-auto h-7 w-7"
-                  onClick={() => openDialogForLane(lane)}
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                </Button>
               </div>
               <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2">
                 {isLoading ? (
@@ -396,17 +464,24 @@ export function AgentBoardView() {
                     Loading
                   </div>
                 ) : (
-                  laneItems.map(item => (
+                  columnItems.map(item => (
                     <AgentBoardCard
                       key={item.id}
                       item={item}
                       project={projectById.get(item.project_id)}
                       highlighted={highlightItemId === item.id}
+                      attention={attentionItemIds.has(item.id)}
                       dragging={draggingItemId === item.id}
                       onDragStart={() => setDraggingItemId(item.id)}
                       onDragEnd={() => setDraggingItemId(null)}
-                      onPointerLaneDrop={lane => move(item, lane)}
-                      onMove={lane => move(item, lane)}
+                      onPointerColumnDrop={column => {
+                        const targetLane = targetLaneForColumn(item, column)
+                        if (targetLane) move(item, targetLane)
+                      }}
+                      onMove={column => {
+                        const targetLane = targetLaneForColumn(item, column)
+                        if (targetLane) move(item, targetLane)
+                      }}
                       onOpenSession={() => openSession(item)}
                     />
                   ))
@@ -419,7 +494,6 @@ export function AgentBoardView() {
 
       <NewAgentTodoDialog
         open={dialogOpen}
-        defaultLane={dialogLane}
         projects={projects}
         onOpenChange={setDialogOpen}
       />
@@ -431,21 +505,23 @@ function AgentBoardCard({
   item,
   project,
   highlighted,
+  attention,
   dragging,
   onDragStart,
   onDragEnd,
-  onPointerLaneDrop,
+  onPointerColumnDrop,
   onMove,
   onOpenSession,
 }: {
   item: AgentBoardItem
   project?: Project
   highlighted?: boolean
+  attention?: boolean
   dragging?: boolean
   onDragStart: () => void
   onDragEnd: () => void
-  onPointerLaneDrop: (lane: AgentBoardLane) => void
-  onMove: (lane: AgentBoardLane) => void
+  onPointerColumnDrop: (column: AgentBoardColumnId) => void
+  onMove: (column: AgentBoardColumnId) => void
   onOpenSession: () => void
 }) {
   const pointerDragRef = useRef<{
@@ -459,7 +535,8 @@ function AgentBoardCard({
     item.planning_session_id ||
     item.implementation_session_id ||
     item.yolo_session_id
-  const starting = isStartingLaneSideEffect(item)
+  const inProgress = isAgentBoardItemInProgress(item)
+  const currentColumn = columnForLane(item.lane)
 
   const handlePointerDown = (event: PointerEvent<HTMLElement>) => {
     if (event.button !== 0 || isInteractiveCardTarget(event.target)) return
@@ -494,10 +571,13 @@ function AgentBoardCard({
     }
     onDragEnd()
 
-    if (!drag.moved) return
-    const lane = laneFromPoint(event.clientX, event.clientY)
-    if (lane && canMoveAgentBoardItem(item.lane, lane)) {
-      onPointerLaneDrop(lane)
+    if (!drag.moved) {
+      onOpenSession()
+      return
+    }
+    const column = columnFromPoint(event.clientX, event.clientY)
+    if (column) {
+      onPointerColumnDrop(column)
     }
   }
 
@@ -517,6 +597,8 @@ function AgentBoardCard({
       onPointerCancel={handlePointerCancel}
       className={cn(
         'cursor-grab touch-none rounded-md border bg-background p-2 shadow-sm transition-colors hover:border-foreground/20 active:cursor-grabbing',
+        attention &&
+          'animate-pulse border-primary bg-primary/5 ring-2 ring-primary/30',
         highlighted && 'border-primary shadow-md ring-2 ring-primary/25',
         dragging && 'opacity-75 ring-2 ring-primary/20',
         item.last_error && 'border-destructive/50'
@@ -529,11 +611,11 @@ function AgentBoardCard({
         {item.title}
       </h3>
       <div className="mb-2 flex flex-wrap gap-1">
-        {starting && (
-          <Badge variant="outline" className="h-5 gap-1 px-1.5 text-[10px]">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            Starting
-          </Badge>
+        {inProgress && (
+          <Loader2
+            className="h-4 w-4 animate-spin text-primary"
+            aria-label="Work in progress"
+          />
         )}
         <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
           {item.backend}
@@ -584,16 +666,16 @@ function AgentBoardCard({
         </Button>
         <NativeSelect
           className="h-7 text-xs"
-          value={item.lane}
-          onChange={event => onMove(event.target.value as AgentBoardLane)}
+          value={currentColumn}
+          onChange={event => onMove(event.target.value as AgentBoardColumnId)}
         >
-          {AGENT_BOARD_LANES.map(lane => (
+          {AGENT_BOARD_COLUMNS.map(column => (
             <option
-              key={lane}
-              value={lane}
-              disabled={!canMoveAgentBoardItem(item.lane, lane)}
+              key={column.id}
+              value={column.id}
+              disabled={!targetLaneForColumn(item, column.id)}
             >
-              {AGENT_BOARD_LANE_LABELS[lane]}
+              {AGENT_BOARD_COLUMN_LABELS[column.id]}
             </option>
           ))}
         </NativeSelect>
@@ -601,7 +683,7 @@ function AgentBoardCard({
           variant="ghost"
           size="icon"
           className="h-7 w-7"
-          onClick={() => onMove('archived')}
+          onClick={() => onMove('archive')}
         >
           <Archive className="h-3.5 w-3.5" />
         </Button>

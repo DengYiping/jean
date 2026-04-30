@@ -10,6 +10,8 @@ use super::git::get_repo_identifier;
 use crate::gh_cli::{apply_gh_account_env, build_gh_command};
 use crate::platform::silent_command;
 
+const GITHUB_GRAPHQL_CONNECTION_LIMIT: &str = "100";
+
 // =============================================================================
 // GitHub Types
 // =============================================================================
@@ -2152,7 +2154,7 @@ pub async fn list_github_prs(
         &[
             ("owner", repo_id.owner),
             ("repo", repo_id.repo),
-            ("count", "1000".to_string()),
+            ("count", GITHUB_GRAPHQL_CONNECTION_LIMIT.to_string()),
         ],
         "gh api graphql",
     )?;
@@ -3927,6 +3929,11 @@ pub async fn get_advisory_context_content(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_github_graphql_connection_limit_matches_api_maximum() {
+        assert_eq!(GITHUB_GRAPHQL_CONNECTION_LIMIT, "100");
+    }
 
     #[test]
     fn test_slugify_issue_title() {

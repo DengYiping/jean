@@ -22,7 +22,6 @@ const TERMINAL_BUFFER_CAP: usize = 4000;
 
 type SessionReplayBufferMap = HashMap<String, VecDeque<(u64, Arc<str>)>>;
 type TerminalReplayBufferMap = HashMap<String, VecDeque<(u64, Arc<str>)>>;
-
 /// Events that are worth buffering for replay on reconnect.
 const REPLAYABLE_EVENTS: &[&str] = &[
     "chat:sending",

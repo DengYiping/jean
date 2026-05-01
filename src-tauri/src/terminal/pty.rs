@@ -291,10 +291,6 @@ pub fn spawn_terminal(
                         }
                     }
                 }
-                Err(e) => {
-                    log::error!("Error reading from terminal: {e}");
-                    break;
-                }
             }
         }
 

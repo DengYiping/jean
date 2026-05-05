@@ -98,6 +98,34 @@ describe('ToolCallInline', () => {
     expect(screen.queryByText(/"diff":/)).not.toBeInTheDocument()
   })
 
+  it('renders Codex file changes relative to the active worktree', () => {
+    render(
+      <ToolCallInline
+        worktreePath="/tmp/worktree"
+        toolCall={{
+          id: 'tool-relative-file-change',
+          name: 'FileChange',
+          input: [
+            {
+              path: '/tmp/worktree/src/DmsMetadataClient.java',
+              kind: { type: 'update' },
+              diff: '@@ -1,2 +1,2 @@\n line 1\n-line 2\n+line 3\n',
+            },
+          ],
+        }}
+      />
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /File Change/i }))
+
+    expect(
+      screen.getByRole('button', { name: /src\/DmsMetadataClient\.java/i })
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByTitle('/tmp/worktree/src/DmsMetadataClient.java')
+    ).not.toBeInTheDocument()
+  })
+
   it('threads the chat viewport ref into inline file-change expansion', async () => {
     vi.useFakeTimers()
 

@@ -24,6 +24,8 @@ import { logger } from '@/lib/logger'
 interface StreamingMessageProps {
   /** Session ID for the streaming message */
   sessionId: string
+  /** Active worktree path for displaying file changes relative to the repo */
+  worktreePath: string
   /** Streaming content blocks (new format) */
   contentBlocks: ContentBlock[]
   /** Active tool calls during streaming */
@@ -91,6 +93,7 @@ interface StreamingMessageProps {
  */
 export const StreamingMessage = memo(function StreamingMessage({
   sessionId,
+  worktreePath,
   contentBlocks,
   toolCalls,
   streamingContent,
@@ -221,6 +224,7 @@ export const StreamingMessage = memo(function StreamingMessage({
                                 viewportRef={scrollViewportRef}
                                 isStreaming={true}
                                 isIncomplete={isIncomplete}
+                                worktreePath={worktreePath}
                               />
                             )
                           case 'standalone':
@@ -231,6 +235,7 @@ export const StreamingMessage = memo(function StreamingMessage({
                                 viewportRef={scrollViewportRef}
                                 isStreaming={true}
                                 isIncomplete={isIncomplete}
+                                worktreePath={worktreePath}
                               />
                             )
                           case 'stackedGroup':
@@ -241,6 +246,7 @@ export const StreamingMessage = memo(function StreamingMessage({
                                 viewportRef={scrollViewportRef}
                                 isStreaming={true}
                                 isIncomplete={isIncomplete}
+                                worktreePath={worktreePath}
                               />
                             )
                           case 'askUserQuestion': {
@@ -284,6 +290,7 @@ export const StreamingMessage = memo(function StreamingMessage({
                                 viewportRef={scrollViewportRef}
                                 isStreaming={true}
                                 isIncomplete={false}
+                                worktreePath={worktreePath}
                               />
                             )
                           case 'exitPlanMode': {
@@ -395,12 +402,13 @@ export const StreamingMessage = memo(function StreamingMessage({
         </>
       )}
 
-      <FileChangeCard toolCalls={toolCalls} />
+      <FileChangeCard toolCalls={toolCalls} worktreePath={worktreePath} />
 
       {/* Show edited files during streaming */}
       <EditedFilesDisplay
         toolCalls={toolCalls}
         onFileClick={onEditedFileClick}
+        worktreePath={worktreePath}
       />
     </div>
   )

@@ -60,6 +60,93 @@ describe('FileChangeCard', () => {
     expect(screen.getByText('line 4')).toBeInTheDocument()
   })
 
+  it('renders absolute paths inside the worktree as relative paths', () => {
+    render(
+      <FileChangeCard
+        worktreePath="/tmp/worktree"
+        toolCalls={[
+          {
+            id: 'file-change-relative',
+            name: 'FileChange',
+            input: [
+              {
+                path: '/tmp/worktree/src/components/chat/FileChangeCard.tsx',
+                kind: { type: 'update' },
+                diff: '@@ -1,1 +1,1 @@\n-old\n+new\n',
+              },
+            ],
+          },
+        ]}
+      />
+    )
+
+    expect(
+      screen.getByRole('button', {
+        name: /src\/components\/chat\/FileChangeCard\.tsx/i,
+      })
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText('/tmp/worktree/src/components/chat/FileChangeCard.tsx')
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByTitle('src/components/chat/FileChangeCard.tsx')
+    ).toBeInTheDocument()
+  })
+
+  it('keeps absolute display paths for files outside the worktree', () => {
+    render(
+      <FileChangeCard
+        worktreePath="/tmp/worktree"
+        toolCalls={[
+          {
+            id: 'file-change-outside',
+            name: 'FileChange',
+            input: [
+              {
+                path: '/tmp/other/FileChangeCard.tsx',
+                kind: { type: 'update' },
+                diff: '@@ -1,1 +1,1 @@\n-old\n+new\n',
+              },
+            ],
+          },
+        ]}
+      />
+    )
+
+    expect(
+      screen.getByTitle('/tmp/other/FileChangeCard.tsx')
+    ).toBeInTheDocument()
+  })
+
+  it('disambiguates duplicate filenames using relative parent directories', () => {
+    render(
+      <FileChangeCard
+        worktreePath="/tmp/worktree"
+        toolCalls={[
+          {
+            id: 'file-change-duplicates',
+            name: 'FileChange',
+            input: [
+              {
+                path: '/tmp/worktree/src/components/Button.tsx',
+                kind: { type: 'update' },
+                diff: '@@ -1,1 +1,1 @@\n-old\n+new\n',
+              },
+              {
+                path: '/tmp/worktree/test/components/Button.tsx',
+                kind: { type: 'update' },
+                diff: '@@ -1,1 +1,1 @@\n-old\n+new\n',
+              },
+            ],
+          },
+        ]}
+      />
+    )
+
+    expect(screen.getByText('src/components/Button.tsx')).toBeInTheDocument()
+    expect(screen.getByText('test/components/Button.tsx')).toBeInTheDocument()
+  })
+
   it('preserves the clicked file row position inside the inline viewport', async () => {
     vi.useFakeTimers()
 

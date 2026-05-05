@@ -241,6 +241,31 @@ export function getFileChangeTotals(changes: ParsedFileChange[]): {
   }
 }
 
+function trimTrailingPathSeparators(path: string): string {
+  const trimmed = path.replace(/\/+$/g, '')
+  return trimmed || path
+}
+
+export function formatWorktreeRelativePath(
+  filePath: string,
+  worktreePath?: string | null
+): string {
+  const normalizedFilePath = normalizePath(filePath)
+  if (!worktreePath) return normalizedFilePath
+
+  const normalizedWorktreePath = trimTrailingPathSeparators(
+    normalizePath(worktreePath)
+  )
+  if (!normalizedWorktreePath) return normalizedFilePath
+
+  const prefix = `${normalizedWorktreePath}/`
+  if (!normalizedFilePath.startsWith(prefix)) {
+    return normalizedFilePath
+  }
+
+  return normalizedFilePath.slice(prefix.length)
+}
+
 export function computeDisplayNames(paths: string[]): Map<string, string> {
   const result = new Map<string, string>()
   if (paths.length === 0) return result

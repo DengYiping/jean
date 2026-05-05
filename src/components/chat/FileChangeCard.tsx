@@ -12,7 +12,7 @@ import type { ToolCall } from '@/types/chat'
 import { cn } from '@/lib/utils'
 import {
   collectFileChanges,
-  computeDisplayNames,
+  formatWorktreeRelativePath,
   getFileChangeTotals,
   type ParsedFileChange,
 } from './file-change-utils'
@@ -21,6 +21,7 @@ interface FileChangeCardProps {
   toolCalls: ToolCall[] | undefined
   className?: string
   viewportRef?: RefObject<HTMLDivElement | null>
+  worktreePath?: string | null
 }
 
 const COLLAPSE_THRESHOLD = 5
@@ -60,10 +61,12 @@ function getKindLetter(kind: string): string {
 function FileChangeRow({
   change,
   displayName,
+  displayPath,
   viewportRef,
 }: {
   change: ParsedFileChange
   displayName: string
+  displayPath: string
   viewportRef?: RefObject<HTMLDivElement | null>
 }) {
   const [isOpen, setIsOpen] = useState(false)
@@ -151,7 +154,7 @@ function FileChangeRow({
         ref={buttonRef}
         type="button"
         onClick={handleToggle}
-        title={change.path}
+        title={displayPath}
         className="flex w-full items-center gap-2 px-3 py-[5px] text-left transition-colors hover:bg-white/[0.04]"
       >
         <span
@@ -267,6 +270,7 @@ export const FileChangeCard = memo(function FileChangeCard({
   toolCalls,
   className,
   viewportRef,
+  worktreePath,
 }: FileChangeCardProps) {
   const changes = collectFileChanges(toolCalls)
   const [isListOpen, setIsListOpen] = useState(
@@ -274,9 +278,15 @@ export const FileChangeCard = memo(function FileChangeCard({
   )
   const [showAll, setShowAll] = useState(false)
 
-  const displayNameMap = useMemo(
-    () => computeDisplayNames(changes.map(c => c.path)),
-    [changes]
+  const displayPathMap = useMemo(
+    () =>
+      new Map(
+        changes.map(change => [
+          change.path,
+          formatWorktreeRelativePath(change.path, worktreePath),
+        ])
+      ),
+    [changes, worktreePath]
   )
 
   if (changes.length === 0) return null
@@ -330,14 +340,18 @@ export const FileChangeCard = memo(function FileChangeCard({
 
       {isListOpen && (
         <div className="border-t border-white/[0.04]">
-          {visibleChanges.map(change => (
-            <FileChangeRow
-              key={`${change.path}:${change.previousPath ?? ''}:${change.kind}`}
-              change={change}
-              displayName={displayNameMap.get(change.path) ?? change.path}
-              viewportRef={viewportRef}
-            />
-          ))}
+          {visibleChanges.map(change => {
+            const displayPath = displayPathMap.get(change.path) ?? change.path
+            return (
+              <FileChangeRow
+                key={`${change.path}:${change.previousPath ?? ''}:${change.kind}`}
+                change={change}
+                displayName={displayPath}
+                displayPath={displayPath}
+                viewportRef={viewportRef}
+              />
+            )
+          })}
           {needsShowMore && (
             <button
               type="button"

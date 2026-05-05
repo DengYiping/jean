@@ -2,6 +2,7 @@ import { memo } from 'react'
 import type { ToolCall } from '@/types/chat'
 import { Badge } from '@/components/ui/badge'
 import { getFilename } from '@/lib/path-utils'
+import { formatWorktreeRelativePath } from './file-change-utils'
 import {
   Tooltip,
   TooltipTrigger,
@@ -23,6 +24,7 @@ function isEditTool(
 interface EditedFilesDisplayProps {
   toolCalls: ToolCall[] | undefined
   onFileClick: (path: string) => void
+  worktreePath?: string | null
 }
 
 /**
@@ -34,6 +36,7 @@ interface EditedFilesDisplayProps {
 export const EditedFilesDisplay = memo(function EditedFilesDisplay({
   toolCalls,
   onFileClick,
+  worktreePath,
 }: EditedFilesDisplayProps) {
   if (!toolCalls) return null
 
@@ -51,20 +54,24 @@ export const EditedFilesDisplay = memo(function EditedFilesDisplay({
         Edited {uniqueFilePaths.length} file
         {uniqueFilePaths.length === 1 ? '' : 's'}:
       </span>
-      {uniqueFilePaths.map(filePath => (
-        <Tooltip key={filePath}>
-          <TooltipTrigger asChild>
-            <Badge
-              variant="outline"
-              className="cursor-pointer"
-              onClick={() => onFileClick(filePath)}
-            >
-              {getFilename(filePath)}
-            </Badge>
-          </TooltipTrigger>
-          <TooltipContent>{filePath}</TooltipContent>
-        </Tooltip>
-      ))}
+      {uniqueFilePaths.map(filePath => {
+        const displayPath = formatWorktreeRelativePath(filePath, worktreePath)
+        return (
+          <Tooltip key={filePath}>
+            <TooltipTrigger asChild>
+              <Badge
+                variant="outline"
+                title={displayPath}
+                className="cursor-pointer"
+                onClick={() => onFileClick(filePath)}
+              >
+                {getFilename(displayPath)}
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent>{displayPath}</TooltipContent>
+          </Tooltip>
+        )
+      })}
     </div>
   )
 })

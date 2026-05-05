@@ -12,6 +12,7 @@ describe('StreamingMessage', () => {
 
   const baseProps = {
     sessionId: 'session-1',
+    worktreePath: '/tmp/worktree',
     contentBlocks: [],
     toolCalls: [],
     streamingContent: '',

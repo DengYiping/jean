@@ -34,7 +34,10 @@ import { Markdown } from '@/components/ui/markdown'
 import { cn } from '@/lib/utils'
 import { getFilename } from '@/lib/path-utils'
 import { FileChangeCard } from './FileChangeCard'
-import { normalizeFileChanges } from './file-change-utils'
+import {
+  formatWorktreeRelativePath,
+  normalizeFileChanges,
+} from './file-change-utils'
 import {
   Collapsible,
   CollapsibleContent,
@@ -52,6 +55,8 @@ interface ToolCallInlineProps {
   isStreaming?: boolean
   /** Whether this item is still in progress (shows spinner) */
   isIncomplete?: boolean
+  /** Active worktree path for displaying file changes relative to the repo */
+  worktreePath?: string | null
 }
 
 /**
@@ -65,12 +70,13 @@ export function ToolCallInline({
   viewportRef,
   isStreaming,
   isIncomplete,
+  worktreePath,
 }: ToolCallInlineProps) {
   const { data: preferences } = usePreferences()
   const [isOpen, setIsOpen] = useState(
     preferences?.expand_tool_calls_by_default ?? false
   )
-  const display = getToolDisplay(toolCall, { viewportRef })
+  const display = getToolDisplay(toolCall, { viewportRef, worktreePath })
   const {
     icon,
     label,
@@ -169,6 +175,8 @@ interface TaskCallInlineProps {
   isStreaming?: boolean
   /** Whether this item is still in progress (shows spinner) */
   isIncomplete?: boolean
+  /** Active worktree path for displaying file changes relative to the repo */
+  worktreePath?: string | null
 }
 
 /**
@@ -184,6 +192,7 @@ export function TaskCallInline({
   viewportRef,
   isStreaming,
   isIncomplete,
+  worktreePath,
 }: TaskCallInlineProps) {
   const { data: preferences } = usePreferences()
   const [isOpen, setIsOpen] = useState(
@@ -262,6 +271,7 @@ export function TaskCallInline({
                       onFileClick={onFileClick}
                       viewportRef={viewportRef}
                       isStreaming={isStreaming}
+                      worktreePath={worktreePath}
                     />
                   ) : (
                     <SubToolItem
@@ -269,6 +279,7 @@ export function TaskCallInline({
                       toolCall={subTool}
                       onFileClick={onFileClick}
                       viewportRef={viewportRef}
+                      worktreePath={worktreePath}
                     />
                   )
                 )}
@@ -295,6 +306,8 @@ interface StackedGroupProps {
   isStreaming?: boolean
   /** Whether this item is still in progress (shows spinner) */
   isIncomplete?: boolean
+  /** Active worktree path for displaying file changes relative to the repo */
+  worktreePath?: string | null
 }
 
 /**
@@ -308,6 +321,7 @@ export function StackedGroup({
   viewportRef,
   isStreaming,
   isIncomplete,
+  worktreePath,
 }: StackedGroupProps) {
   const { data: preferences } = usePreferences()
   const [isOpen, setIsOpen] = useState(
@@ -381,6 +395,7 @@ export function StackedGroup({
                   toolCall={item.tool}
                   onFileClick={onFileClick}
                   viewportRef={viewportRef}
+                  worktreePath={worktreePath}
                 />
               )
             )}
@@ -439,13 +454,19 @@ interface SubToolItemProps {
   toolCall: ToolCall
   onFileClick?: (filePath: string) => void
   viewportRef?: RefObject<HTMLDivElement | null>
+  worktreePath?: string | null
 }
 
 /**
  * Compact sub-tool item displayed within a Task or ToolCallGroup
  * Even more minimal than ToolCallInline - just icon, label, and detail inline
  */
-function SubToolItem({ toolCall, onFileClick, viewportRef }: SubToolItemProps) {
+function SubToolItem({
+  toolCall,
+  onFileClick,
+  viewportRef,
+  worktreePath,
+}: SubToolItemProps) {
   const { data: preferences } = usePreferences()
   const [isOpen, setIsOpen] = useState(
     preferences?.expand_tool_calls_by_default ?? false
@@ -457,7 +478,7 @@ function SubToolItem({ toolCall, onFileClick, viewportRef }: SubToolItemProps) {
     filePath,
     expandedContent,
     suppressDefaultOutput,
-  } = getToolDisplay(toolCall, { viewportRef })
+  } = getToolDisplay(toolCall, { viewportRef, worktreePath })
 
   const handleFileClick = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -538,6 +559,7 @@ interface ToolDisplay {
 
 interface ToolDisplayOptions {
   viewportRef?: RefObject<HTMLDivElement | null>
+  worktreePath?: string | null
 }
 
 /** Renders a unified diff view with colored +/- lines */
@@ -884,7 +906,7 @@ function ScheduleWakeupCountdown({ toolCallId }: ScheduleWakeupIndicatorProps) {
 
 function getToolDisplay(
   toolCall: ToolCall,
-  { viewportRef }: ToolDisplayOptions = {}
+  { viewportRef, worktreePath }: ToolDisplayOptions = {}
 ): ToolDisplay {
   const input = (toolCall.input ?? {}) as Record<string, unknown>
 
@@ -1138,7 +1160,9 @@ function getToolDisplay(
         0
       )
       const filePath = changes.length === 1 ? changes[0]?.path : undefined
-      const filename = filePath ? getFilename(filePath) : undefined
+      const filename = filePath
+        ? getFilename(formatWorktreeRelativePath(filePath, worktreePath))
+        : undefined
       const detail =
         changes.length <= 1
           ? filename
@@ -1155,6 +1179,7 @@ function getToolDisplay(
               toolCalls={[toolCall]}
               className="mt-0"
               viewportRef={viewportRef}
+              worktreePath={worktreePath}
             />
           ) : (
             JSON.stringify(toolCall.input, null, 2)

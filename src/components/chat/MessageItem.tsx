@@ -514,6 +514,7 @@ export const MessageItem = memo(function MessageItem({
                                 allToolCalls={message.tool_calls ?? []}
                                 onFileClick={onFileClick}
                                 isStreaming={false}
+                                worktreePath={worktreePath}
                               />
                             )
                           case 'standalone':
@@ -522,6 +523,7 @@ export const MessageItem = memo(function MessageItem({
                                 toolCall={item.tool}
                                 onFileClick={onFileClick}
                                 isStreaming={false}
+                                worktreePath={worktreePath}
                               />
                             )
                           case 'stackedGroup':
@@ -530,6 +532,7 @@ export const MessageItem = memo(function MessageItem({
                                 items={item.items}
                                 onFileClick={onFileClick}
                                 isStreaming={false}
+                                worktreePath={worktreePath}
                               />
                             )
                           case 'askUserQuestion': {
@@ -591,6 +594,7 @@ export const MessageItem = memo(function MessageItem({
                                 toolCall={item.tool}
                                 onFileClick={onFileClick}
                                 isStreaming={false}
+                                worktreePath={worktreePath}
                               />
                             )
                           case 'exitPlanMode': {
@@ -778,6 +782,7 @@ export const MessageItem = memo(function MessageItem({
           <EditedFilesDisplay
             toolCalls={message.tool_calls}
             onFileClick={onEditedFileClick}
+            worktreePath={worktreePath}
           />
         )}
 

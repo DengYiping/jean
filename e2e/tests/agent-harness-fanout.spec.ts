@@ -17,6 +17,13 @@ test.describe('Agent harness fan-out', () => {
       })
       return worktree
     })
+    await mockPage.evaluate(projectId => {
+      const handlers = (window as any).__JEAN_E2E_MOCK__?.invokeHandlers
+      handlers.update_project_settings({
+        projectId,
+        stableWorktreeSlotsEnabled: true,
+      })
+    }, firstWorktree.project_id)
 
     await mockPage.keyboard.press('Meta+b')
     await expect(mockPage.getByText('PROJECTS')).toBeVisible({ timeout: 3000 })
@@ -53,6 +60,19 @@ test.describe('Agent harness fan-out', () => {
       'Compare this implementation across harnesses',
       'Compare this implementation across harnesses',
       'Compare this implementation across harnesses',
+    ])
+
+    const slots = await mockPage.evaluate(projectId => {
+      const handlers = (window as any).__JEAN_E2E_MOCK__?.invokeHandlers
+      return handlers.list_worktree_slots({ projectId })
+    }, firstWorktree.project_id)
+    expect(slots).toHaveLength(3)
+    expect(new Set(slots.map((slot: any) => slot.id)).size).toBe(3)
+    expect(new Set(slots.map((slot: any) => slot.worktree_id)).size).toBe(3)
+    expect(slots.map((slot: any) => slot.state)).toEqual([
+      'active',
+      'active',
+      'active',
     ])
   })
 })

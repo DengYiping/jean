@@ -5,7 +5,9 @@ use tauri::AppHandle;
 use uuid::Uuid;
 
 use super::git;
-use super::storage::{get_project_worktrees_dir, sanitize_directory_name, save_projects_data};
+use super::storage::{
+    get_project_worktrees_dir, sanitize_directory_name, save_projects_data, with_projects_data_mut,
+};
 use super::types::{Project, ProjectsData, WorktreeSlot, WorktreeSlotState};
 
 const MAX_IDLE_SLOTS_PER_PROJECT: usize = 4;
@@ -26,7 +28,6 @@ fn now() -> u64 {
 
 pub fn reserve_slot(
     app: &AppHandle,
-    data: &mut ProjectsData,
     project: &Project,
     worktree_id: &str,
     branch: &str,
@@ -35,60 +36,59 @@ pub fn reserve_slot(
         return Ok(None);
     }
 
-    let now = now();
-    if let Some(slot) = data
-        .worktree_slots
-        .iter_mut()
-        .filter(|slot| slot.project_id == project.id && slot.state == WorktreeSlotState::Idle)
-        .min_by_key(|slot| slot.last_used_at)
-    {
-        slot.state = WorktreeSlotState::Active;
-        slot.worktree_id = Some(worktree_id.to_string());
-        slot.branch = Some(branch.to_string());
-        slot.last_used_at = now;
-        slot.last_error = None;
-        let reservation = SlotReservation {
-            slot_id: slot.id.clone(),
-            path: slot.path.clone(),
-            reused: true,
-        };
-        save_projects_data(app, data)?;
-        return Ok(Some(reservation));
-    }
+    with_projects_data_mut(app, |data| {
+        let now = now();
+        if let Some(slot) = data
+            .worktree_slots
+            .iter_mut()
+            .filter(|slot| slot.project_id == project.id && slot.state == WorktreeSlotState::Idle)
+            .min_by_key(|slot| slot.last_used_at)
+        {
+            slot.state = WorktreeSlotState::Active;
+            slot.worktree_id = Some(worktree_id.to_string());
+            slot.branch = Some(branch.to_string());
+            slot.last_used_at = now;
+            slot.last_error = None;
+            return Ok(Some(SlotReservation {
+                slot_id: slot.id.clone(),
+                path: slot.path.clone(),
+                reused: true,
+            }));
+        }
 
-    let slot_number = next_slot_number(data, &project.id);
-    let slot_path =
-        get_project_worktrees_dir(app, &project.name, project.worktrees_dir.as_deref())?
-            .join(".jean-slots")
-            .join(slot_folder_name(&project.name, slot_number));
-    if let Some(parent) = slot_path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create slots directory: {e}"))?;
-    }
-    let path = slot_path
-        .to_str()
-        .ok_or_else(|| "Invalid slot path".to_string())?
-        .to_string();
-    let slot_id = Uuid::new_v4().to_string();
+        let slot_number = next_slot_number(data, &project.id);
+        let slot_path =
+            get_project_worktrees_dir(app, &project.name, project.worktrees_dir.as_deref())?
+                .join(".jean-slots")
+                .join(slot_folder_name(&project.name, slot_number));
+        if let Some(parent) = slot_path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create slots directory: {e}"))?;
+        }
+        let path = slot_path
+            .to_str()
+            .ok_or_else(|| "Invalid slot path".to_string())?
+            .to_string();
+        let slot_id = Uuid::new_v4().to_string();
 
-    data.worktree_slots.push(WorktreeSlot {
-        id: slot_id.clone(),
-        project_id: project.id.clone(),
-        path: path.clone(),
-        state: WorktreeSlotState::Active,
-        worktree_id: Some(worktree_id.to_string()),
-        branch: Some(branch.to_string()),
-        created_at: now,
-        last_used_at: now,
-        last_error: None,
-    });
-    save_projects_data(app, data)?;
+        data.worktree_slots.push(WorktreeSlot {
+            id: slot_id.clone(),
+            project_id: project.id.clone(),
+            path: path.clone(),
+            state: WorktreeSlotState::Active,
+            worktree_id: Some(worktree_id.to_string()),
+            branch: Some(branch.to_string()),
+            created_at: now,
+            last_used_at: now,
+            last_error: None,
+        });
 
-    Ok(Some(SlotReservation {
-        slot_id,
-        path,
-        reused: false,
-    }))
+        Ok(Some(SlotReservation {
+            slot_id,
+            path,
+            reused: false,
+        }))
+    })
 }
 
 fn next_slot_number(data: &ProjectsData, project_id: &str) -> usize {

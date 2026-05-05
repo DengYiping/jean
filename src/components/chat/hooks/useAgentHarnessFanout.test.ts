@@ -7,12 +7,13 @@ import {
 import type { Session, WorktreeSessions } from '@/types/chat'
 import type { Worktree } from '@/types/projects'
 
-function makeWorktree(id: string): Worktree {
+function makeWorktree(id: string, stableSlotId?: string): Worktree {
   return {
     id,
     project_id: 'project-1',
     name: id,
     path: `/repo/${id}`,
+    stable_slot_id: stableSlotId,
     branch: id,
     created_at: 1,
     order: 0,
@@ -51,7 +52,10 @@ describe('agent harness fan-out', () => {
   })
 
   it('creates one worktree per harness and sends the same prompt to each', async () => {
-    const createdWorktrees = [makeWorktree('codex-wt'), makeWorktree('open-wt')]
+    const createdWorktrees = [
+      makeWorktree('codex-wt', 'slot-codex'),
+      makeWorktree('open-wt', 'slot-open'),
+    ]
     const sessions = [makeSession('codex-session'), makeSession('open-session')]
     const invoke = vi.fn(
       async (command: string, args?: Record<string, unknown>) => {
@@ -73,6 +77,7 @@ describe('agent harness fan-out', () => {
     const sendMessage = vi.fn()
     const clearSnapshot = vi.fn()
     const onDirtyWarning = vi.fn()
+    const onWorktreeReady = vi.fn()
 
     await executeAgentHarnessFanout({
       projectId: 'project-1',
@@ -101,7 +106,7 @@ describe('agent harness fan-out', () => {
       sendMessage,
       clearSnapshot,
       onDirtyWarning,
-      onWorktreeReady: vi.fn(),
+      onWorktreeReady,
       onSessionPrepared: vi.fn(),
       resolveCustomProfile: model => ({ model }),
       getMcpConfig: backend => `mcp:${backend}`,
@@ -110,6 +115,14 @@ describe('agent harness fan-out', () => {
 
     expect(clearSnapshot).toHaveBeenCalledOnce()
     expect(onDirtyWarning).toHaveBeenCalledOnce()
+    expect(onWorktreeReady).toHaveBeenCalledTimes(2)
+    expect(
+      new Set(
+        onWorktreeReady.mock.calls.map(
+          call => (call[0] as Worktree).stable_slot_id
+        )
+      )
+    ).toEqual(new Set(['slot-codex', 'slot-open']))
     expect(invoke).toHaveBeenCalledWith('create_worktree', {
       projectId: 'project-1',
       baseBranch: 'feature/base',

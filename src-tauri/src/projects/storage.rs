@@ -272,6 +272,18 @@ pub fn save_projects_data(app: &AppHandle, data: &ProjectsData) -> Result<(), St
     save_projects_data_internal(app, data)
 }
 
+/// Load, mutate, and save projects data while holding the projects lock.
+pub fn with_projects_data_mut<F, T>(app: &AppHandle, f: F) -> Result<T, String>
+where
+    F: FnOnce(&mut ProjectsData) -> Result<T, String>,
+{
+    let _lock = PROJECTS_LOCK.lock().unwrap();
+    let mut data = load_projects_data_internal(app)?;
+    let result = f(&mut data)?;
+    save_projects_data_internal(app, &data)?;
+    Ok(result)
+}
+
 fn canonicalize_for_matching(path: &str) -> PathBuf {
     Path::new(path)
         .canonicalize()

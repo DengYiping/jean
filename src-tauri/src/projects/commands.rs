@@ -930,10 +930,7 @@ pub async fn create_worktree(
     // Generate ID upfront so we can track this worktree
     let worktree_id = Uuid::new_v4().to_string();
     let created_at = now();
-    let slot_reservation = {
-        let mut current_data = load_projects_data(&app)?;
-        slots::reserve_slot(&app, &mut current_data, &project, &worktree_id, &name)?
-    };
+    let slot_reservation = slots::reserve_slot(&app, &project, &worktree_id, &name)?;
     if let Some(slot) = &slot_reservation {
         worktree_path_str = slot.path.clone();
     }
@@ -1942,10 +1939,7 @@ pub async fn create_worktree_from_existing_branch(
     // Generate ID upfront so we can track this worktree
     let worktree_id = Uuid::new_v4().to_string();
     let created_at = now();
-    let slot_reservation = {
-        let mut current_data = load_projects_data(&app)?;
-        slots::reserve_slot(&app, &mut current_data, &project, &worktree_id, &name)?
-    };
+    let slot_reservation = slots::reserve_slot(&app, &project, &worktree_id, &name)?;
     if let Some(slot) = &slot_reservation {
         worktree_path_str = slot.path.clone();
     }

@@ -1072,6 +1072,9 @@ export function useWorktreeEvents() {
         // Auto-expand the project so the new worktree is visible in sidebar
         const { expandProject } = useProjectsStore.getState()
         expandProject(project_id)
+        queryClient.invalidateQueries({
+          queryKey: projectsQueryKeys.worktreeSlots(project_id),
+        })
 
         // Start timeout recovery in case worktree:created/error events are never received
         startPendingTimeout(id, project_id)
@@ -1091,6 +1094,9 @@ export function useWorktreeEvents() {
         // survives if the cache update is a no-op (e.g. cache was invalidated
         // between worktree:creating and worktree:created events).
         handleWorktreeReady(worktree, queryClient)
+        queryClient.invalidateQueries({
+          queryKey: projectsQueryKeys.worktreeSlots(worktree.project_id),
+        })
         clearPendingTimeout(worktree.id)
 
         if (consumeWorktreeSilentReady(worktree.id)) {
@@ -1208,6 +1214,9 @@ export function useWorktreeEvents() {
             return old.filter(w => w.id !== id)
           }
         )
+        queryClient.invalidateQueries({
+          queryKey: projectsQueryKeys.worktreeSlots(project_id),
+        })
 
         // Clear selection if this was selected
         const { selectedWorktreeId, selectWorktree } =
@@ -1245,6 +1254,9 @@ export function useWorktreeEvents() {
             return old.filter(w => w.id !== id)
           }
         )
+        queryClient.invalidateQueries({
+          queryKey: projectsQueryKeys.worktreeSlots(project_id),
+        })
 
         // Clear chat/selection if this worktree was active
         const { activeWorktreeId, clearActiveWorktree } =
@@ -1281,6 +1293,9 @@ export function useWorktreeEvents() {
             return old.filter(w => w.id !== id)
           }
         )
+        queryClient.invalidateQueries({
+          queryKey: projectsQueryKeys.worktreeSlots(project_id),
+        })
 
         // Clear chat/selection if this worktree was active
         // (handles cases where worktree:deleting wasn't emitted, e.g. close_base_session)
@@ -1332,6 +1347,9 @@ export function useWorktreeEvents() {
             )
           }
         )
+        queryClient.invalidateQueries({
+          queryKey: projectsQueryKeys.worktreeSlots(project_id),
+        })
 
         toast.error('Failed to delete worktree', {
           description: error,

@@ -47,6 +47,15 @@ export const test = base.extend<TauriMockFixtures>({
         const worktreeStore: Array<Record<string, unknown>> = structuredClone(
           (responseMap.list_worktrees as Array<Record<string, unknown>>) ?? []
         )
+        const projectStore: Array<Record<string, unknown>> = structuredClone(
+          (responseMap.list_projects as Array<Record<string, unknown>>) ?? []
+        )
+        const worktreeSlotStore: Array<Record<string, unknown>> =
+          structuredClone(
+            (responseMap.list_worktree_slots as
+              | Array<Record<string, unknown>>
+              | undefined) ?? []
+          )
         const automationStore: Array<Record<string, unknown>> = []
         const agentBoardStore: Array<Record<string, unknown>> = structuredClone(
           (responseMap.list_agent_board_items as
@@ -148,6 +157,60 @@ export const test = base.extend<TauriMockFixtures>({
           const cloned = structuredClone(session)
           cloned.session_derived_state = deriveSessionState(cloned)
           return cloned
+        }
+
+        function reserveStableSlot(
+          project: Record<string, unknown>,
+          worktreeId: string,
+          branch: string
+        ) {
+          const projectId = String(project.id)
+          const now = Date.now() / 1000
+          const idleSlot = worktreeSlotStore
+            .filter(
+              slot => slot.project_id === projectId && slot.state === 'idle'
+            )
+            .sort(
+              (a, b) =>
+                Number(a.last_used_at ?? 0) - Number(b.last_used_at ?? 0)
+            )[0]
+
+          if (idleSlot) {
+            idleSlot.state = 'active'
+            idleSlot.worktree_id = worktreeId
+            idleSlot.branch = branch
+            idleSlot.last_used_at = now
+            delete idleSlot.last_error
+            return idleSlot
+          }
+
+          let slotNumber = 1
+          while (
+            worktreeSlotStore.some(
+              slot =>
+                slot.project_id === projectId &&
+                String(slot.path).endsWith(`slot-${slotNumber}`)
+            )
+          ) {
+            slotNumber += 1
+          }
+
+          const projectName = String(project.name ?? 'project').replace(
+            /[^a-zA-Z0-9_-]/g,
+            '-'
+          )
+          const slot = {
+            id: `slot-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            project_id: projectId,
+            path: `/tmp/e2e-test-project/.jean-slots/${projectName}-slot-${slotNumber}`,
+            state: 'active',
+            worktree_id: worktreeId,
+            branch,
+            created_at: now,
+            last_used_at: now,
+          }
+          worktreeSlotStore.push(slot)
+          return slot
         }
 
         function createAgentBoardWorktree(projectId: string, suffix: string) {
@@ -252,6 +315,22 @@ export const test = base.extend<TauriMockFixtures>({
           string,
           (args?: Record<string, unknown>) => unknown
         > = {
+          list_projects: () => structuredClone(projectStore),
+          update_project_settings: args => {
+            const project = projectStore.find(
+              item => item.id === args?.projectId
+            )
+            if (!project) return null
+            if ('stableWorktreeSlotsEnabled' in (args ?? {})) {
+              project.stable_worktree_slots_enabled =
+                args?.stableWorktreeSlotsEnabled
+            }
+            if ('stable_worktree_slots_enabled' in (args ?? {})) {
+              project.stable_worktree_slots_enabled =
+                args?.stable_worktree_slots_enabled
+            }
+            return structuredClone(project)
+          },
           list_agent_board_items: () => {
             agentBoardStore.forEach(syncAgentBoardItem)
             return structuredClone(agentBoardStore)
@@ -395,9 +474,34 @@ export const test = base.extend<TauriMockFixtures>({
             }
           },
           list_worktrees: () => structuredClone(worktreeStore),
-          list_worktree_slots: () => [],
+          list_worktree_slots: args => {
+            const projectId = args?.projectId as string | undefined
+            return structuredClone(
+              projectId
+                ? worktreeSlotStore.filter(
+                    slot => slot.project_id === projectId
+                  )
+                : worktreeSlotStore
+            )
+          },
           reset_worktree_slot: () => null,
-          reset_idle_worktree_slots: () => null,
+          reset_idle_worktree_slots: args => {
+            const projectId = args?.projectId as string | undefined
+            for (
+              let index = worktreeSlotStore.length - 1;
+              index >= 0;
+              index--
+            ) {
+              const slot = worktreeSlotStore[index]
+              if (
+                slot.project_id === projectId &&
+                (slot.state === 'idle' || slot.state === 'error')
+              ) {
+                worktreeSlotStore.splice(index, 1)
+              }
+            }
+            return null
+          },
           get_worktree: args => {
             const worktree = worktreeStore.find(w => w.id === args?.worktreeId)
             return worktree ? structuredClone(worktree) : null
@@ -406,12 +510,20 @@ export const test = base.extend<TauriMockFixtures>({
             const projectId = (args?.projectId as string) ?? 'project-1'
             const index = worktreeStore.length + 1
             const name = `harness-${index}`
+            const id = `worktree-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+            const project = projectStore.find(item => item.id === projectId)
+            const stableSlot =
+              project?.stable_worktree_slots_enabled === true
+                ? reserveStableSlot(project, id, name)
+                : undefined
             const worktree = {
-              id: `worktree-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              id,
               project_id: projectId,
               name,
-              path: `/tmp/e2e-test-project/.worktrees/${name}`,
-              stable_slot_id: undefined,
+              path:
+                (stableSlot?.path as string | undefined) ??
+                `/tmp/e2e-test-project/.worktrees/${name}`,
+              stable_slot_id: stableSlot?.id,
               branch: name,
               base_branch: (args?.baseBranch as string | undefined) ?? 'main',
               created_at: Date.now() / 1000,

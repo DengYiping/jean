@@ -191,21 +191,31 @@ function executeKeybindingAction(
         break
       }
       const resolvedWorktreePath = targetWorktreePath
+      const selectedProjectId = useProjectsStore.getState().selectedProjectId
+      const targetProjectPath = selectedProjectId
+        ? (queryClient
+            .getQueryData<
+              { id: string; path: string }[]
+            >(projectsQueryKeys.list())
+            ?.find(project => project.id === selectedProjectId)?.path ?? null)
+        : null
 
       // Fetch run scripts - use fetchQuery to handle uncached dashboard worktrees
       ;(async () => {
         let runScripts = queryClient.getQueryData<string[]>([
           'run-scripts',
           targetWorktreePath,
+          targetProjectPath,
         ])
 
         if (runScripts === undefined) {
           try {
             runScripts = await queryClient.fetchQuery<string[]>({
-              queryKey: ['run-scripts', targetWorktreePath],
+              queryKey: ['run-scripts', targetWorktreePath, targetProjectPath],
               queryFn: () =>
                 invoke<string[]>('get_run_scripts', {
                   worktreePath: targetWorktreePath,
+                  projectPath: targetProjectPath,
                 }),
             })
           } catch {

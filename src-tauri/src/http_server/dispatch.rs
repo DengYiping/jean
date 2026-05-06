@@ -1748,12 +1748,14 @@ pub async fn dispatch_command(
         }
         "get_run_scripts" => {
             let worktree_path: String = field(&args, "worktreePath", "worktree_path")?;
-            let result = crate::terminal::get_run_scripts(worktree_path).await;
+            let project_path: Option<String> = field_opt(&args, "projectPath", "project_path")?;
+            let result = crate::terminal::get_run_scripts(worktree_path, project_path).await;
             to_value(result)
         }
         "get_ports" => {
             let worktree_path: String = field(&args, "worktreePath", "worktree_path")?;
-            let result = crate::terminal::get_ports(worktree_path).await;
+            let project_path: Option<String> = field_opt(&args, "projectPath", "project_path")?;
+            let result = crate::terminal::get_ports(worktree_path, project_path).await;
             to_value(result)
         }
         "get_terminal_listening_ports" => {
@@ -1761,8 +1763,10 @@ pub async fn dispatch_command(
             to_value(result)
         }
         "get_build_script" => {
-            // NATIVE ONLY: Terminals don't work in browser mode
-            Ok(Value::Null)
+            let worktree_path: String = field(&args, "worktreePath", "worktree_path")?;
+            let project_path: Option<String> = field_opt(&args, "projectPath", "project_path")?;
+            let result = crate::terminal::get_build_script(worktree_path, project_path).await;
+            to_value(result)
         }
 
         // =====================================================================

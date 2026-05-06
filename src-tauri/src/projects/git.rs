@@ -2038,6 +2038,23 @@ pub fn read_jean_config(worktree_path: &str) -> Option<JeanConfig> {
     }
 }
 
+/// Read jean.json for a worktree, falling back to the project root config.
+///
+/// Worktree config wins when present. The fallback keeps Jean-managed scripts
+/// available when jean.json exists only in the base project directory.
+pub fn read_jean_config_for_worktree(
+    worktree_path: &str,
+    project_path: Option<&str>,
+) -> Option<JeanConfig> {
+    read_jean_config(worktree_path).or_else(|| {
+        let project_path = project_path?;
+        if Path::new(project_path) == Path::new(worktree_path) {
+            return None;
+        }
+        read_jean_config(project_path)
+    })
+}
+
 /// Run a setup script in a worktree directory
 ///
 /// Executes the script using sh -c and captures output.
@@ -2785,6 +2802,97 @@ mod tests {
         .unwrap();
 
         (temp, source, destination)
+    }
+
+    fn write_jean_config(dir: &Path, run: &str, build: &str, port: u16) {
+        std::fs::write(
+            dir.join("jean.json"),
+            format!(
+                r#"{{
+  "scripts": {{
+    "run": "{run}",
+    "build": "{build}"
+  }},
+  "ports": [{{ "port": {port}, "label": "App" }}]
+}}"#
+            ),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_read_jean_config_for_worktree_prefers_worktree_config() {
+        let temp = TempDir::new().unwrap();
+        let project = temp.path().join("project");
+        let worktree = temp.path().join("worktree");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::create_dir_all(&worktree).unwrap();
+        write_jean_config(&project, "bun run dev", "bun run build", 3000);
+        write_jean_config(&worktree, "npm run dev", "npm run build", 4000);
+
+        let config = read_jean_config_for_worktree(
+            worktree.to_str().unwrap(),
+            Some(project.to_str().unwrap()),
+        )
+        .unwrap();
+
+        assert_eq!(
+            config.scripts.run.unwrap().into_vec(),
+            vec!["npm run dev".to_string()]
+        );
+        assert_eq!(config.scripts.build, Some("npm run build".to_string()));
+        assert_eq!(config.ports.unwrap()[0].port, 4000);
+    }
+
+    #[test]
+    fn test_read_jean_config_for_worktree_falls_back_to_project_config() {
+        let temp = TempDir::new().unwrap();
+        let project = temp.path().join("project");
+        let worktree = temp.path().join("worktree");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::create_dir_all(&worktree).unwrap();
+        write_jean_config(&project, "bun run dev", "bun run build", 3000);
+
+        let config = read_jean_config_for_worktree(
+            worktree.to_str().unwrap(),
+            Some(project.to_str().unwrap()),
+        )
+        .unwrap();
+
+        assert_eq!(
+            config.scripts.run.unwrap().into_vec(),
+            vec!["bun run dev".to_string()]
+        );
+        assert_eq!(config.scripts.build, Some("bun run build".to_string()));
+        assert_eq!(config.ports.unwrap()[0].port, 3000);
+    }
+
+    #[test]
+    fn test_read_jean_config_for_worktree_returns_none_when_no_config_exists() {
+        let temp = TempDir::new().unwrap();
+        let project = temp.path().join("project");
+        let worktree = temp.path().join("worktree");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::create_dir_all(&worktree).unwrap();
+
+        let config = read_jean_config_for_worktree(
+            worktree.to_str().unwrap(),
+            Some(project.to_str().unwrap()),
+        );
+
+        assert!(config.is_none());
+    }
+
+    #[test]
+    fn test_read_jean_config_for_worktree_ignores_same_project_path_fallback() {
+        let temp = TempDir::new().unwrap();
+
+        let config = read_jean_config_for_worktree(
+            temp.path().to_str().unwrap(),
+            Some(temp.path().to_str().unwrap()),
+        );
+
+        assert!(config.is_none());
     }
 
     #[test]

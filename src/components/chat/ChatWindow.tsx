@@ -532,7 +532,10 @@ export function ChatWindow({
   const mergeableStatus = prStatus?.mergeable ?? undefined
 
   // Run scripts for this worktree (used by keyboard shortcuts and quick actions)
-  const { data: runScripts = [] } = useRunScripts(activeWorktreePath ?? null)
+  const { data: runScripts = [] } = useRunScripts(
+    activeWorktreePath ?? null,
+    project?.path ?? null
+  )
 
   // Per-session provider selection: persisted session → zustand → project default → global default
   const projectDefaultProvider = project?.default_provider ?? null

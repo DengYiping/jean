@@ -7,7 +7,7 @@ import {
   useBrowserTabActions,
 } from '@/hooks/useBrowserPane'
 import { useChatStore } from '@/store/chat-store'
-import { usePorts } from '@/services/projects'
+import { usePorts, useProjects, useWorktree } from '@/services/projects'
 import { resolveDefaultTabUrl } from './default-tab-url'
 import { BrowserTabContent } from './BrowserTabContent'
 import { BrowserToolbar } from './BrowserToolbar'
@@ -54,8 +54,14 @@ export const BrowserView = memo(function BrowserView({
 
   // Resolve worktreePath → first jean.json port (used as default new-tab URL)
   const worktreePath = useChatStore(state => state.worktreePaths[worktreeId])
+  const { data: worktree } = useWorktree(worktreeId)
+  const { data: projects } = useProjects()
+  const project = worktree
+    ? projects?.find(candidate => candidate.id === worktree.project_id)
+    : null
   const { data: ports, isFetched: portsFetched } = usePorts(
-    worktreePath ?? null
+    worktreePath ?? null,
+    project?.path ?? null
   )
 
   // Auto-create the first tab when the view first opens with no tabs.

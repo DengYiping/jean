@@ -2323,9 +2323,10 @@ export function useSaveJeanConfig() {
 
 function useJeanScript(
   worktreePath: string | null,
+  projectPath: string | null | undefined,
   scriptType: 'run' | 'build'
 ) {
-  const queryKey = [`${scriptType}-script`, worktreePath]
+  const queryKey = [`${scriptType}-script`, worktreePath, projectPath ?? null]
   const commandName =
     scriptType === 'run' ? 'get_run_script' : 'get_build_script'
 
@@ -2336,6 +2337,7 @@ function useJeanScript(
       logger.debug(`Fetching ${scriptType} script`, { worktreePath })
       const script = await invoke<string | null>(commandName, {
         worktreePath,
+        projectPath: projectPath ?? null,
       })
       const normalizedScript = script?.trim() || null
       logger.debug(`${scriptType} script result`, { script: normalizedScript })
@@ -2350,15 +2352,19 @@ function useJeanScript(
  * Hook to get the run script(s) from jean.json for a worktree.
  * Returns string[] (empty = none configured).
  */
-export function useRunScripts(worktreePath: string | null) {
+export function useRunScripts(
+  worktreePath: string | null,
+  projectPath?: string | null
+) {
   return useQuery<string[]>({
-    queryKey: ['run-scripts', worktreePath],
+    queryKey: ['run-scripts', worktreePath, projectPath ?? null],
     queryFn: async () => {
       if (!isTauri() || !worktreePath) return []
 
-      logger.debug('Fetching run scripts', { worktreePath })
+      logger.debug('Fetching run scripts', { worktreePath, projectPath })
       const scripts = await invoke<string[]>('get_run_scripts', {
         worktreePath,
+        projectPath: projectPath ?? null,
       })
       logger.debug('Run scripts result', { scripts })
       return scripts
@@ -2371,13 +2377,17 @@ export function useRunScripts(worktreePath: string | null) {
 /**
  * Hook to get the first run script from jean.json for a worktree.
  */
-export function useRunScript(worktreePath: string | null) {
+export function useRunScript(
+  worktreePath: string | null,
+  projectPath?: string | null
+) {
   return useQuery<string | null>({
-    queryKey: ['run-script', worktreePath],
+    queryKey: ['run-script', worktreePath, projectPath ?? null],
     queryFn: async () => {
       if (!isTauri() || !worktreePath) return null
       const scripts = await invoke<string[]>('get_run_scripts', {
         worktreePath,
+        projectPath: projectPath ?? null,
       })
       return scripts[0]?.trim() || null
     },
@@ -2389,20 +2399,29 @@ export function useRunScript(worktreePath: string | null) {
 /**
  * Hook to get the build script from jean.json for a worktree.
  */
-export function useBuildScript(worktreePath: string | null) {
-  return useJeanScript(worktreePath, 'build')
+export function useBuildScript(
+  worktreePath: string | null,
+  projectPath?: string | null
+) {
+  return useJeanScript(worktreePath, projectPath, 'build')
 }
 
 /**
  * Hook to get configured ports from jean.json for a worktree.
  * Returns PortEntry[] (empty = none configured).
  */
-export function usePorts(worktreePath: string | null) {
+export function usePorts(
+  worktreePath: string | null,
+  projectPath?: string | null
+) {
   return useQuery<PortEntry[]>({
-    queryKey: ['ports', worktreePath],
+    queryKey: ['ports', worktreePath, projectPath ?? null],
     queryFn: async () => {
       if (!isTauri() || !worktreePath) return []
-      const ports = await invoke<PortEntry[]>('get_ports', { worktreePath })
+      const ports = await invoke<PortEntry[]>('get_ports', {
+        worktreePath,
+        projectPath: projectPath ?? null,
+      })
       return ports
     },
     enabled: !!worktreePath,

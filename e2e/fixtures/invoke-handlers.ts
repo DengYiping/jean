@@ -152,6 +152,9 @@ export const defaultResponses: Record<string, unknown> = {
   get_available_gh_versions: [],
 
   // Terminal
+  get_run_scripts: [],
+  get_build_script: null,
+  get_ports: [],
   kill_all_terminals: 0,
   has_active_terminal: false,
 

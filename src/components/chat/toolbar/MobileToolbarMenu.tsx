@@ -37,6 +37,7 @@ import {
 import {
   Sheet,
   SheetContent,
+  SheetDescription,
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
@@ -183,6 +184,7 @@ export function MobileToolbarMenu({
   const isMobile = useIsMobile()
   const [menuOpen, setMenuOpen] = useState(false)
   const [modelSheetOpen, setModelSheetOpen] = useState(false)
+  const [modeSheetOpen, setModeSheetOpen] = useState(false)
   const [modelSearchQuery, setModelSearchQuery] = useState('')
   const providerDisplayName = getProviderDisplayName(selectedProvider)
   const selectedModelLabel = filteredModelOptions.find(
@@ -193,6 +195,10 @@ export function MobileToolbarMenu({
     setMenuOpen(false)
     setModelSearchQuery('')
     requestAnimationFrame(() => setModelSheetOpen(true))
+  }
+  const openModeSheet = () => {
+    setMenuOpen(false)
+    requestAnimationFrame(() => setModeSheetOpen(true))
   }
   const normalizedModelQuery = modelSearchQuery.trim().toLowerCase()
   const visibleModelOptions = normalizedModelQuery
@@ -205,6 +211,31 @@ export function MobileToolbarMenu({
         )
       })
     : filteredModelOptions
+  const modeOptions = [
+    {
+      value: 'plan' as const,
+      label: 'Plan',
+      icon: ClipboardList,
+    },
+    {
+      value: 'build' as const,
+      label: 'Build',
+      icon: Hammer,
+    },
+    {
+      value: 'yolo' as const,
+      label: 'Yolo',
+      icon: Zap,
+    },
+  ]
+  const selectedModeOption =
+    modeOptions.find(option => option.value === executionMode) ??
+    ({
+      value: 'plan' as const,
+      label: 'Plan',
+      icon: ClipboardList,
+    } satisfies (typeof modeOptions)[number])
+  const SelectedModeIcon = selectedModeOption.icon
 
   return (
     <>
@@ -240,6 +271,49 @@ export function MobileToolbarMenu({
               L
             </span>
           </DropdownMenuItem>
+
+          <DropdownMenuSeparator />
+
+          {isMobile ? (
+            <DropdownMenuItem onSelect={openModeSheet}>
+              <SelectedModeIcon className="h-4 w-4" />
+              <span>Mode</span>
+              <span className="ml-auto w-16 text-right text-xs text-muted-foreground">
+                {selectedModeOption.label}
+              </span>
+              <ChevronRight className="ml-2 h-4 w-4 shrink-0" />
+            </DropdownMenuItem>
+          ) : (
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger className="[&>svg:last-child]:!ml-2">
+                <SelectedModeIcon className="mr-2 h-4 w-4" />
+                <span>Mode</span>
+                <span className="ml-auto w-16 text-right text-xs text-muted-foreground">
+                  {selectedModeOption.label}
+                </span>
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent>
+                <DropdownMenuRadioGroup
+                  value={executionMode}
+                  onValueChange={v => onSetExecutionMode(v as ExecutionMode)}
+                >
+                  <DropdownMenuRadioItem value="plan">
+                    Plan
+                  </DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="build">
+                    Build
+                  </DropdownMenuRadioItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuRadioItem
+                    value="yolo"
+                    className="text-red-600 focus:text-red-600 dark:text-red-400 dark:focus:text-red-400"
+                  >
+                    Yolo
+                  </DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          )}
 
           <DropdownMenuSeparator />
 
@@ -587,40 +661,49 @@ export function MobileToolbarMenu({
               </DropdownMenuSubContent>
             </DropdownMenuSub>
           )}
-
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger className="[&>svg:last-child]:!ml-2">
-              {executionMode === 'plan' && (
-                <ClipboardList className="mr-2 h-4 w-4" />
-              )}
-              {executionMode === 'build' && <Hammer className="mr-2 h-4 w-4" />}
-              {executionMode === 'yolo' && <Zap className="mr-2 h-4 w-4" />}
-              <span>Mode</span>
-              <span className="ml-auto w-16 text-right text-xs text-muted-foreground capitalize">
-                {executionMode}
-              </span>
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent>
-              <DropdownMenuRadioGroup
-                value={executionMode}
-                onValueChange={v => onSetExecutionMode(v as ExecutionMode)}
-              >
-                <DropdownMenuRadioItem value="plan">Plan</DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="build">
-                  Build
-                </DropdownMenuRadioItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuRadioItem
-                  value="yolo"
-                  className="text-red-600 focus:text-red-600 dark:text-red-400 dark:focus:text-red-400"
-                >
-                  Yolo
-                </DropdownMenuRadioItem>
-              </DropdownMenuRadioGroup>
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
         </DropdownMenuContent>
       </DropdownMenu>
+      <Sheet open={modeSheetOpen} onOpenChange={setModeSheetOpen}>
+        <SheetContent
+          side="bottom"
+          className="max-h-[75svh] rounded-t-xl p-0"
+          showCloseButton={false}
+        >
+          <SheetHeader className="border-b px-4 py-3">
+            <SheetTitle className="text-base">Select Mode</SheetTitle>
+            <SheetDescription className="sr-only">
+              Choose the execution mode for the next message.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="space-y-1 p-2">
+            {modeOptions.map(option => {
+              const Icon = option.icon
+              const selected = executionMode === option.value
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  aria-pressed={selected}
+                  className={cn(
+                    'flex min-h-12 w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm font-medium hover:bg-accent hover:text-accent-foreground',
+                    selected && 'bg-accent text-accent-foreground',
+                    option.value === 'yolo' &&
+                      'text-red-600 hover:text-red-600 dark:text-red-400 dark:hover:text-red-400'
+                  )}
+                  onClick={() => {
+                    onSetExecutionMode(option.value)
+                    setModeSheetOpen(false)
+                  }}
+                >
+                  <Icon className="h-4 w-4" />
+                  <span className="flex-1">{option.label}</span>
+                  {selected && <Check className="h-4 w-4" />}
+                </button>
+              )
+            })}
+          </div>
+        </SheetContent>
+      </Sheet>
       <Sheet open={modelSheetOpen} onOpenChange={setModelSheetOpen}>
         <SheetContent
           side="bottom"

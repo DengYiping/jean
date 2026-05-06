@@ -132,10 +132,13 @@ export const defaultResponses: Record<string, unknown> = {
   // CLI checks
   check_claude_cli_installed: { installed: true, version: '1.0.0' },
   check_claude_cli_auth: { authenticated: true },
+  uninstall_claude_cli: null,
   check_codex_cli_installed: { installed: true, version: '1.0.0' },
   check_codex_cli_auth: { authenticated: true },
+  uninstall_codex_cli: null,
   check_opencode_cli_installed: { installed: true, version: '1.0.0' },
   check_opencode_cli_auth: { authenticated: true },
+  uninstall_opencode_cli: null,
   resolve_claude_update_command: null,
   resolve_codex_update_command: null,
   check_gh_cli_installed: {
@@ -144,6 +147,7 @@ export const defaultResponses: Record<string, unknown> = {
     path: '/opt/homebrew/bin/gh',
   },
   check_gh_cli_auth: { authenticated: true },
+  uninstall_gh_cli: null,
   get_available_cli_versions: [],
   get_available_gh_versions: [],
 

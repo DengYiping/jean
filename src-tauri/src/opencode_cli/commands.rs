@@ -2,7 +2,8 @@
 #![allow(dead_code)] // Installation/update helpers are intentionally retained for dormant backend paths.
 
 use serde::{Deserialize, Serialize};
-use tauri::AppHandle;
+use std::path::PathBuf;
+use tauri::{AppHandle, Manager};
 
 use super::config::resolve_cli_command;
 use crate::http_server::EmitExt;
@@ -14,6 +15,7 @@ const GITHUB_REPO: &str = "anomalyco/opencode";
 /// Emergency fallback version when API fails AND no cache exists.
 const FALLBACK_OPENCODE_VERSION: &str = "0.4.1";
 const OPENCODE_VERSIONS_CACHE_FILE: &str = "opencode-versions-cache.json";
+const LEGACY_OPENCODE_CLI_DIR_NAME: &str = "opencode-cli";
 
 /// Status of the OpenCode CLI installation
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -69,6 +71,14 @@ struct PlatformAsset {
 enum ArchiveFormat {
     Zip,
     TarGz,
+}
+
+fn get_legacy_opencode_cli_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data directory: {e}"))?;
+    Ok(app_data_dir.join(LEGACY_OPENCODE_CLI_DIR_NAME))
 }
 
 /// List available OpenCode models by refreshing from the OpenCode CLI cache source.
@@ -633,6 +643,18 @@ pub async fn install_opencode_cli(_app: AppHandle, _version: Option<String>) -> 
         "Jean now uses the OpenCode CLI from your host system. Install `opencode` on your machine and restart or refresh Jean."
             .to_string(),
     )
+}
+
+/// Remove the legacy Jean-managed OpenCode CLI directory, if present.
+#[tauri::command]
+pub async fn uninstall_opencode_cli(app: AppHandle) -> Result<(), String> {
+    let cli_dir = get_legacy_opencode_cli_dir(&app)?;
+    if cli_dir.exists() {
+        std::fs::remove_dir_all(&cli_dir)
+            .map_err(|e| format!("Failed to remove OpenCode CLI directory: {e}"))?;
+        log::info!("Removed legacy Jean-managed OpenCode CLI at {:?}", cli_dir);
+    }
+    Ok(())
 }
 
 /// Extract a named binary from a tar.gz archive.

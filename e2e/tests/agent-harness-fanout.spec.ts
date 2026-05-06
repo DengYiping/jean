@@ -1,21 +1,12 @@
-import { test, expect } from '../fixtures/tauri-mock'
+import { test, expect, activateWorktree } from '../fixtures/tauri-mock'
 
 test.describe('Agent harness fan-out', () => {
   test('sends the draft prompt to selected harness worktrees', async ({
     mockPage,
   }) => {
-    await expect(mockPage.getByText('Test Project')).toBeVisible({
-      timeout: 5000,
-    })
-
     const firstWorktree = await mockPage.evaluate(() => {
       const handlers = (window as any).__JEAN_E2E_MOCK__?.invokeHandlers
-      const worktree = handlers.list_worktrees()[0]
-      handlers.create_session({
-        worktreeId: worktree.id,
-        worktreePath: worktree.path,
-      })
-      return worktree
+      return handlers.list_worktrees()[0]
     })
     await mockPage.evaluate(projectId => {
       const handlers = (window as any).__JEAN_E2E_MOCK__?.invokeHandlers
@@ -25,12 +16,9 @@ test.describe('Agent harness fan-out', () => {
       })
     }, firstWorktree.project_id)
 
-    await mockPage.keyboard.press('Meta+b')
-    await expect(mockPage.getByText('PROJECTS')).toBeVisible({ timeout: 3000 })
-    await mockPage.getByText(firstWorktree.name).click()
+    await activateWorktree(mockPage, firstWorktree.name)
 
     const textarea = mockPage.locator('textarea').first()
-    await expect(textarea).toBeVisible({ timeout: 3000 })
     await textarea.fill('Compare this implementation across harnesses')
 
     await mockPage

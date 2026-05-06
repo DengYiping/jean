@@ -40,10 +40,11 @@ test.describe('Navigation', () => {
     await mockPage.getByText('fuzzy-tiger').click()
     await mockPage.waitForTimeout(1000)
 
-    // Dashboard empty state should no longer be visible
     await expect(
-      mockPage.getByText('Your imagination is the only limit')
-    ).not.toBeVisible({ timeout: 3000 })
+      mockPage.getByRole('heading', {
+        name: /Test Project\s*›\s*fuzzy-tiger/,
+      })
+    ).toBeVisible({ timeout: 3000 })
   })
 
   test('right-click worktree can fork it', async ({ mockPage }) => {

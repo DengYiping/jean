@@ -231,6 +231,19 @@ function getDefaultModelForBackend(
   return preferences?.selected_model ?? 'claude-opus-4-7'
 }
 
+function getBackendFromModel(
+  model: string | null | undefined
+): Session['backend'] | undefined {
+  if (!model) return undefined
+  if (model.startsWith('opencode/')) {
+    return 'opencode'
+  }
+  if (model.startsWith('codex') || model.includes('codex')) {
+    return 'codex'
+  }
+  return undefined
+}
+
 function getPlanApprovalPromptOptions(
   preferences: AppPreferences | undefined
 ): {
@@ -279,6 +292,26 @@ export function useMessageHandlers({
   projectIdRef,
 }: UseMessageHandlersParams): MessageHandlers {
   'use no memo'
+
+  const getEffectiveSessionBackend = useCallback(
+    (sessionId: string): Session['backend'] => {
+      const session = queryClient.getQueryData<Session>(
+        chatQueryKeys.session(sessionId)
+      )
+      const preferences = queryClient.getQueryData<AppPreferences>(
+        preferencesQueryKeys.preferences()
+      )
+
+      return (
+        getBackendFromModel(session?.selected_model) ??
+        session?.backend ??
+        useChatStore.getState().selectedBackends[sessionId] ??
+        preferences?.default_backend ??
+        'claude'
+      )
+    },
+    [queryClient]
+  )
 
   const clearCachedWaitingState = useCallback(
     (
@@ -687,16 +720,16 @@ export function useMessageHandlers({
       const preferences = queryClient.getQueryData<AppPreferences>(
         preferencesQueryKeys.preferences()
       )
+      const sessionBackend = getEffectiveSessionBackend(sessionId)
       const message = buildPlanApprovalMessage({
         mode: 'build',
-        backend: useChatStore.getState().selectedBackends[sessionId],
+        backend: sessionBackend,
         updatedPlan,
         ...getPlanApprovalPromptOptions(preferences),
       })
       // Send approval message so the backend continues with execution
       // NOTE: setLastSentMessage is critical for permission denial flow - without it,
       // the denied message context won't be set and approval UI won't work
-      const sessionBackend = useChatStore.getState().selectedBackends[sessionId]
       const buildBackendOverride = buildBackendRef.current
       const overridesApply =
         !buildBackendOverride || buildBackendOverride === sessionBackend
@@ -781,6 +814,7 @@ export function useMessageHandlers({
       selectedThinkingLevelRef,
       selectedEffortLevelRef,
       useAdaptiveThinkingRef,
+      getEffectiveSessionBackend,
       buildModelRef,
       buildBackendRef,
       buildThinkingLevelRef,
@@ -844,15 +878,14 @@ export function useMessageHandlers({
       const preferences = queryClient.getQueryData<AppPreferences>(
         preferencesQueryKeys.preferences()
       )
+      const sessionBackendYolo = getEffectiveSessionBackend(sessionId)
       const message = buildPlanApprovalMessage({
         mode: 'yolo',
-        backend: useChatStore.getState().selectedBackends[sessionId],
+        backend: sessionBackendYolo,
         updatedPlan,
         ...getPlanApprovalPromptOptions(preferences),
       })
       // Resolve yolo overrides (skip if backend override doesn't match session)
-      const sessionBackendYolo =
-        useChatStore.getState().selectedBackends[sessionId]
       const yoloBackendOverride = yoloBackendRef.current
       const yoloOverridesApply =
         !yoloBackendOverride || yoloBackendOverride === sessionBackendYolo
@@ -938,6 +971,7 @@ export function useMessageHandlers({
       selectedThinkingLevelRef,
       selectedEffortLevelRef,
       useAdaptiveThinkingRef,
+      getEffectiveSessionBackend,
       yoloModelRef,
       yoloBackendRef,
       yoloThinkingLevelRef,
@@ -994,8 +1028,7 @@ export function useMessageHandlers({
     markAtBottom()
 
     // Resolve build overrides (skip if backend override doesn't match session)
-    const streamBuildSessionBackend =
-      useChatStore.getState().selectedBackends[sessionId]
+    const streamBuildSessionBackend = getEffectiveSessionBackend(sessionId)
     const streamBuildBackendOverride = buildBackendRef.current
     const streamBuildOverridesApply =
       !streamBuildBackendOverride ||
@@ -1024,7 +1057,7 @@ export function useMessageHandlers({
     )
     const buildApprovalMsg = buildPlanApprovalMessage({
       mode: 'build',
-      backend: useChatStore.getState().selectedBackends[sessionId],
+      backend: streamBuildSessionBackend,
       ...getPlanApprovalPromptOptions(preferences),
     })
     setLastSentMessage(sessionId, buildApprovalMsg)
@@ -1061,6 +1094,7 @@ export function useMessageHandlers({
     selectedThinkingLevelRef,
     selectedEffortLevelRef,
     useAdaptiveThinkingRef,
+    getEffectiveSessionBackend,
     buildModelRef,
     buildBackendRef,
     buildThinkingLevelRef,
@@ -1108,8 +1142,7 @@ export function useMessageHandlers({
     markAtBottom()
 
     // Resolve yolo overrides (skip if backend override doesn't match session)
-    const streamYoloSessionBackend =
-      useChatStore.getState().selectedBackends[sessionId]
+    const streamYoloSessionBackend = getEffectiveSessionBackend(sessionId)
     const streamYoloBackendOverride = yoloBackendRef.current
     const streamYoloOverridesApply =
       !streamYoloBackendOverride ||
@@ -1135,7 +1168,7 @@ export function useMessageHandlers({
     )
     const yoloApprovalMsg = buildPlanApprovalMessage({
       mode: 'yolo',
-      backend: useChatStore.getState().selectedBackends[sessionId],
+      backend: streamYoloSessionBackend,
       ...getPlanApprovalPromptOptions(preferences),
     })
     setLastSentMessage(sessionId, yoloApprovalMsg)
@@ -1172,6 +1205,7 @@ export function useMessageHandlers({
     selectedThinkingLevelRef,
     selectedEffortLevelRef,
     useAdaptiveThinkingRef,
+    getEffectiveSessionBackend,
     yoloModelRef,
     yoloBackendRef,
     yoloThinkingLevelRef,

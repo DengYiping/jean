@@ -13,7 +13,22 @@ test.describe('App loads', () => {
     ).toBeVisible({ timeout: 5000 })
   })
 
-  test('shows connected status', async ({ mockPage }) => {
-    await expect(mockPage.getByText('Connected')).toBeVisible({ timeout: 5000 })
+  test('shows quick menu actions', async ({ mockPage }) => {
+    await mockPage.getByRole('button', { name: 'Quick menu' }).click()
+    await expect(
+      mockPage.getByRole('menu', { name: 'Quick menu' })
+    ).toBeVisible({
+      timeout: 5000,
+    })
+    await expect(
+      mockPage.getByRole('menuitem', { name: 'Add Project' })
+    ).toBeVisible({
+      timeout: 5000,
+    })
+    await expect(
+      mockPage.getByRole('menuitem', { name: 'Archives' })
+    ).toBeVisible({
+      timeout: 5000,
+    })
   })
 })

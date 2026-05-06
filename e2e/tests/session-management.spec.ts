@@ -8,16 +8,18 @@ test.describe('Session Management', () => {
 
     await activateWorktree(mockPage, 'fuzzy-tiger')
 
+    const existingTabs = mockPage.locator('[data-session-id]')
+    await expect(existingTabs).toHaveCount(1, { timeout: 3000 })
+
     // Click new session button
-    await mockPage.locator('button[aria-label="New session"]').click()
+    await mockPage.getByRole('button', { name: 'New session' }).click()
     await mockPage.waitForTimeout(500)
 
-    // A session tab should appear with data-session-id
-    const sessionTab = mockPage.locator('[data-session-id]').first()
-    await expect(sessionTab).toBeVisible({ timeout: 3000 })
+    // The session modal should now show two session tabs
+    const sessionTabs = mockPage.locator('[data-session-id]')
+    await expect(sessionTabs).toHaveCount(2, { timeout: 3000 })
 
-    // Session name should contain "Session"
-    await expect(sessionTab).toContainText('Session')
+    await expect(sessionTabs.first()).toContainText('Session')
   })
 
   test('switch between sessions', async ({ mockPage }) => {
@@ -27,23 +29,20 @@ test.describe('Session Management', () => {
 
     await activateWorktree(mockPage, 'fuzzy-tiger')
 
-    // Create two sessions
-    await mockPage.locator('button[aria-label="New session"]').click()
-    await mockPage.waitForTimeout(500)
-    await mockPage.locator('button[aria-label="New session"]').click()
+    // Create a second session inside the modal
+    await mockPage.getByRole('button', { name: 'New session' }).click()
     await mockPage.waitForTimeout(500)
 
     // Should have 2 session tabs
     const tabs = mockPage.locator('[data-session-id]')
     await expect(tabs).toHaveCount(2, { timeout: 3000 })
 
-    // Click the second tab (older session — "Session 1")
+    // Click the older session tab and verify it becomes the active tab
     const secondTab = tabs.nth(1)
     await secondTab.click()
     await mockPage.waitForTimeout(500)
 
-    // The clicked tab should now have the active class (font-medium)
-    await expect(secondTab).toHaveClass(/font-medium/, { timeout: 2000 })
+    await expect(secondTab).toHaveClass(/bg-muted/, { timeout: 2000 })
   })
 
   test('rename session via double-click', async ({ mockPage }) => {
@@ -52,10 +51,6 @@ test.describe('Session Management', () => {
     })
 
     await activateWorktree(mockPage, 'fuzzy-tiger')
-
-    // Create a session
-    await mockPage.locator('button[aria-label="New session"]').click()
-    await mockPage.waitForTimeout(500)
 
     const sessionTab = mockPage.locator('[data-session-id]').first()
     await expect(sessionTab).toBeVisible({ timeout: 3000 })

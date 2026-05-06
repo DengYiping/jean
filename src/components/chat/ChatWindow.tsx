@@ -102,6 +102,7 @@ import { FloatingButtons } from './FloatingButtons'
 import { PlanDialog, type PlanDialogMode } from './PlanDialog'
 import { RecapDialog } from './RecapDialog'
 import { StreamingMessage } from './StreamingMessage'
+import { CompactStreamingTicker } from './CompactStreamingTicker'
 import { StreamingStatusBar } from './StreamingStatusBar'
 import { ChatErrorFallback } from './ChatErrorFallback'
 import { logger } from '@/lib/logger'
@@ -112,6 +113,7 @@ import {
   VirtualizedMessageList,
   type VirtualizedMessageListHandle,
 } from './VirtualizedMessageList'
+import { CompactMessageList } from './CompactMessageList'
 import {
   extractImagePaths,
   extractTextFilePaths,
@@ -2845,6 +2847,64 @@ export function ChatWindow({
                             <div className="text-muted-foreground">
                               Loading...
                             </div>
+                          ) : preferences?.compact_chat_view_enabled ? (
+                            <CompactMessageList
+                              ref={virtualizedListRef}
+                              messages={messages}
+                              scrollContainerRef={scrollViewportRef}
+                              totalMessages={messages.length}
+                              pendingPlanMessageId={
+                                pendingPlanMessage?.id ?? null
+                              }
+                              sessionId={deferredSessionId ?? ''}
+                              worktreePath={activeWorktreePath ?? ''}
+                              approveShortcut={approveShortcut}
+                              approveShortcutYolo={approveShortcutYolo}
+                              approveShortcutClearContext={
+                                approveShortcutClearContext
+                              }
+                              approveShortcutClearContextBuild={
+                                approveShortcutClearContextBuild
+                              }
+                              approveButtonRef={approveButtonRef}
+                              approvedPlanMessageIds={approvedPlanMessageIds}
+                              isSending={isSending}
+                              onPlanApproval={handlePlanApproval}
+                              onCustomBuildPrompt={openBuildCustomPromptDialog}
+                              onPlanApprovalYolo={handlePlanApprovalYolo}
+                              onClearContextApproval={
+                                handleClearContextApproval
+                              }
+                              onClearContextApprovalBuild={
+                                handleClearContextApprovalBuild
+                              }
+                              onWorktreeBuildApproval={
+                                worktree?.project_id
+                                  ? handleWorktreeBuildApproval
+                                  : undefined
+                              }
+                              onWorktreeYoloApproval={
+                                worktree?.project_id
+                                  ? handleWorktreeYoloApproval
+                                  : undefined
+                              }
+                              onQuestionAnswer={handleQuestionAnswer}
+                              onQuestionSkip={handleSkipQuestion}
+                              onFileClick={setViewingFilePath}
+                              onEditedFileClick={setViewingFilePath}
+                              onFixFinding={handleFixFinding}
+                              onFixAllFindings={handleFixAllFindings}
+                              isQuestionAnswered={isQuestionAnswered}
+                              getSubmittedAnswers={getSubmittedAnswers}
+                              areQuestionsSkipped={areQuestionsSkipped}
+                              isFindingFixed={isFindingFixed}
+                              onCopyToInput={handleCopyToInput}
+                              shouldScrollToBottom={isAtBottom}
+                              onScrollToBottomHandled={
+                                handleScrollToBottomHandled
+                              }
+                              completedDurationMs={completedDurationMs}
+                            />
                           ) : (
                             <VirtualizedMessageList
                               ref={virtualizedListRef}
@@ -2904,59 +2964,117 @@ export function ChatWindow({
                               completedDurationMs={completedDurationMs}
                             />
                           )}
-                          {isSending && activeSessionId && (
-                            <StreamingMessage
-                              sessionId={activeSessionId}
-                              worktreePath={activeWorktreePath ?? ''}
-                              contentBlocks={currentStreamingContentBlocks}
-                              toolCalls={currentToolCalls}
-                              streamingContent={streamingContent}
-                              selectedThinkingLevel={selectedThinkingLevel}
-                              approveShortcut={approveShortcut}
-                              approveShortcutYolo={approveShortcutYolo}
-                              approveShortcutClearContext={
-                                approveShortcutClearContext
-                              }
-                              approveShortcutClearContextBuild={
-                                approveShortcutClearContextBuild
-                              }
-                              approveButtonRef={approveButtonRef}
-                              onQuestionAnswer={handleQuestionAnswer}
-                              onQuestionSkip={handleSkipQuestion}
-                              onFileClick={setViewingFilePath}
-                              scrollViewportRef={scrollViewportRef}
-                              onEditedFileClick={setViewingFilePath}
-                              isQuestionAnswered={isQuestionAnswered}
-                              getSubmittedAnswers={getSubmittedAnswers}
-                              areQuestionsSkipped={areQuestionsSkipped}
-                              isStreamingPlanApproved={isStreamingPlanApproved}
-                              onStreamingPlanApproval={
-                                handleStreamingPlanApproval
-                              }
-                              onStreamingCustomBuildPrompt={
-                                openBuildCustomPromptDialog
-                              }
-                              onStreamingPlanApprovalYolo={
-                                handleStreamingPlanApprovalYolo
-                              }
-                              onStreamingClearContextApproval={
-                                handleStreamingClearContextApproval
-                              }
-                              onStreamingClearContextApprovalBuild={
-                                handleStreamingClearContextApprovalBuild
-                              }
-                              onStreamingWorktreeBuildApproval={
-                                worktree?.project_id
-                                  ? handleStreamingWorktreeBuildApproval
-                                  : undefined
-                              }
-                              onStreamingWorktreeYoloApproval={
-                                worktree?.project_id
-                                  ? handleStreamingWorktreeYoloApproval
-                                  : undefined
-                              }
-                            />
-                          )}
+                          {isSending &&
+                            activeSessionId &&
+                            (preferences?.compact_chat_view_enabled ? (
+                              <CompactStreamingTicker
+                                sessionId={activeSessionId}
+                                worktreePath={activeWorktreePath ?? ''}
+                                contentBlocks={currentStreamingContentBlocks}
+                                toolCalls={currentToolCalls}
+                                streamingContent={streamingContent}
+                                selectedThinkingLevel={selectedThinkingLevel}
+                                approveShortcut={approveShortcut}
+                                approveShortcutYolo={approveShortcutYolo}
+                                approveShortcutClearContext={
+                                  approveShortcutClearContext
+                                }
+                                approveShortcutClearContextBuild={
+                                  approveShortcutClearContextBuild
+                                }
+                                approveButtonRef={approveButtonRef}
+                                onQuestionAnswer={handleQuestionAnswer}
+                                onQuestionSkip={handleSkipQuestion}
+                                onFileClick={setViewingFilePath}
+                                scrollViewportRef={scrollViewportRef}
+                                onEditedFileClick={setViewingFilePath}
+                                isQuestionAnswered={isQuestionAnswered}
+                                getSubmittedAnswers={getSubmittedAnswers}
+                                areQuestionsSkipped={areQuestionsSkipped}
+                                isStreamingPlanApproved={
+                                  isStreamingPlanApproved
+                                }
+                                onStreamingPlanApproval={
+                                  handleStreamingPlanApproval
+                                }
+                                onStreamingCustomBuildPrompt={
+                                  openBuildCustomPromptDialog
+                                }
+                                onStreamingPlanApprovalYolo={
+                                  handleStreamingPlanApprovalYolo
+                                }
+                                onStreamingClearContextApproval={
+                                  handleStreamingClearContextApproval
+                                }
+                                onStreamingClearContextApprovalBuild={
+                                  handleStreamingClearContextApprovalBuild
+                                }
+                                onStreamingWorktreeBuildApproval={
+                                  worktree?.project_id
+                                    ? handleStreamingWorktreeBuildApproval
+                                    : undefined
+                                }
+                                onStreamingWorktreeYoloApproval={
+                                  worktree?.project_id
+                                    ? handleStreamingWorktreeYoloApproval
+                                    : undefined
+                                }
+                              />
+                            ) : (
+                              <StreamingMessage
+                                sessionId={activeSessionId}
+                                worktreePath={activeWorktreePath ?? ''}
+                                contentBlocks={currentStreamingContentBlocks}
+                                toolCalls={currentToolCalls}
+                                streamingContent={streamingContent}
+                                selectedThinkingLevel={selectedThinkingLevel}
+                                approveShortcut={approveShortcut}
+                                approveShortcutYolo={approveShortcutYolo}
+                                approveShortcutClearContext={
+                                  approveShortcutClearContext
+                                }
+                                approveShortcutClearContextBuild={
+                                  approveShortcutClearContextBuild
+                                }
+                                approveButtonRef={approveButtonRef}
+                                onQuestionAnswer={handleQuestionAnswer}
+                                onQuestionSkip={handleSkipQuestion}
+                                onFileClick={setViewingFilePath}
+                                scrollViewportRef={scrollViewportRef}
+                                onEditedFileClick={setViewingFilePath}
+                                isQuestionAnswered={isQuestionAnswered}
+                                getSubmittedAnswers={getSubmittedAnswers}
+                                areQuestionsSkipped={areQuestionsSkipped}
+                                isStreamingPlanApproved={
+                                  isStreamingPlanApproved
+                                }
+                                onStreamingPlanApproval={
+                                  handleStreamingPlanApproval
+                                }
+                                onStreamingCustomBuildPrompt={
+                                  openBuildCustomPromptDialog
+                                }
+                                onStreamingPlanApprovalYolo={
+                                  handleStreamingPlanApprovalYolo
+                                }
+                                onStreamingClearContextApproval={
+                                  handleStreamingClearContextApproval
+                                }
+                                onStreamingClearContextApprovalBuild={
+                                  handleStreamingClearContextApprovalBuild
+                                }
+                                onStreamingWorktreeBuildApproval={
+                                  worktree?.project_id
+                                    ? handleStreamingWorktreeBuildApproval
+                                    : undefined
+                                }
+                                onStreamingWorktreeYoloApproval={
+                                  worktree?.project_id
+                                    ? handleStreamingWorktreeYoloApproval
+                                    : undefined
+                                }
+                              />
+                            ))}
 
                           {/* Permission approval UI - shown when tools require approval (never in yolo mode) */}
                           {showPermissionApproval && activeSessionId && (

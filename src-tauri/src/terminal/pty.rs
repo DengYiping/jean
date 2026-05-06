@@ -21,6 +21,82 @@ fn shell_run_args(run_command: &str) -> [&str; 2] {
     ["-c", run_command]
 }
 
+fn decode_terminal_output_chunk(
+    bytes: &[u8],
+    carry: &mut [u8; 3],
+    carry_len: &mut usize,
+) -> Option<String> {
+    match std::str::from_utf8(bytes) {
+        Ok(_) => {
+            *carry_len = 0;
+            // SAFETY: validated above.
+            Some(unsafe { String::from_utf8_unchecked(bytes.to_vec()) })
+        }
+        Err(first_err) => {
+            let total = bytes.len();
+            let mut out = String::with_capacity(total);
+            let mut cursor = 0usize;
+            let mut err = first_err;
+
+            loop {
+                let valid_up_to = err.valid_up_to();
+                // SAFETY: from_utf8 verified this segment.
+                out.push_str(unsafe {
+                    std::str::from_utf8_unchecked(&bytes[cursor..cursor + valid_up_to])
+                });
+
+                match err.error_len() {
+                    None => {
+                        let tail_start = cursor + valid_up_to;
+                        let tail_len = total - tail_start;
+                        debug_assert!(tail_len <= 3);
+                        carry[..tail_len].copy_from_slice(&bytes[tail_start..total]);
+                        *carry_len = tail_len;
+                        break;
+                    }
+                    Some(bad_len) => {
+                        out.push('\u{FFFD}');
+                        cursor += valid_up_to + bad_len;
+                        if cursor >= total {
+                            *carry_len = 0;
+                            break;
+                        }
+                        match std::str::from_utf8(&bytes[cursor..]) {
+                            Ok(s) => {
+                                out.push_str(s);
+                                *carry_len = 0;
+                                break;
+                            }
+                            Err(next_err) => err = next_err,
+                        }
+                    }
+                }
+            }
+
+            if out.is_empty() {
+                None
+            } else {
+                Some(out)
+            }
+        }
+    }
+}
+
+fn flush_terminal_output_carry(carry_len: &mut usize) -> Option<String> {
+    if *carry_len == 0 {
+        return None;
+    }
+
+    let len = *carry_len;
+    *carry_len = 0;
+
+    let mut out = String::with_capacity(len * 3);
+    for _ in 0..len {
+        out.push('\u{FFFD}');
+    }
+    Some(out)
+}
+
 /// Spawn a terminal, optionally running a command
 ///
 /// When `command_args` is provided alongside `command`, the binary at `command`
@@ -168,27 +244,51 @@ pub fn spawn_terminal(
         log::error!("Failed to emit terminal:started event: {e}");
     }
 
-    // Spawn reader thread
+    // Spawn reader thread.
+    //
+    // Streaming UTF-8 decode: a `read()` can split a multi-byte codepoint at
+    // the buffer boundary. `from_utf8_lossy` would emit `U+FFFD` for the split
+    // bytes even though the stream is valid. Carry incomplete trailing bytes
+    // into the next read and keep lossy decoding semantics for genuinely
+    // invalid sequences.
     let app_clone = app.clone();
     let terminal_id_clone = terminal_id.clone();
     thread::spawn(move || {
-        let mut buf = [0u8; 4096];
+        const BUF_SIZE: usize = 4096;
+        let mut buf = [0u8; BUF_SIZE];
+        let mut carry = [0u8; 3];
+        let mut carry_len = 0usize;
+
         loop {
-            match reader.read(&mut buf) {
+            buf[..carry_len].copy_from_slice(&carry[..carry_len]);
+            let staged_len = carry_len;
+
+            match reader.read(&mut buf[staged_len..]) {
                 Ok(0) => {
-                    // EOF - terminal closed
                     log::trace!("Terminal EOF for: {terminal_id_clone}");
+                    if let Some(data) = flush_terminal_output_carry(&mut carry_len) {
+                        let event = TerminalOutputEvent {
+                            terminal_id: terminal_id_clone.clone(),
+                            data,
+                        };
+                        if let Err(e) = app_clone.emit_all("terminal:output", &event) {
+                            log::error!("Failed to emit terminal:output event: {e}");
+                        }
+                    }
                     break;
                 }
                 Ok(n) => {
-                    // Convert bytes to string (lossy conversion for non-UTF8)
-                    let data = String::from_utf8_lossy(&buf[..n]).to_string();
-                    let event = TerminalOutputEvent {
-                        terminal_id: terminal_id_clone.clone(),
-                        data,
-                    };
-                    if let Err(e) = app_clone.emit_all("terminal:output", &event) {
-                        log::error!("Failed to emit terminal:output event: {e}");
+                    let total = staged_len + n;
+                    if let Some(data) =
+                        decode_terminal_output_chunk(&buf[..total], &mut carry, &mut carry_len)
+                    {
+                        let event = TerminalOutputEvent {
+                            terminal_id: terminal_id_clone.clone(),
+                            data,
+                        };
+                        if let Err(e) = app_clone.emit_all("terminal:output", &event) {
+                            log::error!("Failed to emit terminal:output event: {e}");
+                        }
                     }
                 }
                 Err(e) => {
@@ -240,6 +340,58 @@ mod tests {
             super::shell_run_args("bun run tauri:dev"),
             ["-c", "bun run tauri:dev"]
         );
+    }
+
+    fn decode_chunks(chunks: &[&[u8]]) -> Vec<String> {
+        let mut carry = [0u8; 3];
+        let mut carry_len = 0usize;
+        let mut outputs = Vec::new();
+
+        for chunk in chunks {
+            let mut staged = Vec::with_capacity(carry_len + chunk.len());
+            staged.extend_from_slice(&carry[..carry_len]);
+            staged.extend_from_slice(chunk);
+
+            if let Some(output) =
+                super::decode_terminal_output_chunk(&staged, &mut carry, &mut carry_len)
+            {
+                outputs.push(output);
+            }
+        }
+
+        if let Some(output) = super::flush_terminal_output_carry(&mut carry_len) {
+            outputs.push(output);
+        }
+
+        outputs
+    }
+
+    #[test]
+    fn decode_terminal_output_chunk_preserves_split_multibyte_codepoint() {
+        let outputs = decode_chunks(&[&[0xE2, 0x82], &[0xAC]]);
+
+        assert_eq!(outputs, vec!["€".to_string()]);
+    }
+
+    #[test]
+    fn decode_terminal_output_chunk_emits_valid_prefix_before_split_tail() {
+        let outputs = decode_chunks(&[b"ab\xE2\x82", b"\xACcd"]);
+
+        assert_eq!(outputs, vec!["ab".to_string(), "€cd".to_string()]);
+    }
+
+    #[test]
+    fn decode_terminal_output_chunk_replaces_invalid_sequences() {
+        let outputs = decode_chunks(&[b"a\xFFb"]);
+
+        assert_eq!(outputs, vec!["a\u{FFFD}b".to_string()]);
+    }
+
+    #[test]
+    fn flush_terminal_output_carry_replaces_dangling_trailing_bytes_at_eof() {
+        let outputs = decode_chunks(&[&[0xE2, 0x82]]);
+
+        assert_eq!(outputs, vec!["\u{FFFD}\u{FFFD}".to_string()]);
     }
 }
 

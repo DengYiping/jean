@@ -114,6 +114,7 @@ describe('preferences service', () => {
         syntax_theme_light: 'github-light',
         session_recap_enabled: false,
         parallel_execution_prompt_enabled: false,
+        compact_chat_view_enabled: true,
         magic_prompts: DEFAULT_MAGIC_PROMPTS,
         magic_prompt_models: DEFAULT_MAGIC_PROMPT_MODELS,
         magic_prompt_providers: DEFAULT_MAGIC_PROMPT_PROVIDERS,
@@ -187,6 +188,7 @@ describe('preferences service', () => {
 
       expect(invoke).toHaveBeenCalledWith('load_preferences')
       expect(result.current.data?.theme).toBe('dark')
+      expect(result.current.data?.compact_chat_view_enabled).toBe(true)
     })
 
     it('returns defaults when not in Tauri context', async () => {
@@ -201,6 +203,7 @@ describe('preferences service', () => {
 
       expect(result.current.data?.theme).toBe('system')
       expect(result.current.data?.selected_model).toBe('claude-opus-4-7')
+      expect(result.current.data?.compact_chat_view_enabled).toBe(false)
     })
 
     it('returns defaults on backend error', async () => {
@@ -265,6 +268,7 @@ describe('preferences service', () => {
         syntax_theme_light: 'github-light',
         session_recap_enabled: false,
         parallel_execution_prompt_enabled: false,
+        compact_chat_view_enabled: false,
         magic_prompts: DEFAULT_MAGIC_PROMPTS,
         magic_prompt_models: DEFAULT_MAGIC_PROMPT_MODELS,
         magic_prompt_providers: DEFAULT_MAGIC_PROMPT_PROVIDERS,
@@ -369,6 +373,7 @@ describe('preferences service', () => {
         syntax_theme_light: 'github-light',
         session_recap_enabled: false,
         parallel_execution_prompt_enabled: false,
+        compact_chat_view_enabled: false,
         magic_prompts: DEFAULT_MAGIC_PROMPTS,
         magic_prompt_models: DEFAULT_MAGIC_PROMPT_MODELS,
         magic_prompt_providers: DEFAULT_MAGIC_PROMPT_PROVIDERS,
@@ -556,6 +561,7 @@ describe('preferences service', () => {
         syntax_theme_light: 'github-light',
         session_recap_enabled: false,
         parallel_execution_prompt_enabled: false,
+        compact_chat_view_enabled: false,
         magic_prompts: DEFAULT_MAGIC_PROMPTS,
         magic_prompt_models: DEFAULT_MAGIC_PROMPT_MODELS,
         magic_prompt_providers: DEFAULT_MAGIC_PROMPT_PROVIDERS,
@@ -663,6 +669,7 @@ describe('preferences service', () => {
         syntax_theme_light: 'github-light',
         session_recap_enabled: false,
         parallel_execution_prompt_enabled: false,
+        compact_chat_view_enabled: false,
         magic_prompts: DEFAULT_MAGIC_PROMPTS,
         magic_prompt_models: DEFAULT_MAGIC_PROMPT_MODELS,
         magic_prompt_providers: DEFAULT_MAGIC_PROMPT_PROVIDERS,
@@ -770,6 +777,7 @@ describe('preferences service', () => {
         syntax_theme_light: 'github-light',
         session_recap_enabled: false,
         parallel_execution_prompt_enabled: false,
+        compact_chat_view_enabled: false,
         magic_prompts: DEFAULT_MAGIC_PROMPTS,
         magic_prompt_models: DEFAULT_MAGIC_PROMPT_MODELS,
         magic_prompt_providers: DEFAULT_MAGIC_PROMPT_PROVIDERS,
@@ -875,6 +883,7 @@ describe('preferences service', () => {
         syntax_theme_light: 'github-light',
         session_recap_enabled: false,
         parallel_execution_prompt_enabled: false,
+        compact_chat_view_enabled: false,
         magic_prompts: DEFAULT_MAGIC_PROMPTS,
         magic_prompt_models: DEFAULT_MAGIC_PROMPT_MODELS,
         magic_prompt_providers: DEFAULT_MAGIC_PROMPT_PROVIDERS,

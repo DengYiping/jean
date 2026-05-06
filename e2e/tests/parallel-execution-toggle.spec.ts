@@ -136,10 +136,13 @@ const test = base.extend<{ mockPage: Page }>({
 })
 
 async function createSession(page: Page) {
-  await expect(page.getByText('Test Project')).toBeVisible({ timeout: 5000 })
   await activateWorktree(page, 'fuzzy-tiger')
-  await page.locator('button[aria-label="New session"]').click()
-  await page.waitForTimeout(500)
+}
+
+function parallelExecutionButton(page: Page) {
+  return page.getByRole('button', {
+    name: 'Parallel execution prompting',
+  })
 }
 
 test.describe('Parallel Execution Session Toggle', () => {
@@ -148,10 +151,10 @@ test.describe('Parallel Execution Session Toggle', () => {
   }) => {
     await createSession(mockPage)
 
-    const toggle = mockPage.getByRole('switch', {
-      name: 'Toggle parallel execution prompting for this session',
-    })
-    await expect(toggle).toHaveAttribute('data-state', 'checked')
+    await expect(parallelExecutionButton(mockPage)).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    )
   })
 
   test('persists a session-specific disable across reload', async ({
@@ -159,10 +162,8 @@ test.describe('Parallel Execution Session Toggle', () => {
   }) => {
     await createSession(mockPage)
 
-    const toggle = mockPage.getByRole('switch', {
-      name: 'Toggle parallel execution prompting for this session',
-    })
-    await expect(toggle).toHaveAttribute('data-state', 'checked')
+    const toggle = parallelExecutionButton(mockPage)
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true')
 
     await toggle.click()
     await mockPage.waitForTimeout(1000)
@@ -178,6 +179,11 @@ test.describe('Parallel Execution Session Toggle', () => {
     await mockPage.reload()
     await mockPage.waitForTimeout(1000)
 
-    await expect(toggle).toHaveAttribute('data-state', 'unchecked')
+    await createSession(mockPage)
+
+    await expect(parallelExecutionButton(mockPage)).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    )
   })
 })

@@ -65,4 +65,59 @@ test.describe('Navigation', () => {
       mockPage.getByRole('button', { name: 'fuzzy-tiger-fork' }).last()
     ).toBeVisible({ timeout: 3000 })
   })
+
+  test('right-click fork uses a stable slot when enabled', async ({
+    mockPage,
+  }) => {
+    await expect(mockPage.getByText('Test Project')).toBeVisible({
+      timeout: 5000,
+    })
+
+    const sourceWorktree = await mockPage.evaluate(() => {
+      const handlers = (window as any).__JEAN_E2E_MOCK__?.invokeHandlers
+      return handlers
+        .list_worktrees()
+        .find((worktree: any) => worktree.name === 'fuzzy-tiger')
+    })
+
+    await mockPage.evaluate(projectId => {
+      const handlers = (window as any).__JEAN_E2E_MOCK__?.invokeHandlers
+      handlers.update_project_settings({
+        projectId,
+        stableWorktreeSlotsEnabled: true,
+      })
+    }, sourceWorktree.project_id)
+
+    const projectsHeader = mockPage.getByText('PROJECTS')
+    if (!(await projectsHeader.isVisible().catch(() => false))) {
+      await mockPage.keyboard.press('Meta+b')
+      await mockPage.waitForTimeout(500)
+    }
+
+    await mockPage.getByText('fuzzy-tiger').click({ button: 'right' })
+    await mockPage.getByRole('menuitem', { name: 'Fork Worktree' }).click()
+
+    await expect(
+      mockPage.getByRole('button', { name: 'fuzzy-tiger-fork' }).last()
+    ).toBeVisible({ timeout: 3000 })
+
+    const { forkedWorktree, slots } = await mockPage.evaluate(projectId => {
+      const handlers = (window as any).__JEAN_E2E_MOCK__?.invokeHandlers
+      const worktrees = handlers.list_worktrees()
+      return {
+        forkedWorktree: worktrees.find(
+          (worktree: any) => worktree.name === 'fuzzy-tiger-fork'
+        ),
+        slots: handlers.list_worktree_slots({ projectId }),
+      }
+    }, sourceWorktree.project_id)
+
+    expect(slots).toHaveLength(1)
+    expect(slots[0].state).toBe('active')
+    expect(slots[0].worktree_id).toBe(forkedWorktree.id)
+    expect(forkedWorktree.stable_slot_id).toBe(slots[0].id)
+    expect(forkedWorktree.path).toBe(slots[0].path)
+    expect(forkedWorktree.path).toContain('/.jean-slots/')
+    expect(forkedWorktree.base_branch).toBe(sourceWorktree.branch)
+  })
 })

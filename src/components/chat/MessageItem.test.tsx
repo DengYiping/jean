@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@/test/test-utils'
+import { fireEvent, render, screen } from '@/test/test-utils'
 import { MessageItem } from './MessageItem'
 import type {
   ChatMessage,
@@ -7,6 +7,10 @@ import type {
   QuestionAnswer,
   ReviewFinding,
 } from '@/types/chat'
+
+vi.mock('@/services/preferences', () => ({
+  usePreferences: () => ({ data: {} }),
+}))
 
 function createPlanMessage(): ChatMessage {
   return {
@@ -163,5 +167,43 @@ describe('MessageItem', () => {
     expect(
       screen.queryByRole('button', { name: 'Approve' })
     ).not.toBeInTheDocument()
+  })
+
+  it('passes custom prompt actions through to the plan approval menu', () => {
+    const onCustomBuildPrompt = vi.fn()
+
+    render(
+      <MessageItem
+        message={createPlanMessage()}
+        messageIndex={0}
+        totalMessages={1}
+        pendingPlanMessageId="plan-msg-1"
+        hasFollowUpMessage={false}
+        sessionId="session-1"
+        worktreePath="/tmp/worktree"
+        approveShortcut="Cmd+Enter"
+        isSending={false}
+        onPlanApproval={vi.fn()}
+        onCustomBuildPrompt={onCustomBuildPrompt}
+        onPlanApprovalYolo={vi.fn()}
+        onQuestionAnswer={noopQuestionAnswer}
+        onQuestionSkip={vi.fn()}
+        onFileClick={vi.fn()}
+        onEditedFileClick={vi.fn()}
+        onFixFinding={noopFixFinding}
+        onFixAllFindings={noopFixAllFindings}
+        isQuestionAnswered={vi.fn(() => false)}
+        getSubmittedAnswers={vi.fn(() => undefined)}
+        areQuestionsSkipped={vi.fn(() => false)}
+        isFindingFixed={vi.fn(() => false)}
+      />
+    )
+
+    fireEvent.pointerDown(
+      screen.getByRole('button', { name: 'Approve options' })
+    )
+    fireEvent.click(screen.getByText('Custom Prompt...'))
+
+    expect(onCustomBuildPrompt).toHaveBeenCalledWith('plan-msg-1')
   })
 })

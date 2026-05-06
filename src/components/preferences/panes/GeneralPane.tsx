@@ -120,6 +120,8 @@ interface CleanupResult {
   deleted_sessions: number
 }
 
+type LegacyCliTarget = 'claude' | 'codex' | 'opencode' | 'gh'
+
 const SettingsSection: React.FC<{
   title: React.ReactNode
   actions?: React.ReactNode
@@ -166,6 +168,9 @@ export const GeneralPane: React.FC = () => {
   const reviewSound = normalizeNotificationSound(preferences?.review_sound)
   const [showDeleteAllDialog, setShowDeleteAllDialog] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [deleteCliTarget, setDeleteCliTarget] =
+    useState<LegacyCliTarget | null>(null)
+  const [isDeletingCli, setIsDeletingCli] = useState(false)
 
   // CLI status hooks
   const { data: cliStatus, isLoading: isCliLoading } = useClaudeCliStatus()
@@ -243,6 +248,57 @@ export const GeneralPane: React.FC = () => {
       setShowDeleteAllDialog(false)
     }
   }, [queryClient])
+
+  const handleConfirmDeleteCli = useCallback(async () => {
+    if (!deleteCliTarget) return
+
+    const target = deleteCliTarget
+    const targetDetails = {
+      claude: {
+        name: 'Claude CLI',
+        command: 'uninstall_claude_cli' as const,
+        queryKey: claudeCliQueryKeys.all,
+      },
+      codex: {
+        name: 'Codex CLI',
+        command: 'uninstall_codex_cli' as const,
+        queryKey: codexCliQueryKeys.all,
+      },
+      opencode: {
+        name: 'OpenCode CLI',
+        command: 'uninstall_opencode_cli' as const,
+        queryKey: opencodeCliQueryKeys.all,
+      },
+      gh: {
+        name: 'GitHub CLI',
+        command: 'uninstall_gh_cli' as const,
+        queryKey: ghCliQueryKeys.all,
+      },
+    }[target]
+
+    setIsDeletingCli(true)
+    const toastId = toast.loading(
+      `Removing legacy Jean-managed ${targetDetails.name} files...`
+    )
+
+    try {
+      await invoke(targetDetails.command)
+      await queryClient.invalidateQueries({ queryKey: targetDetails.queryKey })
+      toast.success(`Legacy ${targetDetails.name} files removed`, {
+        id: toastId,
+      })
+    } catch (error) {
+      toast.error(
+        `Failed to remove legacy ${targetDetails.name} files: ${error}`,
+        {
+          id: toastId,
+        }
+      )
+    } finally {
+      setIsDeletingCli(false)
+      setDeleteCliTarget(null)
+    }
+  }, [deleteCliTarget, queryClient])
 
   const handleModelChange = (value: ClaudeModel) => {
     if (preferences) {
@@ -821,6 +877,14 @@ export const GeneralPane: React.FC = () => {
                   >
                     Refresh
                   </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setDeleteCliTarget('claude')}
+                    disabled={isDeletingCli}
+                  >
+                    Remove legacy files
+                  </Button>
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
@@ -899,14 +963,24 @@ export const GeneralPane: React.FC = () => {
               {isGhLoading ? (
                 <Loader2 className="size-4 animate-spin text-muted-foreground" />
               ) : ghStatus?.installed ? (
-                <Button
-                  variant="outline"
-                  className="w-40 justify-between"
-                  onClick={() => openCliUpdateModal('gh')}
-                >
-                  {ghStatus.version ?? 'Installed'}
-                  <ChevronDown className="size-3" />
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    className="w-40 justify-between"
+                    onClick={() => openCliUpdateModal('gh')}
+                  >
+                    {ghStatus.version ?? 'Installed'}
+                    <ChevronDown className="size-3" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setDeleteCliTarget('gh')}
+                    disabled={isDeletingCli}
+                  >
+                    Remove legacy files
+                  </Button>
+                </div>
               ) : (
                 <Button
                   className="w-40"
@@ -1010,6 +1084,14 @@ export const GeneralPane: React.FC = () => {
                     onClick={handleRefreshCodexStatus}
                   >
                     Refresh
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setDeleteCliTarget('codex')}
+                    disabled={isDeletingCli}
+                  >
+                    Remove legacy files
                   </Button>
                 </div>
               ) : (
@@ -1125,6 +1207,14 @@ export const GeneralPane: React.FC = () => {
                     onClick={handleRefreshOpenCodeStatus}
                   >
                     Refresh
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setDeleteCliTarget('opencode')}
+                    disabled={isDeletingCli}
+                  >
+                    Remove legacy files
                   </Button>
                 </div>
               ) : (
@@ -2248,6 +2338,46 @@ export const GeneralPane: React.FC = () => {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {isDeleting ? 'Deleting...' : 'Delete All'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={deleteCliTarget !== null}
+        onOpenChange={open => {
+          if (!open) setDeleteCliTarget(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Remove legacy Jean-managed{' '}
+              {deleteCliTarget === 'claude'
+                ? 'Claude CLI'
+                : deleteCliTarget === 'codex'
+                  ? 'Codex CLI'
+                  : deleteCliTarget === 'opencode'
+                    ? 'OpenCode CLI'
+                    : 'GitHub CLI'}{' '}
+              files?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This cleans up any leftover Jean-managed files from older Jean
+              releases. It does not uninstall the CLI from your machine. Jean
+              will refresh the CLI status after cleanup.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeletingCli}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDeleteCli}
+              disabled={isDeletingCli}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeletingCli ? 'Removing...' : 'Remove'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

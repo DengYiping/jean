@@ -4,47 +4,27 @@ test.describe('Model Selection', () => {
   test('model selector shows current model in chat toolbar', async ({
     mockPage,
   }) => {
-    await expect(mockPage.getByText('Test Project')).toBeVisible({
-      timeout: 5000,
-    })
-
-    // Navigate to a worktree chat view
     await activateWorktree(mockPage, 'fuzzy-tiger')
 
-    // The default model is "sonnet" — toolbar should show "Sonnet" in a combobox
-    const modelCombobox = mockPage.locator('button[role="combobox"]', {
-      hasText: 'Sonnet',
-    })
-    await expect(modelCombobox).toBeVisible({ timeout: 3000 })
+    await expect(
+      mockPage.getByRole('button', { name: 'Sonnet 4.6' })
+    ).toBeVisible({ timeout: 3000 })
   })
 
   test('changing model updates the selector value', async ({ mockPage }) => {
-    await expect(mockPage.getByText('Test Project')).toBeVisible({
-      timeout: 5000,
-    })
-
     await activateWorktree(mockPage, 'fuzzy-tiger')
 
-    // Create a session first (model change requires an active session)
-    await mockPage.locator('button[aria-label="New session"]').click()
-    await mockPage.waitForTimeout(500)
-
-    // Click the model selector combobox
-    const modelCombobox = mockPage.locator('button[role="combobox"]', {
-      hasText: 'Sonnet',
-    })
-    await expect(modelCombobox).toBeVisible({ timeout: 3000 })
-    await modelCombobox.click()
+    const modelButton = mockPage.getByRole('button', { name: 'Sonnet 4.6' })
+    await expect(modelButton).toBeVisible({ timeout: 3000 })
+    await modelButton.click()
     await mockPage.waitForTimeout(200)
 
     // Select "Opus 4.7"
-    await mockPage.getByRole('option', { name: 'Opus 4.7' }).click()
+    await mockPage.getByRole('menuitemradio', { name: /^Opus 4\.7$/ }).click()
     await mockPage.waitForTimeout(500)
 
-    // Verify the selector now shows Opus 4.7
-    const updatedCombobox = mockPage.locator('button[role="combobox"]', {
-      hasText: 'Opus 4.7',
-    })
-    await expect(updatedCombobox).toBeVisible({ timeout: 3000 })
+    await expect(
+      mockPage.getByRole('button', { name: 'Opus 4.7' })
+    ).toBeVisible({ timeout: 3000 })
   })
 })

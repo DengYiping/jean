@@ -1270,6 +1270,18 @@ pub async fn install_codex_cli(_app: AppHandle, _version: Option<String>) -> Res
     )
 }
 
+/// Remove the legacy Jean-managed Codex CLI directory, if present.
+#[tauri::command]
+pub async fn uninstall_codex_cli(app: AppHandle) -> Result<(), String> {
+    let cli_dir = super::config::get_cli_dir(&app)?;
+    if cli_dir.exists() {
+        std::fs::remove_dir_all(&cli_dir)
+            .map_err(|e| format!("Failed to remove Codex CLI directory: {e}"))?;
+        log::info!("Removed legacy Jean-managed Codex CLI at {:?}", cli_dir);
+    }
+    Ok(())
+}
+
 /// Extract the codex binary from a tar.gz archive
 fn extract_tar_gz_binary(
     archive_content: &[u8],

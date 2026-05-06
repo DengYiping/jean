@@ -182,6 +182,29 @@ function mergeConsecutiveStackables(items: TimelineItem[]): TimelineItem[] {
 }
 
 /**
+ * Replay/snapshot paths may deliver text as many separate blocks, while live
+ * streaming coalesces them through addTextBlock. Normalize both paths so the
+ * timeline sees the same shape.
+ */
+export function coalesceContentBlocks(blocks: ContentBlock[]): ContentBlock[] {
+  const result: ContentBlock[] = []
+
+  for (const block of blocks) {
+    const last = result[result.length - 1]
+    if (block.type === 'text' && last?.type === 'text') {
+      result[result.length - 1] = {
+        type: 'text',
+        text: last.text + block.text,
+      }
+      continue
+    }
+    result.push(block)
+  }
+
+  return result
+}
+
+/**
  * Build a timeline from content blocks and tool calls
  * Preserves the order from content_blocks while grouping Tasks with their sub-tools
  *
@@ -193,6 +216,7 @@ export function buildTimeline(
   contentBlocks: ContentBlock[],
   toolCalls: ToolCall[]
 ): TimelineItem[] {
+  const normalizedBlocks = coalesceContentBlocks(contentBlocks)
   const result: TimelineItem[] = []
 
   // Build a map of tool calls by ID for quick lookup
@@ -221,7 +245,7 @@ export function buildTimeline(
   // Find Tasks and their sub-tools by processing content_blocks in order
   // This respects the actual output sequence - text blocks indicate Task completion
   let currentTaskId: string | null = null
-  for (const block of contentBlocks) {
+  for (const block of normalizedBlocks) {
     if (block.type === 'text' && block.text.trim()) {
       // Text breaks the Task context - the agent has returned
       currentTaskId = null
@@ -253,8 +277,8 @@ export function buildTimeline(
   let lastTextIndex: number | null = null
 
   // Process content blocks in order
-  for (let i = 0; i < contentBlocks.length; i++) {
-    const block = contentBlocks[i]
+  for (let i = 0; i < normalizedBlocks.length; i++) {
+    const block = normalizedBlocks[i]
     if (!block) continue
 
     if (block.type === 'thinking') {

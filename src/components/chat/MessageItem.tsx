@@ -183,7 +183,7 @@ export const MessageItem = memo(function MessageItem({
   approvedPlanMessageIds: _approvedPlanMessageIds,
   isSending,
   onPlanApproval,
-  onCustomBuildPrompt: _onCustomBuildPrompt,
+  onCustomBuildPrompt,
   onPlanApprovalYolo,
   onClearContextApproval,
   onClearContextApprovalBuild,
@@ -246,6 +246,10 @@ export const MessageItem = memo(function MessageItem({
   const handlePlanApprovalYolo = useCallback(() => {
     onPlanApprovalYolo?.(message.id)
   }, [onPlanApprovalYolo, message.id])
+
+  const handleCustomBuildPrompt = useCallback(() => {
+    onCustomBuildPrompt?.(message.id)
+  }, [onCustomBuildPrompt, message.id])
 
   // Stable callback for clear context approval
   const handleClearContextApproval = useCallback(() => {
@@ -658,6 +662,7 @@ export const MessageItem = memo(function MessageItem({
             hasFollowUpMessage={hasFollowUpMessage}
             hasUnresolvedQuestions={hasUnresolvedQuestions}
             onPlanApproval={handlePlanApproval}
+            onCustomBuildPrompt={handleCustomBuildPrompt}
             onPlanApprovalYolo={handlePlanApprovalYolo}
             onClearContextApproval={handleClearContextApproval}
             onClearContextBuildApproval={handleClearContextApprovalBuild}
@@ -759,6 +764,7 @@ export const MessageItem = memo(function MessageItem({
                 hasFollowUpMessage={hasFollowUpMessage}
                 hasUnresolvedQuestions={hasUnresolvedQuestions}
                 onPlanApproval={handlePlanApproval}
+                onCustomBuildPrompt={handleCustomBuildPrompt}
                 onPlanApprovalYolo={handlePlanApprovalYolo}
                 onClearContextApproval={handleClearContextApproval}
                 onClearContextBuildApproval={handleClearContextApprovalBuild}

@@ -977,27 +977,133 @@ export const test = base.extend<TauriMockFixtures>({
 export { expect }
 
 /**
- * Helper: open sidebar and click a worktree to activate it.
- * Waits for the chat view to appear.
+ * Helper: open a worktree from the current fork UI.
+ *
+ * The fork routes through the project canvas + SessionChatModal, so tests that
+ * need a chat session may have to seed/open one explicitly after the modal
+ * opens. This helper does that through the E2E mock transport.
  */
 export async function activateWorktree(
   page: Page,
-  worktreeName: string
+  worktreeName: string,
+  options: { ensureSession?: boolean } = {}
 ): Promise<void> {
-  // Ensure sidebar is visible
-  const projectsHeader = page.getByText('PROJECTS')
-  if (!(await projectsHeader.isVisible().catch(() => false))) {
-    await page.keyboard.press('Meta+b')
-    await page.waitForTimeout(500)
+  const { ensureSession = true } = options
+  const escapedWorktreeName = worktreeName.replace(
+    /[.*+?^${}()|[\]\\]/g,
+    '\\$&'
+  )
+
+  // Wait for the workspace shell to load before driving the mock-backed open flow.
+  await expect(page.getByRole('button', { name: 'Workspace' })).toBeVisible({
+    timeout: 5000,
+  })
+
+  const selection = await page.evaluate(
+    ({ targetWorktreeName, ensureSession }) => {
+      const mock = (window as any).__JEAN_E2E_MOCK__
+      const handlers = mock?.invokeHandlers
+      const worktrees = handlers?.list_worktrees?.()
+      const worktree = Array.isArray(worktrees)
+        ? worktrees.find(
+            (item: Record<string, unknown>) => item.name === targetWorktreeName
+          )
+        : null
+
+      if (!worktree) {
+        throw new Error(`Worktree not found in E2E mock: ${targetWorktreeName}`)
+      }
+
+      const projects = handlers?.list_projects?.()
+      const project = Array.isArray(projects)
+        ? projects.find(
+            (item: Record<string, unknown>) => item.id === worktree.project_id
+          )
+        : null
+
+      if (!ensureSession) {
+        return {
+          projectId: worktree.project_id,
+          projectName: String(project?.name ?? ''),
+          sessionId: null,
+          worktreeId: worktree.id,
+          worktreePath: worktree.path,
+        }
+      }
+
+      const sessionResult =
+        handlers?.get_sessions?.({
+          worktreeId: worktree.id,
+          worktreePath: worktree.path,
+        }) ?? null
+      const sessions = Array.isArray(sessionResult?.sessions)
+        ? sessionResult.sessions
+        : []
+
+      let sessionId =
+        (sessionResult?.active_session_id as string | null | undefined) ??
+        (sessions[0]?.id as string | undefined) ??
+        null
+
+      if (!sessionId) {
+        const created = handlers?.create_session?.({
+          worktreeId: worktree.id,
+          worktreePath: worktree.path,
+        })
+        sessionId = (created?.id as string | undefined) ?? null
+      }
+
+      if (!sessionId) {
+        throw new Error(
+          `Failed to create or locate a session for worktree: ${targetWorktreeName}`
+        )
+      }
+
+      return {
+        projectId: worktree.project_id,
+        projectName: String(project?.name ?? ''),
+        sessionId,
+        worktreeId: worktree.id,
+        worktreePath: worktree.path,
+      }
+    },
+    { targetWorktreeName: worktreeName, ensureSession }
+  )
+
+  if (selection.projectName) {
+    await expect(
+      page.getByRole('heading', { name: selection.projectName }).first()
+    ).toBeVisible({ timeout: 5000 })
   }
-  await expect(projectsHeader).toBeVisible({ timeout: 3000 })
 
-  // Click the worktree
-  await page.getByText(worktreeName).click()
-  await page.waitForTimeout(1000)
+  if (ensureSession) {
+    await page.evaluate(() => {
+      const mock = (window as any).__JEAN_E2E_MOCK__
+      mock?.eventEmitter?.dispatchEvent(
+        new CustomEvent('cache:invalidate', {
+          detail: { keys: ['sessions'] },
+        })
+      )
+    })
+  }
 
-  // Wait for chat view (dashboard empty state should be gone)
-  await expect(
-    page.getByText('Your imagination is the only limit')
-  ).not.toBeVisible({ timeout: 3000 })
+  const openCanvasButton = page
+    .getByRole('button', {
+      name: new RegExp(`Open\\s+${escapedWorktreeName}\\b`, 'i'),
+    })
+    .first()
+  if (await openCanvasButton.isVisible().catch(() => false)) {
+    await openCanvasButton.click()
+  } else {
+    await page.getByText(worktreeName, { exact: true }).first().click()
+  }
+
+  if (!ensureSession) {
+    await expect(page.getByRole('button', { name: 'New session' })).toBeVisible(
+      { timeout: 5000 }
+    )
+    return
+  }
+
+  await expect(page.locator('textarea').first()).toBeVisible({ timeout: 8000 })
 }

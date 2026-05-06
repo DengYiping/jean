@@ -121,10 +121,11 @@ test.describe('Keyboard shortcuts', () => {
     await mockPage.locator('[cmdk-input]').fill('calm-dolphin')
     await mockPage.keyboard.press('Enter')
 
-    await expect(mockPage.getByText('Test Project')).toBeVisible({
-      timeout: 3000,
-    })
-    await expect(mockPage.getByText('calm-dolphin')).toBeVisible({
+    await expect(
+      mockPage.getByRole('heading', {
+        name: /Test Project\s*›\s*calm-dolphin/,
+      })
+    ).toBeVisible({
       timeout: 3000,
     })
   })
@@ -148,10 +149,11 @@ test.describe('Keyboard shortcuts', () => {
       await mockPage.locator('[cmdk-input]').fill('Solo Project')
       await mockPage.keyboard.press('Enter')
 
-      await expect(mockPage.getByText('Solo Project')).toBeVisible({
-        timeout: 3000,
-      })
-      await expect(mockPage.getByText('solo-worktree')).toBeVisible({
+      await expect(
+        mockPage.getByRole('heading', {
+          name: /Solo Project\s*›\s*solo-worktree/,
+        })
+      ).toBeVisible({
         timeout: 3000,
       })
     })
@@ -184,10 +186,11 @@ test.describe('Keyboard shortcuts', () => {
       await mockPage.locator('[cmdk-input]').fill('beta')
       await mockPage.keyboard.press('Enter')
 
-      await expect(mockPage.getByText('Many Project')).toBeVisible({
-        timeout: 3000,
-      })
-      await expect(mockPage.getByText('beta-worktree')).toBeVisible({
+      await expect(
+        mockPage.getByRole('heading', {
+          name: /Many Project\s*›\s*beta-worktree/,
+        })
+      ).toBeVisible({
         timeout: 3000,
       })
     })

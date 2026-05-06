@@ -782,7 +782,6 @@ export function SessionChatModal({
               <div className="flex items-center gap-2 min-w-0">
                 <h2 className="text-sm font-medium min-w-0 flex-1 truncate">
                   {project && (
-                  {project && (
                     <span className="text-muted-foreground font-normal">
                       <button
                         type="button"
@@ -1139,299 +1138,309 @@ export function SessionChatModal({
           </div>
 
           {/* Session tabs */}
-          {sessions.length > 0 && (
-            <div className="shrink-0 border-b flex items-center gap-0.5 pr-4 relative">
-              {hasWaitingLeft && (
-                <button
-                  type="button"
-                  onClick={() => scrollToFirstWaiting('left')}
-                  className="absolute left-0 top-0 bottom-0 w-1 bg-yellow-500 animate-blink rounded-r z-10 cursor-pointer"
-                  aria-label="Scroll to waiting session"
-                />
-              )}
-              {hasWaitingRight && (
-                <button
-                  type="button"
-                  onClick={() => scrollToFirstWaiting('right')}
-                  className="absolute right-0 top-0 bottom-0 w-1 bg-yellow-500 animate-blink rounded-l z-10 cursor-pointer"
-                  aria-label="Scroll to waiting session"
-                />
-              )}
-              <ScrollArea
-                className="min-w-0 flex-1"
-                viewportClassName="overflow-x-auto overflow-y-hidden overscroll-x-contain overscroll-y-none touch-pan-x scrollbar-hide [-webkit-overflow-scrolling:touch]"
-                viewportRef={modalTabScrollRef}
-              >
-                <div className="flex min-w-max items-center gap-1.5 py-1 px-3">
-                  {sortedSessions.map((session, idx) => {
-                    const isActive = session.id === currentSessionId
-                    const status = getSessionStatus(session, storeState)
-                    const config = statusConfig[status]
-                    const chatState = useChatStore.getState()
-                    const sessionLabel = chatState.sessionLabels[session.id]
-                    const sessionHasPlan =
-                      !!planFilePaths[session.id] || !!session.plan_file_path
-                    const sessionHasRecap =
-                      !!sessionDigests[session.id] || !!session.digest
-                    const resumeCommand = getResumeCommand(session)
-                    return (
-                      <ContextMenu key={session.id}>
-                        <ContextMenuTrigger asChild>
-                          <button
-                            data-session-id={session.id}
-                            onClick={() => handleTabClick(session.id)}
-                            onDoubleClick={() =>
-                              handleStartRenameImmediate(
-                                session.id,
-                                session.name
-                              )
-                            }
-                            className={cn(
-                              'group/tab flex rounded items-center gap-2 px-2.5 py-1.5 text-xs transition-colors whitespace-nowrap border border-transparent',
-                              isActive
-                                ? 'bg-muted text-foreground'
-                                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
-                              status === 'waiting' &&
-                                'border-dashed border-yellow-500 dark:border-yellow-400'
-                            )}
-                          >
-                            <StatusIndicator
-                              status={config.indicatorStatus}
-                              variant={config.indicatorVariant}
-                              className="h-1.5 w-1.5"
-                            />
-                            {idx < 9 && (
-                              <kbd className="shrink-0 rounded border border-border/50 px-1 py-px text-[9px] font-medium leading-none text-muted-foreground/70">
-                                ⌘{idx + 1}
-                              </kbd>
-                            )}
-                            {renamingSessionId === session.id ? (
-                              <input
-                                ref={renameInputRef}
-                                type="text"
-                                value={renameValue}
-                                onChange={e => setRenameValue(e.target.value)}
-                                onBlur={() => handleRenameSubmit(session.id)}
-                                onKeyDown={e =>
-                                  handleRenameKeyDown(e, session.id)
-                                }
-                                onClick={e => e.stopPropagation()}
-                                className="w-full min-w-0 bg-transparent text-xs outline-none"
+          <div className="shrink-0 border-b flex items-center gap-0.5 pr-4 relative">
+            {sessions.length > 0 ? (
+              <>
+                {hasWaitingLeft && (
+                  <button
+                    type="button"
+                    onClick={() => scrollToFirstWaiting('left')}
+                    className="absolute left-0 top-0 bottom-0 w-1 bg-yellow-500 animate-blink rounded-r z-10 cursor-pointer"
+                    aria-label="Scroll to waiting session"
+                  />
+                )}
+                {hasWaitingRight && (
+                  <button
+                    type="button"
+                    onClick={() => scrollToFirstWaiting('right')}
+                    className="absolute right-0 top-0 bottom-0 w-1 bg-yellow-500 animate-blink rounded-l z-10 cursor-pointer"
+                    aria-label="Scroll to waiting session"
+                  />
+                )}
+                <ScrollArea
+                  className="min-w-0 flex-1"
+                  viewportClassName="overflow-x-auto overflow-y-hidden overscroll-x-contain overscroll-y-none touch-pan-x scrollbar-hide [-webkit-overflow-scrolling:touch]"
+                  viewportRef={modalTabScrollRef}
+                >
+                  <div className="flex min-w-max items-center gap-1.5 py-1 px-3">
+                    {sortedSessions.map((session, idx) => {
+                      const isActive = session.id === currentSessionId
+                      const status = getSessionStatus(session, storeState)
+                      const config = statusConfig[status]
+                      const chatState = useChatStore.getState()
+                      const sessionLabel = chatState.sessionLabels[session.id]
+                      const sessionHasPlan =
+                        !!planFilePaths[session.id] || !!session.plan_file_path
+                      const sessionHasRecap =
+                        !!sessionDigests[session.id] || !!session.digest
+                      const resumeCommand = getResumeCommand(session)
+                      return (
+                        <ContextMenu key={session.id}>
+                          <ContextMenuTrigger asChild>
+                            <button
+                              data-session-id={session.id}
+                              onClick={() => handleTabClick(session.id)}
+                              onDoubleClick={() =>
+                                handleStartRenameImmediate(
+                                  session.id,
+                                  session.name
+                                )
+                              }
+                              className={cn(
+                                'group/tab flex rounded items-center gap-2 px-2.5 py-1.5 text-xs transition-colors whitespace-nowrap border border-transparent',
+                                isActive
+                                  ? 'bg-muted text-foreground'
+                                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
+                                status === 'waiting' &&
+                                  'border-dashed border-yellow-500 dark:border-yellow-400'
+                              )}
+                            >
+                              <StatusIndicator
+                                status={config.indicatorStatus}
+                                variant={config.indicatorVariant}
+                                className="h-1.5 w-1.5"
                               />
-                            ) : (
-                              session.name
-                            )}
-                            {renamingSessionId !== session.id && (
-                              <DismissButton
-                                tooltip={
-                                  sessions.filter(s => !s.archived_at).length <=
-                                  1
-                                    ? 'Close worktree'
-                                    : 'Remove session'
-                                }
-                                onClick={e => {
-                                  e.stopPropagation()
-                                  const activeSessions = sessions.filter(
-                                    s => !s.archived_at
-                                  )
-                                  if (activeSessions.length <= 1) {
-                                    const action = () => {
-                                      handleDeleteSession(session.id)
-                                      onClose()
-                                    }
-                                    const sessionIsEmpty =
-                                      !session.message_count
-                                    if (
-                                      preferences?.confirm_session_close !==
-                                        false &&
-                                      !sessionIsEmpty
-                                    ) {
-                                      pendingCloseAction.current = action
-                                      setCloseConfirmOpen(true)
-                                    } else {
-                                      action()
-                                    }
-                                  } else {
-                                    handleArchiveSession(session.id)
+                              {idx < 9 && (
+                                <kbd className="shrink-0 rounded border border-border/50 px-1 py-px text-[9px] font-medium leading-none text-muted-foreground/70">
+                                  ⌘{idx + 1}
+                                </kbd>
+                              )}
+                              {renamingSessionId === session.id ? (
+                                <input
+                                  ref={renameInputRef}
+                                  type="text"
+                                  value={renameValue}
+                                  onChange={e => setRenameValue(e.target.value)}
+                                  onBlur={() => handleRenameSubmit(session.id)}
+                                  onKeyDown={e =>
+                                    handleRenameKeyDown(e, session.id)
                                   }
-                                }}
-                                className="ml-0.5 opacity-60 sm:opacity-0 sm:group-hover/tab:opacity-60 hover:!opacity-100"
-                                size="xs"
-                              />
-                            )}
-                          </button>
-                        </ContextMenuTrigger>
-                        <ContextMenuContent className="w-64">
-                          <ContextMenuItem
-                            onSelect={() =>
-                              handleStartRename(session.id, session.name)
-                            }
-                          >
-                            <Pencil className="mr-2 h-4 w-4" />
-                            Rename
-                          </ContextMenuItem>
-                          <ContextMenuItem
-                            onSelect={() => {
-                              setLabelTargetSessionId(session.id)
-                              setLabelModalOpen(true)
-                            }}
-                          >
-                            <Tag className="mr-2 h-4 w-4" />
-                            {sessionLabel ? 'Remove Label' : 'Add Label'}
-                          </ContextMenuItem>
-                          <ContextMenuItem
-                            onSelect={() => {
-                              const { reviewingSessions, setSessionReviewing } =
-                                useChatStore.getState()
-                              const isReviewing =
-                                reviewingSessions[session.id] ||
-                                !!session.review_results
-                              setSessionReviewing(session.id, !isReviewing)
-                            }}
-                          >
-                            {status === 'review' ? (
-                              <>
-                                <EyeOff className="mr-2 h-4 w-4" />
-                                Mark as Idle
-                              </>
-                            ) : (
-                              <>
-                                <Eye className="mr-2 h-4 w-4" />
-                                Mark for Review
-                              </>
-                            )}
-                          </ContextMenuItem>
-                          {resumeCommand && (
+                                  onClick={e => e.stopPropagation()}
+                                  className="w-full min-w-0 bg-transparent text-xs outline-none"
+                                />
+                              ) : (
+                                session.name
+                              )}
+                              {renamingSessionId !== session.id && (
+                                <DismissButton
+                                  tooltip={
+                                    sessions.filter(s => !s.archived_at)
+                                      .length <= 1
+                                      ? 'Close worktree'
+                                      : 'Remove session'
+                                  }
+                                  onClick={e => {
+                                    e.stopPropagation()
+                                    const activeSessions = sessions.filter(
+                                      s => !s.archived_at
+                                    )
+                                    if (activeSessions.length <= 1) {
+                                      const action = () => {
+                                        handleDeleteSession(session.id)
+                                        onClose()
+                                      }
+                                      const sessionIsEmpty =
+                                        !session.message_count
+                                      if (
+                                        preferences?.confirm_session_close !==
+                                          false &&
+                                        !sessionIsEmpty
+                                      ) {
+                                        pendingCloseAction.current = action
+                                        setCloseConfirmOpen(true)
+                                      } else {
+                                        action()
+                                      }
+                                    } else {
+                                      handleArchiveSession(session.id)
+                                    }
+                                  }}
+                                  className="ml-0.5 opacity-60 sm:opacity-0 sm:group-hover/tab:opacity-60 hover:!opacity-100"
+                                  size="xs"
+                                />
+                              )}
+                            </button>
+                          </ContextMenuTrigger>
+                          <ContextMenuContent className="w-64">
+                            <ContextMenuItem
+                              onSelect={() =>
+                                handleStartRename(session.id, session.name)
+                              }
+                            >
+                              <Pencil className="mr-2 h-4 w-4" />
+                              Rename
+                            </ContextMenuItem>
                             <ContextMenuItem
                               onSelect={() => {
-                                void navigator.clipboard
-                                  .writeText(resumeCommand)
-                                  .then(() =>
-                                    toast.success('Resume command copied')
-                                  )
-                                  .catch(() =>
-                                    toast.error('Failed to copy resume command')
-                                  )
+                                setLabelTargetSessionId(session.id)
+                                setLabelModalOpen(true)
                               }}
                             >
-                              <Terminal className="mr-2 h-4 w-4" />
-                              Copy Resume Command
+                              <Tag className="mr-2 h-4 w-4" />
+                              {sessionLabel ? 'Remove Label' : 'Add Label'}
                             </ContextMenuItem>
-                          )}
-                          <ContextMenuSeparator />
-                          <ContextMenuItem
-                            disabled={!sessionHasRecap}
-                            onSelect={() => {
-                              useChatStore
-                                .getState()
-                                .setActiveSession(worktreeId, session.id)
-                              requestAnimationFrame(() => {
-                                window.dispatchEvent(
-                                  new CustomEvent('open-recap')
-                                )
-                              })
-                            }}
-                          >
-                            <Sparkles className="mr-2 h-4 w-4" />
-                            Recap
-                          </ContextMenuItem>
-                          <ContextMenuItem
-                            disabled={!sessionHasPlan}
-                            onSelect={() => {
-                              useChatStore
-                                .getState()
-                                .setActiveSession(worktreeId, session.id)
-                              requestAnimationFrame(() => {
-                                window.dispatchEvent(
-                                  new CustomEvent('open-plan')
-                                )
-                              })
-                            }}
-                          >
-                            <FileText className="mr-2 h-4 w-4" />
-                            Plan
-                          </ContextMenuItem>
-                          <ContextMenuItem
-                            onSelect={() => handleArchiveSession(session.id)}
-                          >
-                            <Archive className="mr-2 h-4 w-4" />
-                            Archive Session
-                          </ContextMenuItem>
-                          <ContextMenuSeparator />
-                          <ContextMenuItem
-                            variant="destructive"
-                            onSelect={() => handleDeleteSession(session.id)}
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Delete Session
-                          </ContextMenuItem>
-                        </ContextMenuContent>
-                      </ContextMenu>
-                    )
-                  })}
-                </div>
-                <ScrollBar orientation="horizontal" className="h-1" />
-              </ScrollArea>
-              {!isMobile && (
-                <div className="flex items-center gap-0.5">
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          window.dispatchEvent(new CustomEvent('open-recap'))
-                        }
-                        className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground"
-                        aria-label="Recap"
-                      >
-                        <Sparkles
-                          className={cn(
-                            'h-3 w-3',
-                            hasRecap && 'text-yellow-500'
-                          )}
-                        />
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent>Recap (R)</TooltipContent>
-                  </Tooltip>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          window.dispatchEvent(new CustomEvent('open-plan'))
-                        }
-                        className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground"
-                        aria-label="Plan"
-                      >
-                        <FileText
-                          className={cn(
-                            'h-3 w-3',
-                            hasPlan && 'text-yellow-500'
-                          )}
-                        />
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent>Plan (P)</TooltipContent>
-                  </Tooltip>
-                </div>
-              )}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 w-6 p-0 shrink-0"
-                    aria-label="New session"
-                    onClick={handleCreateSession}
-                  >
-                    <Plus className="h-3 w-3" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>New session</TooltipContent>
-              </Tooltip>
-            </div>
-          )}
+                            <ContextMenuItem
+                              onSelect={() => {
+                                const {
+                                  reviewingSessions,
+                                  setSessionReviewing,
+                                } = useChatStore.getState()
+                                const isReviewing =
+                                  reviewingSessions[session.id] ||
+                                  !!session.review_results
+                                setSessionReviewing(session.id, !isReviewing)
+                              }}
+                            >
+                              {status === 'review' ? (
+                                <>
+                                  <EyeOff className="mr-2 h-4 w-4" />
+                                  Mark as Idle
+                                </>
+                              ) : (
+                                <>
+                                  <Eye className="mr-2 h-4 w-4" />
+                                  Mark for Review
+                                </>
+                              )}
+                            </ContextMenuItem>
+                            {resumeCommand && (
+                              <ContextMenuItem
+                                onSelect={() => {
+                                  void navigator.clipboard
+                                    .writeText(resumeCommand)
+                                    .then(() =>
+                                      toast.success('Resume command copied')
+                                    )
+                                    .catch(() =>
+                                      toast.error(
+                                        'Failed to copy resume command'
+                                      )
+                                    )
+                                }}
+                              >
+                                <Terminal className="mr-2 h-4 w-4" />
+                                Copy Resume Command
+                              </ContextMenuItem>
+                            )}
+                            <ContextMenuSeparator />
+                            <ContextMenuItem
+                              disabled={!sessionHasRecap}
+                              onSelect={() => {
+                                useChatStore
+                                  .getState()
+                                  .setActiveSession(worktreeId, session.id)
+                                requestAnimationFrame(() => {
+                                  window.dispatchEvent(
+                                    new CustomEvent('open-recap')
+                                  )
+                                })
+                              }}
+                            >
+                              <Sparkles className="mr-2 h-4 w-4" />
+                              Recap
+                            </ContextMenuItem>
+                            <ContextMenuItem
+                              disabled={!sessionHasPlan}
+                              onSelect={() => {
+                                useChatStore
+                                  .getState()
+                                  .setActiveSession(worktreeId, session.id)
+                                requestAnimationFrame(() => {
+                                  window.dispatchEvent(
+                                    new CustomEvent('open-plan')
+                                  )
+                                })
+                              }}
+                            >
+                              <FileText className="mr-2 h-4 w-4" />
+                              Plan
+                            </ContextMenuItem>
+                            <ContextMenuItem
+                              onSelect={() => handleArchiveSession(session.id)}
+                            >
+                              <Archive className="mr-2 h-4 w-4" />
+                              Archive Session
+                            </ContextMenuItem>
+                            <ContextMenuSeparator />
+                            <ContextMenuItem
+                              variant="destructive"
+                              onSelect={() => handleDeleteSession(session.id)}
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Delete Session
+                            </ContextMenuItem>
+                          </ContextMenuContent>
+                        </ContextMenu>
+                      )
+                    })}
+                  </div>
+                  <ScrollBar orientation="horizontal" className="h-1" />
+                </ScrollArea>
+                {!isMobile && currentSessionId && (
+                  <div className="flex items-center gap-0.5">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            window.dispatchEvent(new CustomEvent('open-recap'))
+                          }
+                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground"
+                          aria-label="Recap"
+                        >
+                          <Sparkles
+                            className={cn(
+                              'h-3 w-3',
+                              hasRecap && 'text-yellow-500'
+                            )}
+                          />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>Recap (R)</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            window.dispatchEvent(new CustomEvent('open-plan'))
+                          }
+                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground"
+                          aria-label="Plan"
+                        >
+                          <FileText
+                            className={cn(
+                              'h-3 w-3',
+                              hasPlan && 'text-yellow-500'
+                            )}
+                          />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>Plan (P)</TooltipContent>
+                    </Tooltip>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="flex min-w-0 flex-1 items-center px-3 py-1 text-xs text-muted-foreground">
+                No sessions
+              </div>
+            )}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 p-0 shrink-0"
+                  aria-label="New session"
+                  onClick={handleCreateSession}
+                >
+                  <Plus className="h-3 w-3" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>New session</TooltipContent>
+            </Tooltip>
+          </div>
 
           <div className="min-h-0 flex-1 overflow-hidden">
             {currentSessionId && (

@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tokio::sync::Mutex as AsyncMutex;
 
 use super::config::{resolve_cli_binary, resolve_update_command, ResolvedClaudeCommand};
@@ -48,10 +48,19 @@ const CLAUDE_OAUTH_CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 const CLAUDE_OAUTH_SCOPES: &str =
     "user:profile user:inference user:sessions:claude_code user:mcp_servers";
 const CLAUDE_USAGE_CACHE_TTL_SECS: u64 = 5 * 60;
+const LEGACY_CLAUDE_CLI_DIR_NAME: &str = "claude-cli";
 static CLAUDE_USAGE_FETCH_LOCK: OnceLock<AsyncMutex<()>> = OnceLock::new();
 
 fn claude_usage_fetch_lock() -> &'static AsyncMutex<()> {
     CLAUDE_USAGE_FETCH_LOCK.get_or_init(|| AsyncMutex::new(()))
+}
+
+fn get_legacy_claude_cli_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data directory: {e}"))?;
+    Ok(app_data_dir.join(LEGACY_CLAUDE_CLI_DIR_NAME))
 }
 
 /// Status of the Claude CLI installation
@@ -366,6 +375,18 @@ pub async fn install_claude_cli(_app: AppHandle, _version: Option<String>) -> Re
         "Jean now uses the Claude Code CLI from your host system. Install `claude` on your machine and restart or refresh Jean."
             .to_string(),
     )
+}
+
+/// Remove the legacy Jean-managed Claude CLI directory, if present.
+#[tauri::command]
+pub async fn uninstall_claude_cli(app: AppHandle) -> Result<(), String> {
+    let cli_dir = get_legacy_claude_cli_dir(&app)?;
+    if cli_dir.exists() {
+        std::fs::remove_dir_all(&cli_dir)
+            .map_err(|e| format!("Failed to remove Claude CLI directory: {e}"))?;
+        log::info!("Removed legacy Jean-managed Claude CLI at {:?}", cli_dir);
+    }
+    Ok(())
 }
 
 /// Result of checking Claude CLI authentication status

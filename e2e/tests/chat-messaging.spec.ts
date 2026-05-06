@@ -5,15 +5,7 @@ test.describe('Chat Messaging', () => {
     mockPage,
     emitEvent,
   }) => {
-    await expect(mockPage.getByText('Test Project')).toBeVisible({
-      timeout: 5000,
-    })
-
     await activateWorktree(mockPage, 'fuzzy-tiger')
-
-    // Create a session first
-    await mockPage.locator('button[aria-label="New session"]').click()
-    await mockPage.waitForTimeout(500)
 
     // Find the chat textarea and send a message
     const textarea = mockPage.locator('textarea').first()
@@ -57,15 +49,7 @@ test.describe('Chat Messaging', () => {
     mockPage,
     emitEvent,
   }) => {
-    await expect(mockPage.getByText('Test Project')).toBeVisible({
-      timeout: 5000,
-    })
-
     await activateWorktree(mockPage, 'fuzzy-tiger')
-
-    // Create a session
-    await mockPage.locator('button[aria-label="New session"]').click()
-    await mockPage.waitForTimeout(500)
 
     const textarea = mockPage.locator('textarea').first()
     await expect(textarea).toBeVisible({ timeout: 3000 })

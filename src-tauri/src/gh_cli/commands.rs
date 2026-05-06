@@ -9,7 +9,7 @@ use std::process::Command;
 use std::sync::RwLock;
 use tauri::AppHandle;
 
-use super::config::{find_gh_in_path, resolve_gh_binary};
+use super::config::{find_gh_in_path, get_gh_cli_dir, resolve_gh_binary};
 
 /// Emergency fallback version when API fails AND no cache exists.
 /// The download URL pattern is stable for any valid version, so staleness is acceptable.
@@ -534,6 +534,18 @@ fn fallback_gh_versions() -> Vec<GhReleaseInfo> {
 #[tauri::command]
 pub async fn install_gh_cli(_app: AppHandle, _version: Option<String>) -> Result<(), String> {
     Err("Jean no longer installs GitHub CLI. Install `gh` on your PATH and refresh.".to_string())
+}
+
+/// Remove the legacy Jean-managed GitHub CLI directory, if present.
+#[tauri::command]
+pub async fn uninstall_gh_cli(app: AppHandle) -> Result<(), String> {
+    let cli_dir = get_gh_cli_dir(&app)?;
+    if cli_dir.exists() {
+        std::fs::remove_dir_all(&cli_dir)
+            .map_err(|e| format!("Failed to remove GitHub CLI directory: {e}"))?;
+        log::info!("Removed legacy Jean-managed GitHub CLI at {:?}", cli_dir);
+    }
+    Ok(())
 }
 
 /// Result of checking GitHub CLI authentication status

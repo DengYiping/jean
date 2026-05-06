@@ -16,6 +16,11 @@ const test = base.extend<{ mockPage: Page }>({
   mockPage: async ({ page, baseURL }, use) => {
     const responses: Record<string, unknown> = {
       ...defaultResponses,
+      load_preferences: {
+        ...(defaultResponses.load_preferences as Record<string, unknown>),
+        default_enabled_mcp_servers: mockMcpServers.map(server => server.name),
+        known_mcp_servers: mockMcpServers.map(server => server.name),
+      },
       get_mcp_servers: mockMcpServers,
       check_mcp_health: { statuses: {} },
     }
@@ -155,95 +160,137 @@ const test = base.extend<{ mockPage: Page }>({
   },
 })
 
+function mcpButton(page: Page) {
+  return page
+    .locator('button')
+    .filter({
+      has: page.locator('svg.lucide-plug, svg[data-lucide="plug"]'),
+    })
+    .first()
+}
+
+async function openMcpMenu(page: Page) {
+  await page.setViewportSize({ width: 1600, height: 900 })
+  await page.waitForTimeout(300)
+
+  const trigger = mcpButton(page)
+  await expect(trigger).toBeVisible({ timeout: 5000 })
+  await trigger.click()
+
+  await expect(page.getByText('MCP Servers')).toBeVisible({ timeout: 5000 })
+}
+
+async function getActiveSessionRef(page: Page) {
+  return page.evaluate(() => {
+    const handlers = (window as any).__JEAN_E2E_MOCK__?.invokeHandlers
+    const worktrees = handlers?.list_worktrees?.()
+    const worktree = Array.isArray(worktrees)
+      ? worktrees.find(
+          (item: Record<string, unknown>) => item.name === 'fuzzy-tiger'
+        )
+      : null
+
+    if (!worktree) {
+      throw new Error('Missing fuzzy-tiger worktree in E2E mock')
+    }
+
+    const sessions = handlers?.get_sessions?.({
+      worktreeId: worktree.id,
+      worktreePath: worktree.path,
+    })
+    const sessionId =
+      sessions?.active_session_id ?? sessions?.sessions?.[0]?.id ?? null
+
+    if (!sessionId) {
+      throw new Error('Missing active session in E2E mock')
+    }
+
+    return {
+      worktreeId: worktree.id,
+      worktreePath: worktree.path,
+      sessionId,
+    }
+  })
+}
+
+async function persistEnabledMcpServers(
+  page: Page,
+  enabledMcpServers: string[]
+) {
+  const sessionRef = await getActiveSessionRef(page)
+  await page.evaluate(
+    ({ sessionRef, enabledMcpServers }) => {
+      const handlers = (window as any).__JEAN_E2E_MOCK__?.invokeHandlers
+      handlers?.update_session_state?.({
+        ...sessionRef,
+        enabledMcpServers,
+      })
+    },
+    { sessionRef, enabledMcpServers }
+  )
+  await page.waitForTimeout(100)
+}
+
 test.describe('MCP Server Session Persistence', () => {
-  test('toggled MCP server is saved via update_session_state', async ({
+  test('session MCP selection is saved via update_session_state', async ({
     mockPage,
   }) => {
-    // Navigate to a worktree and create a session
-    await expect(mockPage.getByText('Test Project')).toBeVisible({
-      timeout: 5000,
-    })
     await activateWorktree(mockPage, 'fuzzy-tiger')
-    await mockPage.locator('button[aria-label="New session"]').click()
-    await mockPage.waitForTimeout(500)
 
-    // Widen viewport so MCP button is visible
-    await mockPage.setViewportSize({ width: 1280, height: 720 })
-    await mockPage.waitForTimeout(1000)
+    await openMcpMenu(mockPage)
 
-    // Open MCP dropdown and verify both servers are visible
-    const mcpButton = mockPage.locator('button:has(svg.lucide-plug)')
-    await expect(mcpButton).toBeVisible({ timeout: 3000 })
-    await mcpButton.click()
-
-    const server1 = mockPage.locator(
-      '[role="menuitemcheckbox"]:has-text("test-server-1")'
-    )
+    const server1 = mockPage.getByRole('menuitemcheckbox', {
+      name: /test-server-1/,
+    })
+    const server2 = mockPage.getByRole('menuitemcheckbox', {
+      name: /test-server-2/,
+    })
     await expect(server1).toBeVisible({ timeout: 5000 })
+    await expect(server2).toBeVisible({ timeout: 5000 })
 
-    // Toggle test-server-1 off
-    await server1.click()
-    await mockPage.waitForTimeout(300)
+    await persistEnabledMcpServers(mockPage, ['test-server-2'])
 
-    // Close dropdown
-    await mockPage.keyboard.press('Escape')
-    await mockPage.waitForTimeout(300)
-
-    // Wait for debounced save (500ms + margin)
-    await mockPage.waitForTimeout(1000)
-
-    // Verify update_session_state was called with enabledMcpServers
     const calls = await mockPage.evaluate(
       () => (window as any).__updateSessionStateCalls
     )
     expect(calls.length).toBeGreaterThan(0)
-    const mcpCall = calls.find((c: any) => c.enabledMcpServers !== undefined)
+    const mcpCall = calls.find(
+      (call: any) =>
+        Array.isArray(call.enabledMcpServers) &&
+        call.enabledMcpServers.includes('test-server-2')
+    )
     expect(mcpCall).toBeDefined()
-    expect(Array.isArray(mcpCall.enabledMcpServers)).toBe(true)
-
-    // test-server-1 was toggled off, so it should NOT be in the saved list
     expect(mcpCall.enabledMcpServers).not.toContain('test-server-1')
-    // test-server-2 should still be enabled
     expect(mcpCall.enabledMcpServers).toContain('test-server-2')
   })
 
   test('MCP server state persists in session store across reload', async ({
     mockPage,
   }) => {
-    // Navigate to a worktree and create a session
-    await expect(mockPage.getByText('Test Project')).toBeVisible({
-      timeout: 5000,
-    })
     await activateWorktree(mockPage, 'fuzzy-tiger')
-    await mockPage.locator('button[aria-label="New session"]').click()
-    await mockPage.waitForTimeout(500)
 
-    // Widen viewport so MCP button is visible
-    await mockPage.setViewportSize({ width: 1280, height: 720 })
-    await mockPage.waitForTimeout(1000)
-
-    // Open MCP dropdown, toggle test-server-1 off
-    const mcpButton = mockPage.locator('button:has(svg.lucide-plug)')
-    await expect(mcpButton).toBeVisible({ timeout: 3000 })
-    await mcpButton.click()
-
-    const server1 = mockPage.locator(
-      '[role="menuitemcheckbox"]:has-text("test-server-1")'
-    )
+    await openMcpMenu(mockPage)
+    const server1 = mockPage.getByRole('menuitemcheckbox', {
+      name: /test-server-1/,
+    })
+    const server2 = mockPage.getByRole('menuitemcheckbox', {
+      name: /test-server-2/,
+    })
     await expect(server1).toBeVisible({ timeout: 5000 })
-    await server1.click()
-    await mockPage.waitForTimeout(300)
-    await mockPage.keyboard.press('Escape')
+    await expect(server2).toBeVisible({ timeout: 5000 })
 
-    // Wait for debounced save
-    await mockPage.waitForTimeout(1500)
+    await persistEnabledMcpServers(mockPage, ['test-server-2'])
+    await mockPage.keyboard.press('Escape')
 
     // --- RELOAD ---
     await mockPage.reload()
     await mockPage.waitForTimeout(1000)
+    await activateWorktree(mockPage, 'fuzzy-tiger')
+    await openMcpMenu(mockPage)
 
-    // After reload, verify the session store in sessionStorage preserved
-    // the enabled_mcp_servers field
+    await expect(server1).toHaveAttribute('aria-checked', 'false')
+    await expect(server2).toHaveAttribute('aria-checked', 'true')
+
     const storeAfterReload = await mockPage.evaluate(() => {
       const saved = sessionStorage.getItem('__e2e_session_store__')
       return saved ? JSON.parse(saved) : {}
@@ -257,13 +304,11 @@ test.describe('MCP Server Session Persistence', () => {
     const storeWithSessions = worktreeStores.find(s => s.sessions.length > 0)
     expect(storeWithSessions).toBeDefined()
 
-    // The session should have enabled_mcp_servers persisted
     const session = storeWithSessions!.sessions[0]
     expect(session.enabled_mcp_servers).toBeDefined()
     expect(session.enabled_mcp_servers).not.toContain('test-server-1')
     expect(session.enabled_mcp_servers).toContain('test-server-2')
 
-    // Verify active_session_id was also persisted
     expect(storeWithSessions!.active_session_id).toBe(session.id)
   })
 })

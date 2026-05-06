@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ContentBlock, ToolCall } from '@/types/chat'
-import { buildTimeline } from './tool-call-utils'
+import { buildTimeline, coalesceContentBlocks } from './tool-call-utils'
 
 describe('buildTimeline', () => {
   it('excludes FileChange tool calls from the inline timeline', () => {
@@ -61,5 +61,71 @@ describe('buildTimeline', () => {
     const timeline = buildTimeline(contentBlocks, toolCalls)
 
     expect(timeline).toHaveLength(0)
+  })
+
+  it('coalesces fragmented text deltas before rendering the timeline', () => {
+    const contentBlocks: ContentBlock[] = [
+      { type: 'text', text: 'Repo inspected.\n\n' },
+      { type: 'text', text: 'Plan:\n- Implement changes' },
+      { type: 'text', text: '\n- Add tests' },
+    ]
+
+    expect(coalesceContentBlocks(contentBlocks)).toEqual([
+      {
+        type: 'text',
+        text: 'Repo inspected.\n\nPlan:\n- Implement changes\n- Add tests',
+      },
+    ])
+
+    const timeline = buildTimeline(contentBlocks, [])
+
+    expect(timeline).toHaveLength(1)
+    expect(timeline[0]).toMatchObject({
+      type: 'text',
+      text: 'Repo inspected.\n\nPlan:\n- Implement changes\n- Add tests',
+    })
+  })
+
+  it('preserves tool grouping when snapshot text is split into multiple deltas', () => {
+    const toolCalls: ToolCall[] = [
+      {
+        id: 'task-1',
+        name: 'Task',
+        input: { description: 'Inspect code' },
+      },
+      {
+        id: 'bash-1',
+        name: 'Bash',
+        input: { command: 'pwd' },
+      },
+      {
+        id: 'read-1',
+        name: 'Read',
+        input: { file_path: 'src/App.tsx' },
+      },
+    ]
+
+    const contentBlocks: ContentBlock[] = [
+      { type: 'text', text: 'Starting' },
+      { type: 'text', text: ' now' },
+      { type: 'tool_use', tool_call_id: 'task-1' },
+      { type: 'tool_use', tool_call_id: 'bash-1' },
+      { type: 'tool_use', tool_call_id: 'read-1' },
+    ]
+
+    const timeline = buildTimeline(contentBlocks, toolCalls)
+
+    expect(timeline).toHaveLength(2)
+    expect(timeline[0]).toMatchObject({
+      type: 'text',
+      text: 'Starting now',
+    })
+    expect(timeline[1]).toMatchObject({
+      type: 'task',
+      taskTool: { id: 'task-1' },
+    })
+    expect(timeline[1]).toMatchObject({
+      subTools: [{ id: 'bash-1' }, { id: 'read-1' }],
+    })
   })
 })

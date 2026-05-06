@@ -150,6 +150,7 @@ export interface InitialData {
 
 let initialDataPromise: Promise<InitialData | null> | null = null
 let initialDataResolved = false
+const HTTP_FETCH_TIMEOUT = 12_000
 
 function hasBrowserTransportGlobals(): boolean {
   return (
@@ -157,6 +158,27 @@ function hasBrowserTransportGlobals(): boolean {
     typeof localStorage !== 'undefined' &&
     typeof WebSocket !== 'undefined'
   )
+}
+
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init?: RequestInit
+): Promise<Response> {
+  const controller = new AbortController()
+  let timeout: ReturnType<typeof setTimeout> | null = null
+  try {
+    return await Promise.race([
+      fetch(input, { ...init, signal: controller.signal }),
+      new Promise<Response>((_, reject) => {
+        timeout = setTimeout(() => {
+          controller.abort()
+          reject(new Error('HTTP request timed out'))
+        }, HTTP_FETCH_TIMEOUT)
+      }),
+    ])
+  } finally {
+    if (timeout) clearTimeout(timeout)
+  }
 }
 
 /**
@@ -208,7 +230,7 @@ export async function preloadInitialData(
   initialDataPromise = (async () => {
     try {
       const url = buildInitUrl({ selectedProjectId })
-      const response = await fetch(url)
+      const response = await fetchWithTimeout(url)
       if (!response.ok) {
         return null
       }
@@ -241,7 +263,7 @@ export async function refetchInitialData(
 
   try {
     const url = buildInitUrl({ selectedProjectId, activeSessionIds })
-    const response = await fetch(url)
+    const response = await fetchWithTimeout(url)
     if (!response.ok) return null
     return (await response.json()) as InitialData
   } catch {
@@ -314,6 +336,7 @@ class WsTransport {
   private _dataReady = false
   private _tokenValidated = false
   private _lastConnectTime = 0
+  private _connectStartedAt = 0
   private _reconnectPrefetch: Promise<InitialData | null> | null = null
   private _subscribers = new Set<() => void>()
   /** Track last seen seq per session for replay on reconnect. */
@@ -324,6 +347,10 @@ class WsTransport {
   private _lastSeqByTerminal = new Map<string, number>()
   /** Terminals that were running when we (potentially) disconnected. */
   private _activeTerminals = new Set<string>()
+
+  constructor() {
+    this.registerWakeHandlers()
+  }
 
   get connected(): boolean {
     return this._connected
@@ -423,6 +450,7 @@ class WsTransport {
     }
 
     this._connecting = true
+    this._connectStartedAt = Date.now()
 
     // On reconnect with a previously-validated token, skip auth HTTP
     // round-trip and go straight to WebSocket. If the token has been
@@ -445,7 +473,7 @@ class WsTransport {
       : `${window.location.origin}/api/auth`
 
     try {
-      const res = await fetch(authUrl)
+      const res = await fetchWithTimeout(authUrl)
       if (!res.ok) {
         // Invalid token — clear it, set error, don't reconnect
         localStorage.removeItem('jean-http-token')
@@ -476,6 +504,7 @@ class WsTransport {
     const host = window.location.host
     const url = `${protocol}//${host}/ws?token=${encodeURIComponent(token)}`
 
+    this._connectStartedAt = Date.now()
     this.ws = new WebSocket(url)
     this.clearConnectWatchdog()
     this.connectWatchdog = setTimeout(() => {
@@ -799,6 +828,53 @@ class WsTransport {
     }, delay)
   }
 
+  private registerWakeHandlers(): void {
+    if (
+      !hasBrowserTransportGlobals() ||
+      isNativeApp() ||
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (window as any).__JEAN_E2E_MOCK__
+    ) {
+      return
+    }
+
+    const wake = () => this.handleBrowserWake()
+    window.addEventListener('pageshow', wake)
+    window.addEventListener('focus', wake)
+    window.addEventListener('online', wake)
+    document.addEventListener('visibilitychange', wake)
+  }
+
+  private handleBrowserWake(): void {
+    if (!hasBrowserTransportGlobals()) return
+    if (document.visibilityState && document.visibilityState !== 'visible') {
+      return
+    }
+
+    const readyState = this.ws?.readyState
+    const isOpen = readyState === WebSocket.OPEN
+    const isConnecting = readyState === WebSocket.CONNECTING
+    const connectIsStale =
+      this._connectStartedAt > 0 &&
+      Date.now() - this._connectStartedAt >= WsTransport.CONNECT_TIMEOUT
+
+    if (this._connected && isOpen) return
+
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
+    }
+
+    if ((this._connecting || isConnecting) && !connectIsStale) return
+
+    if (this._connecting || this.ws) {
+      this.forceReconnectNow()
+      return
+    }
+
+    this.connect()
+  }
+
   private clearConnectWatchdog(): void {
     if (!this.connectWatchdog) return
     clearTimeout(this.connectWatchdog)
@@ -816,6 +892,25 @@ class WsTransport {
       return
     }
     this.scheduleReconnect()
+  }
+
+  private forceReconnectNow(): void {
+    this.clearConnectWatchdog()
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
+    }
+    if (this.ws) {
+      try {
+        this.ws.close()
+      } catch {
+        // Ignore close errors; this method immediately opens a fresh socket.
+      }
+    }
+    this.ws = null
+    this._connecting = false
+    this.setConnected(false)
+    this.connect()
   }
 }
 

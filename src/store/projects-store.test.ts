@@ -38,6 +38,17 @@ describe('ProjectsStore', () => {
       expect(useProjectsStore.getState().selectedWorktreeId).toBe('worktree-1')
     })
 
+    it('selects project and worktree in one update', () => {
+      const { selectProjectWorktree } = useProjectsStore.getState()
+
+      selectProjectWorktree('project-1', 'worktree-1')
+
+      const state = useProjectsStore.getState()
+      expect(state.selectedProjectId).toBe('project-1')
+      expect(state.selectedWorktreeId).toBe('worktree-1')
+      expect(state.projectAccessTimestamps['project-1']).toBeGreaterThan(0)
+    })
+
     it('clears selection with null', () => {
       const { selectProject, selectWorktree } = useProjectsStore.getState()
 

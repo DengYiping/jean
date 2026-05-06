@@ -277,6 +277,11 @@ interface ChatUIState {
     sessionId: string,
     options?: { markOpened?: boolean }
   ) => void
+  openWorktreeSessionInCanvas: (
+    worktreeId: string,
+    sessionId: string,
+    options?: { markOpened?: boolean }
+  ) => void
   getActiveSession: (worktreeId: string) => string | undefined
 
   // Actions - AI Review results management (session-scoped)
@@ -721,6 +726,42 @@ export const useChatStore = create<ChatUIState>()(
 
         if (options?.markOpened !== false) {
           // Fire-and-forget: update last_opened_at on the backend
+          invoke('set_session_last_opened', { sessionId })
+            .then(() => window.dispatchEvent(new CustomEvent('session-opened')))
+            .catch(() => undefined)
+        }
+      },
+
+      openWorktreeSessionInCanvas: (worktreeId, sessionId, options) => {
+        set(
+          state => {
+            if (
+              state.activeWorktreeId === null &&
+              state.activeWorktreePath === null &&
+              state.activeSessionIds[worktreeId] === sessionId &&
+              state.sessionWorktreeMap[sessionId] === worktreeId
+            ) {
+              return state
+            }
+
+            return {
+              activeWorktreeId: null,
+              activeWorktreePath: null,
+              activeSessionIds: {
+                ...state.activeSessionIds,
+                [worktreeId]: sessionId,
+              },
+              sessionWorktreeMap: {
+                ...state.sessionWorktreeMap,
+                [sessionId]: worktreeId,
+              },
+            }
+          },
+          undefined,
+          'openWorktreeSessionInCanvas'
+        )
+
+        if (options?.markOpened !== false) {
           invoke('set_session_last_opened', { sessionId })
             .then(() => window.dispatchEvent(new CustomEvent('session-opened')))
             .catch(() => undefined)

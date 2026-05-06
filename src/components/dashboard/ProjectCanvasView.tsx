@@ -1872,12 +1872,22 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
   useEffect(() => {
     const handleOpenSessionModal = (
       e: CustomEvent<{
+        projectId?: string
         sessionId: string
         worktreeId?: string
         worktreePath?: string
       }>
     ) => {
-      const { sessionId, worktreeId, worktreePath } = e.detail
+      const {
+        projectId: eventProjectId,
+        sessionId,
+        worktreeId,
+        worktreePath,
+      } = e.detail
+
+      if (eventProjectId && eventProjectId !== projectId) {
+        return
+      }
 
       // If worktreeId/worktreePath provided, open the modal for that worktree
       // (e.g. from UnreadBell navigating to a session on the project canvas)

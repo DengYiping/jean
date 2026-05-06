@@ -1,5 +1,5 @@
 import { Profiler, type ProfilerOnRenderCallback } from 'react'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { WorktreeItem } from './WorktreeItem'
 import { useChatStore } from '@/store/chat-store'
@@ -63,9 +63,13 @@ const worktree: Worktree = {
   order: 0,
 }
 
-const makeWorktree = (id: string, name: string): Worktree => ({
+const makeWorktree = (
+  id: string,
+  name: string,
+  projectId = 'project-1'
+): Worktree => ({
   id,
-  project_id: 'project-1',
+  project_id: projectId,
   name,
   path: `/repo/${id}`,
   branch: id,
@@ -101,6 +105,7 @@ describe('WorktreeItem', () => {
       activeWorktreeId: 'old-worktree',
       activeWorktreePath: '/repo/old-worktree',
       activeSessionIds: { 'worktree-1': 'session-existing' },
+      lastOpenedPerProject: {},
       sessionWorktreeMap: {},
       sendingSessionIds: {},
       activeToolCalls: {},
@@ -134,12 +139,17 @@ describe('WorktreeItem', () => {
     expect(useChatStore.getState().activeSessionIds['worktree-1']).toBe(
       'session-existing'
     )
+    expect(useChatStore.getState().lastOpenedPerProject['project-1']).toEqual({
+      worktreeId: 'worktree-1',
+      sessionId: 'session-existing',
+    })
 
     vi.advanceTimersByTime(50)
 
     expect(listener).toHaveBeenCalledTimes(1)
     const event = listener.mock.calls[0]?.[0] as CustomEvent
     expect(event.detail).toEqual({
+      projectId: 'project-1',
       sessionId: 'session-existing',
       worktreeId: 'worktree-1',
       worktreePath: '/repo/worktree-1',
@@ -228,16 +238,19 @@ describe('WorktreeItem', () => {
       .toMatchInlineSnapshot(`
         [
           {
+            "projectId": "project-1",
             "sessionId": "worktree-1-session",
             "worktreeId": "worktree-1",
             "worktreePath": "/repo/worktree-1",
           },
           {
+            "projectId": "project-1",
             "sessionId": "worktree-2-session",
             "worktreeId": "worktree-2",
             "worktreePath": "/repo/worktree-2",
           },
           {
+            "projectId": "project-1",
             "sessionId": "worktree-3-session",
             "worktreeId": "worktree-3",
             "worktreePath": "/repo/worktree-3",
@@ -260,5 +273,60 @@ describe('WorktreeItem', () => {
 
     window.removeEventListener('open-session-modal', listener)
     vi.useRealTimers()
+  })
+
+  it('does not show a selected highlight for stale worktree selection from another project', () => {
+    const projectOneWorktree = makeWorktree(
+      'worktree-project-one',
+      'Project One Worktree',
+      'project-1'
+    )
+    const projectTwoWorktree = makeWorktree(
+      'worktree-project-two',
+      'Project Two Worktree',
+      'project-2'
+    )
+
+    render(
+      <>
+        <WorktreeItem
+          worktree={projectOneWorktree}
+          projectId="project-1"
+          projectPath="/repo/project-1"
+          defaultBranch="main"
+        />
+        <WorktreeItem
+          worktree={projectTwoWorktree}
+          projectId="project-2"
+          projectPath="/repo/project-2"
+          defaultBranch="main"
+        />
+      </>
+    )
+
+    act(() => {
+      useProjectsStore.setState({
+        selectedProjectId: 'project-2',
+        selectedWorktreeId: 'worktree-project-two',
+      })
+    })
+
+    const projectOneRow = screen
+      .getByText('Project One Worktree')
+      .closest('div.cursor-pointer')
+    const projectTwoRow = screen
+      .getByText('Project Two Worktree')
+      .closest('div.cursor-pointer')
+
+    expect(projectOneRow?.className).not.toContain('bg-primary/10')
+    expect(projectTwoRow?.className).toContain('bg-primary/10')
+
+    act(() => {
+      useProjectsStore.getState().selectWorktree('worktree-project-one')
+    })
+
+    expect(useProjectsStore.getState().selectedProjectId).toBe('project-2')
+    expect(projectOneRow?.className).not.toContain('bg-primary/10')
+    expect(projectTwoRow?.className).not.toContain('bg-primary/10')
   })
 })

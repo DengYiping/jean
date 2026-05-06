@@ -205,6 +205,7 @@ describe('AgentBoardView', () => {
       expect(listener).toHaveBeenCalledTimes(1)
       const event = listener.mock.calls[0]?.[0] as CustomEvent
       expect(event.detail).toEqual({
+        projectId: 'project-1',
         sessionId: 'session-1',
         worktreeId: 'worktree-1',
         worktreePath: '/tmp/worktree',

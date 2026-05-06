@@ -62,6 +62,34 @@ export const test = base.extend<TauriMockFixtures>({
             | Array<Record<string, unknown>>
             | undefined) ?? []
         )
+        const latestTerminalRunBySession: Record<string, string> = {}
+        const terminalRunCountersBySession: Record<string, number> = {}
+        const invokeCalls: Array<{
+          command: string
+          args: Record<string, unknown> | undefined
+        }> = []
+
+        function recordTerminalRun(event: Event) {
+          const payload = (event as CustomEvent).detail as
+            | Record<string, unknown>
+            | undefined
+          const sessionId = payload?.session_id
+          if (typeof sessionId !== 'string' || !sessionId) return
+
+          const next = (terminalRunCountersBySession[sessionId] ?? 0) + 1
+          terminalRunCountersBySession[sessionId] = next
+          latestTerminalRunBySession[sessionId] = `e2e-terminal-run-${next}`
+          runBackendSupervisorAction(
+            sessionId,
+            typeof payload?.worktree_id === 'string'
+              ? payload.worktree_id
+              : undefined
+          )
+        }
+
+        eventEmitter.addEventListener('chat:done', recordTerminalRun)
+        eventEmitter.addEventListener('chat:error', recordTerminalRun)
+        eventEmitter.addEventListener('chat:cancelled', recordTerminalRun)
 
         function getWorktreeStore(worktreeId: string) {
           if (!sessionStore[worktreeId]) {
@@ -71,6 +99,158 @@ export const test = base.extend<TauriMockFixtures>({
             }
           }
           return sessionStore[worktreeId]
+        }
+
+        function findStoredSession(sessionId: string) {
+          for (const store of Object.values(sessionStore)) {
+            const session = store.sessions.find(item => item.id === sessionId)
+            if (session) return session
+          }
+          return null
+        }
+
+        function runBackendSupervisorAction(
+          sessionId: string,
+          eventWorktreeId: string | undefined
+        ) {
+          const session = findStoredSession(sessionId)
+          const action = session?.supervisor_action as
+            | Record<string, unknown>
+            | undefined
+          const runId = latestTerminalRunBySession[sessionId]
+          if (!session || !action || !runId) return
+          if (action.enabled !== true) return
+          if (action.last_handled_run_id === runId) return
+
+          const prompt =
+            typeof action.prompt === 'string' && action.prompt.trim()
+              ? action.prompt.trim()
+              : ''
+          const magicActions = Array.isArray(action.magic_actions)
+            ? action.magic_actions
+            : []
+          if (!prompt && magicActions.length === 0) return
+
+          if (prompt) {
+            const maxTurns =
+              typeof action.max_supervisor_created_turns === 'number'
+                ? action.max_supervisor_created_turns
+                : null
+            const currentCount =
+              typeof action.supervisor_created_turn_count === 'number'
+                ? action.supervisor_created_turn_count
+                : 0
+
+            if (maxTurns !== null && currentCount >= maxTurns) {
+              action.enabled = false
+              action.last_handled_run_id = runId
+              return
+            }
+
+            action.supervisor_created_turn_count = currentCount + 1
+          }
+
+          action.last_handled_run_id = runId
+
+          if (prompt) {
+            const maxTurns =
+              typeof action.max_supervisor_created_turns === 'number'
+                ? action.max_supervisor_created_turns
+                : null
+            const currentCount =
+              typeof action.supervisor_created_turn_count === 'number'
+                ? action.supervisor_created_turn_count
+                : 0
+            if (maxTurns !== null && currentCount >= maxTurns) {
+              action.enabled = false
+            }
+          }
+
+          const worktreeId =
+            eventWorktreeId ??
+            Object.entries(sessionStore).find(([, store]) =>
+              store.sessions.some(item => item.id === sessionId)
+            )?.[0]
+          const worktree =
+            worktreeStore.find(item => item.id === worktreeId) ??
+            worktreeStore[0]
+
+          for (const magicAction of magicActions) {
+            invokeCalls.push({
+              command: 'create_commit_with_ai',
+              args: {
+                worktreePath: worktree?.path,
+                customPrompt: null,
+                push: magicAction === 'commit_and_push',
+                remote: null,
+                prNumber: worktree?.pr_number ?? null,
+                model: undefined,
+                customProfileName: null,
+                reasoningEffort: null,
+                specificFiles: null,
+              },
+            })
+          }
+
+          if (!prompt) return
+
+          const queuedMessage = {
+            id: `supervisor-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            message: prompt,
+            pendingImages: [],
+            pendingFiles: [],
+            skills: [],
+            pendingTextFiles: [],
+            model:
+              (session.selected_model as string | undefined) ??
+              (session.backend === 'codex' ? 'gpt-5.4' : 'claude-opus-4-7'),
+            provider: (session.selected_provider as string | null) ?? null,
+            executionMode:
+              (session.selected_execution_mode as string | undefined) ?? 'plan',
+            thinkingLevel:
+              (session.selected_thinking_level as string | undefined) ?? 'off',
+            effortLevel: session.selected_effort_level as string | undefined,
+            backend: session.backend === 'claude' ? undefined : session.backend,
+            queuedAt: Date.now(),
+          }
+          const queue = Array.isArray(session.queued_messages)
+            ? session.queued_messages
+            : []
+          session.queued_messages = queue
+          queue.push(queuedMessage)
+
+          invokeCalls.push({
+            command: 'enqueue_message',
+            args: {
+              worktreeId: worktree?.id ?? worktreeId,
+              worktreePath: worktree?.path,
+              sessionId,
+              message: queuedMessage,
+            },
+          })
+
+          eventEmitter.dispatchEvent(
+            new CustomEvent('queue:updated', {
+              detail: { sessionId, queue: structuredClone(queue) },
+            })
+          )
+
+          if (queue.length === 1) {
+            invokeCalls.push({
+              command: 'send_chat_message',
+              args: {
+                sessionId,
+                worktreeId: worktree?.id ?? worktreeId,
+                worktreePath: worktree?.path,
+                message: prompt,
+                model: queuedMessage.model,
+                executionMode: queuedMessage.executionMode,
+                thinkingLevel: queuedMessage.thinkingLevel,
+                effortLevel: queuedMessage.effortLevel,
+                backend: queuedMessage.backend,
+              },
+            })
+          }
         }
 
         function deriveSessionState(session: Record<string, unknown>) {
@@ -703,8 +883,77 @@ export const test = base.extend<TauriMockFixtures>({
                 session.parallel_execution_prompt_enabled =
                   args.parallelExecutionPromptEnabled
               }
+              if (args?.supervisorAction !== undefined) {
+                session.supervisor_action = structuredClone(
+                  args.supervisorAction as unknown
+                )
+              }
             }
             return null
+          },
+          claim_supervisor_action_trigger: args => {
+            const sessionId = args?.sessionId as string | undefined
+            if (!sessionId) return null
+
+            const session = findStoredSession(sessionId)
+            const action = session?.supervisor_action as
+              | Record<string, unknown>
+              | undefined
+            const runId = latestTerminalRunBySession[sessionId]
+            if (!session || !action || !runId) return null
+            if (action.enabled !== true) return null
+            if (action.last_handled_run_id === runId) return null
+
+            const prompt =
+              typeof action.prompt === 'string' && action.prompt.trim()
+                ? action.prompt.trim()
+                : ''
+            const magicActions = Array.isArray(action.magic_actions)
+              ? action.magic_actions
+              : []
+            if (!prompt && magicActions.length === 0) return null
+
+            if (prompt) {
+              const maxTurns =
+                typeof action.max_supervisor_created_turns === 'number'
+                  ? action.max_supervisor_created_turns
+                  : null
+              const currentCount =
+                typeof action.supervisor_created_turn_count === 'number'
+                  ? action.supervisor_created_turn_count
+                  : 0
+
+              if (maxTurns !== null && currentCount >= maxTurns) {
+                action.enabled = false
+                action.last_handled_run_id = runId
+                return null
+              }
+
+              action.supervisor_created_turn_count = currentCount + 1
+            }
+
+            action.last_handled_run_id = runId
+            const actionToRun = structuredClone(action)
+
+            if (prompt) {
+              const maxTurns =
+                typeof action.max_supervisor_created_turns === 'number'
+                  ? action.max_supervisor_created_turns
+                  : null
+              const currentCount =
+                typeof action.supervisor_created_turn_count === 'number'
+                  ? action.supervisor_created_turn_count
+                  : 0
+              if (maxTurns !== null && currentCount >= maxTurns) {
+                action.enabled = false
+              }
+            }
+
+            return {
+              sessionId,
+              runId,
+              action: actionToRun,
+            }
           },
           get_session: args => {
             const wid = (args?.worktreeId as string) ?? 'unknown'
@@ -938,10 +1187,6 @@ export const test = base.extend<TauriMockFixtures>({
           }
         }
 
-        const invokeCalls: Array<{
-          command: string
-          args: Record<string, unknown> | undefined
-        }> = []
         const loggedHandlers: Record<string, (args?: any) => unknown> = {}
         for (const [cmd, handler] of Object.entries(handlers)) {
           loggedHandlers[cmd] = args => {

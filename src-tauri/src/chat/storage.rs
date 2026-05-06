@@ -702,6 +702,7 @@ pub fn load_sessions(
                 total_runs: 0,
                 loaded_run_start_index: 0,
                 scheduled_wakeup: None,
+                supervisor_action: None,
             };
             session.refresh_derived_state();
             session
@@ -800,6 +801,7 @@ where
                 total_runs: 0,
                 loaded_run_start_index: 0,
                 scheduled_wakeup: None,
+                supervisor_action: None,
             };
             session.refresh_derived_state();
             session

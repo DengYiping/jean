@@ -16,7 +16,8 @@ use super::storage::{
 };
 use super::types::{
     AllSessionsEntry, AllSessionsResponse, Backend, ChatMessage, ClaudeContext, EffortLevel,
-    LabelData, MessageRole, RunStatus, Session, SessionDigest, ThinkingLevel, UnreadSessionEntry,
+    LabelData, MessageRole, RunEntry, RunStatus, Session, SessionDigest, SessionMetadata,
+    SupervisorAction, SupervisorMagicAction, ThinkingLevel, UnreadSessionEntry,
     UnreadSessionsResponse, WorktreeIndex, WorktreeSessions,
 };
 use crate::claude_cli::resolve_cli_binary;
@@ -94,6 +95,14 @@ fn now() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
+}
+
+fn backend_as_str(backend: &Backend) -> &'static str {
+    match backend {
+        Backend::Claude => "claude",
+        Backend::Codex => "codex",
+        Backend::Opencode => "opencode",
+    }
 }
 
 fn resolve_codex_multi_agent_settings(
@@ -595,6 +604,7 @@ pub async fn update_session_state(
     selected_execution_mode: Option<Option<String>>,
     parallel_execution_prompt_enabled: Option<Option<bool>>,
     table_checked_rows: Option<std::collections::HashMap<String, Vec<u32>>>,
+    supervisor_action: Option<Option<SupervisorAction>>,
 ) -> Result<(), String> {
     log::trace!("Updating session state for: {session_id}");
 
@@ -665,6 +675,9 @@ pub async fn update_session_state(
             }
             if let Some(v) = table_checked_rows {
                 session.table_checked_rows = v;
+            }
+            if let Some(v) = supervisor_action {
+                session.supervisor_action = v;
             }
             let has_pending_permission_denials = !session.pending_permission_denials.is_empty()
                 || !session.pending_codex_mcp_elicitations.is_empty();
@@ -2650,6 +2663,12 @@ pub async fn send_chat_message(
                         }
                     }
                     emit_sessions_cache_invalidation(&app);
+                    spawn_supervisor_action_after_terminal_run(
+                        app.clone(),
+                        session_id.clone(),
+                        worktree_id.clone(),
+                        worktree_path.clone(),
+                    );
                 } else {
                     if let Err(mark_err) = run_log_writer.mark_crashed() {
                         log::warn!("Failed to mark run as crashed after thread error: {mark_err}");
@@ -2663,6 +2682,12 @@ pub async fn send_chat_message(
                             Ok(())
                         });
                     }
+                    spawn_supervisor_action_after_terminal_run(
+                        app.clone(),
+                        session_id.clone(),
+                        worktree_id.clone(),
+                        worktree_path.clone(),
+                    );
                 }
             }
             return Err(e);
@@ -2683,6 +2708,12 @@ pub async fn send_chat_message(
                     log::warn!("Failed to complete salvaged run after panic: {complete_err}");
                 }
                 emit_sessions_cache_invalidation(&app);
+                spawn_supervisor_action_after_terminal_run(
+                    app.clone(),
+                    session_id.clone(),
+                    worktree_id.clone(),
+                    worktree_path.clone(),
+                );
             } else {
                 if let Err(mark_err) = run_log_writer.mark_crashed() {
                     log::warn!("Failed to mark run as crashed after thread panic: {mark_err}");
@@ -2696,6 +2727,12 @@ pub async fn send_chat_message(
                         Ok(())
                     });
                 }
+                spawn_supervisor_action_after_terminal_run(
+                    app.clone(),
+                    session_id.clone(),
+                    worktree_id.clone(),
+                    worktree_path.clone(),
+                );
             }
             return Err(
                 "CLI execution thread closed unexpectedly (possible crash or panic)".to_string(),
@@ -2747,6 +2784,12 @@ pub async fn send_chat_message(
         if let Err(e) = run_log_writer.cancel(None, None) {
             log::warn!("Failed to cancel run log after error: {e}");
         }
+        spawn_supervisor_action_after_terminal_run(
+            app.clone(),
+            session_id.clone(),
+            worktree_id.clone(),
+            worktree_path.clone(),
+        );
         log::info!("[SendChat] EXIT session={session_id} reason=error_emitted");
         return Ok(ChatMessage {
             id: Uuid::new_v4().to_string(),
@@ -2810,6 +2853,12 @@ pub async fn send_chat_message(
         })?;
 
         log::info!("[SendChat] EXIT session={session_id} reason=cancelled_no_content");
+        spawn_supervisor_action_after_terminal_run(
+            app.clone(),
+            session_id.clone(),
+            worktree_id.clone(),
+            worktree_path.clone(),
+        );
         // Return a minimal cancelled message (not persisted, just for UI)
         return Ok(ChatMessage {
             id: Uuid::new_v4().to_string(),
@@ -2956,6 +3005,12 @@ pub async fn send_chat_message(
 
     // Emit cache invalidation so all clients (native + web) refetch authoritative state
     emit_sessions_cache_invalidation(&app);
+    spawn_supervisor_action_after_terminal_run(
+        app.clone(),
+        session_id.clone(),
+        worktree_id.clone(),
+        worktree_path.clone(),
+    );
 
     if was_cancelled {
         log::info!("[SendChat] EXIT session={session_id} reason=cancelled_with_content");
@@ -5669,6 +5724,391 @@ pub fn steer_codex_turn(session_id: String, input: String) -> Result<String, Str
 }
 
 // =============================================================================
+// Supervisor action commands
+// =============================================================================
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SupervisorActionClaim {
+    pub session_id: String,
+    pub run_id: String,
+    pub action: SupervisorAction,
+}
+
+fn is_terminal_run(run: &RunEntry) -> bool {
+    matches!(
+        run.status,
+        RunStatus::Completed | RunStatus::Cancelled | RunStatus::Crashed
+    )
+}
+
+fn claim_supervisor_action_from_metadata(
+    metadata: &mut SessionMetadata,
+) -> Option<SupervisorActionClaim> {
+    let run_id = metadata
+        .runs
+        .iter()
+        .rev()
+        .find(|run| is_terminal_run(run))
+        .map(|run| run.run_id.clone())?;
+
+    let action = metadata.supervisor_action.as_mut()?;
+    if !action.enabled || action.last_handled_run_id.as_deref() == Some(run_id.as_str()) {
+        return None;
+    }
+
+    let prompt_enabled = action
+        .prompt
+        .as_deref()
+        .is_some_and(|prompt| !prompt.trim().is_empty());
+    let has_magic_actions = !action.magic_actions.is_empty();
+    if !prompt_enabled && !has_magic_actions {
+        return None;
+    }
+
+    if prompt_enabled {
+        if let Some(max_turns) = action.max_supervisor_created_turns {
+            if action.supervisor_created_turn_count >= max_turns {
+                action.enabled = false;
+                action.last_handled_run_id = Some(run_id);
+                return None;
+            }
+        }
+        action.supervisor_created_turn_count += 1;
+    }
+
+    action.last_handled_run_id = Some(run_id.clone());
+    let action_to_run = action.clone();
+
+    if prompt_enabled {
+        if let Some(max_turns) = action.max_supervisor_created_turns {
+            if action.supervisor_created_turn_count >= max_turns {
+                action.enabled = false;
+            }
+        }
+    }
+
+    Some(SupervisorActionClaim {
+        session_id: metadata.id.clone(),
+        run_id,
+        action: action_to_run,
+    })
+}
+
+/// Atomically claims the supervisor action for the latest terminal run.
+/// Returns null if the action is disabled, already claimed by another client,
+/// or stopped by its configured turn-count limit.
+#[tauri::command]
+pub async fn claim_supervisor_action_trigger(
+    app: AppHandle,
+    session_id: String,
+) -> Result<Option<SupervisorActionClaim>, String> {
+    let claim = with_existing_metadata_mut(&app, &session_id, |metadata| {
+        claim_supervisor_action_from_metadata(metadata)
+    })?;
+
+    if claim.is_some() {
+        emit_sessions_cache_invalidation(&app);
+    }
+
+    Ok(claim)
+}
+
+fn supervisor_prompt(action: &SupervisorAction) -> Option<String> {
+    action
+        .prompt
+        .as_deref()
+        .map(str::trim)
+        .filter(|prompt| !prompt.is_empty())
+        .map(str::to_string)
+}
+
+fn supervisor_selected_model(metadata: &SessionMetadata, prefs: &crate::AppPreferences) -> String {
+    if let Some(model) = metadata
+        .selected_model
+        .as_deref()
+        .map(str::trim)
+        .filter(|model| !model.is_empty())
+    {
+        return model.to_string();
+    }
+
+    match metadata.backend {
+        Backend::Codex => prefs.selected_codex_model.clone(),
+        Backend::Opencode => prefs.selected_opencode_model.clone(),
+        Backend::Claude => prefs.selected_model.clone(),
+    }
+}
+
+fn build_supervisor_queued_message(
+    claim: &SupervisorActionClaim,
+    metadata: Option<&SessionMetadata>,
+    prefs: &crate::AppPreferences,
+) -> Option<serde_json::Value> {
+    let prompt = supervisor_prompt(&claim.action)?;
+    let backend = metadata.map(|m| m.backend.clone()).unwrap_or_else(|| {
+        match prefs.default_backend.as_str() {
+            "codex" => Backend::Codex,
+            "opencode" => Backend::Opencode,
+            _ => Backend::Claude,
+        }
+    });
+    let model = metadata
+        .map(|m| supervisor_selected_model(m, prefs))
+        .unwrap_or_else(|| match backend {
+            Backend::Codex => prefs.selected_codex_model.clone(),
+            Backend::Opencode => prefs.selected_opencode_model.clone(),
+            Backend::Claude => prefs.selected_model.clone(),
+        });
+    let provider = metadata.and_then(|m| m.selected_provider.clone());
+    let execution_mode = metadata
+        .and_then(|m| m.selected_execution_mode.clone())
+        .unwrap_or_else(|| "plan".to_string());
+    let thinking_level = metadata
+        .and_then(|m| m.selected_thinking_level.clone())
+        .unwrap_or(ThinkingLevel::Off);
+    let effort_level = metadata.and_then(|m| m.selected_effort_level.clone());
+
+    let mut message = serde_json::json!({
+        "id": Uuid::new_v4().to_string(),
+        "message": prompt,
+        "pendingImages": [],
+        "pendingFiles": [],
+        "skills": [],
+        "pendingTextFiles": [],
+        "model": model,
+        "provider": provider,
+        "executionMode": execution_mode,
+        "thinkingLevel": thinking_level,
+        "queuedAt": now() * 1000,
+    });
+
+    if let Some(effort_level) = effort_level {
+        message["effortLevel"] = serde_json::json!(effort_level);
+    }
+    if backend != Backend::Claude {
+        message["backend"] = serde_json::json!(backend_as_str(&backend));
+    }
+
+    Some(message)
+}
+
+fn enqueue_supervisor_prompt(
+    app: &AppHandle,
+    session_id: &str,
+    message: serde_json::Value,
+) -> Result<(Vec<serde_json::Value>, bool), String> {
+    let (queue, was_empty) = with_existing_metadata_mut(app, session_id, |metadata| {
+        let was_empty = metadata.queued_messages.is_empty();
+        metadata.queued_messages.push(message);
+        (metadata.queued_messages.clone(), was_empty)
+    })?;
+
+    app.emit_all(
+        "queue:updated",
+        &serde_json::json!({ "sessionId": session_id, "queue": queue }),
+    )
+    .ok();
+
+    Ok((queue, was_empty))
+}
+
+fn spawn_supervisor_prompt_turn(
+    app: AppHandle,
+    worktree_id: String,
+    worktree_path: String,
+    session_id: String,
+    message_id: String,
+) {
+    tauri::async_runtime::spawn(async move {
+        if super::registry::is_session_actively_managed(&session_id) {
+            return;
+        }
+
+        let metadata = match load_metadata(&app, &session_id) {
+            Ok(Some(metadata)) => metadata,
+            Ok(None) => return,
+            Err(error) => {
+                log::warn!(
+                    "[SupervisorAction] Failed to load metadata before sending prompt for session={session_id}: {error}"
+                );
+                return;
+            }
+        };
+        if metadata.waiting_for_input {
+            return;
+        }
+
+        let dequeued = match dequeue_message(
+            app.clone(),
+            worktree_id.clone(),
+            worktree_path.clone(),
+            session_id.clone(),
+        )
+        .await
+        {
+            Ok(Some(message)) => message,
+            Ok(None) => return,
+            Err(error) => {
+                log::error!(
+                    "[SupervisorAction] Failed to dequeue supervisor prompt for session={session_id}: {error}"
+                );
+                return;
+            }
+        };
+
+        if dequeued.get("id").and_then(|value| value.as_str()) != Some(message_id.as_str()) {
+            let _ = with_existing_metadata_mut(&app, &session_id, |metadata| {
+                metadata.queued_messages.insert(0, dequeued.clone());
+            });
+            return;
+        }
+
+        let prompt = dequeued
+            .get("message")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default()
+            .to_string();
+        if prompt.trim().is_empty() {
+            return;
+        }
+
+        let model = dequeued
+            .get("model")
+            .and_then(|value| value.as_str())
+            .map(str::to_string);
+        let execution_mode = dequeued
+            .get("executionMode")
+            .and_then(|value| value.as_str())
+            .map(str::to_string);
+        let thinking_level = dequeued
+            .get("thinkingLevel")
+            .cloned()
+            .and_then(|value| serde_json::from_value::<ThinkingLevel>(value).ok());
+        let effort_level = dequeued
+            .get("effortLevel")
+            .cloned()
+            .and_then(|value| serde_json::from_value::<EffortLevel>(value).ok());
+        let custom_profile_name = dequeued
+            .get("provider")
+            .and_then(|value| value.as_str())
+            .map(str::to_string);
+        let backend = dequeued
+            .get("backend")
+            .and_then(|value| value.as_str())
+            .map(str::to_string);
+
+        if let Err(error) = Box::pin(send_chat_message(
+            app.clone(),
+            session_id.clone(),
+            worktree_id.clone(),
+            worktree_path.clone(),
+            prompt,
+            model,
+            execution_mode,
+            thinking_level,
+            effort_level,
+            None,
+            None,
+            None,
+            None,
+            None,
+            custom_profile_name,
+            backend,
+        ))
+        .await
+        {
+            log::error!(
+                "[SupervisorAction] Failed to start supervisor prompt turn for session={session_id}: {error}"
+            );
+        }
+    });
+}
+
+async fn run_supervisor_action_after_terminal_run(
+    app: AppHandle,
+    session_id: String,
+    worktree_id: String,
+    worktree_path: String,
+) -> Result<(), String> {
+    let Some(claim) = claim_supervisor_action_trigger(app.clone(), session_id.clone()).await?
+    else {
+        return Ok(());
+    };
+
+    let prefs = crate::load_preferences(app.clone())
+        .await
+        .unwrap_or_default();
+    let worktree = load_projects_data(&app).ok().and_then(|data| {
+        data.worktrees.into_iter().find(|worktree| {
+            worktree.id.as_str() == worktree_id || worktree.path.as_str() == worktree_path
+        })
+    });
+
+    for action in &claim.action.magic_actions {
+        let push = matches!(action, SupervisorMagicAction::CommitAndPush);
+
+        if let Err(error) = crate::projects::create_commit_with_ai(
+            app.clone(),
+            worktree_path.clone(),
+            prefs.magic_prompts.commit_message.clone(),
+            push,
+            None,
+            worktree.as_ref().and_then(|worktree| worktree.pr_number),
+            Some(prefs.magic_prompt_models.commit_message_model.clone()),
+            prefs.magic_prompt_providers.commit_message_provider.clone(),
+            prefs.magic_prompt_efforts.commit_message_effort.clone(),
+            None,
+        )
+        .await
+        {
+            log::error!(
+                "[SupervisorAction] Magic action failed for session={session_id}, action={action:?}: {error}"
+            );
+        }
+    }
+
+    let metadata = load_metadata(&app, &session_id).ok().flatten();
+    let Some(message) = build_supervisor_queued_message(&claim, metadata.as_ref(), &prefs) else {
+        return Ok(());
+    };
+    let message_id = message
+        .get("id")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default()
+        .to_string();
+
+    let (_queue, was_empty) = enqueue_supervisor_prompt(&app, &session_id, message)?;
+    if was_empty {
+        spawn_supervisor_prompt_turn(app, worktree_id, worktree_path, session_id, message_id);
+    }
+
+    Ok(())
+}
+
+fn spawn_supervisor_action_after_terminal_run(
+    app: AppHandle,
+    session_id: String,
+    worktree_id: String,
+    worktree_path: String,
+) {
+    tauri::async_runtime::spawn(async move {
+        if let Err(error) = run_supervisor_action_after_terminal_run(
+            app,
+            session_id.clone(),
+            worktree_id,
+            worktree_path,
+        )
+        .await
+        {
+            log::error!(
+                "[SupervisorAction] Failed to run supervisor action for session={session_id}: {error}"
+            );
+        }
+    });
+}
+
+// =============================================================================
 // Queue management commands (atomic operations for cross-client sync)
 // =============================================================================
 
@@ -5822,6 +6262,150 @@ pub async fn list_pending_wakeups() -> Result<Vec<super::wakeup::PendingWakeupEn
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_run(run_id: &str, status: RunStatus) -> RunEntry {
+        RunEntry {
+            run_id: run_id.to_string(),
+            user_message_id: format!("user-{run_id}"),
+            user_message: "test".to_string(),
+            model: None,
+            execution_mode: None,
+            thinking_level: None,
+            effort_level: None,
+            started_at: 1,
+            ended_at: Some(2),
+            status,
+            assistant_message_id: None,
+            cancelled: false,
+            recovered: false,
+            claude_session_id: None,
+            pid: None,
+            usage: None,
+        }
+    }
+
+    fn supervisor_metadata(action: SupervisorAction) -> SessionMetadata {
+        let mut metadata = SessionMetadata::new(
+            "session-1".to_string(),
+            "worktree-1".to_string(),
+            "Session 1".to_string(),
+            0,
+        );
+        metadata.supervisor_action = Some(action);
+        metadata
+    }
+
+    fn supervisor_action(prompt: Option<&str>, max_turns: Option<u32>) -> SupervisorAction {
+        SupervisorAction {
+            enabled: true,
+            magic_actions: vec![SupervisorMagicAction::Commit],
+            prompt: prompt.map(str::to_string),
+            max_supervisor_created_turns: max_turns,
+            supervisor_created_turn_count: 0,
+            last_handled_run_id: None,
+        }
+    }
+
+    #[test]
+    fn supervisor_claims_latest_terminal_run_once() {
+        let mut metadata = supervisor_metadata(supervisor_action(Some("continue"), Some(2)));
+        metadata.runs.push(test_run("run-1", RunStatus::Completed));
+
+        let first = claim_supervisor_action_from_metadata(&mut metadata);
+        let second = claim_supervisor_action_from_metadata(&mut metadata);
+
+        assert_eq!(
+            first.as_ref().map(|claim| claim.run_id.as_str()),
+            Some("run-1")
+        );
+        assert!(second.is_none());
+        let action = metadata.supervisor_action.as_ref().unwrap();
+        assert_eq!(action.supervisor_created_turn_count, 1);
+        assert_eq!(action.last_handled_run_id.as_deref(), Some("run-1"));
+        assert!(action.enabled);
+    }
+
+    #[test]
+    fn supervisor_disables_after_max_supervisor_created_turns() {
+        let mut metadata = supervisor_metadata(supervisor_action(Some("continue"), Some(1)));
+        metadata.runs.push(test_run("run-1", RunStatus::Completed));
+
+        let claim = claim_supervisor_action_from_metadata(&mut metadata);
+
+        assert!(claim.is_some());
+        let action = metadata.supervisor_action.as_ref().unwrap();
+        assert_eq!(action.supervisor_created_turn_count, 1);
+        assert!(!action.enabled);
+    }
+
+    #[test]
+    fn supervisor_skips_when_max_was_already_reached() {
+        let mut action = supervisor_action(Some("continue"), Some(1));
+        action.supervisor_created_turn_count = 1;
+        let mut metadata = supervisor_metadata(action);
+        metadata.runs.push(test_run("run-1", RunStatus::Completed));
+
+        let claim = claim_supervisor_action_from_metadata(&mut metadata);
+
+        assert!(claim.is_none());
+        assert!(!metadata.supervisor_action.as_ref().unwrap().enabled);
+    }
+
+    #[test]
+    fn supervisor_magic_only_does_not_increment_turn_count() {
+        let mut metadata = supervisor_metadata(supervisor_action(None, Some(1)));
+        metadata.runs.push(test_run("run-1", RunStatus::Crashed));
+
+        let claim = claim_supervisor_action_from_metadata(&mut metadata);
+
+        assert!(claim.is_some());
+        let action = metadata.supervisor_action.as_ref().unwrap();
+        assert_eq!(action.supervisor_created_turn_count, 0);
+        assert!(action.enabled);
+    }
+
+    #[test]
+    fn supervisor_queued_message_uses_session_settings() {
+        let prefs = crate::AppPreferences::default();
+        let mut metadata = supervisor_metadata(supervisor_action(Some(" continue "), Some(1)));
+        metadata.backend = Backend::Codex;
+        metadata.selected_model = Some("gpt-5.5".to_string());
+        metadata.selected_execution_mode = Some("yolo".to_string());
+        metadata.selected_thinking_level = Some(ThinkingLevel::Off);
+        metadata.selected_effort_level = Some(EffortLevel::High);
+        metadata.selected_provider = Some("openrouter".to_string());
+
+        let claim = SupervisorActionClaim {
+            session_id: metadata.id.clone(),
+            run_id: "run-1".to_string(),
+            action: metadata.supervisor_action.clone().unwrap(),
+        };
+
+        let message = build_supervisor_queued_message(&claim, Some(&metadata), &prefs).unwrap();
+
+        assert_eq!(message["message"], "continue");
+        assert_eq!(message["model"], "gpt-5.5");
+        assert_eq!(message["provider"], "openrouter");
+        assert_eq!(message["executionMode"], "yolo");
+        assert_eq!(message["thinkingLevel"], "off");
+        assert_eq!(message["effortLevel"], "high");
+        assert_eq!(message["backend"], "codex");
+    }
+
+    #[test]
+    fn supervisor_queued_message_omits_claude_backend() {
+        let prefs = crate::AppPreferences::default();
+        let metadata = supervisor_metadata(supervisor_action(Some("continue"), Some(1)));
+        let claim = SupervisorActionClaim {
+            session_id: metadata.id.clone(),
+            run_id: "run-1".to_string(),
+            action: metadata.supervisor_action.clone().unwrap(),
+        };
+
+        let message = build_supervisor_queued_message(&claim, Some(&metadata), &prefs).unwrap();
+
+        assert!(message.get("backend").is_none());
+    }
 
     #[test]
     fn test_extract_text_from_stream_json_text_only() {

@@ -3509,6 +3509,7 @@ pub fn run() {
             chat::answer_codex_mcp_elicitation,
             chat::answer_codex_user_input,
             chat::steer_codex_turn,
+            chat::claim_supervisor_action_trigger,
             // Chat commands - Queue management (cross-client sync)
             chat::enqueue_message,
             chat::dequeue_message,

@@ -661,6 +661,32 @@ pub struct Session {
     /// Fires the stored prompt into this session after fire_at_unix.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scheduled_wakeup: Option<ScheduledWakeup>,
+    /// Per-session supervisor action configuration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supervisor_action: Option<SupervisorAction>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SupervisorMagicAction {
+    Commit,
+    CommitAndPush,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SupervisorAction {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub magic_actions: Vec<SupervisorMagicAction>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_supervisor_created_turns: Option<u32>,
+    #[serde(default)]
+    pub supervisor_created_turn_count: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_handled_run_id: Option<String>,
 }
 
 /// A ScheduleWakeup request originated from the Claude CLI tool.
@@ -756,6 +782,7 @@ impl Session {
             total_runs: 0,
             loaded_run_start_index: 0,
             scheduled_wakeup: None,
+            supervisor_action: None,
         }
     }
 
@@ -1066,6 +1093,7 @@ impl SessionMetadata {
             total_runs: self.runs.len(),
             loaded_run_start_index: self.runs.len(),
             scheduled_wakeup: self.scheduled_wakeup.clone(),
+            supervisor_action: self.supervisor_action.clone(),
         };
         session.refresh_derived_state();
         session
@@ -1117,6 +1145,7 @@ impl SessionMetadata {
             (session.updated_at > run_updated_at).then_some(session.updated_at);
         self.label = session.label.clone();
         self.scheduled_wakeup = session.scheduled_wakeup.clone();
+        self.supervisor_action = session.supervisor_action.clone();
         // NOTE: Do NOT overwrite queued_messages here. Queue state is managed
         // exclusively by enqueue/dequeue/remove/clear operations which use
         // atomic read-modify-write via with_existing_metadata_mut. Overwriting
@@ -1471,6 +1500,10 @@ pub struct SessionMetadata {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub queued_messages: Vec<serde_json::Value>,
 
+    /// Per-session supervisor action configuration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supervisor_action: Option<SupervisorAction>,
+
     /// Unix timestamp when session was last opened/viewed by the user
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_opened_at: Option<u64>,
@@ -1593,6 +1626,7 @@ impl SessionMetadata {
             table_checked_rows: HashMap::new(),
             label: None,
             queued_messages: vec![],
+            supervisor_action: None,
             last_opened_at: None,
             automation_id: None,
             automation_name: None,

@@ -23,6 +23,8 @@ import type {
   ExecutionMode,
   LabelData,
   QueuedMessage,
+  SupervisorAction,
+  SupervisorActionClaim,
 } from '@/types/chat'
 import { isTauri, projectsQueryKeys } from '@/services/projects'
 import { preferencesQueryKeys } from '@/services/preferences'
@@ -565,6 +567,7 @@ export function useUpdateSessionState() {
       selectedExecutionMode,
       parallelExecutionPromptEnabled,
       tableCheckedRows,
+      supervisorAction,
     }: {
       worktreeId: string
       worktreePath: string
@@ -602,6 +605,7 @@ export function useUpdateSessionState() {
       selectedExecutionMode?: ExecutionMode | null
       parallelExecutionPromptEnabled?: boolean | null
       tableCheckedRows?: Record<string, number[]>
+      supervisorAction?: SupervisorAction | null
     }): Promise<void> => {
       if (!isTauri()) {
         throw new Error('Not in Tauri context')
@@ -626,6 +630,7 @@ export function useUpdateSessionState() {
         selectedExecutionMode,
         parallelExecutionPromptEnabled,
         tableCheckedRows,
+        supervisorAction,
       })
       logger.debug('Session state updated')
     },
@@ -643,6 +648,17 @@ export function useUpdateSessionState() {
       // Don't toast - this is a background operation
     },
   })
+}
+
+export async function claimSupervisorActionTrigger(
+  sessionId: string
+): Promise<SupervisorActionClaim | null> {
+  return invoke<SupervisorActionClaim | null>(
+    'claim_supervisor_action_trigger',
+    {
+      sessionId,
+    }
+  )
 }
 
 /**

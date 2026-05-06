@@ -73,6 +73,7 @@ import type {
   CodexMcpElicitation as CodexMcpElicitationType,
   PermissionDenial,
   PendingFile,
+  SupervisorAction,
 } from '@/types/chat'
 import { isAskUserQuestion } from '@/types/chat'
 import { getSkillName } from '@/lib/path-utils'
@@ -820,6 +821,45 @@ export function ChatWindow({
       })
     },
     [activeSessionId, activeWorktreeId, activeWorktreePath, updateSessionState]
+  )
+
+  const handleSupervisorActionChange = useCallback(
+    (action: SupervisorAction | null) => {
+      if (!activeSessionId || !activeWorktreeId || !activeWorktreePath) return
+
+      queryClient.setQueryData<Session>(
+        chatQueryKeys.session(activeSessionId),
+        old => (old ? { ...old, supervisor_action: action } : old)
+      )
+      queryClient.setQueryData<WorktreeSessions>(
+        chatQueryKeys.sessions(activeWorktreeId),
+        old =>
+          old
+            ? {
+                ...old,
+                sessions: old.sessions.map(session =>
+                  session.id === activeSessionId
+                    ? { ...session, supervisor_action: action }
+                    : session
+                ),
+              }
+            : old
+      )
+
+      updateSessionState.mutate({
+        worktreeId: activeWorktreeId,
+        worktreePath: activeWorktreePath,
+        sessionId: activeSessionId,
+        supervisorAction: action,
+      })
+    },
+    [
+      activeSessionId,
+      activeWorktreeId,
+      activeWorktreePath,
+      queryClient,
+      updateSessionState,
+    ]
   )
 
   const handleToggleParallelExecutionPrompting = useCallback(() => {
@@ -3361,6 +3401,10 @@ export function ChatWindow({
                             }
                             onParallelExecutionPromptChange={
                               handleParallelExecutionPromptToggle
+                            }
+                            supervisorAction={session?.supervisor_action}
+                            onSupervisorActionChange={
+                              handleSupervisorActionChange
                             }
                             onCancel={handleCancel}
                             queuedMessageCount={currentQueuedMessages.length}

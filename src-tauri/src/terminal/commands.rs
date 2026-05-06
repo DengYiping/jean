@@ -10,7 +10,7 @@ use super::pty::{
 };
 use super::registry::{get_all_terminal_ids, has_terminal, TERMINAL_SESSIONS};
 use crate::platform::silent_command;
-use crate::projects::git::read_jean_config;
+use crate::projects::git::read_jean_config_for_worktree;
 
 /// A TCP port that a terminal's child process is listening on
 #[derive(Clone, Serialize, Debug)]
@@ -60,8 +60,8 @@ pub async fn start_terminal(
 
 /// Get the run script(s) from jean.json for a worktree
 #[tauri::command]
-pub async fn get_run_scripts(worktree_path: String) -> Vec<String> {
-    read_jean_config(&worktree_path)
+pub async fn get_run_scripts(worktree_path: String, project_path: Option<String>) -> Vec<String> {
+    read_jean_config_for_worktree(&worktree_path, project_path.as_deref())
         .and_then(|config| config.scripts.run)
         .map(|r| r.into_vec())
         .unwrap_or_default()
@@ -69,16 +69,23 @@ pub async fn get_run_scripts(worktree_path: String) -> Vec<String> {
 
 /// Get configured ports from jean.json for a worktree
 #[tauri::command]
-pub async fn get_ports(worktree_path: String) -> Vec<crate::projects::types::PortEntry> {
-    read_jean_config(&worktree_path)
+pub async fn get_ports(
+    worktree_path: String,
+    project_path: Option<String>,
+) -> Vec<crate::projects::types::PortEntry> {
+    read_jean_config_for_worktree(&worktree_path, project_path.as_deref())
         .and_then(|config| config.ports)
         .unwrap_or_default()
 }
 
 /// Get the build script from jean.json for a worktree
 #[tauri::command]
-pub async fn get_build_script(worktree_path: String) -> Option<String> {
-    read_jean_config(&worktree_path).and_then(|config| config.scripts.build)
+pub async fn get_build_script(
+    worktree_path: String,
+    project_path: Option<String>,
+) -> Option<String> {
+    read_jean_config_for_worktree(&worktree_path, project_path.as_deref())
+        .and_then(|config| config.scripts.build)
 }
 
 /// Write data to a terminal (stdin)

@@ -204,8 +204,6 @@ export function SessionChatModal({
     [sessionsData?.sessions]
   )
   const { data: preferences } = usePreferences()
-  const { data: runScript } = useRunScript(worktreePath)
-  const { data: buildScript } = useBuildScript(worktreePath)
   const isBrowserModalOpen = useBrowserStore(
     state => state.modalOpen[worktreeId] ?? false
   )
@@ -328,6 +326,11 @@ export function SessionChatModal({
   const project = worktree
     ? projects?.find(p => p.id === worktree.project_id)
     : null
+  const { data: runScript } = useRunScript(worktreePath, project?.path ?? null)
+  const { data: buildScript } = useBuildScript(
+    worktreePath,
+    project?.path ?? null
+  )
   const { data: openPRs } = useGitHubPRs(project?.path ?? null, 'open')
   const stackedOnPR =
     worktree?.base_branch && worktree.base_branch !== project?.default_branch

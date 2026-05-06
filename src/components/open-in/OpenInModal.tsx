@@ -114,7 +114,7 @@ export function OpenInModal() {
     return null
   }, [worktree?.path, selectedWorktreeId, selectedProjectId, projects])
 
-  const { data: ports } = usePorts(targetPath)
+  const { data: ports } = usePorts(targetPath, selectedProject?.path ?? null)
 
   // Base options (Editor, Terminal, Finder, GitHub)
   const baseOptions = useMemo(() => {

@@ -40,14 +40,20 @@ export function useWorktreeMenuActions({
   const openInFinder = useOpenWorktreeInFinder()
   const openInTerminal = useOpenWorktreeInTerminal()
   const openInEditor = useOpenWorktreeInEditor()
-  const { data: runScript } = useRunScript(worktree.path)
-  const { data: buildScript } = useBuildScript(worktree.path)
-  const { data: runScripts = [] } = useRunScripts(worktree.path)
   const { data: preferences } = usePreferences()
   const { data: projects = [] } = useProjects()
   const { data: sessionsData } = useSessions(worktree.id, worktree.path)
   const isBase = isBaseSession(worktree)
   const project = projects.find(candidate => candidate.id === projectId)
+  const { data: runScript } = useRunScript(worktree.path, project?.path ?? null)
+  const { data: buildScript } = useBuildScript(
+    worktree.path,
+    project?.path ?? null
+  )
+  const { data: runScripts = [] } = useRunScripts(
+    worktree.path,
+    project?.path ?? null
+  )
   const effectiveEditor = getEffectiveEditor(
     project?.default_editor,
     preferences?.editor

@@ -5,7 +5,7 @@ use uuid::Uuid;
 use super::storage::{ensure_memory_file, load_automations, with_automations_mut};
 use super::types::{Automation, AutomationLastRunStatus, AutomationStatus, AutomationTargetMode};
 use crate::automations::AutomationManager;
-use crate::chat::storage::{load_metadata, with_sessions_mut};
+use crate::chat::storage::with_sessions_mut;
 use crate::chat::types::{Backend, EffortLevel, Session, ThinkingLevel};
 use crate::chat::{resolve_default_backend, send_chat_message};
 use crate::http_server::EmitExt;
@@ -157,7 +157,12 @@ async fn run_existing_targets(
             continue;
         }
 
-        let session_id = ensure_automation_session(app, automation, &worktree)?;
+        let session_id = ensure_automation_session(
+            app,
+            automation,
+            &worktree,
+            automation_session_strategy(&automation.target_mode),
+        )?;
         let prompt = build_automation_prompt(app, automation)?;
 
         let send_result = send_chat_message(
@@ -221,7 +226,12 @@ async fn run_fresh_target(
     .await?;
 
     let worktree = wait_for_worktree_ready(app, &pending_worktree.id).await?;
-    let session_id = ensure_automation_session(app, automation, &worktree)?;
+    let session_id = ensure_automation_session(
+        app,
+        automation,
+        &worktree,
+        automation_session_strategy(&automation.target_mode),
+    )?;
     let prompt = build_automation_prompt(app, automation)?;
 
     send_chat_message(
@@ -286,34 +296,76 @@ async fn archive_previous_fresh_runs(
     Ok(())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AutomationSessionStrategy {
+    NewThread,
+    DefaultThread,
+}
+
+fn automation_session_strategy(target_mode: &AutomationTargetMode) -> AutomationSessionStrategy {
+    match target_mode {
+        AutomationTargetMode::ExistingWorktrees => AutomationSessionStrategy::NewThread,
+        AutomationTargetMode::FreshWorktree => AutomationSessionStrategy::DefaultThread,
+    }
+}
+
 fn ensure_automation_session(
     app: &AppHandle,
     automation: &Automation,
     worktree: &Worktree,
+    strategy: AutomationSessionStrategy,
 ) -> Result<String, String> {
-    if let Some(existing_session_id) = automation.session_ids_by_worktree_id.get(&worktree.id) {
-        if load_metadata(app, existing_session_id)?.is_some() {
-            return Ok(existing_session_id.clone());
+    match strategy {
+        AutomationSessionStrategy::NewThread => create_automation_thread(app, automation, worktree),
+        AutomationSessionStrategy::DefaultThread => {
+            use_default_automation_thread(app, automation, worktree)
         }
     }
+}
 
+fn create_automation_thread(
+    app: &AppHandle,
+    automation: &Automation,
+    worktree: &Worktree,
+) -> Result<String, String> {
     let backend = parse_backend(automation.backend.as_deref())
         .unwrap_or_else(|| resolve_default_backend(app, Some(&worktree.id)));
     let session_name = format!("Automation: {}", automation.name);
-    let created_session_id = with_sessions_mut(app, &worktree.path, &worktree.id, |sessions| {
+    with_sessions_mut(app, &worktree.path, &worktree.id, |sessions| {
         let order = sessions.sessions.len() as u32;
         let mut session = Session::new(session_name.clone(), order, backend.clone());
-        session.automation_id = Some(automation.id.clone());
-        session.automation_name = Some(automation.name.clone());
-        session.automation_target_worktree_id = Some(worktree.id.clone());
-        session.automation_owned = true;
-        session.selected_model = automation.model.clone();
-        session.selected_provider = automation.provider.clone();
-        session.selected_execution_mode = automation.execution_mode.clone();
-        session.selected_thinking_level =
-            parse_thinking_level(automation.thinking_level.as_deref())?;
+        apply_automation_session_settings(&mut session, automation, worktree)?;
         sessions.sessions.push(session.clone());
         Ok(session.id)
+    })
+}
+
+fn use_default_automation_thread(
+    app: &AppHandle,
+    automation: &Automation,
+    worktree: &Worktree,
+) -> Result<String, String> {
+    let backend = parse_backend(automation.backend.as_deref())
+        .unwrap_or_else(|| resolve_default_backend(app, Some(&worktree.id)));
+    let session_id = with_sessions_mut(app, &worktree.path, &worktree.id, |sessions| {
+        if sessions.sessions.is_empty() {
+            sessions
+                .sessions
+                .push(Session::default_session_with_backend(backend.clone()));
+        }
+
+        let default_session_id = sessions
+            .active_session_id
+            .clone()
+            .filter(|session_id| sessions.find_session(session_id).is_some())
+            .unwrap_or_else(|| sessions.sessions[0].id.clone());
+
+        let default_session = sessions
+            .find_session_mut(&default_session_id)
+            .ok_or_else(|| "Default automation session not found.".to_string())?;
+        apply_automation_session_settings(default_session, automation, worktree)?;
+        sessions.active_session_id = Some(default_session_id.clone());
+        Ok(default_session_id)
     })?;
 
     with_automations_mut(app, |automations| {
@@ -323,13 +375,29 @@ fn ensure_automation_session(
             .ok_or_else(|| "Automation not found.".to_string())?;
         automation_entry
             .session_ids_by_worktree_id
-            .insert(worktree.id.clone(), created_session_id.clone());
+            .insert(worktree.id.clone(), session_id.clone());
         automation_entry.updated_at = now_secs();
         Ok(())
     })?;
     emit_automations_invalidation(app, &automation.id);
 
-    Ok(created_session_id)
+    Ok(session_id)
+}
+
+fn apply_automation_session_settings(
+    session: &mut Session,
+    automation: &Automation,
+    worktree: &Worktree,
+) -> Result<(), String> {
+    session.automation_id = Some(automation.id.clone());
+    session.automation_name = Some(automation.name.clone());
+    session.automation_target_worktree_id = Some(worktree.id.clone());
+    session.automation_owned = true;
+    session.selected_model = automation.model.clone();
+    session.selected_provider = automation.provider.clone();
+    session.selected_execution_mode = automation.execution_mode.clone();
+    session.selected_thinking_level = parse_thinking_level(automation.thinking_level.as_deref())?;
+    Ok(())
 }
 
 fn build_automation_prompt(app: &AppHandle, automation: &Automation) -> Result<String, String> {
@@ -811,6 +879,18 @@ mod tests {
         )
         .expect_err("daily window should fail");
         assert!(error.contains("only supported for hourly"));
+    }
+
+    #[test]
+    fn selects_thread_strategy_for_automation_target_mode() {
+        assert_eq!(
+            automation_session_strategy(&AutomationTargetMode::ExistingWorktrees),
+            AutomationSessionStrategy::NewThread
+        );
+        assert_eq!(
+            automation_session_strategy(&AutomationTargetMode::FreshWorktree),
+            AutomationSessionStrategy::DefaultThread
+        );
     }
 
     #[test]

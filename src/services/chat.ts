@@ -52,6 +52,9 @@ export const chatQueryKeys = {
   unreadCount: () => [...chatQueryKeys.all, 'unread-count'] as const,
 }
 
+export const SESSIONS_STALE_TIME_MS = 1000 * 60 * 5
+export const SESSIONS_GC_TIME_MS = 1000 * 60 * 5
+
 // ============================================================================
 // Chat Queries
 // ============================================================================
@@ -137,8 +140,8 @@ export function useSessions(
       }
     },
     enabled: !!worktreeId && !!worktreePath,
-    staleTime: 1000 * 60 * 5, // 5 minutes - enables instant tab bar rendering from cache
-    gcTime: 1000 * 60 * 5,
+    staleTime: SESSIONS_STALE_TIME_MS, // 5 minutes - enables instant tab bar rendering from cache
+    gcTime: SESSIONS_GC_TIME_MS,
     refetchOnMount: true, // Respects staleTime; status changes pushed via streaming/cache:invalidate events
   })
 }

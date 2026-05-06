@@ -54,6 +54,7 @@ interface ProjectsUIState {
   // Actions
   selectProject: (id: string | null) => void
   selectWorktree: (id: string | null) => void
+  selectProjectWorktree: (projectId: string, worktreeId: string) => void
   toggleProjectExpanded: (id: string) => void
   setProjectExpanded: (id: string, expanded: boolean) => void
   expandProject: (id: string) => void
@@ -139,6 +140,20 @@ export const useProjectsStore = create<ProjectsUIState>()(
 
       selectWorktree: id =>
         set({ selectedWorktreeId: id }, undefined, 'selectWorktree'),
+
+      selectProjectWorktree: (projectId, worktreeId) =>
+        set(
+          state => ({
+            selectedProjectId: projectId,
+            selectedWorktreeId: worktreeId,
+            projectAccessTimestamps: {
+              ...state.projectAccessTimestamps,
+              [projectId]: Date.now(),
+            },
+          }),
+          undefined,
+          'selectProjectWorktree'
+        ),
 
       // Expansion actions
       toggleProjectExpanded: id =>

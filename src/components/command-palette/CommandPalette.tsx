@@ -100,6 +100,7 @@ export function CommandPalette() {
         window.dispatchEvent(
           new CustomEvent('open-session-modal', {
             detail: {
+              projectId,
               sessionId: '',
               worktreeId: worktree.id,
               worktreePath: worktree.path,

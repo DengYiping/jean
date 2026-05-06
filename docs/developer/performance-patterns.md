@@ -69,4 +69,71 @@ const EditorArea = React.memo(({ panelVisible }) => {
 })
 ```
 
+### Profiling Hot Paths
+
+Profile the user workflow, not a helper in isolation. Start from a concrete hot
+path such as "click an existing worktree in the sidebar and open its session
+modal", then build the smallest test harness that exercises that path with warm
+cache/state.
+
+Use React Profiler in targeted component tests to count update commits and
+capture `actualDuration`:
+
+```typescript
+const renderStats: Record<string, { updates: number; actualDuration: number }> =
+  {}
+
+const onRender: ProfilerOnRenderCallback = (id, phase, actualDuration) => {
+  const stat = (renderStats[id] ??= { updates: 0, actualDuration: 0 })
+  if (phase === 'update') {
+    stat.updates += 1
+    stat.actualDuration += actualDuration
+  }
+}
+
+render(
+  <Profiler id="worktree-1" onRender={onRender}>
+    <WorktreeItem worktree={worktree} projectId={projectId} />
+  </Profiler>
+)
+```
+
+Make profiling output opt-in so normal test runs stay quiet:
+
+```typescript
+if (process.env.PROFILE_WORKTREE_SWITCH_TEST === '1') {
+  console.info('[profile] Worktree switch render stats', renderStats)
+}
+```
+
+Prefer stable assertions over wall-clock timing:
+
+- Assert unaffected rows/components do not re-render.
+- Assert affected rows/components stay under a small commit-count budget.
+- Assert warm TanStack Query cache entries are reused without invoking IPC.
+- Assert duplicated query keys or refetches do not appear on repeated switches.
+- Avoid hard `actualDuration` thresholds in Vitest/jsdom; use duration output for
+  diagnosis, not pass/fail, unless the threshold is very coarse and stable.
+
+When profiling a Zustand-heavy path, map each commit back to store writes. If a
+single click calls several actions, such as `selectProject`, `selectWorktree`,
+`clearActiveWorktree`, and `setActiveSession`, expect multiple commits for the
+clicked/previously selected rows. The useful regression boundary is whether
+unrelated rows also update.
+
+When profiling a TanStack Query path, check both the query key and the fetch
+function:
+
+- Shared query keys should reuse warm cache data.
+- `staleTime` should match the normal hook if the data shape is the same.
+- Extra flags like `includeMessageCounts` should only be present when the UI
+  actually consumes the heavier data.
+
+Run focused profiling separately from the required quality gate:
+
+```bash
+PROFILE_WORKTREE_SWITCH_TEST=1 bun run test:run src/components/projects/WorktreeItem.test.tsx --reporter verbose --logHeapUsage
+bun run check:all
+```
+
 ---

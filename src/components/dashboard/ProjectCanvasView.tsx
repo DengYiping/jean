@@ -9,6 +9,7 @@ import {
 } from 'react'
 import { useQueries, useQueryClient } from '@tanstack/react-query'
 import { invoke } from '@/lib/transport'
+import { logger } from '@/lib/logger'
 import { cn } from '@/lib/utils'
 import {
   Search,
@@ -59,11 +60,8 @@ import {
   useRemoveProject,
   projectsQueryKeys,
 } from '@/services/projects'
-import {
-  chatQueryKeys,
-  useCreateSession,
-  cancelChatMessage,
-} from '@/services/chat'
+import { useCreateSession, cancelChatMessage } from '@/services/chat'
+import { createProjectCanvasSessionsQuery } from './project-canvas-session-queries'
 import { useGitHubPRs } from '@/services/github'
 import { useGitStatus } from '@/services/git-status'
 import { useChatStore } from '@/store/chat-store'
@@ -75,7 +73,7 @@ import {
   getEffectiveEditor,
   getTerminalLabel,
 } from '@/types/preferences'
-import type { LabelData, Session, WorktreeSessions } from '@/types/chat'
+import type { LabelData, Session } from '@/types/chat'
 import { NewIssuesBadge } from '@/components/shared/NewIssuesBadge'
 import { OpenPRsBadge } from '@/components/shared/OpenPRsBadge'
 import { FailedRunsBadge } from '@/components/shared/FailedRunsBadge'
@@ -677,25 +675,7 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
 
   // Load sessions for all worktrees dynamically using useQueries
   const sessionQueries = useQueries({
-    queries: readyWorktrees.map(wt => ({
-      queryKey: [...chatQueryKeys.sessions(wt.id), 'with-counts'],
-      queryFn: async (): Promise<WorktreeSessions> => {
-        if (!isTauri() || !wt.id || !wt.path) {
-          return {
-            worktree_id: wt.id,
-            sessions: [],
-            active_session_id: null,
-            version: 2,
-          }
-        }
-        return invoke<WorktreeSessions>('get_sessions', {
-          worktreeId: wt.id,
-          worktreePath: wt.path,
-          includeMessageCounts: true,
-        })
-      },
-      enabled: !!wt.id && !!wt.path,
-    })),
+    queries: readyWorktrees.map(createProjectCanvasSessionsQuery),
   })
 
   // Derive a stable fingerprint from query data to avoid re-computing
@@ -725,6 +705,19 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
   const sessionsByWorktreeIdRef = useRef(sessionsByWorktreeId)
   sessionsByWorktreeIdRef.current = sessionsByWorktreeId
 
+  useEffect(() => {
+    if (!import.meta.env.DEV || import.meta.env.MODE === 'test') return
+    const completedQueries = sessionQueries.filter(
+      query => query.data && !query.isFetching
+    )
+    logger.debug('[ProjectCanvasView] session queries completed', {
+      projectId,
+      completed: completedQueries.length,
+      total: sessionQueries.length,
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, sessionsFingerprint])
+
   // Use shared store state hook
   const storeState = useCanvasStoreState()
   const queryClient = useQueryClient()
@@ -734,7 +727,7 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
       if (!isTauri()) return
 
       const now = Math.floor(Date.now() / 1000)
-      console.debug('[ProjectCanvasView] markWorktreeLastUsed:start', {
+      logger.debug('[ProjectCanvasView] markWorktreeLastUsed:start', {
         projectId,
         worktreeId,
         reason,
@@ -753,18 +746,15 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
 
       void invoke('set_worktree_last_opened', { worktreeId })
         .then(() => {
-          console.debug('[ProjectCanvasView] markWorktreeLastUsed:success', {
+          logger.debug('[ProjectCanvasView] markWorktreeLastUsed:success', {
             projectId,
             worktreeId,
             reason,
             now,
           })
-          queryClient.invalidateQueries({
-            queryKey: projectsQueryKeys.worktrees(projectId),
-          })
         })
         .catch(error => {
-          console.debug('[ProjectCanvasView] markWorktreeLastUsed:error', {
+          logger.debug('[ProjectCanvasView] markWorktreeLastUsed:error', {
             projectId,
             worktreeId,
             reason,
@@ -780,7 +770,7 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
 
   const openWorktreeModal = useCallback(
     (worktreeId: string, worktreePath: string, reason: string) => {
-      console.debug('[ProjectCanvasView] openWorktreeModal', {
+      logger.debug('[ProjectCanvasView] openWorktreeModal', {
         projectId,
         worktreeId,
         worktreePath,
@@ -897,7 +887,7 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
   useEffect(() => {
     if (worktreeSortMode !== 'last_activity') return
 
-    console.debug(
+    logger.debug(
       '[ProjectCanvasView] last-activity sort snapshot',
       worktreeSections
         .map(section => ({
@@ -1882,12 +1872,22 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
   useEffect(() => {
     const handleOpenSessionModal = (
       e: CustomEvent<{
+        projectId?: string
         sessionId: string
         worktreeId?: string
         worktreePath?: string
       }>
     ) => {
-      const { sessionId, worktreeId, worktreePath } = e.detail
+      const {
+        projectId: eventProjectId,
+        sessionId,
+        worktreeId,
+        worktreePath,
+      } = e.detail
+
+      if (eventProjectId && eventProjectId !== projectId) {
+        return
+      }
 
       // If worktreeId/worktreePath provided, open the modal for that worktree
       // (e.g. from UnreadBell navigating to a session on the project canvas)

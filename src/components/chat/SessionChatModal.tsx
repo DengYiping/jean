@@ -1434,7 +1434,7 @@ export function SessionChatModal({
           <div className="min-h-0 flex-1 overflow-hidden">
             {currentSessionId && (
               <ChatWindow
-                key={currentSessionId}
+                key={worktreeId}
                 isModal
                 worktreeId={worktreeId}
                 worktreePath={worktreePath}

@@ -124,7 +124,16 @@ export function useWorktree(worktreeId: string | null) {
   ] as const
 
   // Skip backend fetch while worktree is pending — it's not in projects.json yet
-  const cachedData = queryClient.getQueryData<Worktree>(queryKey)
+  const cachedWorktreeFromList = worktreeId
+    ? queryClient
+        .getQueriesData<Worktree[]>({
+          queryKey: [...projectsQueryKeys.all, 'worktrees'],
+        })
+        .flatMap(([, worktrees]) => worktrees ?? [])
+        .find(worktree => worktree.id === worktreeId)
+    : undefined
+  const cachedData =
+    queryClient.getQueryData<Worktree>(queryKey) ?? cachedWorktreeFromList
   const isPending = cachedData?.status === 'pending'
 
   return useQuery({
@@ -147,6 +156,7 @@ export function useWorktree(worktreeId: string | null) {
       }
     },
     enabled: !!worktreeId && !isPending,
+    initialData: cachedWorktreeFromList,
     staleTime: 1000 * 30, // 30 seconds - PR info may change
     gcTime: 1000 * 60 * 5,
   })

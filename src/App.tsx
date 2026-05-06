@@ -239,13 +239,6 @@ function App() {
             chatQueryKeys.sessions(worktreeId),
             sessionsData
           )
-          // Also seed the 'with-counts' variant used by ProjectCanvasView.
-          // The /api/init endpoint fetches with include_message_counts=true,
-          // so this data is valid for both keys.
-          queryClient.setQueryData(
-            [...chatQueryKeys.sessions(worktreeId), 'with-counts'],
-            sessionsData
-          )
 
           // Extract session state for Zustand store
           const wts = sessionsData as WorktreeSessions

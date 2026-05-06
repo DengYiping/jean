@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useChatStore } from './chat-store'
 import type {
   ToolCall,
@@ -82,6 +82,38 @@ describe('ChatStore', () => {
       expect(state.sessionWorktreeMap['session-1']).toBe('worktree-1')
       expect(state.sessionWorktreeMap['session-2']).toBe('worktree-2')
     })
+
+    it('opens a session in canvas mode in one update', () => {
+      const store = useChatStore.getState()
+
+      store.setActiveWorktree('worktree-1', '/path/to/worktree-1')
+      store.openWorktreeSessionInCanvas('worktree-2', 'session-abc', {
+        markOpened: false,
+      })
+
+      const state = useChatStore.getState()
+      expect(state.activeWorktreeId).toBeNull()
+      expect(state.activeWorktreePath).toBeNull()
+      expect(state.activeSessionIds['worktree-2']).toBe('session-abc')
+      expect(state.sessionWorktreeMap['session-abc']).toBe('worktree-2')
+    })
+
+    it('does not notify when opening the already-selected canvas session', () => {
+      const store = useChatStore.getState()
+
+      store.openWorktreeSessionInCanvas('worktree-1', 'session-1', {
+        markOpened: false,
+      })
+
+      const listener = vi.fn()
+      const unsubscribe = useChatStore.subscribe(listener)
+      store.openWorktreeSessionInCanvas('worktree-1', 'session-1', {
+        markOpened: false,
+      })
+
+      expect(listener).not.toHaveBeenCalled()
+      unsubscribe()
+    })
   })
 
   describe('worktree management', () => {
@@ -119,11 +151,10 @@ describe('ChatStore', () => {
         '/path/to/worktree-1'
       )
 
-      // Simulate: WorktreeItem.handleClick sequence
-      // 1. clearActiveWorktree() ensures ProjectCanvasView renders
-      store.clearActiveWorktree()
-      // 2. setActiveSession() picks the session to show in the modal
-      store.setActiveSession('worktree-2', 'session-abc')
+      // Simulate: WorktreeItem.handleClick combined chat-store action
+      store.openWorktreeSessionInCanvas('worktree-2', 'session-abc', {
+        markOpened: false,
+      })
 
       const state = useChatStore.getState()
       // activeWorktreePath must be null so MainWindowContent renders ProjectCanvasView
@@ -139,9 +170,10 @@ describe('ChatStore', () => {
       // Simulate: already viewing a worktree in ChatWindow mode
       store.setActiveWorktree('worktree-1', '/path/to/worktree-1')
 
-      // Simulate: WorktreeItem.handleSessionSelect sequence
-      store.clearActiveWorktree()
-      store.setActiveSession('worktree-1', 'session-xyz')
+      // Simulate: WorktreeItem.handleSessionSelect combined chat-store action
+      store.openWorktreeSessionInCanvas('worktree-1', 'session-xyz', {
+        markOpened: false,
+      })
 
       const state = useChatStore.getState()
       // Must be null for ProjectCanvasView to mount and receive open-session-modal event

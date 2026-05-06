@@ -53,6 +53,7 @@ export function openWorkspaceSession(target: WorkspaceSessionTarget) {
     window.dispatchEvent(
       new CustomEvent('open-session-modal', {
         detail: {
+          projectId: target.projectId,
           sessionId: target.sessionId,
           worktreeId: target.worktreeId,
           worktreePath: target.worktreePath,

@@ -4,6 +4,7 @@ import type {
   ThinkingLevel,
   EffortLevel,
   ExecutionMode,
+  SupervisorAction,
 } from '@/types/chat'
 import type { McpServerInfo } from '@/types/chat'
 import type {
@@ -95,6 +96,8 @@ export interface ChatToolbarProps {
   onSetExecutionMode: (mode: ExecutionMode) => void
   parallelExecutionPromptEnabled: boolean
   onParallelExecutionPromptChange: (enabled: boolean) => void
+  supervisorAction?: SupervisorAction | null
+  onSupervisorActionChange: (action: SupervisorAction | null) => void
   onCancel: () => void
   queuedMessageCount?: number
   onHarnessFanoutSend?: (targetBackends: Backend[]) => void

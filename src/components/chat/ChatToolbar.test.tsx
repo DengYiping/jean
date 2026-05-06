@@ -125,6 +125,8 @@ function createProps(
     onSetExecutionMode: vi.fn(),
     parallelExecutionPromptEnabled: false,
     onParallelExecutionPromptChange: vi.fn(),
+    supervisorAction: null,
+    onSupervisorActionChange: vi.fn(),
     onCancel: vi.fn(),
     availableMcpServers: [],
     enabledMcpServers: [],

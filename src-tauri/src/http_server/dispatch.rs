@@ -1829,6 +1829,8 @@ pub async fn dispatch_command(
             )?;
             let table_checked_rows: Option<std::collections::HashMap<String, Vec<u32>>> =
                 field_opt(&args, "tableCheckedRows", "table_checked_rows")?;
+            let supervisor_action: Option<Option<crate::chat::types::SupervisorAction>> =
+                field_opt(&args, "supervisorAction", "supervisor_action")?;
             crate::chat::update_session_state(
                 app.clone(),
                 worktree_id,
@@ -1852,10 +1854,17 @@ pub async fn dispatch_command(
                 selected_execution_mode,
                 parallel_execution_prompt_enabled,
                 table_checked_rows,
+                supervisor_action,
             )
             .await?;
             emit_cache_invalidation(app, &["sessions"]);
             Ok(Value::Null)
+        }
+        "claim_supervisor_action_trigger" => {
+            let session_id: String = field(&args, "sessionId", "session_id")?;
+            let result =
+                crate::chat::claim_supervisor_action_trigger(app.clone(), session_id).await?;
+            to_value(result)
         }
         "archive_session" => {
             let worktree_id: String = field(&args, "worktreeId", "worktree_id")?;

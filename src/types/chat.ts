@@ -242,6 +242,8 @@ export interface Session {
   loaded_run_start_index?: number
   /** Pending ScheduleWakeup request (one per session, last-wins) */
   scheduled_wakeup?: ScheduledWakeup
+  /** Per-session supervisor action configuration */
+  supervisor_action?: SupervisorAction | null
 }
 
 /**
@@ -255,6 +257,27 @@ export interface ScheduledWakeup {
   prompt: string
   reason: string
   tool_call_id: string
+}
+
+export type SupervisorMagicAction = 'commit' | 'commit_and_push'
+
+/**
+ * Per-session supervisor action configuration.
+ * Serialized with snake_case because it is stored in session metadata.
+ */
+export interface SupervisorAction {
+  enabled: boolean
+  magic_actions: SupervisorMagicAction[]
+  prompt?: string | null
+  max_supervisor_created_turns?: number | null
+  supervisor_created_turn_count: number
+  last_handled_run_id?: string | null
+}
+
+export interface SupervisorActionClaim {
+  sessionId: string
+  runId: string
+  action: SupervisorAction
 }
 
 /** Returned by `list_pending_wakeups` — hydrates the UI store on mount. */

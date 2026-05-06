@@ -21,6 +21,7 @@ import { DockBurgerButton } from '@/components/chat/toolbar/DockBurgerButton'
 import { SendCancelButton } from '@/components/chat/toolbar/SendCancelButton'
 import { SessionUsageMeter } from '@/components/chat/toolbar/SessionUsageMeter'
 import { ContextViewerDialog } from '@/components/chat/toolbar/ContextViewerDialog'
+import { SupervisorActionPopover } from '@/components/chat/toolbar/SupervisorActionPopover'
 import {
   CODEX_MODEL_OPTIONS,
   EFFORT_LEVEL_OPTIONS,
@@ -111,6 +112,8 @@ export const ChatToolbar = memo(function ChatToolbar({
   onSetExecutionMode,
   parallelExecutionPromptEnabled,
   onParallelExecutionPromptChange,
+  supervisorAction,
+  onSupervisorActionChange,
   onCancel,
   queuedMessageCount,
   onHarnessFanoutSend,
@@ -447,7 +450,12 @@ export const ChatToolbar = memo(function ChatToolbar({
 
         <div className="h-4 w-px shrink-0 bg-border/50" />
 
-        <div className="flex h-8 shrink-0 items-center px-2">
+        <div className="flex h-8 shrink-0 items-center gap-1 px-2">
+          <SupervisorActionPopover
+            action={supervisorAction}
+            disabled={!activeSessionId}
+            onChange={onSupervisorActionChange}
+          />
           <Tooltip>
             <TooltipTrigger asChild>
               <button

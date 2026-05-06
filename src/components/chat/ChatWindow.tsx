@@ -356,6 +356,22 @@ export function ChatWindow({
     isFetching: isSessionsFetching,
   } = useSessions(activeWorktreeId, activeWorktreePath)
 
+  useEffect(() => {
+    if (
+      !import.meta.env.DEV ||
+      import.meta.env.MODE === 'test' ||
+      !activeWorktreeId ||
+      isSessionsFetching
+    ) {
+      return
+    }
+    logger.debug('[ChatWindow] sessions loaded', {
+      worktreeId: activeWorktreeId,
+      sessionCount: sessionsData?.sessions.length ?? 0,
+      activeSessionId: sessionsData?.active_session_id ?? null,
+    })
+  }, [activeWorktreeId, isSessionsFetching, sessionsData])
+
   const uiStateInitialized = useUIStore(state => state.uiStateInitialized)
 
   // Sync active session from backend if store doesn't have one
@@ -402,6 +418,23 @@ export function ChatWindow({
     activeWorktreeId,
     activeWorktreePath
   )
+
+  useEffect(() => {
+    if (
+      !import.meta.env.DEV ||
+      import.meta.env.MODE === 'test' ||
+      isLoading ||
+      !deferredSessionId
+    ) {
+      return
+    }
+    logger.debug('[ChatWindow] session loaded', {
+      worktreeId: activeWorktreeId,
+      sessionId: deferredSessionId,
+      hasSession: !!session,
+      messageCount: session?.messages.length ?? 0,
+    })
+  }, [activeWorktreeId, deferredSessionId, isLoading, session])
   const automationBadge = session?.automation_owned
     ? (session.automation_name ?? 'Automation')
     : null

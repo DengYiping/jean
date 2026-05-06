@@ -7,6 +7,7 @@ import type {
 import { ArrowDown, ArrowUp, ChevronDown, GitBranch } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { logger } from '@/lib/logger'
 import { isBaseSession, type Worktree } from '@/types/projects'
 import { useProjectsStore } from '@/store/projects-store'
 import { useChatStore } from '@/store/chat-store'
@@ -15,7 +16,7 @@ import { useIsMobile } from '@/hooks/use-mobile'
 import { WorktreeContextMenu } from './WorktreeContextMenu'
 import { useRenameWorktree } from '@/services/projects'
 import { useSessions } from '@/services/chat'
-import { isAskUserQuestion, isExitPlanMode } from '@/types/chat'
+import { isAskUserQuestion, isExitPlanMode, type Session } from '@/types/chat'
 import {
   computeSessionCardData,
   groupCardsByStatus,
@@ -50,33 +51,20 @@ export function WorktreeItem({
   defaultBranch,
 }: WorktreeItemProps) {
   const isMobile = useIsMobile()
-  const {
-    selectedWorktreeId,
-    selectWorktree,
-    selectProject,
-    expandedWorktreeIds,
-    toggleWorktreeExpanded,
-  } = useProjectsStore()
+  const isSelected = useProjectsStore(
+    state => state.selectedWorktreeId === worktree.id
+  )
+  const isExpanded = useProjectsStore(state =>
+    state.expandedWorktreeIds.has(worktree.id)
+  )
   // Check if any session in this worktree is running (chat)
   const isChatRunning = useChatStore(state =>
     state.isWorktreeRunning(worktree.id)
   )
-  // Get state needed for streaming waiting check
-  const sessionWorktreeMap = useChatStore(state => state.sessionWorktreeMap)
-  const activeToolCalls = useChatStore(state => state.activeToolCalls)
-  const isQuestionAnswered = useChatStore(state => state.isQuestionAnswered)
-  const executionModes = useChatStore(state => state.executionModes)
-  const executingModes = useChatStore(state => state.executingModes)
-  const sendingSessionIds = useChatStore(state => state.sendingSessionIds)
-  const waitingForInputSessionIds = useChatStore(
-    state => state.waitingForInputSessionIds
-  )
-  const reviewingSessions = useChatStore(state => state.reviewingSessions)
   // Check if worktree has a loading operation (commit, pr, review, merge, pull)
   const loadingOperation = useChatStore(
     state => state.worktreeLoadingOperations[worktree.id] ?? null
   )
-  const isSelected = selectedWorktreeId === worktree.id
   const isBase = isBaseSession(worktree)
 
   // Get git status for this worktree from event-driven cache
@@ -100,12 +88,16 @@ export function WorktreeItem({
   const { data: sessionsData } = useSessions(worktree.id, worktree.path)
 
   // Check if any session has streaming AskUserQuestion waiting (blinks)
-  const isStreamingWaitingQuestion = useMemo(() => {
-    for (const [sessionId, toolCalls] of Object.entries(activeToolCalls)) {
-      if (sessionWorktreeMap[sessionId] === worktree.id) {
+  const isStreamingWaitingQuestion = useChatStore(state => {
+    for (const [sessionId, toolCalls] of Object.entries(
+      state.activeToolCalls
+    )) {
+      if (state.sessionWorktreeMap[sessionId] === worktree.id) {
         if (
           toolCalls.some(
-            tc => isAskUserQuestion(tc) && !isQuestionAnswered(sessionId, tc.id)
+            tc =>
+              isAskUserQuestion(tc) &&
+              !state.isQuestionAnswered(sessionId, tc.id)
           )
         ) {
           return true
@@ -113,15 +105,18 @@ export function WorktreeItem({
       }
     }
     return false
-  }, [activeToolCalls, sessionWorktreeMap, worktree.id, isQuestionAnswered])
+  })
 
   // Check if any session has streaming ExitPlanMode waiting (solid)
-  const isStreamingWaitingPlan = useMemo(() => {
-    for (const [sessionId, toolCalls] of Object.entries(activeToolCalls)) {
-      if (sessionWorktreeMap[sessionId] === worktree.id) {
+  const isStreamingWaitingPlan = useChatStore(state => {
+    for (const [sessionId, toolCalls] of Object.entries(
+      state.activeToolCalls
+    )) {
+      if (state.sessionWorktreeMap[sessionId] === worktree.id) {
         if (
           toolCalls.some(
-            tc => isExitPlanMode(tc) && !isQuestionAnswered(sessionId, tc.id)
+            tc =>
+              isExitPlanMode(tc) && !state.isQuestionAnswered(sessionId, tc.id)
           )
         ) {
           return true
@@ -129,14 +124,14 @@ export function WorktreeItem({
       }
     }
     return false
-  }, [activeToolCalls, sessionWorktreeMap, worktree.id, isQuestionAnswered])
+  })
 
   // Check if any session has unanswered AskUserQuestion in persisted messages (blinks)
-  const hasPendingQuestion = useMemo(() => {
+  const hasPendingQuestion = useChatStore(state => {
     const sessions = sessionsData?.sessions ?? []
     for (const session of sessions) {
       // Skip sessions that are currently streaming (handled by isStreamingWaitingQuestion)
-      if (sendingSessionIds[session.id]) continue
+      if (state.sendingSessionIds[session.id]) continue
 
       // Find last assistant message by iterating from end (avoids array copy from .reverse())
       let lastAssistantMsg = null
@@ -148,22 +143,24 @@ export function WorktreeItem({
       }
       if (
         lastAssistantMsg?.tool_calls?.some(
-          tc => isAskUserQuestion(tc) && !isQuestionAnswered(session.id, tc.id)
+          tc =>
+            isAskUserQuestion(tc) &&
+            !state.isQuestionAnswered(session.id, tc.id)
         )
       ) {
         return true
       }
     }
     return false
-  }, [sessionsData?.sessions, sendingSessionIds, isQuestionAnswered])
+  })
 
   // Check if any session has unanswered ExitPlanMode in persisted messages (solid)
   // Uses plan_approved / approved_plan_message_ids (matching session-card-utils.tsx)
-  const hasPendingPlan = useMemo(() => {
+  const hasPendingPlan = useChatStore(state => {
     const sessions = sessionsData?.sessions ?? []
     for (const session of sessions) {
       // Skip sessions that are currently streaming (handled by isStreamingWaitingPlan)
-      if (sendingSessionIds[session.id]) continue
+      if (state.sendingSessionIds[session.id]) continue
 
       const approvedPlanIds = new Set(session.approved_plan_message_ids ?? [])
 
@@ -183,19 +180,19 @@ export function WorktreeItem({
       }
     }
     return false
-  }, [sessionsData?.sessions, sendingSessionIds])
+  })
 
   // Check if any session is explicitly waiting for user input
-  const isExplicitlyWaiting = useMemo(() => {
+  const isExplicitlyWaiting = useChatStore(state => {
     for (const [sessionId, isWaiting] of Object.entries(
-      waitingForInputSessionIds
+      state.waitingForInputSessionIds
     )) {
-      if (isWaiting && sessionWorktreeMap[sessionId] === worktree.id) {
+      if (isWaiting && state.sessionWorktreeMap[sessionId] === worktree.id) {
         return true
       }
     }
     return false
-  }, [waitingForInputSessionIds, sessionWorktreeMap, worktree.id])
+  })
 
   // Check for persisted waiting state from session metadata (fallback when messages not loaded)
   const hasPersistedWaitingQuestion = useMemo(() => {
@@ -222,29 +219,29 @@ export function WorktreeItem({
     isStreamingWaitingPlan || hasPendingPlan || hasPersistedWaitingPlan
 
   // Check if any session in this worktree is in review state (done, needs user review)
-  const isReviewing = useMemo(() => {
+  const isReviewing = useChatStore(state => {
     const sessions = sessionsData?.sessions ?? []
     for (const session of sessions) {
-      if (reviewingSessions[session.id]) return true
+      if (state.reviewingSessions[session.id]) return true
     }
     return false
-  }, [sessionsData?.sessions, reviewingSessions])
+  })
 
   // Get execution mode for running session (yolo vs vibing/plan)
-  const runningSessionExecutionMode = useMemo(() => {
-    for (const [sessionId, isSending] of Object.entries(sendingSessionIds)) {
-      if (isSending && sessionWorktreeMap[sessionId] === worktree.id) {
-        return executingModes[sessionId] ?? executionModes[sessionId] ?? 'plan'
+  const runningSessionExecutionMode = useChatStore(state => {
+    for (const [sessionId, isSending] of Object.entries(
+      state.sendingSessionIds
+    )) {
+      if (isSending && state.sessionWorktreeMap[sessionId] === worktree.id) {
+        return (
+          state.executingModes[sessionId] ??
+          state.executionModes[sessionId] ??
+          'plan'
+        )
       }
     }
     return 'plan'
-  }, [
-    sendingSessionIds,
-    sessionWorktreeMap,
-    worktree.id,
-    executingModes,
-    executionModes,
-  ])
+  })
 
   // Determine indicator status and variant for StatusIndicator component
   const { indicatorStatus, indicatorVariant } = useMemo((): {
@@ -277,31 +274,17 @@ export function WorktreeItem({
     isReviewing,
   ])
 
-  // Worktree expansion state for sidebar session list
-  const isExpanded = expandedWorktreeIds.has(worktree.id)
-  const storeState = useCanvasStoreState()
-
-  // Compute card data for all sessions (needed for both summary and expanded list)
-  const allCards = useMemo(() => {
-    const sessions = sessionsData?.sessions ?? []
-    return sessions.map(s => computeSessionCardData(s, storeState))
-  }, [sessionsData?.sessions, storeState])
-
-  const sessionGroups = useMemo(() => {
-    if (!isExpanded) return []
-    return groupCardsByStatus(allCards)
-  }, [isExpanded, allCards])
-
   const handleChevronClick = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation()
-      toggleWorktreeExpanded(worktree.id)
+      useProjectsStore.getState().toggleWorktreeExpanded(worktree.id)
     },
-    [worktree.id, toggleWorktreeExpanded]
+    [worktree.id]
   )
 
   const handleSessionSelect = useCallback(
     (sessionId: string) => {
+      const { selectProject, selectWorktree } = useProjectsStore.getState()
       selectProject(projectId)
       selectWorktree(worktree.id)
       // Clear active worktree so MainWindowContent renders ProjectCanvasView
@@ -321,7 +304,7 @@ export function WorktreeItem({
         )
       }, 50)
     },
-    [projectId, worktree.id, worktree.path, selectProject, selectWorktree]
+    [projectId, worktree.id, worktree.path]
   )
 
   // Responsive padding based on sidebar width
@@ -365,6 +348,13 @@ export function WorktreeItem({
   }, [worktree.id, worktree.name])
 
   const handleClick = useCallback(() => {
+    if (import.meta.env.DEV && import.meta.env.MODE !== 'test') {
+      logger.debug('[WorktreeItem] sidebar click', {
+        projectId,
+        worktreeId: worktree.id,
+      })
+    }
+    const { selectProject, selectWorktree } = useProjectsStore.getState()
     selectProject(projectId)
     selectWorktree(worktree.id)
     // Clear active worktree so MainWindowContent renders ProjectCanvasView
@@ -398,15 +388,7 @@ export function WorktreeItem({
     if (isMobile) {
       useUIStore.getState().setLeftSidebarVisible(false)
     }
-  }, [
-    isMobile,
-    projectId,
-    worktree.id,
-    worktree.path,
-    sessionsData?.sessions,
-    selectProject,
-    selectWorktree,
-  ])
+  }, [isMobile, projectId, worktree.id, worktree.path, sessionsData?.sessions])
 
   const handleDoubleClick = useCallback(
     (e: React.MouseEvent) => {
@@ -468,7 +450,7 @@ export function WorktreeItem({
         baseBranch: defaultBranch,
         projectId,
         onMergeConflict: () => {
-          selectWorktree(worktree.id)
+          useProjectsStore.getState().selectWorktree(worktree.id)
           setTimeout(() => {
             window.dispatchEvent(
               new CustomEvent('magic-command', {
@@ -479,7 +461,7 @@ export function WorktreeItem({
         },
       })
     },
-    [worktree.id, worktree.path, defaultBranch, projectId, selectWorktree]
+    [worktree.id, worktree.path, defaultBranch, projectId]
   )
 
   const handlePush = useCallback(
@@ -629,47 +611,76 @@ export function WorktreeItem({
       </WorktreeContextMenu>
 
       {/* Expandable session list grouped by status */}
-      {isExpanded && sessionGroups.length > 0 && (
-        <div
-          className={cn(
-            'border-l border-border/40 py-0.5',
-            isNarrowSidebar ? 'ml-6' : 'ml-9'
-          )}
-        >
-          {sessionGroups.map(group => (
-            <div key={group.key}>
-              <div className="pl-3 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-                {group.title}{' '}
-                <span className="text-muted-foreground/60">
-                  {group.cards.length}
+      {isExpanded && (
+        <ExpandedWorktreeSessions
+          sessions={sessionsData?.sessions ?? []}
+          isNarrowSidebar={isNarrowSidebar}
+          onSessionSelect={handleSessionSelect}
+        />
+      )}
+    </div>
+  )
+}
+
+function ExpandedWorktreeSessions({
+  sessions,
+  isNarrowSidebar,
+  onSessionSelect,
+}: {
+  sessions: Session[]
+  isNarrowSidebar: boolean
+  onSessionSelect: (sessionId: string) => void
+}) {
+  const storeState = useCanvasStoreState()
+  const allCards = useMemo(
+    () => sessions.map(session => computeSessionCardData(session, storeState)),
+    [sessions, storeState]
+  )
+  const sessionGroups = useMemo(() => groupCardsByStatus(allCards), [allCards])
+
+  if (sessionGroups.length === 0) {
+    return null
+  }
+
+  return (
+    <div
+      className={cn(
+        'border-l border-border/40 py-0.5',
+        isNarrowSidebar ? 'ml-6' : 'ml-9'
+      )}
+    >
+      {sessionGroups.map(group => (
+        <div key={group.key}>
+          <div className="pl-3 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+            {group.title}{' '}
+            <span className="text-muted-foreground/60">
+              {group.cards.length}
+            </span>
+          </div>
+          {group.cards.map(card => {
+            const config = statusConfig[card.status]
+            return (
+              <div
+                key={card.session.id}
+                className="flex items-center gap-1.5 pl-5 py-1 cursor-pointer text-sm text-muted-foreground hover:text-foreground hover:bg-accent/50 truncate"
+                onClick={e => {
+                  e.stopPropagation()
+                  onSessionSelect(card.session.id)
+                }}
+              >
+                <StatusIndicator
+                  status={config.indicatorStatus}
+                  variant={config.indicatorVariant}
+                  className="h-1.5 w-1.5 shrink-0"
+                />
+                <span className="truncate text-xs">
+                  {card.session.name || 'Untitled'}
                 </span>
               </div>
-              {group.cards.map(card => {
-                const config = statusConfig[card.status]
-                return (
-                  <div
-                    key={card.session.id}
-                    className="flex items-center gap-1.5 pl-5 py-1 cursor-pointer text-sm text-muted-foreground hover:text-foreground hover:bg-accent/50 truncate"
-                    onClick={e => {
-                      e.stopPropagation()
-                      handleSessionSelect(card.session.id)
-                    }}
-                  >
-                    <StatusIndicator
-                      status={config.indicatorStatus}
-                      variant={config.indicatorVariant}
-                      className="h-1.5 w-1.5 shrink-0"
-                    />
-                    <span className="truncate text-xs">
-                      {card.session.name || 'Untitled'}
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
-          ))}
+            )
+          })}
         </div>
-      )}
+      ))}
     </div>
   )
 }

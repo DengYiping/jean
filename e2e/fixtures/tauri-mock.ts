@@ -553,12 +553,20 @@ export const test = base.extend<TauriMockFixtures>({
             const sourceBranch =
               (source?.branch as string | undefined) ?? sourceName
             const name = `${sourceName}-fork`
+            const id = `worktree-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+            const project = projectStore.find(item => item.id === projectId)
+            const stableSlot =
+              project?.stable_worktree_slots_enabled === true
+                ? reserveStableSlot(project, id, name)
+                : undefined
             const worktree = {
-              id: `worktree-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              id,
               project_id: projectId,
               name,
-              path: `/tmp/e2e-test-project/.worktrees/${name}`,
-              stable_slot_id: undefined,
+              path:
+                (stableSlot?.path as string | undefined) ??
+                `/tmp/e2e-test-project/.worktrees/${name}`,
+              stable_slot_id: stableSlot?.id,
               branch: name,
               base_branch: sourceBranch,
               created_at: Date.now() / 1000,

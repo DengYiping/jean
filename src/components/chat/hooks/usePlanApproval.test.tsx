@@ -3,7 +3,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createElement, type ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { agentBoardQueryKeys } from '@/services/agent-board'
-import { defaultPreferences } from '@/types/preferences'
+import {
+  DEFAULT_PARALLEL_EXECUTION_PROMPT,
+  defaultPreferences,
+} from '@/types/preferences'
+import { useChatStore } from '@/store/chat-store'
 import type * as ChatService from '@/services/chat'
 import type { AgentBoardItem } from '@/types/agent-board'
 import type { Session } from '@/types/chat'
@@ -88,6 +92,9 @@ function planCard(): SessionCardData {
 describe('usePlanApproval', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    useChatStore.setState({
+      parallelExecutionPromptEnabledBySession: {},
+    })
     mockMarkPlanApproved.mockResolvedValue(undefined)
     mockInvoke.mockResolvedValue(undefined)
   })
@@ -135,6 +142,40 @@ describe('usePlanApproval', () => {
     })
     expect(queryClient.getQueryData(agentBoardQueryKeys.all)).toEqual(
       boardItems
+    )
+  })
+
+  it('passes the per-session parallel execution prompt when approving a plan', async () => {
+    useChatStore.setState({
+      parallelExecutionPromptEnabledBySession: {
+        'session-1': true,
+      },
+    })
+
+    const queryClient = createTestQueryClient()
+    const { result } = renderHook(
+      () =>
+        usePlanApproval({
+          worktreeId: 'worktree-1',
+          worktreePath: '/tmp/worktree-1',
+        }),
+      { wrapper: createWrapper(queryClient) }
+    )
+
+    act(() => {
+      result.current.handlePlanApproval(planCard())
+    })
+
+    await waitFor(() => {
+      expect(mockSendMessageMutate).toHaveBeenCalled()
+    })
+
+    expect(mockSendMessageMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 'session-1',
+        executionMode: 'build',
+        parallelExecutionPrompt: DEFAULT_PARALLEL_EXECUTION_PROMPT,
+      })
     )
   })
 })

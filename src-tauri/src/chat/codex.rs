@@ -233,6 +233,27 @@ pub(crate) fn build_codex_user_input(prompt: &str) -> Vec<serde_json::Value> {
     input
 }
 
+pub(crate) fn build_codex_prompt_with_parallel_request(
+    prompt: &str,
+    parallel_execution_prompt: Option<&str>,
+) -> String {
+    let Some(parallel_prompt) = parallel_execution_prompt
+        .map(str::trim)
+        .filter(|prompt| !prompt.is_empty())
+    else {
+        return prompt.to_string();
+    };
+
+    format!(
+        "{prompt}\n\n---\n\nParallel execution request from user settings:\n\
+         The user has explicitly enabled parallel execution for this turn. \
+         Use available sub-agents in parallel for independent sidecar tasks, \
+         and batch independent tool calls, when that materially helps. \
+         Do not force sub-agents for tightly coupled or trivial work.\n\n\
+         Additional parallel execution guidance:\n{parallel_prompt}"
+    )
+}
+
 /// Split "gpt-5.4-fast" → ("gpt-5.4", true). Only gpt-5.4-fast is recognised;
 /// older models that happened to end in `-fast` are left unchanged.
 fn split_fast_model(model: &str) -> (&str, bool) {
@@ -3560,6 +3581,51 @@ mod tests {
             .get("config")
             .and_then(|config| config.get("experimental_instructions_file"))
             .is_none());
+    }
+
+    #[test]
+    fn thread_start_enables_multi_agent_feature_when_requested() {
+        let params = build_thread_start_params(
+            std::path::Path::new("/tmp"),
+            Some("gpt-5.4"),
+            Some("plan"),
+            false,
+            Some("Use subagents in parallel."),
+            true,
+            Some(3),
+        );
+
+        assert_eq!(
+            params["developerInstructions"],
+            "Use subagents in parallel."
+        );
+        assert_eq!(params["config"]["features"]["multi_agent"], true);
+        assert_eq!(params["config"]["agents"]["max_threads"], 3);
+    }
+
+    #[test]
+    fn codex_parallel_prompt_adds_user_level_parallel_request() {
+        let prompt = build_codex_prompt_with_parallel_request(
+            "Explore this codebase",
+            Some("Use subagents in parallel."),
+        );
+
+        assert!(prompt.starts_with("Explore this codebase\n\n---\n\n"));
+        assert!(prompt.contains("The user has explicitly enabled parallel execution"));
+        assert!(prompt.contains("Use available sub-agents in parallel"));
+        assert!(prompt.contains("Use subagents in parallel."));
+    }
+
+    #[test]
+    fn codex_parallel_prompt_wrapper_ignores_empty_prompt() {
+        assert_eq!(
+            build_codex_prompt_with_parallel_request("Explore this codebase", Some("   ")),
+            "Explore this codebase"
+        );
+        assert_eq!(
+            build_codex_prompt_with_parallel_request("Explore this codebase", None),
+            "Explore this codebase"
+        );
     }
 
     #[test]

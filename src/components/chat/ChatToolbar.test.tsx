@@ -187,12 +187,11 @@ describe('ChatToolbar', () => {
     expect(onParallelExecutionPromptChange).toHaveBeenCalledWith(true)
   })
 
-  it('disables parallel execution prompting once the session setting is locked', () => {
+  it('keeps parallel execution prompting toggleable for existing Codex threads', () => {
     const onParallelExecutionPromptChange = vi.fn()
     render(
       <ChatToolbar
         {...createProps({
-          parallelExecutionPromptToggleDisabled: true,
           onParallelExecutionPromptChange,
         })}
       />
@@ -202,11 +201,11 @@ describe('ChatToolbar', () => {
       name: 'Parallel execution prompting',
     })
 
-    expect(button).toBeDisabled()
+    expect(button).toBeEnabled()
 
     fireEvent.click(button)
 
-    expect(onParallelExecutionPromptChange).not.toHaveBeenCalled()
+    expect(onParallelExecutionPromptChange).toHaveBeenCalledWith(true)
   })
 
   it('shows Codex context usage from the toolbar while the floating dock is hidden', () => {

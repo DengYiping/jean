@@ -180,6 +180,8 @@ export function useMessageSending({
       queryClient,
       preferences?.chrome_enabled,
       preferences?.ai_language,
+      preferences?.parallel_execution_prompt_enabled,
+      preferences?.magic_prompts?.parallel_execution,
       resolveCustomProfile,
     ]
   )

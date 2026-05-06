@@ -96,6 +96,23 @@ fn now() -> u64 {
         .as_secs()
 }
 
+fn resolve_codex_multi_agent_settings(
+    global_multi_agent_enabled: bool,
+    max_agent_threads: u32,
+    parallel_execution_prompt: Option<&str>,
+) -> (bool, Option<u32>) {
+    let parallel_prompt_enabled = parallel_execution_prompt
+        .map(str::trim)
+        .is_some_and(|prompt| !prompt.is_empty());
+    let enabled = global_multi_agent_enabled || parallel_prompt_enabled;
+
+    if enabled {
+        (true, Some(max_agent_threads.clamp(1, 8)))
+    } else {
+        (false, None)
+    }
+}
+
 /// Find the nearest non-archived session after removing an item at `removed_index`.
 /// Preference order: left neighbor(s) first, then right neighbor(s).
 fn find_neighbor_non_archived_session_id(
@@ -1736,11 +1753,19 @@ pub async fn send_chat_message(
     // Read Codex multi-agent preferences
     if effective_backend == Backend::Codex {
         if let Ok(prefs) = crate::load_preferences(app.clone()).await {
-            codex_multi_agent_enabled = prefs.codex_multi_agent_enabled;
-            if codex_multi_agent_enabled {
-                codex_max_agent_threads = Some(prefs.codex_max_agent_threads.clamp(1, 8));
-            }
+            (codex_multi_agent_enabled, codex_max_agent_threads) =
+                resolve_codex_multi_agent_settings(
+                    prefs.codex_multi_agent_enabled,
+                    prefs.codex_max_agent_threads,
+                    parallel_execution_prompt.as_deref(),
+                );
         }
+        log::debug!(
+            "Codex multi-agent settings for session={session_id}: parallel_prompt_present={}, multi_agent_enabled={}, max_agent_threads={:?}",
+            parallel_execution_prompt.is_some(),
+            codex_multi_agent_enabled,
+            codex_max_agent_threads
+        );
     }
     let allowed_tools_for_cli = if final_allowed_tools.is_empty() {
         None
@@ -2262,6 +2287,11 @@ pub async fn send_chat_message(
                         None => Err("Nothing to compact yet. Send one message first.".to_string()),
                     }
                 } else {
+                    let codex_turn_message = super::codex::build_codex_prompt_with_parallel_request(
+                        &thread_message,
+                        thread_parallel_prompt.as_deref(),
+                    );
+
                     super::codex::execute_codex_via_server(
                         &thread_app,
                         &thread_session_id,
@@ -2274,7 +2304,7 @@ pub async fn send_chat_message(
                         codex_reasoning_effort.as_deref(),
                         thread_codex_search,
                         &codex_add_dirs,
-                        &thread_message,
+                        &codex_turn_message,
                         codex_developer_prompt.as_deref(),
                         thread_codex_multi_agent,
                         thread_codex_max_threads,
@@ -5801,6 +5831,36 @@ mod tests {
         let result = extract_text_from_stream_json(output);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "Hello world");
+    }
+
+    #[test]
+    fn codex_multi_agent_stays_disabled_without_global_or_parallel_prompt() {
+        let (enabled, max_threads) = resolve_codex_multi_agent_settings(false, 3, None);
+
+        assert!(!enabled);
+        assert_eq!(max_threads, None);
+    }
+
+    #[test]
+    fn codex_multi_agent_is_enabled_by_parallel_prompt() {
+        let (enabled, max_threads) =
+            resolve_codex_multi_agent_settings(false, 3, Some("Use subagents in parallel"));
+
+        assert!(enabled);
+        assert_eq!(max_threads, Some(3));
+    }
+
+    #[test]
+    fn codex_multi_agent_threads_are_clamped_when_enabled_by_parallel_prompt() {
+        let (enabled_low, max_threads_low) =
+            resolve_codex_multi_agent_settings(false, 0, Some("Use subagents"));
+        let (enabled_high, max_threads_high) =
+            resolve_codex_multi_agent_settings(false, 12, Some("Use subagents"));
+
+        assert!(enabled_low);
+        assert_eq!(max_threads_low, Some(1));
+        assert!(enabled_high);
+        assert_eq!(max_threads_high, Some(8));
     }
 
     #[test]

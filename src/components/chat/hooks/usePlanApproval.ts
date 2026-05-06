@@ -8,6 +8,7 @@ import { agentBoardQueryKeys } from '@/services/agent-board'
 import { invoke } from '@/lib/transport'
 import { useClaudeCliStatus } from '@/services/claude-cli'
 import { supportsAdaptiveThinking } from '@/lib/model-utils'
+import { resolveParallelExecutionPromptForSession } from '@/lib/parallel-execution-prompt'
 import type { AgentBoardItem } from '@/types/agent-board'
 import type { EffortLevel, ThinkingLevel } from '@/types/chat'
 import type { SessionCardData } from '../session-card-utils'
@@ -249,6 +250,10 @@ export function usePlanApproval({
             effortLevel,
             backend: sessionBackend,
             customProfileName: card.session.selected_provider ?? undefined,
+            parallelExecutionPrompt: resolveParallelExecutionPromptForSession(
+              sessionId,
+              preferences
+            ),
           })
         })
     },
@@ -420,6 +425,10 @@ export function usePlanApproval({
             effortLevel,
             backend: sessionBackend,
             customProfileName: card.session.selected_provider ?? undefined,
+            parallelExecutionPrompt: resolveParallelExecutionPromptForSession(
+              sessionId,
+              preferences
+            ),
           })
         })
     },

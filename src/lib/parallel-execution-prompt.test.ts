@@ -40,6 +40,21 @@ describe('resolveParallelExecutionPrompt', () => {
     ).toBe(DEFAULT_PARALLEL_EXECUTION_PROMPT)
   })
 
+  it('uses the session override when the global preference is disabled', () => {
+    useChatStore.setState({
+      parallelExecutionPromptEnabledBySession: {
+        'session-1': true,
+      },
+    })
+
+    expect(
+      resolveParallelExecutionPromptForSession('session-1', {
+        parallel_execution_prompt_enabled: false,
+        magic_prompts: { parallel_execution: 'session parallel prompt' },
+      })
+    ).toBe('session parallel prompt')
+  })
+
   it('falls back to cached session data when the store has not hydrated yet', () => {
     queryClient.setQueryData(['chat', 'sessions', 'worktree-1'], {
       worktree_id: 'worktree-1',

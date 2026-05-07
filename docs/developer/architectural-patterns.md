@@ -1,6 +1,6 @@
 # Architectural Patterns
 
-Core architectural patterns and their implementation in this Tauri + React template. This document serves as a reference for the key patterns that make the system work together cohesively.
+Core architectural patterns and their implementation in Jean. This document serves as a reference for the key patterns that make the system work together cohesively.
 
 ## State Management Patterns
 
@@ -86,6 +86,8 @@ app.on_menu_event(|app, event| {
 
 ```typescript
 // Command invocation with error handling
+import { invoke } from '@/lib/transport'
+
 const result = await invoke<Result>('my_command', { args })
 ```
 
@@ -159,6 +161,8 @@ Same action, multiple triggers:
 case ',': commandContext.openPreferences()
 
 // Menu event
+import { listen } from '@/lib/transport'
+
 listen('menu-preferences', () => commandContext.openPreferences())
 
 // Command palette

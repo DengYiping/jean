@@ -123,10 +123,10 @@ The auto-updater provides:
 
 1. App waits 5 seconds after launch
 2. Silently checks for updates using `@tauri-apps/plugin-updater`
-3. If update available, shows browser `confirm()` dialog
-4. Downloads and installs in background with progress logging
-5. Shows completion dialog with restart option
-6. Uses `@tauri-apps/plugin-process` to restart if user agrees
+3. If update available, stores the update object and opens `UpdateAvailableModal`
+4. User can install immediately or defer into the title-bar pending update indicator
+5. Downloads and installs with toast progress
+6. Shows a restart toast action that uses `@tauri-apps/plugin-process`
 
 ### Implementation
 
@@ -134,19 +134,15 @@ The auto-updater is implemented in `src/App.tsx`:
 
 ```typescript
 import { check } from '@tauri-apps/plugin-updater'
-import { relaunch } from '@tauri-apps/plugin-process'
+import { useUIStore } from '@/store/ui-store'
 
 // Inside useEffect:
 const checkForUpdates = async () => {
   try {
     const update = await check()
     if (update) {
-      const shouldUpdate = confirm(`Update available: ${update.version}...`)
-      if (shouldUpdate) {
-        await update.downloadAndInstall(/* progress callback */)
-        const shouldRestart = confirm('Update completed successfully!...')
-        if (shouldRestart) await relaunch()
-      }
+      pendingUpdateRef.current = update
+      useUIStore.getState().setUpdateModalVersion(update.version)
     }
   } catch (error) {
     // Silent fail - don't bother user with network issues
@@ -160,7 +156,7 @@ const checkForUpdates = async () => {
 The updater is configured in `tauri.conf.json`:
 
 - **Active**: `true` to enable update checks
-- **Dialog**: `true` to show built-in dialogs (we use custom confirm dialogs)
+- **Dialog**: `false`; Jean uses `UpdateAvailableModal` and toast actions
 - **Endpoints**: GitHub releases URL with template placeholder
 - **Public Key**: Template placeholder for signing verification
 

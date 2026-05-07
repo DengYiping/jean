@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-We provide security updates for the following versions of this template:
+Jean is a local-first desktop app. Security support follows the current maintained branch of this fork unless a release process states otherwise.
 
 | Version | Supported          |
 | ------- | ------------------ |
@@ -11,7 +11,7 @@ We provide security updates for the following versions of this template:
 
 ## Reporting a Vulnerability
 
-We take security vulnerabilities seriously. If you discover a security vulnerability in this template, please follow these steps:
+We take security vulnerabilities seriously. If you discover a security vulnerability in Jean, please follow these steps:
 
 ### 1. Do Not Disclose Publicly
 
@@ -19,7 +19,7 @@ Please do not report security vulnerabilities through public GitHub issues, disc
 
 ### 2. Contact Us Privately
 
-Send details of the vulnerability to: **[security@yourorganization.com]** (replace with your actual security contact)
+Send details privately to the repository owner or maintainer. Do not include exploit details in a public issue.
 
 Include the following information:
 
@@ -37,7 +37,7 @@ Include the following information:
 
 ## Security Best Practices
 
-This template includes several security measures by default:
+Jean includes several security measures:
 
 ### Frontend Security
 
@@ -62,7 +62,7 @@ This template includes several security measures by default:
 
 ## Security Considerations for Developers
 
-When building applications with this template:
+When working on Jean:
 
 ### 1. Environment Variables
 
@@ -134,6 +134,8 @@ await invoke('execute_command', { command: userInput })
 // ✅ Safe - predefined commands only
 await invoke('predefined_safe_command', { args: validatedArgs })
 ```
+
+Frontend code should import `invoke()` from `@/lib/transport`; backend commands must still validate arguments in Rust.
 
 ### 3. Information Disclosure
 

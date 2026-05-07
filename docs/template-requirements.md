@@ -2,16 +2,16 @@
 
 ## Introduction
 
-This document contains detils for creating a "walking skeleton" for building robust, maintainable, and scalable desktop applications using Tauri and React. The goal is to establish a clear, modern, and opinionated project structure and architecture _before_ writing the first feature.
+This document contains details for creating a "walking skeleton" for building robust, maintainable, and scalable desktop applications using Tauri and React. The goal is to establish a clear, modern, and opinionated project structure and architecture _before_ writing the first feature.
 
 This setup is designed to be highly effective for human developers and AI coding agents alike. It promotes best practices, separation of concerns, and provides clear instructions and patterns to follow, reducing ambiguity and leading to a higher-quality codebase.
 
 # Core Tech Stack
 
-- Base: Tauri 2, React 19+ & Typescript, Rust
+- Base: Tauri 2, React 19+ & TypeScript, Rust
 - UI: Tailwind 4 & Shadcn 4
-- State: Tanstack Query & Zustand 5
-- Tests: Built-in for Rust & Vitest 3 for TS
+- State: TanStack Query & Zustand 5
+- Tests: Built-in for Rust & Vitest 4 for TS
 - CI & Releases: GitHub Actions + GitHub
 - DX: VSCode/Cursor, Claude Code
 
@@ -21,13 +21,13 @@ This setup is designed to be highly effective for human developers and AI coding
 
 - Clean Tauri + React App
 - Tauri plugins for with clipboard and filesystem access.
-- Typechecking, linting and formatting via Typescript, ESLint, Prettier, Cargo and Clippy with sensible default configs.
+- Typechecking, linting and formatting via TypeScript, ESLint, Prettier, Cargo and Clippy with sensible default configs.
 - A minimal DX setup for VSCode, Cursor, Claude Code and Gemini.
-- Simple bare-bones test framework for Rust (native) and Typescript (vitest)
+- Simple bare-bones test framework for Rust (native) and TypeScript (vitest)
 - Clear state management "Onion":
   - useState -> Ephemeral internal component UI state
-  - Zustant -> Ephemeral global UI state
-  - Tanstack Query -> All perststant state not "owned" by react app.
+  - Zustand -> Ephemeral global UI state
+  - TanStack Query -> All persistent state not "owned" by React app.
 - Clear pattern for extracting React behaviour into hooks and utilities.
 - Command Bridge -> system for triggering "commands" from Rust to TS or vice versa in a performant, easy-to-understand way.
 - Tailwind & shadcn styling with support for themes and dark mode.
@@ -35,11 +35,11 @@ This setup is designed to be highly effective for human developers and AI coding
 - Simple CSS "reset" for a more native app-like experience.
 - Simple "root" react setup with:
   - Simple app-level components (`main.tsx`, `App.tsx` etc)
-  - `MainWindow` to-level layout component.
+  - `MainWindow` top-level layout component.
   - Extensible unified title bar with OS window controls and main toolbar buttons.
   - "Main" layout with main area and resizable + hideable left & right sidebars.
 - Global "Cmd+K" command palette and clear pattern for adding commands.
-- Settings dialog with multiple panes, sensible default styles and settings persistance via local disk and/or remote backend.
+- Settings dialog with multiple panes, sensible default styles and settings persistence via local disk and/or remote backend.
 - Basic OS menu system: about, settings, check for updates, quit, close window, fullscreen, help etc.
 - Keyboard shortcut system
 - Extensible local crash reporting and data recovery system
@@ -121,22 +121,23 @@ The Tauri [Clipboard Manager plugin](https://v2.tauri.app/plugin/clipboard/) is 
 
 ## Linting, Checks & Formatting
 
-- Typescript, ESLint, Prettier, Clippy & Cargo Formatter
-- Sensible Tauri-friendly default configs for ESLint, Prettier and Typescript. Ensure `eslint.config.js`, `.prettierrc`, and `src-tauri/rustfmt.toml` are configured with sensible defaults to enforce a consistent code style.
+- TypeScript, ESLint, Prettier, Clippy & Cargo Formatter
+- Sensible Tauri-friendly default configs for ESLint, Prettier and TypeScript. Ensure `eslint.config.js`, `.prettierrc`, and `src-tauri/rustfmt.toml` are configured with sensible defaults to enforce a consistent code style.
 - Suitable commands added to `package.json`:
 
 ```json
 "scripts": {
   // ... other scripts
   "typecheck": "tsc --noEmit",
-  "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-  "format:check": "prettier --check \"src/**/*.{ts,tsx,js,jsx,css,md}\"",
+  "lint": "eslint . --max-warnings 0",
+  "format:check": "prettier --check .",
+  "build": "tsc && vite build",
   "rust:fmt:check": "cd src-tauri && cargo fmt --check",
   "rust:clippy": "cd src-tauri && cargo clippy -- -D warnings",
   "rust:test": "cd src-tauri && cargo test",
   "test": "vitest",
   "test:run": "vitest run",
-  "check:all": "bun run typecheck && bun run lint && bun run format:check && bun run test:run && bun run rust:fmt:check && bun run rust:clippy && bun run rust:test"
+  "check:all": "bun run typecheck && bun run lint && bun run format:check && bun run build && bun run rust:fmt:check && bun run rust:clippy && bun run test:run && bun run rust:test"
 },
 ```
 
@@ -150,18 +151,18 @@ State that is only relevant to a single component (e.g., the value of an input f
 
 Transient global state related to the UI (e.g., `isSidebarVisible`, `isCommandPaletteOpen`) uses small, slices Zustand stores for different UI domains (e.g., `useMainUIStore.ts`, `useMyFancyFeaturePanelStore.ts`).
 
-### All Persisted State -> Tanstack Query
+### All Persisted State -> TanStack Query
 
-Data that originates from outside of the react app, either from the Rust backend (eg read from disk) or from external services and APIs uses TanStack Query. Use **TanStack Query**. All `invoke` calls should be wrapped in `useQuery` or `useMutation` hooks within the `src/services/` directory. This handles loading, error, and caching states automatically.
+Data that originates from outside of the React app, either from the Rust backend (eg read from disk) or from external services and APIs uses TanStack Query. Use **TanStack Query**. Shared backend reads and writes should be wrapped in `useQuery` or `useMutation` hooks within the `src/services/` directory. This handles loading, error, and caching states automatically.
 
 ### Data on local disk
 
-Certain settings data should be persisted to local storage (in addition to or instead of to any remote backend system). This should usually be written to the applications support directory (eg. ``~/Library/Application Support/com.myapp.app/recovery/` on macOS). This is handled by Tauri's [filesystem plugin](https://v2.tauri.app/plugin/file-system/) and should be accessed and written in the same way as any other state which is not "owned" by the React App... ie via Tanstack Query.
+Certain settings data should be persisted to local storage (in addition to or instead of to any remote backend system). In Jean this is written under Tauri's app data directory, for example `~/Library/Application Support/com.jean.desktop/` on macOS. File operations are handled by Rust commands and reached from the frontend through `src/lib/transport.ts`, usually wrapped by TanStack Query service hooks.
 
 ## Command Bridge
 
 - **Tauri -> React:** In `main.rs`, define your menu items. When a menu item is clicked, emit an event to the frontend (e.g., `window.emit('menu-event', 'new-file')`). Create a `useMenuListeners.ts` hook in React to listen for these events and call the appropriate functions.
-- **React -> Tauri:** Create a command `update_menu_item(id: String, state: MenuItemState)` in Rust. In React, you can call `invoke('update_menu_item', ...)` to enable/disable menu items based on application state (e.g., disable "Save" when `isDirty` is false).
+- **React -> Tauri/browser backend:** Create a Rust command, register it in `src-tauri/src/lib.rs`, add a web-compatible arm in `src-tauri/src/http_server/dispatch.rs` if it should work in browser/headless mode, and call it via `invoke()` from `src/lib/transport.ts`.
 - **Command System:** Create a `lib/commands.ts` file that defines a global command registry. This allows different parts of the app to register and execute commands (e.g., "createNewFile", "toggleTheme") without being directly coupled. The Command Palette and menu listeners can then simply execute commands from this registry.
 
 ## Test Framework
@@ -175,12 +176,12 @@ Certain settings data should be persisted to local storage (in addition to or in
 
 - Tailwind 4 is used alongside shadcn 4 UI components in the standard way
 - UI components are installed in `src/components/ui` and are kebab-case. Generally speaking, they should not be modified heavily **unless** you are modifying their visual appearance.
-- Most styling for JSX componenrs should be done with tailwind to keep things simple.
+- Most styling for JSX components should be done with tailwind to keep things simple.
 - A shadcn theme can be generated with [Tweakcn](https://tweakcn.com/) and should be used to provide a basic theme via CSS variables.
 
-### Themeing
+### Theming
 
-Themeing should be done via [Tailwind v4 CSS variables](https://ui.shadcn.com/docs/theming) and an [ThemeProvider](https://ui.shadcn.com/docs/dark-mode/vite). See also <https://tailwindcss.com/docs/theme>.
+Theming should be done via [Tailwind v4 CSS variables](https://ui.shadcn.com/docs/theming) and a [ThemeProvider](https://ui.shadcn.com/docs/dark-mode/vite). See also <https://tailwindcss.com/docs/theme>.
 
 ### CSS
 
@@ -206,15 +207,15 @@ Since we're using Tailwind, there should be very little CSS. Some very complex c
 
 ### `main.tsx`
 
-Renders `<App />` wrapped in the Tanstack `QuertProvider`. Nothing else.
+Renders `<App />` wrapped in the TanStack `QueryClientProvider`. Nothing else.
 
 ### `App.tsx`
 
-Contains auto-update logic and Renders `<MainWindow />` wrapped in `<ThemeProvider>`. Should contain no other logic.
+In Jean, `App.tsx` owns global bootstrap work such as initial browser-mode data seeding, update checks, queue processing, persistence hooks, and recovery listeners, then renders `<MainWindow />` inside the provider tree.
 
 ### MainWindow
 
-This is the primary container for the react app. It should render the main app layout components as well as any global "hidden" components like Toasts, Dialogs, command palette etc. By default, it contains four visible components (TitleBar, LeftSideBar, MainWindowContent and RightSideBar) and three invisible ones (PreferencesDialig, CommandPallete, Toaster) as well as hooks for using any stored global UI state. The sidebars and main content components are wrapped in shadcn's ResizablePanel system.
+This is the primary container for the React app. It renders the main app layout components as well as global "hidden" components like toasts, dialogs, and the command palette. In Jean, `MainWindow` coordinates `TitleBar`, `LeftSideBar`, `MainWindowContent`, `RightSideBar`, and global overlays such as preferences, onboarding, update, and modal flows.
 
 ### TitleBar
 
@@ -236,11 +237,11 @@ The main content window is a simple wrapper that allows for the conditional rend
 
 This is intended to provide a simple and obvious pattern for adding settings and configurations. It can be opened with a keyboard shortcut or from the macOS menubar. The left-hand side contains a number of "tabs" Built using shadcn's `Sidebar` components. Each tab loads a new **pane** into the right-hand side. Panes can be added to `src/components/preferences/panes`.
 
-Preferences should be persisted using the standard hooks and pattern for interacting with any other persistent data via Tanstack Query.
+Preferences should be persisted using the standard hooks and pattern for interacting with any other persistent data via TanStack Query.
 
 ## Command Palette
 
-The command palette provides a simple overlay with easy keyboard navigability using Shadcn's `command` components. By default, the only command is to open the preferences, Which provides an example of how to fire commands from the palette.
+The command palette provides a simple overlay with keyboard navigability using Shadcn's `command` components. Current commands are registered from domain files under `src/lib/commands/` and executed with the shared `CommandContext`.
 
 ## Native Menu System
 
@@ -284,17 +285,17 @@ Notifications to be sent and displayed as toasts in the bottom right of the appl
 
 ## Logging System
 
-Logging helpers are provided in both Rust and TypeScript To facilitate easy logging, both to the JavaScript console and to The macOS logs via Tauri's [log plugin](https://v2.tauri.app/plugin/logging/).
+Logging helpers are provided in both Rust and TypeScript to facilitate easy logging, both to the JavaScript console and to OS logs via Tauri's [log plugin](https://v2.tauri.app/plugin/logging/).
 
 ## Developer Docs
 
-The philosophy, design patterns, architecture, best practises, and development processes are documented in a series of Markdown files in `docs/developer`. This is intended as a starting point, describing the current setup. As new features are added and new patterns are included, these documents should be added to and updated so they remain current.
+The philosophy, design patterns, architecture, best practices, and development processes are documented in a series of Markdown files in `docs/developer`. This is intended as a starting point, describing the current setup. As new features are added and new patterns are included, these documents should be added to and updated so they remain current.
 
-`docs/architecture-guide.md` is a comprihensive set of instructions on the patterns and rules used in this app. It's intended for AI agents to read when checking their work follows established patterns.
+`docs/developer/architecture-guide.md` is a comprehensive set of instructions on the patterns and rules used in this app. It's intended for AI agents to read when checking their work follows established patterns.
 
 ## User Guide Boilerplate
 
-A Bare Bones User Guide is included in `docs/userguide`. As new user-facing features are added, this user guide should be updated. The Markdown files in here can be used to build an online user guide if needed.
+There is no separate `docs/userguide` directory in the current tree. User-facing setup information lives in the root `README.md`, `CONTRIBUTING.md`, and `GETTING_STARTED.md`; create a dedicated user guide only when there is a maintained publishing target for it.
 
 ## Task Management
 
@@ -316,17 +317,17 @@ A comprehensive `CLAUDE.md` is included, along with barebones cursor rules and `
 
 Five Claude Code agents specific to this project are included:
 
-- UI Designer -> Expert & passionate UI designer with 15 years experience building native-feeling desktop apps using web technology. Knows macOS design inside out and is expert at making Tauri/React apps beatiful and joyful to use. Equally great at tailwind and modern CSS, with a deep understanding of how React components should be composed to create beautiful, accessible and delightful UIs. Always sweats the details.
+- UI Designer -> Expert & passionate UI designer with 15 years experience building native-feeling desktop apps using web technology. Knows macOS design inside out and is expert at making Tauri/React apps beautiful and joyful to use. Equally great at tailwind and modern CSS, with a deep understanding of how React components should be composed to create beautiful, accessible and delightful UIs. Always sweats the details.
 - Tauri Genius -> World expert on the inner workings of Tauri and it's plugin ecosystem and highly skilled Rust engineer. Knows the JS/TS parts of Tauri as well as the rust parts.
 - React Genius -> World Expert at writing clean, performant and maintainable front-end systems with _exactly our stack_.
 - Technical writer -> Expert at writing clear, terse, unambiguous and information-dense technical docs about THIS PROJECT which are INCREDIBLE at helping both human and AI coders **really understand** the mental models and patterns required to work easily in this codebase. They know the codebase inside-out but only document the stuff their readers **need**. Their docs are so good at explaining the patterns, mental models and Weird Bits that people new to the project always say "it normally takes months of mistakes before I really get a codebase. These docs made that instant". Owns everything in `/docs/developer` and contributes to other technical docs as needed.
-- User Guide Writer -> Thirty years experience writing AMAZING guides for end users of technical software. The hardest part of this job is balancing "compelling", "complete", "correct", "engaging", "concise" and "clear". And this agent is KNOWN for being great at that. They know the product and it's users inside-out. When a diagram, screenshot or video is better than words, they ask a human for help... clearly explaining what they need. They are responsible for `docs/userguide` and nothing else.
+- User Guide Writer -> Thirty years experience writing AMAZING guides for end users of technical software. The hardest part of this job is balancing "compelling", "complete", "correct", "engaging", "concise" and "clear". They know the product and its users inside-out. When a diagram, screenshot or video is better than words, they ask a human for help... clearly explaining what they need. They are responsible for user-facing docs and nothing else.
 
 ### Claude Code Commands
 
-One Claude Code Command is included. You should create moreas your product evolves.
+One Claude Code Command is included. You should create more as your product evolves.
 
-- `/check` -> Checks everything meets `docs/architecture-guide.css` , runs `bun run check:all` and fixes any problems.
+- `/check` -> Checks everything meets `docs/developer/architecture-guide.md`, runs `bun run check:all`, and fixes any problems.
 
 ## Other Boilerplate Bits
 

@@ -4,31 +4,55 @@ User-configurable keyboard shortcut system using native DOM event listeners, int
 
 ## Quick Start
 
-### All Keybindings (19 Total)
+### Current Keybindings
 
-Keybindings are user-configurable in Preferences. Below are the defaults:
+Keybindings are user-configurable in Preferences. The source of truth is `DEFAULT_KEYBINDINGS` and `KEYBINDING_DEFINITIONS` in `src/types/keybindings.ts`; this table mirrors the current defaults:
 
-| Action                      | Default Shortcut | Description                             |
-| --------------------------- | ---------------- | --------------------------------------- |
-| `focus_chat_input`          | `Cmd+L`          | Move focus to chat textarea             |
-| `toggle_left_sidebar`       | `Cmd+B`          | Show/hide projects sidebar              |
-| `open_preferences`          | `Cmd+,`          | Open preferences dialog                 |
-| `open_commit_modal`         | `Cmd+Shift+C`    | Open git commit dialog                  |
-| `open_pull_request`         | `Cmd+Shift+P`    | Open pull request dialog                |
-| `open_git_diff`             | `Cmd+G`          | Open git diff view                      |
-| `execute_run`               | `Cmd+R`          | Start/stop workspace run script         |
-| `open_in_modal`             | `Cmd+O`          | Open worktree in editor/terminal/finder |
-| `open_magic_modal`          | `Cmd+M`          | Open magic git commands menu            |
-| `new_session`               | `Cmd+T`          | Create new chat session                 |
-| `next_session`              | `Cmd+Alt+Right`  | Switch to next session tab              |
-| `previous_session`          | `Cmd+Alt+Left`   | Switch to previous session tab          |
-| `close_session_or_worktree` | `Cmd+W`          | Close session or remove worktree        |
-| `new_worktree`              | `Cmd+N`          | Create new worktree                     |
-| `next_worktree`             | `Cmd+Alt+Down`   | Switch to next worktree                 |
-| `previous_worktree`         | `Cmd+Alt+Up`     | Switch to previous worktree             |
-| `cycle_execution_mode`      | `Shift+Tab`      | Cycle through Plan/Build/Yolo modes     |
-| `approve_plan`              | `Cmd+Enter`      | Approve plan or answer question         |
-| `restore_last_archived`     | `Cmd+Shift+T`    | Restore most recently archived item     |
+| Action                                | Default Shortcut      | Description                     |
+| ------------------------------------- | --------------------- | ------------------------------- |
+| `focus_chat_input`                    | `Cmd+L`               | Move focus to chat textarea     |
+| `toggle_left_sidebar`                 | `Cmd+B`               | Show/hide projects sidebar      |
+| `open_new_project_dialog`             | `Cmd+Shift+N`         | Open new project dialog         |
+| `open_preferences`                    | `Cmd+,`               | Open preferences dialog         |
+| `open_commit_modal`                   | `Cmd+Shift+C`         | Open git commit dialog          |
+| `open_git_diff`                       | `Cmd+G`               | Open git diff view              |
+| `execute_run`                         | `Cmd+R`               | Start/stop workspace run script |
+| `open_in_modal`                       | `Cmd+O`               | Open current worktree in...     |
+| `open_magic_modal`                    | `Cmd+M`               | Open magic commands menu        |
+| `new_session`                         | `Cmd+T`               | Create new chat session         |
+| `next_session`                        | `Cmd+Alt+Right`       | Switch to next session          |
+| `previous_session`                    | `Cmd+Alt+Left`        | Switch to previous session      |
+| `close_session_or_worktree`           | `Cmd+W`               | Close session or worktree       |
+| `new_worktree`                        | `Cmd+N`               | Create new worktree             |
+| `cycle_execution_mode`                | `Shift+Tab`           | Cycle Plan/Build/Yolo modes     |
+| `approve_plan`                        | `Cmd+Enter`           | Approve current plan            |
+| `approve_plan_yolo`                   | `Cmd+Y`               | Approve plan in yolo mode       |
+| `approve_plan_clear_context`          | `Cmd+Shift+Y`         | Clear context and start yolo    |
+| `approve_plan_clear_context_build`    | `Cmd+Shift+Enter`     | Clear context and start build   |
+| `approve_plan_worktree_build`         | `Cmd+Alt+Enter`       | Build in a new worktree         |
+| `approve_plan_worktree_yolo`          | `Cmd+Alt+Y`           | Yolo in a new worktree          |
+| `open_plan`                           | `P`                   | Open selected session plan      |
+| `open_recap`                          | `R`                   | Open selected session recap     |
+| `restore_last_archived`               | `Cmd+Shift+T`         | Restore most recent archive     |
+| `focus_canvas_search`                 | `/`                   | Focus canvas search             |
+| `toggle_terminal`                     | `Cmd+Backquote`       | Show/hide terminal              |
+| `toggle_browser`                      | `Cmd+Shift+Backquote` | Show/hide browser side pane     |
+| `toggle_session_label`                | `Cmd+S`               | Toggle session label            |
+| `toggle_parallel_execution_prompting` | `Cmd+Alt+P`           | Toggle parallel prompting       |
+| `open_provider_dropdown`              | `Cmd+Shift+P`         | Open provider dropdown          |
+| `open_model_dropdown`                 | `Cmd+Shift+M`         | Open model dropdown             |
+| `open_thinking_dropdown`              | `Cmd+Shift+E`         | Open thinking/effort dropdown   |
+| `open_unread_sessions`                | `Cmd+Shift+F`         | Open finished/unread sessions   |
+| `cancel_prompt`                       | `Cmd+Alt+Backspace`   | Cancel current prompt           |
+| `scroll_chat_up`                      | `Cmd+Up`              | Scroll chat up one page         |
+| `scroll_chat_down`                    | `Cmd+Down`            | Scroll chat down one page       |
+| `scroll_chat_up_small`                | `Up`                  | Scroll chat up a small amount   |
+| `scroll_chat_down_small`              | `Down`                | Scroll chat down a small amount |
+| `open_github_dashboard`               | `Cmd+Shift+D`         | Open GitHub dashboard           |
+| `open_quick_menu`                     | `Cmd+.`               | Open quick menu                 |
+| `open_usage_dropdown`                 | `Cmd+U`               | Open usage dropdown             |
+| `open_agent_board`                    | `Cmd+Shift+A`         | Open agent board                |
+| `new_agent_todo`                      | `Cmd+Alt+A`           | Create an agent board todo      |
 
 **Note:** `Cmd` on Mac, `Ctrl` on Windows/Linux.
 
@@ -36,31 +60,9 @@ Keybindings are user-configurable in Preferences. Below are the defaults:
 
 ### TypeScript Type Definitions
 
-All keybindings are defined in `src/types/keybindings.ts`:
+All keybinding actions, defaults, display metadata, formatting helpers, and keyboard-event parsing live in `src/types/keybindings.ts`:
 
 ```typescript
-// Available keybinding actions
-export type KeybindingAction =
-  | 'focus_chat_input'
-  | 'toggle_left_sidebar'
-  | 'open_preferences'
-  | 'open_commit_modal'
-  | 'open_pull_request'
-  | 'open_git_diff'
-  | 'execute_run'
-  | 'open_in_modal'
-  | 'open_magic_modal'
-  | 'new_session'
-  | 'next_session'
-  | 'previous_session'
-  | 'close_session_or_worktree'
-  | 'new_worktree'
-  | 'next_worktree'
-  | 'previous_worktree'
-  | 'cycle_execution_mode'
-  | 'approve_plan'
-  | 'restore_last_archived'
-
 // Shortcut string format: "mod+key" or "mod+shift+key"
 export type ShortcutString = string
 
@@ -74,9 +76,9 @@ export type KeybindingsMap = Record<string, ShortcutString>
 export const DEFAULT_KEYBINDINGS: KeybindingsMap = {
   focus_chat_input: 'mod+l',
   toggle_left_sidebar: 'mod+b',
+  open_new_project_dialog: 'mod+shift+n',
   open_preferences: 'mod+comma',
   open_commit_modal: 'mod+shift+c',
-  open_pull_request: 'mod+shift+p',
   open_git_diff: 'mod+g',
   execute_run: 'mod+r',
   open_in_modal: 'mod+o',
@@ -86,10 +88,9 @@ export const DEFAULT_KEYBINDINGS: KeybindingsMap = {
   previous_session: 'mod+alt+arrowleft',
   close_session_or_worktree: 'mod+w',
   new_worktree: 'mod+n',
-  next_worktree: 'mod+alt+arrowdown',
-  previous_worktree: 'mod+alt+arrowup',
   cycle_execution_mode: 'shift+tab',
   approve_plan: 'mod+enter',
+  // ... see src/types/keybindings.ts for the complete current set
   restore_last_archived: 'mod+shift+t',
 }
 ```
@@ -221,6 +222,8 @@ fn default_keybindings() -> std::collections::HashMap<String, String> {
     map
 }
 ```
+
+The Rust defaults are a compatibility seed for persisted preferences. The frontend merges loaded preferences with `DEFAULT_KEYBINDINGS`, migrates changed defaults in `src/services/preferences.ts`, and drops stale keys.
 
 ## Shortcut String Format
 

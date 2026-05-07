@@ -81,14 +81,10 @@ function SaveButton() {
 
 ### Command Palette Integration
 
-The notification system includes test commands accessible via the command palette (Cmd+K):
+When debug mode is enabled, the command palette includes notification-related test commands:
 
-- **Test Success Toast** - Show success toast
-- **Test Error Toast** - Show error toast
-- **Test Info Toast** - Show info toast
-- **Test Warning Toast** - Show warning toast
-- **Test Native Success Notification** - Show native notification
-- **Test Native Info Notification** - Show native notification with details
+- **Test Toast Notification** - Show a success toast
+- **Test CLI Update Notification** - Show a fake CLI update toast with Update/Cancel actions
 
 ### Advanced Usage
 
@@ -144,7 +140,7 @@ Native notifications require the `notification:default` permission in `src-tauri
 2. **Keep messages concise**: Short titles and clear messages work best
 3. **Use appropriate types**: Match notification type to the action result
 4. **Handle errors**: The system includes automatic fallback handling
-5. **Test both modes**: Use the command palette test commands to verify functionality
+5. **Test debug commands**: Enable debug mode, then use the command palette test commands to verify toast behavior
 
 ## Troubleshooting
 
@@ -163,8 +159,9 @@ Native notifications require the `notification:default` permission in `src-tauri
 
 ### Command Palette Tests
 
-Use the built-in test commands to verify both toast and native notifications are working correctly:
+Use the built-in debug commands to verify toast notifications are working correctly:
 
-1. Open command palette (Cmd+K)
-2. Search for "notification" or "toast"
-3. Run test commands to verify functionality
+1. Enable debug mode in preferences
+2. Open command palette (Cmd+K)
+3. Search for "notification" or "toast"
+4. Run test commands to verify functionality

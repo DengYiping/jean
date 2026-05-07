@@ -7,9 +7,10 @@ Automatic update checking and installation system using Tauri's updater plugin, 
 ### Current Behavior
 
 - Checks for updates 5 seconds after app launch
-- Shows browser `confirm()` dialog when update is available
-- Downloads and installs update in background
-- Offers to restart app when installation completes
+- Shows `UpdateAvailableModal` when update metadata is available
+- Lets the user install now or defer into the title-bar pending update indicator
+- Downloads and installs with toast progress
+- Offers a restart toast action when installation completes
 - Fails silently if network issues occur
 
 ### Manual Update Check
@@ -17,7 +18,6 @@ Automatic update checking and installation system using Tauri's updater plugin, 
 Users can manually check for updates via:
 
 - **Menu**: App → Check for Updates
-- **Command Palette**: Cmd+K → "Check for Updates"
 
 ## Architecture
 
@@ -28,11 +28,11 @@ App Launch
     ↓ (5 second delay)
 Check GitHub for Updates
     ↓ (if update available)
-Show Confirmation Dialog
-    ↓ (if user accepts)
+Show UpdateAvailableModal
+    ↓ (if user chooses Update Now or title-bar pending update)
 Download & Install Update
     ↓ (when complete)
-Show Restart Dialog
+Show Restart Toast Action
     ↓ (if user accepts)
 Restart Application
 ```
@@ -40,9 +40,9 @@ Restart Application
 ### Components
 
 1. **Auto-checker**: Runs 5 seconds after app launch
-2. **Manual checker**: Triggered by menu/command palette
+2. **Manual checker**: Triggered by the native app menu
 3. **Progress tracking**: Logs download progress
-4. **User dialogs**: Browser-native confirm dialogs
+4. **User dialogs**: `UpdateAvailableModal` and toast actions
 5. **Restart handler**: Uses `@tauri-apps/plugin-process`
 
 ## Implementation
@@ -52,57 +52,50 @@ Restart Application
 ```typescript
 // src/App.tsx
 import { check } from '@tauri-apps/plugin-updater'
-import { relaunch } from '@tauri-apps/plugin-process'
 import { logger } from '@/lib/logger'
+import { toast } from 'sonner'
+import { useUIStore } from '@/store/ui-store'
 
 export function App() {
+  const pendingUpdateRef = useRef<any>(null)
+
+  const installAppUpdate = useCallback(async (update) => {
+    const toastId = toast.loading(`Downloading update ${update.version}...`)
+    useUIStore.getState().setPendingUpdateVersion(null)
+    pendingUpdateRef.current = null
+
+    await update.downloadAndInstall((event) => {
+      if (event.event === 'Finished') {
+        toast.loading('Installing update...', { id: toastId })
+      }
+    })
+
+    toast.success(`Update ${update.version} installed!`, {
+      id: toastId,
+      duration: Infinity,
+      action: {
+        label: 'Restart',
+        onClick: async () => {
+          const { relaunch } = await import('@tauri-apps/plugin-process')
+          await relaunch()
+        },
+      },
+    })
+  }, [])
+
   useEffect(() => {
     const checkForUpdates = async () => {
+      if (!isNativeApp()) return
+      if (useUIStore.getState().pendingUpdateVersion) return
+
       try {
         logger.info('Checking for updates...')
         const update = await check()
 
         if (update) {
           logger.info(`Update available: ${update.version}`)
-
-          const shouldUpdate = confirm(
-            `Update available: ${update.version}\n\n` +
-            `Current version: ${update.currentVersion}\n` +
-            `Would you like to download and install this update?`
-          )
-
-          if (shouldUpdate) {
-            logger.info('User accepted update, starting download...')
-
-            await update.downloadAndInstall((event) => {
-              switch (event.event) {
-                case 'Started':
-                  logger.info(`Downloading update: ${event.data.contentLength} bytes`)
-                  break
-                case 'Progress':
-                  logger.info(`Download progress: ${event.data.chunkLength} bytes`)
-                  break
-                case 'Finished':
-                  logger.info('Update download completed')
-                  break
-              }
-            })
-
-            logger.info('Update installed successfully')
-
-            const shouldRestart = confirm(
-              'Update completed successfully!\n\n' +
-              'The application needs to restart to apply the update.\n' +
-              'Would you like to restart now?'
-            )
-
-            if (shouldRestart) {
-              logger.info('Restarting application...')
-              await relaunch()
-            }
-          }
-        } else {
-          logger.info('No updates available')
+          pendingUpdateRef.current = update
+          useUIStore.getState().setUpdateModalVersion(update.version)
         }
       } catch (error) {
         logger.error('Update check failed:', error)
@@ -112,8 +105,16 @@ export function App() {
 
     // Check for updates 5 seconds after app starts
     const timer = setTimeout(checkForUpdates, 5000)
-    return () => clearTimeout(timer)
-  }, [])
+    const handleInstallPending = () => {
+      if (pendingUpdateRef.current) installAppUpdate(pendingUpdateRef.current)
+    }
+    window.addEventListener('install-pending-update', handleInstallPending)
+
+    return () => {
+      clearTimeout(timer)
+      window.removeEventListener('install-pending-update', handleInstallPending)
+    }
+  }, [installAppUpdate])
 
   return <MainWindow />
 }
@@ -123,13 +124,17 @@ export function App() {
 
 ```typescript
 // src/hooks/useMainWindowEventListeners.ts
+import { listen } from '@/lib/transport'
+
 listen('menu-check-updates', async () => {
   logger.debug('Check for updates menu event received')
   try {
     const update = await check()
     if (update) {
-      commandContext.showToast(`Update available: ${update.version}`, 'info')
-      // Could trigger the same update flow as auto-check
+      window.dispatchEvent(
+        new CustomEvent('update-available', { detail: update })
+      )
+      useUIStore.getState().setUpdateModalVersion(update.version)
     } else {
       commandContext.showToast('You are running the latest version', 'success')
     }
@@ -138,31 +143,6 @@ listen('menu-check-updates', async () => {
     commandContext.showToast('Failed to check for updates', 'error')
   }
 })
-```
-
-### Command Palette Integration
-
-```typescript
-// src/lib/commands/settings-commands.ts
-{
-  id: 'check-updates',
-  label: 'Check for Updates',
-  description: 'Check for app updates',
-  group: 'settings',
-  execute: async (context) => {
-    try {
-      const update = await check()
-      if (update) {
-        context.showToast(`Update available: ${update.version}`, 'info')
-      } else {
-        context.showToast('You are running the latest version', 'success')
-      }
-    } catch (error) {
-      context.showToast('Failed to check for updates', 'error')
-    }
-  },
-  isAvailable: () => true,
-}
 ```
 
 ## Configuration
@@ -189,7 +169,7 @@ listen('menu-check-updates', async () => {
 
 - `active: true`: Enables the updater system
 - `endpoints`: GitHub releases URL (template format)
-- `dialog: false`: We use custom confirm dialogs instead of Tauri's built-in dialogs
+- `dialog: false`: Jean uses `UpdateAvailableModal` and toast actions instead of Tauri's built-in dialogs
 - `pubkey`: Public key for signature verification (set during release setup)
 
 ### GitHub Releases Integration
@@ -244,12 +224,12 @@ The GitHub Actions workflow automatically:
 
 - **Non-intrusive**: 5-second delay after app launch
 - **User choice**: Always asks permission before downloading
-- **Progress feedback**: Logs download progress (visible in development)
+- **Progress feedback**: Toast progress during download/install
 - **Graceful failure**: Network errors don't bother the user
 
 ### Manual Updates
 
-- **Accessible**: Available via menu and command palette
+- **Accessible**: Available via the native app menu
 - **Immediate feedback**: Shows toast notifications for results
 - **Consistent**: Uses same update flow as automatic checks
 
@@ -258,19 +238,14 @@ The GitHub Actions workflow automatically:
 **Update Available:**
 
 ```
-Update available: 1.0.1
-
-Current version: 1.0.0
-Would you like to download and install this update?
+Version 1.0.1 is ready to install.
 ```
 
 **Update Complete:**
 
 ```
-Update completed successfully!
-
-The application needs to restart to apply the update.
-Would you like to restart now?
+Update 1.0.1 installed!
+Restart
 ```
 
 **No Updates (Manual Check):**
@@ -308,7 +283,7 @@ All updates are cryptographically signed:
 
 - **Silent failures**: Network errors don't show user dialogs
 - **Minimal logging**: Only essential update events logged
-- **User-focused**: Clear, simple dialogs and notifications
+- **User-focused**: Clear modal and toast notifications
 
 ## Troubleshooting
 
@@ -335,9 +310,8 @@ All updates are cryptographically signed:
 
 ## Future Enhancements
 
-### Planned Improvements
+### Possible Improvements
 
-- **Better progress UI**: Replace confirm dialogs with custom update UI
 - **Background downloads**: Download updates silently, install on restart
 - **Rollback capability**: Ability to revert to previous version
 - **Update channels**: Support for beta/stable release channels

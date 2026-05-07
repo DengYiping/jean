@@ -31,13 +31,19 @@ Edit
 
 View
 ├── Toggle Left Sidebar
-└── Toggle Right Sidebar
+├── Toggle Right Sidebar
+├── ────────────────────
+├── Toggle Terminal          (Cmd+`)
+└── Toggle Browser           (Cmd+Shift+`)
 
-Git
-└── Open Pull Request...
+Window
+├── Magic Menu               (Cmd+M)
+├── ────────────────────
+├── Minimize
+└── Zoom
 ```
 
-**Note:** View and Git menu items do not have accelerators because keybindings are user-configurable in preferences.
+**Note:** Most shortcuts are user-configurable in preferences. Terminal, browser, and magic menu accelerators stay in the native macOS menu so they still fire when an embedded child webview has focus.
 
 ### Adding New Menu Items
 
@@ -83,23 +89,38 @@ fn create_app_menu(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error
         .build()?;
 
     // Build the View submenu
-    // Note: Accelerators removed since keybindings are user-configurable in preferences
     let view_submenu = SubmenuBuilder::new(app, "View")
         .item(&MenuItemBuilder::with_id("toggle-left-sidebar", "Toggle Left Sidebar").build(app)?)
         .item(&MenuItemBuilder::with_id("toggle-right-sidebar", "Toggle Right Sidebar").build(app)?)
+        .separator()
+        .item(
+            &MenuItemBuilder::with_id("toggle-terminal", "Toggle Terminal")
+                .accelerator("CmdOrCtrl+Backquote")
+                .build(app)?,
+        )
+        .item(
+            &MenuItemBuilder::with_id("toggle-browser", "Toggle Browser")
+                .accelerator("CmdOrCtrl+Shift+Backquote")
+                .build(app)?,
+        )
         .build()?;
 
-    // Build the Git submenu
-    // Note: Accelerators removed since keybindings are user-configurable in preferences
-    let git_submenu = SubmenuBuilder::new(app, "Git")
-        .item(&MenuItemBuilder::with_id("open-pull-request", "Open Pull Request...").build(app)?)
+    let window_submenu = SubmenuBuilder::new(app, "Window")
+        .item(
+            &MenuItemBuilder::with_id("magic-menu", "Magic Menu")
+                .accelerator("CmdOrCtrl+M")
+                .build(app)?,
+        )
+        .separator()
+        .item(&PredefinedMenuItem::minimize(app, None)?)
+        .item(&PredefinedMenuItem::maximize(app, None)?)
         .build()?;
 
     let menu = MenuBuilder::new(app)
         .item(&app_submenu)
         .item(&edit_submenu)
         .item(&view_submenu)
-        .item(&git_submenu)
+        .item(&window_submenu)
         .build()?;
 
     app.set_menu(menu)?;
@@ -132,8 +153,14 @@ app.on_menu_event(move |app, event| {
         "toggle-right-sidebar" => {
             let _ = app.emit("menu-toggle-right-sidebar", ());
         }
-        "open-pull-request" => {
-            let _ = app.emit("menu-open-pull-request", ());
+        "magic-menu" => {
+            let _ = app.emit("menu-magic-menu", ());
+        }
+        "toggle-terminal" => {
+            let _ = app.emit("menu-toggle-terminal", ());
+        }
+        "toggle-browser" => {
+            let _ = app.emit("menu-toggle-browser", ());
         }
         _ => {
             log::debug!("Unhandled menu event: {:?}", event.id());
@@ -146,6 +173,8 @@ app.on_menu_event(move |app, event| {
 
 ```typescript
 // src/hooks/useMainWindowEventListeners.ts
+import { listen } from '@/lib/transport'
+
 const setupMenuListeners = async () => {
   const unlisteners = await Promise.all([
     listen('menu-about', async () => {
@@ -184,8 +213,16 @@ const setupMenuListeners = async () => {
       setRightSidebarVisible(!rightSidebarVisible)
     }),
 
-    listen('menu-open-pull-request', () => {
-      commandContext.openPullRequest()
+    listen('menu-magic-menu', () => {
+      executeKeybindingAction('open_magic_modal', commandContext, queryClient)
+    }),
+
+    listen('menu-toggle-terminal', () => {
+      executeKeybindingAction('toggle_terminal', commandContext, queryClient)
+    }),
+
+    listen('menu-toggle-browser', () => {
+      executeKeybindingAction('toggle_browser', commandContext, queryClient)
     }),
   ])
 
@@ -242,13 +279,14 @@ Add visual separation between menu groups:
 .item(&MenuItemBuilder::with_id("item2", "Item 2").build(app)?)
 ```
 
-## Why No Menu Accelerators for User-Configurable Shortcuts
+## Menu Accelerators
 
-The View and Git menu items intentionally omit accelerators because their keyboard shortcuts are configurable in user preferences. Hardcoding accelerators would show static shortcuts in the menu that don't reflect the user's actual bindings.
+Most app actions intentionally omit native menu accelerators because their keyboard shortcuts are configurable in user preferences. Hardcoding accelerators would show static shortcuts in the menu that don't reflect the user's actual bindings.
 
 **Current approach:**
 
 - Only `Preferences...` has an accelerator (`Cmd+,`) since it's not user-configurable
+- Terminal, browser, and magic menu keep native accelerators because those shortcuts must fire even when an embedded browser/webview owns keyboard focus
 - Other actions trigger via the keybinding system (see `keyboard-shortcuts.md`)
 
 ## Adding New Menu Items
@@ -272,7 +310,7 @@ let menu = MenuBuilder::new(app)
     .item(&edit_submenu)
     .item(&file_submenu) // Add new submenu
     .item(&view_submenu)
-    .item(&git_submenu)
+    .item(&window_submenu)
     .build()?;
 ```
 

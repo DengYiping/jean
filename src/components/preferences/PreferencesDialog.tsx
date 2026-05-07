@@ -52,6 +52,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarProvider,
+  SidebarSeparator,
 } from '@/components/ui/sidebar'
 import { useUIStore, type PreferencePane } from '@/store/ui-store'
 import type { KeybindingAction } from '@/types/keybindings'
@@ -73,70 +74,103 @@ import {
   type PreferenceSearchEntry,
 } from './preferences-search'
 
-const navigationItems = [
+interface NavigationItem {
+  type: 'item'
+  id: PreferencePane
+  name: string
+  icon: LucideIcon
+  desktopOnly?: boolean
+}
+
+interface NavigationSeparator {
+  type: 'separator'
+  id: string
+}
+
+const navigationEntries: (NavigationItem | NavigationSeparator)[] = [
   {
-    id: 'general' as const,
+    type: 'item',
+    id: 'general',
     name: 'General',
     icon: Settings,
   },
   {
-    id: 'opinionated' as const,
-    name: 'Opinionated',
-    icon: Sparkles,
-  },
-  {
-    id: 'providers' as const,
-    name: 'Providers',
-    icon: Blocks,
-  },
-  {
-    id: 'usage' as const,
-    name: 'Usage',
-    icon: BarChart3,
-  },
-  {
-    id: 'appearance' as const,
+    type: 'item',
+    id: 'appearance',
     name: 'Appearance',
     icon: Palette,
   },
   {
-    id: 'keybindings' as const,
+    type: 'item',
+    id: 'keybindings',
     name: 'Keybindings',
     icon: Keyboard,
     desktopOnly: true,
   },
+  { type: 'separator', id: 'behavior-separator' },
   {
-    id: 'magic-prompts' as const,
+    type: 'item',
+    id: 'magic-prompts',
     name: 'Magic Prompts',
     icon: Wand2,
   },
   {
-    id: 'skills' as const,
+    type: 'item',
+    id: 'skills',
     name: 'Skills',
     icon: Puzzle,
   },
   {
-    id: 'mcp-servers' as const,
-    name: 'MCP Servers',
-    icon: Plug,
+    type: 'item',
+    id: 'opinionated',
+    name: 'Opinionated',
+    icon: Sparkles,
+  },
+  { type: 'separator', id: 'connectivity-separator' },
+  {
+    type: 'item',
+    id: 'providers',
+    name: 'Providers',
+    icon: Blocks,
   },
   {
-    id: 'integrations' as const,
-    name: 'Integrations',
-    icon: Puzzle,
-  },
-  {
-    id: 'experimental' as const,
-    name: 'Experimental',
-    icon: FlaskConical,
-  },
-  {
-    id: 'web-access' as const,
+    type: 'item',
+    id: 'web-access',
     name: 'Web Access (Experimental)',
     icon: Globe,
     desktopOnly: true,
   },
+  {
+    type: 'item',
+    id: 'mcp-servers',
+    name: 'MCP Servers',
+    icon: Plug,
+  },
+  {
+    type: 'item',
+    id: 'integrations',
+    name: 'Integrations',
+    icon: Puzzle,
+  },
+  { type: 'separator', id: 'usage-separator' },
+  {
+    type: 'item',
+    id: 'usage',
+    name: 'Usage',
+    icon: BarChart3,
+  },
+  { type: 'separator', id: 'advanced-separator' },
+  {
+    type: 'item',
+    id: 'experimental',
+    name: 'Experimental',
+    icon: FlaskConical,
+  },
 ]
+
+const navigationItems = navigationEntries.filter(
+  (entry): entry is NavigationItem => entry.type === 'item'
+)
 
 const paneIconMap: Record<PreferencePane, LucideIcon> = {
   general: Settings,
@@ -427,22 +461,28 @@ export function PreferencesDialog() {
               <SidebarGroup>
                 <SidebarGroupContent>
                   <SidebarMenu>
-                    {navigationItems.map(item => (
-                      <SidebarMenuItem key={item.id}>
-                        <SidebarMenuButton
-                          asChild
-                          isActive={activePane === item.id}
-                        >
-                          <button
-                            onClick={() => handlePaneSelect(item.id)}
-                            className="w-full"
+                    {navigationEntries.map(entry =>
+                      entry.type === 'separator' ? (
+                        <li key={entry.id} aria-hidden="true" className="py-1">
+                          <SidebarSeparator className="mx-0" />
+                        </li>
+                      ) : (
+                        <SidebarMenuItem key={entry.id}>
+                          <SidebarMenuButton
+                            asChild
+                            isActive={activePane === entry.id}
                           >
-                            <item.icon />
-                            <span>{item.name}</span>
-                          </button>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    ))}
+                            <button
+                              onClick={() => handlePaneSelect(entry.id)}
+                              className="w-full"
+                            >
+                              <entry.icon />
+                              <span>{entry.name}</span>
+                            </button>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      )
+                    )}
                   </SidebarMenu>
                 </SidebarGroupContent>
               </SidebarGroup>

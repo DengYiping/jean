@@ -1,9 +1,13 @@
 import { createElement } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { renderHook } from '@testing-library/react'
+import { act, renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { projectsQueryKeys, useWorktree } from './projects'
-import type { Worktree } from '@/types/projects'
+import {
+  projectsQueryKeys,
+  useUpdateProjectSettings,
+  useWorktree,
+} from './projects'
+import type { Project, Worktree } from '@/types/projects'
 
 const mockInvoke = vi.hoisted(() => vi.fn())
 
@@ -73,5 +77,50 @@ describe('projects service', () => {
       'get_worktree',
       expect.anything()
     )
+  })
+
+  it('forwards linked project ids when updating project settings', async () => {
+    const queryClient = createTestQueryClient()
+    const updatedProject: Project = {
+      id: 'project-1',
+      name: 'Jean',
+      path: '/repo',
+      default_branch: 'main',
+      added_at: 1,
+      order: 0,
+      linked_project_ids: ['project-2', 'project-3'],
+    }
+    mockInvoke.mockResolvedValue(updatedProject)
+
+    const { result } = renderHook(() => useUpdateProjectSettings(), {
+      wrapper: createWrapper(queryClient),
+    })
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        projectId: 'project-1',
+        linkedProjectIds: ['project-2', 'project-3'],
+      })
+    })
+
+    expect(mockInvoke).toHaveBeenCalledWith('update_project_settings', {
+      projectId: 'project-1',
+      name: undefined,
+      defaultBranch: undefined,
+      enabledMcpServers: undefined,
+      knownMcpServers: undefined,
+      customSystemPrompt: undefined,
+      defaultProvider: undefined,
+      defaultBackend: undefined,
+      defaultEditor: undefined,
+      githubAccountHost: undefined,
+      githubAccountUser: undefined,
+      worktreesDir: undefined,
+      stableWorktreeSlotsEnabled: undefined,
+      linearApiKey: undefined,
+      linearTeamId: undefined,
+      hideGithubIssuesAndPrs: undefined,
+      linkedProjectIds: ['project-2', 'project-3'],
+    })
   })
 })

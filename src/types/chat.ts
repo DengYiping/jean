@@ -159,6 +159,8 @@ export interface Session {
   claude_session_id?: string
   /** Codex CLI thread ID for resuming conversations */
   codex_thread_id?: string
+  /** Codex /goal long-horizon objective (codex backend only) */
+  codex_goal?: string
   /** OpenCode session ID for resuming conversations */
   opencode_session_id?: string
   /** Selected model for this session */

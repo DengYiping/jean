@@ -63,6 +63,7 @@ import {
   getProviderDisplayName,
 } from '@/components/chat/toolbar/toolbar-utils'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { useUIStore } from '@/store/ui-store'
 import { cn } from '@/lib/utils'
 
 interface MobileToolbarMenuProps {
@@ -167,7 +168,7 @@ export function MobileToolbarMenu({
   onReview,
   onMerge,
   onMergePr,
-  onResolveConflicts,
+  onResolveConflicts: _onResolveConflicts,
   installedBackends,
   onBackendChange,
   onSetExecutionMode,
@@ -407,7 +408,11 @@ export function MobileToolbarMenu({
               M
             </span>
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={onResolveConflicts}>
+          <DropdownMenuItem
+            onClick={() =>
+              useUIStore.getState().setResolveConflictsDialogOpen(true)
+            }
+          >
             <GitMerge className="h-4 w-4" />
             Resolve Conflicts
             <span className="ml-auto text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">

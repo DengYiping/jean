@@ -14,6 +14,7 @@ mod background_tasks;
 mod browser;
 mod chat;
 mod claude_cli;
+mod cli_update;
 mod codex_cli;
 mod gh_cli;
 pub mod http_server;
@@ -3525,6 +3526,9 @@ pub fn run() {
             chat::answer_codex_user_input,
             chat::steer_codex_turn,
             chat::claim_supervisor_action_trigger,
+            chat::codex_goal_set,
+            chat::codex_goal_get,
+            chat::codex_goal_clear,
             // Chat commands - Queue management (cross-client sync)
             chat::enqueue_message,
             chat::dequeue_message,
@@ -3606,6 +3610,7 @@ pub fn run() {
             gh_cli::get_available_gh_versions,
             gh_cli::install_gh_cli,
             gh_cli::uninstall_gh_cli,
+            cli_update::run_cli_path_update,
             // Background task commands
             background_tasks::commands::set_app_focus_state,
             background_tasks::commands::set_active_worktree_for_polling,

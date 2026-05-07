@@ -135,6 +135,11 @@ const MagicModal = lazy(() =>
     default: mod.MagicModal,
   }))
 )
+const ResolveConflictsDialog = lazy(() =>
+  import('@/components/magic/ResolveConflictsDialog').then(mod => ({
+    default: mod.ResolveConflictsDialog,
+  }))
+)
 const GitHubDashboardModal = lazy(() =>
   import('@/components/github-dashboard').then(mod => ({
     default: mod.GitHubDashboardModal,
@@ -259,6 +264,12 @@ export function MainWindow() {
   const openInModalOpen = useUIStore(state => state.openInModalOpen)
   const remotePickerOpen = useUIStore(state => state.remotePickerOpen)
   const magicModalOpen = useUIStore(state => state.magicModalOpen)
+  const resolveConflictsDialogOpen = useUIStore(
+    state => state.resolveConflictsDialogOpen
+  )
+  const setResolveConflictsDialogOpen = useUIStore(
+    state => state.setResolveConflictsDialogOpen
+  )
   const newWorktreeModalOpen = useUIStore(state => state.newWorktreeModalOpen)
   const releaseNotesModalOpen = useUIStore(state => state.releaseNotesModalOpen)
   const updatePrModalOpen = useUIStore(state => state.updatePrModalOpen)
@@ -464,6 +475,9 @@ export function MainWindow() {
   )
   const shouldRenderWorkflowRunsModal = useRetainedMount(workflowRunsModalOpen)
   const shouldRenderMagicModal = useRetainedMount(magicModalOpen)
+  const shouldRenderResolveConflictsDialog = useRetainedMount(
+    resolveConflictsDialogOpen
+  )
   const shouldRenderReleaseNotesDialog = useRetainedMount(releaseNotesModalOpen)
   const shouldRenderNewWorktreeModal = useRetainedMount(newWorktreeModalOpen)
   const shouldRenderAddProjectDialog = useRetainedMount(addProjectDialogOpen)
@@ -616,6 +630,21 @@ export function MainWindow() {
       {shouldRenderMagicModal && (
         <Suspense fallback={null}>
           <MagicModal />
+        </Suspense>
+      )}
+      {shouldRenderResolveConflictsDialog && (
+        <Suspense fallback={null}>
+          <ResolveConflictsDialog
+            open={resolveConflictsDialogOpen}
+            onOpenChange={setResolveConflictsDialogOpen}
+            onConfirm={override => {
+              window.dispatchEvent(
+                new CustomEvent('magic-command', {
+                  detail: { command: 'resolve-conflicts', override },
+                })
+              )
+            }}
+          />
         </Suspense>
       )}
       {shouldRenderRemotePickerModal && (

@@ -509,6 +509,18 @@ export const test = base.extend<TauriMockFixtures>({
               project.stable_worktree_slots_enabled =
                 args?.stable_worktree_slots_enabled
             }
+            if ('linkedProjectIds' in (args ?? {})) {
+              project.linked_project_ids = Array.isArray(args?.linkedProjectIds)
+                ? [...(args?.linkedProjectIds as string[])]
+                : []
+            }
+            if ('linked_project_ids' in (args ?? {})) {
+              project.linked_project_ids = Array.isArray(
+                args?.linked_project_ids
+              )
+                ? [...(args?.linked_project_ids as string[])]
+                : []
+            }
             return structuredClone(project)
           },
           list_agent_board_items: () => {
@@ -831,6 +843,54 @@ export const test = base.extend<TauriMockFixtures>({
             if (session) {
               session.backend = args?.backend as string
             }
+            return null
+          },
+          codex_goal_set: args => {
+            const wid = (args?.worktreeId as string) ?? 'unknown'
+            const store = getWorktreeStore(wid)
+            const session =
+              store.sessions.find(s => s.id === args?.sessionId) ??
+              findStoredSession((args?.sessionId as string) ?? '')
+            if (!session) return null
+
+            session.codex_goal = (args?.objective as string | undefined) ?? null
+            eventEmitter.dispatchEvent(
+              new CustomEvent('chat:codex_goal', {
+                detail: {
+                  session_id: session.id,
+                  worktree_id: wid,
+                  goal: session.codex_goal,
+                },
+              })
+            )
+            return null
+          },
+          codex_goal_get: args => {
+            const wid = (args?.worktreeId as string) ?? 'unknown'
+            const store = getWorktreeStore(wid)
+            const session =
+              store.sessions.find(s => s.id === args?.sessionId) ??
+              findStoredSession((args?.sessionId as string) ?? '')
+            return session?.codex_goal ?? null
+          },
+          codex_goal_clear: args => {
+            const wid = (args?.worktreeId as string) ?? 'unknown'
+            const store = getWorktreeStore(wid)
+            const session =
+              store.sessions.find(s => s.id === args?.sessionId) ??
+              findStoredSession((args?.sessionId as string) ?? '')
+            if (!session) return null
+
+            session.codex_goal = null
+            eventEmitter.dispatchEvent(
+              new CustomEvent('chat:codex_goal', {
+                detail: {
+                  session_id: session.id,
+                  worktree_id: wid,
+                  goal: null,
+                },
+              })
+            )
             return null
           },
           set_session_provider: args => {

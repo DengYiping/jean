@@ -242,3 +242,50 @@ impl EmitExt for AppHandle {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::WsBroadcaster;
+    use serde_json::json;
+
+    #[test]
+    fn replays_terminal_events_after_sequence() {
+        let (broadcaster, _) = WsBroadcaster::new();
+
+        broadcaster.broadcast("terminal:started", &json!({ "terminal_id": "term-1" }));
+        broadcaster.broadcast(
+            "terminal:output",
+            &json!({ "terminal_id": "term-1", "data": "first" }),
+        );
+        broadcaster.broadcast(
+            "terminal:output",
+            &json!({ "terminal_id": "term-1", "data": "second" }),
+        );
+
+        let replay = broadcaster.replay_terminal_events("term-1", 0);
+        assert_eq!(replay.len(), 3);
+
+        let after_started_seq = replay[0].0;
+        let missed = broadcaster.replay_terminal_events("term-1", after_started_seq);
+        assert_eq!(missed.len(), 2);
+        assert!(missed.iter().all(|(seq, _)| *seq > after_started_seq));
+        assert!(missed[0].1.contains("\"data\":\"first\""));
+        assert!(missed[1].1.contains("\"data\":\"second\""));
+    }
+
+    #[test]
+    fn clears_terminal_replay_buffer_when_terminal_stops() {
+        let (broadcaster, _) = WsBroadcaster::new();
+
+        broadcaster.broadcast("terminal:started", &json!({ "terminal_id": "term-1" }));
+        broadcaster.broadcast(
+            "terminal:output",
+            &json!({ "terminal_id": "term-1", "data": "first" }),
+        );
+        assert_eq!(broadcaster.replay_terminal_events("term-1", 0).len(), 2);
+
+        broadcaster.broadcast("terminal:stopped", &json!({ "terminal_id": "term-1" }));
+
+        assert!(broadcaster.replay_terminal_events("term-1", 0).is_empty());
+    }
+}

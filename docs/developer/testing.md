@@ -95,13 +95,13 @@ test.describe('My Feature', () => {
 
 #### Static Handlers (`invoke-handlers.ts`)
 
-Every Tauri command needs an entry here, even if the response is `null`. This is the default response map:
+Every backend command reached by browser E2E needs an entry here, even if the response is `null`. This is the default response map:
 
 ```typescript
 // e2e/fixtures/invoke-handlers.ts
-export const invokeHandlers: Record<string, unknown> = {
-  load_preferences: null, // Overridden by mock-data.ts
-  get_worktrees: [], // Overridden by mock-data.ts
+export const defaultResponses: Record<string, unknown> = {
+  load_preferences: mockPreferences,
+  list_worktrees: [], // Usually seeded by mock-data.ts helpers
   get_sessions: { sessions: [], active_session_id: null },
   rename_session: null,
   send_chat_message: null,
@@ -109,7 +109,7 @@ export const invokeHandlers: Record<string, unknown> = {
 }
 ```
 
-When adding a new Tauri command to the app, add its default response here or tests will fail with an unhandled invoke error.
+When adding a new backend command used by the frontend path under test, add its default response here or tests will fail with an unhandled invoke error.
 
 #### Dynamic Handlers (`tauri-mock.ts`)
 
@@ -125,7 +125,7 @@ if (cmd === 'create_session') {
 }
 ```
 
-Current dynamic handlers: `get_sessions`, `create_session`, `rename_session`, `set_active_session`, `set_session_model`, `get_session`, `send_chat_message`.
+Current dynamic handlers also cover newer stateful flows such as project/worktree mutations, queue operations, agent board updates, automations, Codex goals, supervisor actions, and session setting changes. Check `e2e/fixtures/tauri-mock.ts` before adding duplicate test-only behavior.
 
 #### Override Precedence
 
@@ -291,23 +291,18 @@ test('toggles sidebar visibility', () => {
 })
 ```
 
-### Mocking Tauri APIs
+### Mocking Transport APIs
 
 ```typescript
 // src/test/setup.ts
 import { vi } from 'vitest'
 
-// Mock Tauri APIs for tests
-vi.mock('@tauri-apps/api/event', () => ({
-  listen: vi.fn().mockResolvedValue(() => {}),
-}))
-
-vi.mock('@tauri-apps/plugin-updater', () => ({
-  check: vi.fn().mockResolvedValue(null),
-}))
-
-vi.mock('@tauri-apps/api/core', () => ({
+// Mock Jean's transport layer for tests that exercise service hooks.
+vi.mock('@/lib/transport', () => ({
   invoke: vi.fn(),
+  listen: vi.fn().mockResolvedValue(() => {}),
+  convertFileSrc: vi.fn((path: string) => path),
+  useWsConnectionStatus: () => true,
 }))
 ```
 
@@ -318,7 +313,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 import { renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { vi } from 'vitest'
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '@/lib/transport'
 import { usePreferences } from './preferences'
 
 const mockInvoke = vi.mocked(invoke)
@@ -469,13 +464,14 @@ fn is_valid_filename(filename: &str) -> bool {
 {
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "format:check": "prettier --check \"src/**/*.{ts,tsx,js,jsx,css,md}\"",
+    "lint": "eslint . --max-warnings 0",
+    "format:check": "prettier --check .",
+    "build": "tsc && vite build",
     "rust:fmt:check": "cd src-tauri && cargo fmt --check",
     "rust:clippy": "cd src-tauri && cargo clippy -- -D warnings",
     "rust:test": "cd src-tauri && cargo test",
     "test:run": "vitest run",
-    "check:all": "bun run typecheck && bun run lint && bun run format:check && bun run test:run && bun run rust:fmt:check && bun run rust:clippy && bun run rust:test"
+    "check:all": "bun run typecheck && bun run lint && bun run format:check && bun run build && bun run rust:fmt:check && bun run rust:clippy && bun run test:run && bun run rust:test"
   }
 }
 ```

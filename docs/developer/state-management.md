@@ -12,13 +12,15 @@ Transient global state related to the UI (e.g., `isSidebarVisible`, `isCommandPa
 
 **Current implementation:** The `useChatStore` is a monolithic ~1600 line store handling sessions, streaming, execution modes, and more. While decomposition is recommended for new features, the existing store works and shouldn't be refactored without good reason.
 
-### All Persisted State -> Tanstack Query
+### Backend-Owned or Persisted State -> TanStack Query
 
-Data that originates from outside of the react app, either from the Rust backend (eg read from disk) or from external services and APIs uses TanStack Query. All `invoke` calls should be wrapped in `useQuery` or `useMutation` hooks within the `src/services/` directory. This handles loading, error, and caching states automatically.
+Data that originates from outside of the React app, either from the Rust backend (for example, disk-backed state) or from external services/APIs, should normally use TanStack Query. Shared backend reads and writes belong in hooks under `src/services/` so loading, error, caching, and invalidation behavior stays consistent.
+
+Some UI handlers still call backend commands directly through `src/lib/transport.ts` for one-off actions or command flows. New shared data access should prefer service hooks; direct component calls should stay narrow and follow nearby patterns.
 
 ### Data on local disk
 
-Certain settings data should be persisted to local storage (in addition to or instead of to any remote backend system). This should usually be written to the applications support directory (eg. ``~/Library/Application Support/com.myapp.app/recovery/` on macOS). This is handled by Tauri's [filesystem plugin](https://v2.tauri.app/plugin/file-system/) and should be accessed and written in the same way as any other state which is not "owned" by the React App... ie via Tanstack Query.
+Persisted local data lives under Tauri's app data directory, for example `~/Library/Application Support/com.jean.desktop/` on macOS. File operations are handled in Rust commands and reached from the frontend through `src/lib/transport.ts`, usually wrapped by TanStack Query service hooks.
 
 ## The "Onion" Pattern: Three-Layer State Architecture
 
@@ -43,7 +45,7 @@ const {
   error,
 } = useQuery({
   queryKey: ['user', userId, 'profile'],
-  queryFn: () => invokeCommand('get_user_profile', { userId }),
+  queryFn: () => invoke<User>('get_user_profile', { userId }),
   enabled: !!userId,
 })
 ```
@@ -157,6 +159,13 @@ Handles per-session state that's stored in session files (not ui-state.json):
 - Submitted answers
 - Fixed findings
 - Permission denials
+- Pending Codex MCP elicitations
+- Denied message context
+- Reviewing and waiting-for-input state
+- Plan file path / pending plan message
+- Enabled MCP servers and selected execution mode
+- Per-session parallel execution prompt override
+- Table checked rows
 
 ## Implementation Examples
 
@@ -187,7 +196,7 @@ export const useUIStore = create<UIState>()(
 
 ```typescript
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '@/lib/transport'
 
 // Query hook
 export function useUserProfile(userId: string) {

@@ -49,12 +49,14 @@ Rust and React communicate through three patterns:
    Menu Click / Keyboard Shortcut / Command Palette → Command Execution → State Update
 
 2. Frontend → Backend:
-   React → invoke("command_name", args) → Rust handler → Response
+   React → transport.invoke("command_name", args) → Tauri IPC or WebSocket dispatch → Rust handler → Response
 
 3. Backend → Frontend:
-   Rust background task → app.emit("event-name", data) → React listen() handler → State Update
+   Rust background task → app.emit("event-name", data) → transport.listen() handler → State Update
    (Used by git status polling, PR status updates, worktree events)
 ```
+
+Frontend code should use `invoke()`, `listen()`, and `convertFileSrc()` from `src/lib/transport.ts`. The transport layer selects native Tauri IPC in desktop mode, WebSocket/HTTP in browser mode, and in-memory handlers in browser E2E tests.
 
 ### Command-Centric Design
 
@@ -91,10 +93,12 @@ Additional systems (no dedicated docs yet):
 
 - **Terminal** - Built-in PTY terminal emulator (`src-tauri/src/terminal/`)
 - **Background Tasks** - Git/PR polling with focus-aware intervals (`src-tauri/src/background_tasks/`)
+- **Agent Board** - Cross-session todo board (`src-tauri/src/agent_board/`, `src/services/agent-board.ts`)
+- **Automations** - Scheduled task storage and controls (`src-tauri/src/automations/`, `src/services/automations.ts`)
 - **HTTP Server** - Embedded Axum server + WebSocket for headless/web mode (`src-tauri/src/http_server/`)
-- **Diagnostics** - CPU/memory monitoring panel (`src-tauri/src/diagnostics/`)
+- **Browser Tabs** - Native browser pane/tab controls (`src-tauri/src/browser/`, `src/hooks/useBrowserPane.ts`)
 - **MCP** - Model Context Protocol server integration with per-project overrides (`src/services/mcp.ts`)
-- **CLI Management** - Claude CLI, Codex CLI, Cursor CLI, OpenCode, and host-system gh CLI detection/versioning (`src-tauri/src/claude_cli/`, `src-tauri/src/codex_cli/`, `src-tauri/src/cursor_cli/`, `src-tauri/src/opencode_cli/`, `src-tauri/src/gh_cli/`)
+- **CLI Management** - Claude CLI, Codex CLI, OpenCode, and host-system gh CLI detection/versioning (`src-tauri/src/claude_cli/`, `src-tauri/src/codex_cli/`, `src-tauri/src/opencode_cli/`, `src-tauri/src/gh_cli/`). Cursor support code exists for MCP/model discovery, but it is not registered as an active backend command surface in `src-tauri/src/lib.rs`.
 
 Desktop CLI queue pattern:
 
@@ -102,7 +106,7 @@ Desktop CLI queue pattern:
 - Instead, they write a small request file into app data, launch Jean, and let the React app consume the request on startup.
 - This keeps the CLI path thin, avoids duplicating frontend navigation logic, and works even when the app is not already running.
 
-Cursor-specific notes:
+Cursor-specific implementation notes:
 
 - Cursor auth/status checks must use short timeouts; `cursor-agent status/about` can hang indefinitely
 - Cursor chat integration should use `cursor-agent --print --output-format stream-json` and parse structured NDJSON, not terminal text scraping
@@ -120,9 +124,10 @@ MainWindow (Top-level orchestrator)
 │   └── ProjectsSidebar
 │       └── ProjectTree → WorktreeList per project
 ├── MainWindowContent (Primary content area)
-│   ├── ChatWindow (when worktree selected — always shows chat view)
+│   ├── ChatWindow (when worktree selected — chat, terminal, browser, review surfaces)
 │   │   ├── Chat view (VirtualizedMessageList + ChatInput + ChatToolbar)
-│   │   ├── TerminalPanel (integrated PTY terminal)
+│   │   ├── TerminalPanel / ModalTerminalDrawer (integrated PTY terminal)
+│   │   ├── BrowserPanel / ModalBrowserDrawer (native browser surface)
 │   │   └── ReviewResultsPanel (AI code review findings)
 │   ├── ProjectCanvasView (when project selected, no active worktree)
 │   └── Welcome screen (when nothing selected)
@@ -161,7 +166,9 @@ src/
 ├── components/
 │   ├── actions/           # ActionsSidebar
 │   ├── archive/           # ArchivedModal
-│   ├── chat/              # ChatWindow + 50 files, 12 extracted hooks in chat/hooks/
+│   ├── agent-board/       # Agent board view and todo dialogs
+│   ├── browser/           # Browser pane, modal drawer, toolbar
+│   ├── chat/              # ChatWindow, session modal, message rendering, chat/hooks/
 │   ├── command-palette/   # CommandPalette (cmdk-based)
 │   ├── commit/            # CommitModal
 │   ├── dashboard/         # ProjectCanvasView
@@ -177,16 +184,17 @@ src/
 │   └── worktree/          # NewWorktreeModal, BranchConflictDialog
 ├── hooks/                 # 20+ global hooks
 │   ├── useUIStatePersistence.ts      # Persist UI state to disk
-│   ├── useSessionStatePersistence.ts # Persist session state to disk
+│   ├── useSessionStatePersistence.ts # Persist session-scoped state to session files
 │   ├── useMainWindowEventListeners.ts # Global keyboard/event handlers
 │   ├── useArchiveCleanup.ts          # Auto-cleanup old archived items
 │   ├── useAutoArchiveOnMerge.ts      # Archive worktrees when PRs merge
 │   ├── usePrWorktreeSweep.ts         # Sync PR worktrees for polling
 │   ├── useCliVersionCheck.ts         # CLI version monitoring
 │   ├── useTerminal.ts                # PTY terminal lifecycle
-│   └── ...                           # useGhLogin, useSessionPrefetch, etc.
+│   └── ...                           # useGhLogin, useSessionPrefetch, useBrowserPane, etc.
 ├── lib/
-│   ├── commands/          # Command system (registry + 6 domain command files)
+│   ├── commands/          # Command system (registry + domain command files)
+│   ├── transport.ts       # Native Tauri / browser WebSocket / E2E mock transport
 │   ├── query-client.ts    # TanStack Query client configuration
 │   ├── logger.ts          # Frontend logging
 │   ├── sounds.ts          # Audio feedback
@@ -200,8 +208,9 @@ src/
 │   ├── mcp.ts             # MCP server configuration
 │   ├── preferences.ts     # App preferences queries
 │   ├── ui-state.ts        # UI state persistence queries
-│   └── ...                # files, gh-cli, pr-status, skills
+│   └── ...                # agent-board, automations, files, gh-cli, pr-status, skills
 ├── store/                 # Zustand stores
+│   ├── browser-store.ts   # Browser tab and pane runtime state
 │   ├── chat-store.ts      # Active sessions, streaming state, canvas tabs
 │   ├── projects-store.ts  # Selected project/worktree, sidebar state
 │   ├── terminal-store.ts  # Terminal instances and state
@@ -218,9 +227,15 @@ src/
 src-tauri/src/
 ├── lib.rs                 # App setup, AppState, AppPreferences, UIState structs, command registration
 ├── main.rs                # Entry point
+├── agent_board/           # Agent board item storage and commands
+├── automations/           # Automation storage, commands, scheduler
+├── browser/               # Native browser tab controls
 ├── chat/                  # Session lifecycle management
 │   ├── commands.rs        # Tauri commands (send message, create session, image processing)
 │   ├── claude.rs          # Claude CLI process spawning and management
+│   ├── codex.rs           # Codex CLI stream parsing and process management
+│   ├── opencode.rs        # OpenCode stream parsing and process management
+│   ├── codex_server.rs    # Codex server coordination helpers
 │   ├── detached.rs        # Detached process recovery (survives app quit via nohup)
 │   ├── registry.rs        # Active session registry
 │   ├── storage.rs         # Session data on disk
@@ -250,14 +265,16 @@ src-tauri/src/
 │   ├── pty.rs             # Platform PTY implementation
 │   ├── registry.rs        # Terminal instance registry
 │   └── types.rs           # Terminal types
-├── diagnostics/           # System monitoring
-│   └── commands.rs        # CPU/memory sampling via sysinfo crate
 ├── claude_cli/            # Claude CLI binary management
 │   ├── commands.rs        # Install, version check, path resolution
 │   └── config.rs          # CLI configuration
+├── codex_cli/             # Codex CLI binary management and MCP support
 ├── gh_cli/                # GitHub CLI binary management
 │   ├── commands.rs        # Install, version check, auth status
 │   └── config.rs          # GH CLI configuration
+├── opencode_cli/          # OpenCode CLI binary/model management and MCP support
+├── opencode_server/       # Managed OpenCode server process
+├── opinionated/           # Opinionated plugin checks/install
 └── platform/              # Platform abstractions
     ├── process.rs         # silent_command() - prevents Windows console flash
     └── shell.rs           # Default shell detection

@@ -7,7 +7,7 @@ The command system provides a unified way to register and execute actions throug
 The application has a **two-layer command architecture**:
 
 1. **React Command System** - For UI-level actions (command palette, menus)
-2. **Tauri Backend Commands** - For all data operations (`invoke()` calls)
+2. **Backend Commands** - Native Tauri commands plus WebSocket dispatch for browser/headless mode
 
 ```
 ┌────────────────────────────────────────────────────┐
@@ -25,16 +25,16 @@ The application has a **two-layer command architecture**:
                        │
                        ▼ invoke()
 ┌────────────────────────────────────────────────────┐
-│              Tauri Backend Layer                    │
-│                 (146+ commands)                     │
+│              Backend Command Layer                  │
+│   (250+ native commands; web-compatible subset)     │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────┐ │
 │  │ chat/        │  │ projects/    │  │ terminal/│ │
-│  │ commands.rs  │  │ commands.rs  │  │ cmds.rs  │ │
-│  │ (40 cmds)    │  │ (57 cmds)    │  │ (8 cmds) │ │
+│  │ commands.rs  │  │ commands.rs  │  │ commands │ │
+│  │ AI/session   │  │ git/projects │  │ PTY      │ │
 │  └──────────────┘  └──────────────┘  └──────────┘ │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────┐ │
-│  │ gh_cli/      │  │ claude_cli/  │  │ lib.rs   │ │
-│  │ commands.rs  │  │ commands.rs  │  │ (9 cmds) │ │
+│  │ gh/codex/    │  │ agent_board/ │  │ lib.rs   │ │
+│  │ opencode CLI │  │ automations  │  │ core     │ │
 │  └──────────────┘  └──────────────┘  └──────────┘ │
 └────────────────────────────────────────────────────┘
 ```
@@ -159,32 +159,32 @@ execute: () => {
 }
 ```
 
-## Tauri Backend Commands
+## Backend Commands
 
-All data operations flow through Tauri commands. The app has **146+ backend commands** across multiple modules.
+Most backend operations are registered as Tauri commands in `src-tauri/src/lib.rs`. Browser/headless mode cannot use native Tauri IPC, so web-compatible commands also need a matching arm in `src-tauri/src/http_server/dispatch.rs`.
 
 ### Command Distribution by Module
 
-| Module           | Location                                     | Commands | Purpose                           |
-| ---------------- | -------------------------------------------- | -------- | --------------------------------- |
-| Chat             | `src-tauri/src/chat/commands.rs`             | 40       | Sessions, messages, AI operations |
-| Projects         | `src-tauri/src/projects/commands.rs`         | 57       | Worktrees, git, file operations   |
-| GitHub Issues    | `src-tauri/src/projects/github_issues.rs`    | 12       | Issue/PR fetching                 |
-| Saved Contexts   | `src-tauri/src/projects/saved_contexts.rs`   | 4        | Context persistence               |
-| Terminal         | `src-tauri/src/terminal/commands.rs`         | 8        | PTY management                    |
-| GH CLI           | `src-tauri/src/gh_cli/commands.rs`           | 4        | GitHub CLI wrapper                |
-| Claude CLI       | `src-tauri/src/claude_cli/commands.rs`       | 4        | Claude CLI wrapper                |
-| Background Tasks | `src-tauri/src/background_tasks/commands.rs` | 8        | Async job management              |
-| Core             | `src-tauri/src/lib.rs`                       | 9        | Preferences, UI state             |
+| Module           | Location                                     | Purpose                                            |
+| ---------------- | -------------------------------------------- | -------------------------------------------------- |
+| Chat             | `src-tauri/src/chat/commands.rs`             | Sessions, messages, AI runs, queueing, recovery    |
+| Projects         | `src-tauri/src/projects/commands.rs`         | Projects, worktrees, git, GitHub, Linear, files    |
+| Terminal         | `src-tauri/src/terminal/commands.rs`         | PTY lifecycle and process utilities                |
+| Browser          | `src-tauri/src/browser/commands.rs`          | Native browser tabs; native-only command surface   |
+| Agent Board      | `src-tauri/src/agent_board/commands.rs`      | Cross-session todo board                           |
+| Automations      | `src-tauri/src/automations/commands.rs`      | Scheduled/background automation configuration      |
+| CLI Wrappers     | `src-tauri/src/*_cli/commands.rs`            | Claude, Codex, OpenCode, and GitHub CLI handling   |
+| Background Tasks | `src-tauri/src/background_tasks/commands.rs` | Focus-aware polling and immediate refresh triggers |
+| Core             | `src-tauri/src/lib.rs`                       | Preferences, UI state, HTTP server, notifications  |
 
-### Invoking Tauri Commands
+### Invoking Backend Commands
 
-All Tauri commands are called via `invoke()` and should be wrapped in TanStack Query hooks:
+Frontend code should import `invoke()` from `src/lib/transport.ts`, not directly from `@tauri-apps/api/core`. Shared backend state should normally be wrapped in TanStack Query hooks:
 
 ```typescript
 // src/services/preferences.ts
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '@/lib/transport'
 
 export function usePreferences() {
   return useQuery({
@@ -351,6 +351,23 @@ export function useMyQuery() {
 }
 ```
 
+#### Step 4: Wire Browser/Headless Dispatch
+
+```rust
+// src-tauri/src/http_server/dispatch.rs
+"my_command" => {
+    let arg: String = field(&args, "arg", "arg")?;
+    let result = crate::my_module::commands::my_command(app.clone(), arg).await?;
+    to_value(result)
+}
+```
+
+Use `field()` / `field_opt()` when request payloads may arrive in either camelCase or snake_case.
+
+#### Step 5: Add E2E Mock Coverage
+
+Add a default response in `e2e/fixtures/invoke-handlers.ts`. If the command mutates mock app state, add dynamic behavior in `e2e/fixtures/tauri-mock.ts`.
+
 ## Command Groups
 
 Organize commands into logical groups:
@@ -369,7 +386,7 @@ Organize commands into logical groups:
 4. **Check availability**: Use `isAvailable` to hide commands when they don't apply
 5. **Provide feedback**: Use `context.showToast()` or toast notifications for confirmation
 6. **Stay consistent**: Follow established patterns for similar commands
-7. **Wrap invoke() in TanStack Query**: Never call `invoke()` directly in components
+7. **Use the transport layer**: Import `invoke()` / `listen()` from `@/lib/transport`
 8. **Use background toast pattern**: For non-chat operations that take time
 
 ## Command Context Performance

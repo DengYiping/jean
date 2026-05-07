@@ -45,8 +45,16 @@ const recoveryData = await invoke('load_emergency_data', {
 Data is stored in the app's data directory:
 
 ```
-~/Library/Application Support/com.myapp.app/  (macOS)
+~/Library/Application Support/com.jean.desktop/  (macOS)
 ├── preferences.json                          # App preferences
+├── ui-state.json                             # App-wide restored UI state
+├── projects.json                             # Project/worktree metadata
+├── sessions/                                 # Session metadata and JSONL-backed history
+├── pasted-images/                            # Chat image attachments
+├── pasted-texts/                             # Long pasted text attachments
+├── session-context/                          # Saved/generated context files
+├── combined-contexts/                        # Combined context artifacts
+├── cli-profiles/                             # Custom CLI profile settings
 └── recovery/                                 # Emergency data
     ├── unsaved-work.json
     ├── crash-report-2024-01-15.json
@@ -159,7 +167,7 @@ Use TanStack Query for preferences management:
 ```typescript
 // src/services/preferences.ts
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '@/lib/transport'
 
 export interface AppPreferences {
   theme: string
@@ -512,13 +520,11 @@ const debouncedSave = debounce((state: UIState) => {
 
 // Convert Sets to arrays for JSON serialization
 const getCurrentUIState = (): UIState => {
-  const { fixedReviewFindings } = useChatStore.getState()
+  const { activeSessionIds } = useChatStore.getState()
 
   return {
     // ...other fields
-    fixed_review_findings: Object.fromEntries(
-      Object.entries(fixedReviewFindings).map(([k, v]) => [k, Array.from(v)])
-    ),
+    active_session_ids: activeSessionIds,
   }
 }
 

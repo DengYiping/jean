@@ -5,6 +5,7 @@ use std::sync::Mutex;
 use once_cell::sync::Lazy;
 use tauri::{AppHandle, Manager};
 
+use super::slots::PRESERVED_SLOT_DIRS;
 use super::types::{Project, ProjectsData, WorktreeSlot, WorktreeSlotState};
 
 /// Global mutex to prevent concurrent read-modify-write races on projects.json.
@@ -256,7 +257,7 @@ fn reconcile_worktree_slots(data: &mut ProjectsData) -> bool {
         match slot.state {
             WorktreeSlotState::Active => {
                 let Some(worktree_id) = slot.worktree_id.as_ref() else {
-                    if is_usable_slot_path(&slot.path) {
+                    if is_valid_idle_slot_path(&slot.path) {
                         slot.state = WorktreeSlotState::Idle;
                         slot.branch = None;
                         slot.last_error = None;
@@ -272,7 +273,7 @@ fn reconcile_worktree_slots(data: &mut ProjectsData) -> bool {
                     if slot.created_at > recent_reservation_cutoff {
                         continue;
                     }
-                    if is_usable_slot_path(&slot.path) {
+                    if is_valid_idle_slot_path(&slot.path) {
                         slot.state = WorktreeSlotState::Idle;
                         slot.worktree_id = None;
                         slot.branch = None;
@@ -292,13 +293,25 @@ fn reconcile_worktree_slots(data: &mut ProjectsData) -> bool {
                 }
             }
             WorktreeSlotState::Idle => {
-                if !is_usable_slot_path(&slot.path) {
+                if is_valid_idle_slot_path(&slot.path) {
+                    if slot.last_error.take().is_some() {
+                        changed = true;
+                    }
+                } else {
                     slot.state = WorktreeSlotState::Error;
                     slot.last_error = Some(slot_path_error(&slot.path).to_string());
                     changed = true;
                 }
             }
-            WorktreeSlotState::Error => {}
+            WorktreeSlotState::Error => {
+                if is_valid_idle_slot_path(&slot.path) {
+                    slot.state = WorktreeSlotState::Idle;
+                    slot.worktree_id = None;
+                    slot.branch = None;
+                    slot.last_error = None;
+                    changed = true;
+                }
+            }
         }
     }
 
@@ -338,6 +351,33 @@ fn reconcile_worktree_slots(data: &mut ProjectsData) -> bool {
 fn is_usable_slot_path(path: &str) -> bool {
     let path = Path::new(path);
     path.exists() && path.join(".git").exists()
+}
+
+fn is_valid_idle_slot_path(path: &str) -> bool {
+    let path = Path::new(path);
+    if !path.exists() {
+        return true;
+    }
+    if path.join(".git").exists() {
+        return true;
+    }
+    if !path.is_dir() {
+        return false;
+    }
+    let Ok(entries) = std::fs::read_dir(path) else {
+        return false;
+    };
+    entries.flatten().all(|entry| {
+        entry
+            .file_type()
+            .map(|file_type| file_type.is_dir())
+            .unwrap_or(false)
+            && entry
+                .file_name()
+                .to_str()
+                .map(|name| PRESERVED_SLOT_DIRS.contains(&name))
+                .unwrap_or(false)
+    })
 }
 
 fn slot_path_error(path: &str) -> &'static str {
@@ -859,5 +899,25 @@ mod tests {
         let slot = &data.worktree_slots[0];
         assert_eq!(slot.state, WorktreeSlotState::Active);
         assert_eq!(slot.worktree_id.as_deref(), Some("pending-worktree"));
+    }
+
+    #[test]
+    fn reconcile_accepts_idle_slot_with_preserved_directories_only() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let slot_path = temp.path().join(".jean-slots").join("demo-slot-6");
+        std::fs::create_dir_all(slot_path.join("target/debug")).expect("target");
+        std::fs::write(slot_path.join("target/debug/sentinel"), "target").expect("sentinel");
+        let slot_path = slot_path.to_string_lossy().to_string();
+        let mut data = ProjectsData {
+            projects: vec![],
+            worktrees: vec![],
+            worktree_slots: vec![test_slot("slot-6", &slot_path, WorktreeSlotState::Idle)],
+        };
+
+        assert!(reconcile_worktree_slots(&mut data));
+
+        let slot = &data.worktree_slots[0];
+        assert_eq!(slot.state, WorktreeSlotState::Idle);
+        assert_eq!(slot.last_error, None);
     }
 }

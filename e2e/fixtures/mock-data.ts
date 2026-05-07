@@ -97,6 +97,7 @@ export const mockPreferences = {
     investigate_advisory: null,
     investigate_linear_issue: null,
     review_comments: null,
+    automation_run: null,
     plan_approval_build: null,
     plan_approval_yolo: null,
     plan_approval_codex: null,

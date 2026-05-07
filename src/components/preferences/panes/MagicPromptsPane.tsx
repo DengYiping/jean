@@ -41,6 +41,7 @@ import {
   DEFAULT_INVESTIGATE_LINEAR_ISSUE_PROMPT,
   DEFAULT_RELEASE_NOTES_PROMPT,
   DEFAULT_REVIEW_COMMENTS_PROMPT,
+  DEFAULT_AUTOMATION_RUN_PROMPT,
   DEFAULT_SESSION_NAMING_PROMPT,
   DEFAULT_SESSION_RECAP_PROMPT,
   DEFAULT_PARALLEL_EXECUTION_PROMPT,
@@ -449,6 +450,40 @@ const PROMPT_SECTIONS: PromptSection[] = [
         ],
         defaultValue: DEFAULT_SESSION_RECAP_PROMPT,
         defaultModel: 'sonnet',
+      },
+    ],
+  },
+  {
+    label: 'Automation',
+    configs: [
+      {
+        key: 'automation_run',
+        label: 'Automation Run',
+        description:
+          'Prompt wrapper sent when a scheduled or manually started automation run begins.',
+        variables: [
+          {
+            name: '{automationName}',
+            description: 'Automation name',
+          },
+          {
+            name: '{automationId}',
+            description: 'Automation ID',
+          },
+          {
+            name: '{automationMemoryPath}',
+            description: 'Path to the automation memory file',
+          },
+          {
+            name: '{lastRunAt}',
+            description: 'Last run timestamp, or "never"',
+          },
+          {
+            name: '{prompt}',
+            description: 'Prompt configured on the automation',
+          },
+        ],
+        defaultValue: DEFAULT_AUTOMATION_RUN_PROMPT,
       },
     ],
   },

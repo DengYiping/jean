@@ -509,6 +509,18 @@ export const test = base.extend<TauriMockFixtures>({
               project.stable_worktree_slots_enabled =
                 args?.stable_worktree_slots_enabled
             }
+            if ('linkedProjectIds' in (args ?? {})) {
+              project.linked_project_ids = Array.isArray(args?.linkedProjectIds)
+                ? [...(args?.linkedProjectIds as string[])]
+                : []
+            }
+            if ('linked_project_ids' in (args ?? {})) {
+              project.linked_project_ids = Array.isArray(
+                args?.linked_project_ids
+              )
+                ? [...(args?.linked_project_ids as string[])]
+                : []
+            }
             return structuredClone(project)
           },
           list_agent_board_items: () => {

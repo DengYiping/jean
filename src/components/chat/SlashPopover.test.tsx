@@ -32,7 +32,7 @@ describe('SlashPopover', () => {
     Element.prototype.scrollIntoView = vi.fn()
   })
 
-  it('shows builtin /compact for Codex sessions', () => {
+  it('shows builtin /compact and /goal for Codex sessions', () => {
     render(
       <SlashPopover
         open
@@ -51,6 +51,10 @@ describe('SlashPopover', () => {
     expect(screen.getByText('/compact')).toBeInTheDocument()
     expect(
       screen.getByText('Summarize history and free up context')
+    ).toBeInTheDocument()
+    expect(screen.getByText('/goal')).toBeInTheDocument()
+    expect(
+      screen.getByText('Set, view, or clear the current Codex goal')
     ).toBeInTheDocument()
   })
 })

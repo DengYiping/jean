@@ -27,13 +27,13 @@ import {
   Image as ImageIcon,
   Activity,
 } from 'lucide-react'
-import { diffLines } from 'diff'
 import type { ToolCall } from '@/types/chat'
 import type { StackableItem } from './tool-call-utils'
 import { Markdown } from '@/components/ui/markdown'
 import { cn } from '@/lib/utils'
 import { getFilename } from '@/lib/path-utils'
 import { FileChangeCard } from './FileChangeCard'
+import { InlineFileDiff } from './InlineFileDiff'
 import {
   formatWorktreeRelativePath,
   normalizeFileChanges,
@@ -562,52 +562,6 @@ interface ToolDisplayOptions {
   worktreePath?: string | null
 }
 
-/** Renders a unified diff view with colored +/- lines */
-function DiffView({
-  oldString,
-  newString,
-  filePath,
-  className,
-}: {
-  oldString: string
-  newString: string
-  filePath: string
-  className?: string
-}) {
-  const parts = useMemo(
-    () => diffLines(oldString, newString),
-    [oldString, newString]
-  )
-
-  return (
-    <div className={className}>
-      <div className="text-muted-foreground mb-1.5 font-mono">
-        Path: {filePath}
-      </div>
-      <div className="rounded border border-border/30 overflow-auto max-h-64">
-        {parts.map((part, i) => {
-          const lines = part.value.replace(/\n$/, '').split('\n')
-          return lines.map((line, j) => (
-            <div
-              key={`${i}-${j}`}
-              className={cn(
-                'px-2 font-mono',
-                part.added && 'bg-green-500/15 text-green-400',
-                part.removed && 'bg-red-500/15 text-red-400'
-              )}
-            >
-              <span className="inline-block w-4 select-none opacity-60">
-                {part.added ? '+' : part.removed ? '-' : ' '}
-              </span>
-              {line}
-            </div>
-          ))
-        })}
-      </div>
-    </div>
-  )
-}
-
 const ANSI_ESCAPE_PATTERN = new RegExp(
   String.raw`\u001B(?:\][\s\S]*?(?:\u0007|\u001B\\)|\[[0-?]*[ -/]*[@-~]|[@-Z\\-_])`,
   'g'
@@ -939,7 +893,7 @@ function getToolDisplay(
         detail: filename,
         filePath,
         expandedContent: filePath ? (
-          <DiffView
+          <InlineFileDiff
             filePath={filePath}
             oldString={oldString ?? ''}
             newString={newString ?? ''}

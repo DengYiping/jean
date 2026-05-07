@@ -32,6 +32,12 @@ const BUILTIN_COMMANDS: ClaudeCommand[] = [
     description: 'Summarize history and free up context',
     source: 'builtin',
   },
+  {
+    name: 'goal',
+    path: '',
+    description: 'Set, view, or clear the current Codex goal',
+    source: 'builtin',
+  },
 ]
 
 export interface SlashPopoverHandle {
@@ -88,15 +94,16 @@ export function SlashPopover({
   const { data: commands = [] } = useClaudeCommands(worktreePath)
   const listRef = useRef<HTMLDivElement>(null)
   const [selectedIndex, setSelectedIndex] = useState(0)
+  const compactCommand = BUILTIN_COMMANDS[0]
   const availableCommands = useMemo(() => {
     if (backend === 'claude') {
-      return [...BUILTIN_COMMANDS, ...commands]
+      return compactCommand ? [compactCommand, ...commands] : commands
     }
     if (backend === 'codex') {
       return BUILTIN_COMMANDS
     }
     return []
-  }, [backend, commands])
+  }, [backend, commands, compactCommand])
 
   // Filter and combine items based on search query and context (fuzzy match)
   const filteredItems = useMemo(() => {

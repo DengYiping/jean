@@ -39,6 +39,7 @@ import {
   resolveMagicPromptProvider,
   type AppPreferences,
 } from '@/types/preferences'
+import type { ResolveConflictsOverride } from '@/components/magic/ResolveConflictsDialog'
 
 interface UseGitOperationsParams {
   activeWorktreeId: string | null | undefined
@@ -71,7 +72,7 @@ interface UseGitOperationsReturn {
   /** Merges open PR on GitHub then archives/deletes worktree */
   handleMergePr: () => Promise<void>
   /** Detects existing merge conflicts and opens resolution session */
-  handleResolveConflicts: () => Promise<void>
+  handleResolveConflicts: (override?: ResolveConflictsOverride) => Promise<void>
   /** Fetches base branch and merges to create local conflict state for PR conflict resolution */
   handleResolvePrConflicts: () => Promise<void>
   /** Executes the actual merge with specified type */

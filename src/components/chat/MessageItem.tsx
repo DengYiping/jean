@@ -21,6 +21,7 @@ import { SkillBadge } from './SkillBadge'
 import { ToolCallsDisplay } from './ToolCallsDisplay'
 import { ExitPlanModeButton } from './ExitPlanModeButton'
 import { EditedFilesDisplay } from './EditedFilesDisplay'
+import { FileChangeCard } from './FileChangeCard'
 import {
   Tooltip,
   TooltipTrigger,
@@ -192,7 +193,7 @@ export const MessageItem = memo(function MessageItem({
   onQuestionAnswer,
   onQuestionSkip,
   onFileClick,
-  scrollViewportRef: _scrollViewportRef,
+  scrollViewportRef,
   onEditedFileClick,
   onFixFinding,
   onFixAllFindings,
@@ -781,10 +782,19 @@ export const MessageItem = memo(function MessageItem({
         </>
       )}
 
+      {/* Show Codex file changes at the bottom of assistant messages */}
+      {message.role === 'assistant' &&
+        (message.tool_calls?.length ?? 0) > 0 && (
+          <FileChangeCard
+            toolCalls={message.tool_calls}
+            worktreePath={worktreePath}
+            viewportRef={scrollViewportRef}
+          />
+        )}
+
       {/* Show edited files at the bottom of assistant messages */}
       {message.role === 'assistant' &&
-        (message.tool_calls?.length ?? 0) > 0 &&
-        !skipToolCalls && (
+        (message.tool_calls?.length ?? 0) > 0 && (
           <EditedFilesDisplay
             toolCalls={message.tool_calls}
             onFileClick={onEditedFileClick}

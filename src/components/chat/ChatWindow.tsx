@@ -104,9 +104,11 @@ import { PlanDialog, type PlanDialogMode } from './PlanDialog'
 import { RecapDialog } from './RecapDialog'
 import { StreamingMessage } from './StreamingMessage'
 import { CompactStreamingTicker } from './CompactStreamingTicker'
+import { CodexGoalBanner } from './CodexGoalBanner'
 import { StreamingStatusBar } from './StreamingStatusBar'
 import { ChatErrorFallback } from './ChatErrorFallback'
 import { logger } from '@/lib/logger'
+import { hydrateRunningSnapshot } from '@/lib/hydrate-running-snapshot'
 import { saveCrashState } from '@/lib/recovery'
 import { ErrorBanner } from './ErrorBanner'
 import { SessionDigestReminder } from './SessionDigestReminder'
@@ -147,6 +149,11 @@ const GitDiffModal = lazy(() =>
 const LoadContextModal = lazy(() =>
   import('../magic/LoadContextModal').then(mod => ({
     default: mod.LoadContextModal,
+  }))
+)
+const LinkedProjectsModal = lazy(() =>
+  import('../magic/LinkedProjectsModal').then(mod => ({
+    default: mod.LinkedProjectsModal,
   }))
 )
 import {
@@ -446,12 +453,22 @@ export function ChatWindow({
       hydrateRunningSnapshot(deferredSessionId, lastMsg)
     }
   }, [deferredSessionId, session])
+
+  useEffect(() => {
+    if (!deferredSessionId) return
+    useChatStore
+      .getState()
+      .setCodexGoal(deferredSessionId, session?.codex_goal ?? null)
+  }, [deferredSessionId, session?.codex_goal])
   const automationBadge = session?.automation_owned
     ? (session.automation_name ?? 'Automation')
     : null
 
   const { data: preferences } = usePreferences()
   const patchPreferences = usePatchPreferences()
+  const linkedProjectsModalOpen = useUIStore(
+    state => state.linkedProjectsModalOpen
+  )
   const sessionModalOpen = useUIStore(state => state.sessionChatModalOpen)
   const focusChatShortcut = formatShortcutDisplay(
     (preferences?.keybindings?.focus_chat_input ??
@@ -2386,6 +2403,9 @@ export function ChatWindow({
     queryClient,
     preferences,
   })
+  const handleLinkedProjectsModalChange = useCallback((open: boolean) => {
+    useUIStore.getState().setLinkedProjectsModalOpen(open)
+  }, [])
 
   // Window event listeners are called after useMessageHandlers (needs plan approval handlers)
 
@@ -2892,6 +2912,12 @@ export function ChatWindow({
                               }
                             />
                           )}
+                          <CodexGoalBanner
+                            sessionId={activeSessionId ?? null}
+                            worktreeId={activeWorktreeId ?? null}
+                            worktreePath={activeWorktreePath ?? null}
+                            isCodexBackend={isCodexBackend}
+                          />
                           {isLoading ||
                           isSessionsLoading ||
                           isSessionSwitching ? (
@@ -3559,6 +3585,14 @@ export function ChatWindow({
             activeSessionId={activeSessionId ?? null}
             projectName={worktree?.name ?? 'unknown-project'}
             projectId={worktree?.project_id ?? null}
+          />
+        </Suspense>
+
+        <Suspense fallback={null}>
+          <LinkedProjectsModal
+            open={linkedProjectsModalOpen}
+            onOpenChange={handleLinkedProjectsModalChange}
+            projectId={project?.id ?? null}
           />
         </Suspense>
 

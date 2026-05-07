@@ -1,5 +1,7 @@
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import { useChatStore } from '@/store/chat-store'
+import { useUIStore } from '@/store/ui-store'
+import type { ResolveConflictsOverride } from '@/components/magic/ResolveConflictsDialog'
 
 export interface WorkflowRunDetail {
   workflowName: string
@@ -23,7 +25,7 @@ interface MagicCommandHandlers {
   handleReview: () => void
   handleMerge: () => void
   handleMergePr: () => void
-  handleResolveConflicts: () => void
+  handleResolveConflicts: (override?: ResolveConflictsOverride) => void
   handleInvestigateWorkflowRun: (detail: WorkflowRunDetail) => void
   handleInvestigate: (type: 'issue' | 'pr' | 'advisory') => void
   handleReviewComments: (prompt: string) => void
@@ -117,7 +119,11 @@ export function useMagicCommands({
 
     const handleMagicCommand = (
       e: CustomEvent<
-        { command: string; sessionId?: string } & Partial<WorkflowRunDetail>
+        {
+          command: string
+          sessionId?: string
+          override?: ResolveConflictsOverride
+        } & Partial<WorkflowRunDetail>
       >
     ) => {
       const { command, ...rest } = e.detail
@@ -159,9 +165,16 @@ export function useMagicCommands({
         case 'merge-pr':
           handlers.handleMergePr()
           break
-        case 'resolve-conflicts':
-          handlers.handleResolveConflicts()
+        case 'resolve-conflicts': {
+          const override = (rest as { override?: ResolveConflictsOverride })
+            .override
+          if (!override) {
+            useUIStore.getState().setResolveConflictsDialogOpen(true)
+            break
+          }
+          handlers.handleResolveConflicts(override)
           break
+        }
         case 'investigate':
           handlers.handleInvestigate(
             (rest as { type: 'issue' | 'pr' | 'advisory' }).type ?? 'issue'
@@ -206,9 +219,17 @@ export function useMagicCommands({
       case 'merge-pr':
         handlers.handleMergePr()
         break
-      case 'resolve-conflicts':
-        handlers.handleResolveConflicts()
+      case 'resolve-conflicts': {
+        const override = (
+          pendingMagicCommand as { override?: ResolveConflictsOverride }
+        ).override
+        if (!override) {
+          useUIStore.getState().setResolveConflictsDialogOpen(true)
+          break
+        }
+        handlers.handleResolveConflicts(override)
         break
+      }
       case 'review-comments':
         if (pendingMagicCommand.prompt) {
           handlers.handleReviewComments(pendingMagicCommand.prompt)

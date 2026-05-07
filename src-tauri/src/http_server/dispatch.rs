@@ -224,6 +224,8 @@ pub async fn dispatch_command(
                 "hideGithubIssuesAndPRs",
                 "hide_github_issues_and_prs",
             )?);
+            let linked_project_ids: Option<Vec<String>> =
+                field_opt(&args, "linkedProjectIds", "linked_project_ids")?;
             let result = crate::projects::update_project_settings(
                 app.clone(),
                 project_id,
@@ -242,7 +244,7 @@ pub async fn dispatch_command(
                 linear_api_key,
                 linear_team_id,
                 hide_github_issues_and_prs,
-                None,
+                linked_project_ids,
             )
             .await?;
             to_value(result)

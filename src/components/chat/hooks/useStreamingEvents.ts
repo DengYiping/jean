@@ -928,6 +928,15 @@ export default function useStreamingEvents({
       }
     )
 
+    const unlistenCodexGoal = listen<{
+      session_id: string
+      worktree_id: string
+      goal: string | null
+    }>('chat:codex_goal', event => {
+      const { session_id, goal } = event.payload
+      useChatStore.getState().setCodexGoal(session_id, goal ?? null)
+    })
+
     const unlistenDone = listen<DoneEvent>('chat:done', event => {
       const sessionId = event.payload.session_id
       const worktreeId = event.payload.worktree_id
@@ -2396,6 +2405,7 @@ export default function useStreamingEvents({
       unlistenToolEvent.then(f => f())
       unlistenPermissionDenied.then(f => f())
       unlistenCodexMcpElicitation.then(f => f())
+      unlistenCodexGoal.then(f => f())
       unlistenDone.then(f => f())
       unlistenError.then(f => f())
       unlistenCancelled.then(f => f())

@@ -74,7 +74,7 @@ import {
   type PreferenceSearchEntry,
 } from './preferences-search'
 
-type NavigationItem = {
+interface NavigationItem {
   type: 'item'
   id: PreferencePane
   name: string
@@ -82,7 +82,7 @@ type NavigationItem = {
   desktopOnly?: boolean
 }
 
-type NavigationSeparator = {
+interface NavigationSeparator {
   type: 'separator'
   id: string
 }
@@ -463,11 +463,7 @@ export function PreferencesDialog() {
                   <SidebarMenu>
                     {navigationEntries.map(entry =>
                       entry.type === 'separator' ? (
-                        <li
-                          key={entry.id}
-                          aria-hidden="true"
-                          className="py-1"
-                        >
+                        <li key={entry.id} aria-hidden="true" className="py-1">
                           <SidebarSeparator className="mx-0" />
                         </li>
                       ) : (

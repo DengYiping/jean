@@ -1,4 +1,5 @@
 import { useCallback, type RefObject } from 'react'
+import { invoke } from '@/lib/transport'
 import { generateId } from '@/lib/uuid'
 import { toast } from 'sonner'
 import { useChatStore } from '@/store/chat-store'
@@ -329,7 +330,60 @@ export function useMessageSending({
         return
       }
 
-      const message = textMessage
+      let message = textMessage
+      let pendingGoalSet: Promise<void> | null = null
+      if (
+        selectedBackendRef.current === 'codex' &&
+        /^\/goal(\s|$)/.test(textMessage)
+      ) {
+        const arg = textMessage.replace(/^\/goal\s*/, '').trim()
+        const sessionId = activeSessionId
+        const worktreeId = activeWorktreeId
+        const worktreePath = activeWorktreePath
+
+        if (!arg) {
+          clearInputDraft(sessionId)
+          clearChatInputState()
+          void invoke<string | null>('codex_goal_get', {
+            worktreeId,
+            worktreePath,
+            sessionId,
+          })
+            .then(goal =>
+              toast.info(goal ? `Current goal: ${goal}` : 'No goal set')
+            )
+            .catch(error => toast.error(`/goal failed: ${error}`))
+          return
+        }
+
+        if (arg === 'clear') {
+          clearInputDraft(sessionId)
+          clearChatInputState()
+          void invoke('codex_goal_clear', {
+            worktreeId,
+            worktreePath,
+            sessionId,
+          })
+            .then(() => toast.success('Goal cleared'))
+            .catch(error => toast.error(`/goal failed: ${error}`))
+          return
+        }
+
+        pendingGoalSet = (async () => {
+          try {
+            await invoke('codex_goal_set', {
+              worktreeId,
+              worktreePath,
+              sessionId,
+              objective: arg,
+            })
+            toast.success('Goal set')
+          } catch (error) {
+            toast.error(`/goal failed: ${error}`)
+          }
+        })()
+        message = arg
+      }
 
       if (
         images.length > 0 ||
@@ -403,7 +457,11 @@ export function useMessageSending({
         return
       }
 
-      sendMessageNow(queuedMessage)
+      if (pendingGoalSet) {
+        void pendingGoalSet.then(() => sendMessageNow(queuedMessage))
+      } else {
+        sendMessageNow(queuedMessage)
+      }
     },
     [
       activeSessionId,

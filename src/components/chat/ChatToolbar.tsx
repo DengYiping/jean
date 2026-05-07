@@ -99,7 +99,7 @@ export const ChatToolbar = memo(function ChatToolbar({
   onMerge,
   onMergePr,
   onResolvePrConflicts,
-  onResolveConflicts,
+  onResolveConflicts: _onResolveConflicts,
   hasOpenPr,
   onSetDiffRequest,
   installedBackends,
@@ -140,6 +140,9 @@ export const ChatToolbar = memo(function ChatToolbar({
   )
 
   const pickRemoteOrRun = useRemotePicker(activeWorktreePath)
+  const openResolveConflictsDialog = useCallback(() => {
+    useUIStore.getState().setResolveConflictsDialogOpen(true)
+  }, [])
 
   const handleMcpDropdownOpenChange = useCallback(
     (open: boolean) => {
@@ -247,14 +250,14 @@ export const ChatToolbar = memo(function ChatToolbar({
       worktreePath: activeWorktreePath,
       baseBranch,
       projectId,
-      onMergeConflict: onResolveConflicts,
+      onMergeConflict: openResolveConflictsDialog,
     })
   }, [
     activeWorktreePath,
     baseBranch,
     worktreeId,
     projectId,
-    onResolveConflicts,
+    openResolveConflictsDialog,
   ])
 
   const handlePullUpstreamClick = useCallback(async () => {
@@ -264,9 +267,9 @@ export const ChatToolbar = memo(function ChatToolbar({
       worktreePath: activeWorktreePath,
       branchLabel: activeWorktreePath.split('/').pop() ?? undefined,
       projectId,
-      onMergeConflict: onResolveConflicts,
+      onMergeConflict: openResolveConflictsDialog,
     })
-  }, [activeWorktreePath, worktreeId, projectId, onResolveConflicts])
+  }, [activeWorktreePath, worktreeId, projectId, openResolveConflictsDialog])
 
   const handlePushClick = useCallback(() => {
     if (!activeWorktreePath || !worktreeId) return
@@ -355,7 +358,7 @@ export const ChatToolbar = memo(function ChatToolbar({
           onReview={onReview}
           onMerge={onMerge}
           onMergePr={onMergePr}
-          onResolveConflicts={onResolveConflicts}
+          onResolveConflicts={openResolveConflictsDialog}
           installedBackends={installedBackends}
           onBackendChange={onBackendChange}
           onSetExecutionMode={onSetExecutionMode}

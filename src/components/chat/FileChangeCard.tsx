@@ -340,11 +340,11 @@ export const FileChangeCard = memo(function FileChangeCard({
 
       {isListOpen && (
         <div className="border-t border-white/[0.04]">
-          {visibleChanges.map(change => {
+          {visibleChanges.map((change, index) => {
             const displayPath = displayPathMap.get(change.path) ?? change.path
             return (
               <FileChangeRow
-                key={`${change.path}:${change.previousPath ?? ''}:${change.kind}`}
+                key={`${change.path}:${change.previousPath ?? ''}:${change.kind}:${index}`}
                 change={change}
                 displayName={displayPath}
                 displayPath={displayPath}

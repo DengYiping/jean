@@ -265,6 +265,9 @@ interface ChatUIState {
   // User-assigned labels per session (e.g. "Needs testing")
   sessionLabels: Record<string, LabelData>
 
+  // Codex `/goal` long-horizon objectives keyed by sessionId
+  codexGoals: Record<string, string>
+
   // Pending magic command to execute when ChatWindow mounts (from canvas navigation)
   pendingMagicCommand: { command: string; prompt?: string } | null
   setPendingMagicCommand: (
@@ -318,6 +321,10 @@ interface ChatUIState {
 
   // Actions - Session label management (persisted)
   setSessionLabel: (sessionId: string, label: LabelData | null) => void
+
+  // Actions - Codex /goal objective management
+  setCodexGoal: (sessionId: string, goal: string | null) => void
+  getCodexGoal: (sessionId: string) => string | null
 
   // Actions - Plan file path management (persisted)
   setPlanFilePath: (sessionId: string, path: string | null) => void
@@ -704,6 +711,7 @@ export const useChatStore = create<ChatUIState>()(
       sessionDigests: {},
       worktreeLoadingOperations: {},
       sessionLabels: {},
+      codexGoals: {},
       pendingMagicCommand: null,
 
       // Session management
@@ -996,6 +1004,30 @@ export const useChatStore = create<ChatUIState>()(
           undefined,
           'setSessionLabel'
         ),
+
+      // Codex /goal objective management
+      setCodexGoal: (sessionId, goal) =>
+        set(
+          state => {
+            if (goal) {
+              if (state.codexGoals[sessionId] === goal) return state
+              return {
+                codexGoals: {
+                  ...state.codexGoals,
+                  [sessionId]: goal,
+                },
+              }
+            }
+
+            if (!(sessionId in state.codexGoals)) return state
+            const { [sessionId]: _, ...rest } = state.codexGoals
+            return { codexGoals: rest }
+          },
+          undefined,
+          'setCodexGoal'
+        ),
+
+      getCodexGoal: sessionId => get().codexGoals[sessionId] ?? null,
 
       // Plan file path management
       setPlanFilePath: (sessionId, path) =>
@@ -2787,6 +2819,7 @@ export const useChatStore = create<ChatUIState>()(
             const { [sessionId]: _parallel, ...restParallelExecutionPrompt } =
               state.parallelExecutionPromptEnabledBySession
             const { [sessionId]: _label, ...restLabels } = state.sessionLabels
+            const { [sessionId]: _goal, ...restCodexGoals } = state.codexGoals
             const { [sessionId]: _ttu, ...restThreadTokenUsage } =
               state.threadTokenUsage
             const { [sessionId]: _skillBindings, ...restSkillBindings } =
@@ -2807,6 +2840,7 @@ export const useChatStore = create<ChatUIState>()(
               parallelExecutionPromptEnabledBySession:
                 restParallelExecutionPrompt,
               sessionLabels: restLabels,
+              codexGoals: restCodexGoals,
               threadTokenUsage: restThreadTokenUsage,
               draftSkillBindings: restSkillBindings,
             }

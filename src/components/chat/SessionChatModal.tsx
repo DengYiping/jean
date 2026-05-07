@@ -1029,7 +1029,9 @@ export function SessionChatModal({
                         GitHub
                       </DropdownMenuItem>
                     )}
-                    <DropdownMenuSeparator />
+                    {(isNativeApp() || worktree?.branch) && (
+                      <DropdownMenuSeparator />
+                    )}
                     <DropdownMenuItem
                       onSelect={() => {
                         const { reviewResults, toggleReviewSidebar } =

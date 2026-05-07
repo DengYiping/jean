@@ -39,6 +39,10 @@ class MockWebSocket {
     this.onopen?.()
   }
 
+  message(data: unknown) {
+    this.onmessage?.({ data: JSON.stringify(data) })
+  }
+
   closeFromServer() {
     this.readyState = MockWebSocket.CLOSED
     this.onclose?.()
@@ -142,5 +146,71 @@ describe('browser WebSocket transport recovery', () => {
 
     expect(MockWebSocket.instances).toHaveLength(0)
     expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('replays active terminal output on reconnect and ignores duplicate replay frames', async () => {
+    const { listen } = await importTransport()
+    await flushMicrotasks()
+
+    const output: string[] = []
+    const unlisten = await listen<{ terminal_id: string; data: string }>(
+      'terminal:output',
+      event => {
+        output.push(event.payload.data)
+      }
+    )
+
+    const socket = MockWebSocket.instances[0]
+    if (!socket) throw new Error('Expected initial socket')
+
+    socket.open()
+    socket.message({
+      type: 'event',
+      event: 'terminal:started',
+      seq: 10,
+      payload: { terminal_id: 'term-1' },
+    })
+    socket.message({
+      type: 'event',
+      event: 'terminal:output',
+      seq: 11,
+      payload: { terminal_id: 'term-1', data: 'hello' },
+    })
+
+    expect(output).toEqual(['hello'])
+
+    socket.closeFromServer()
+    await vi.advanceTimersByTimeAsync(100)
+
+    expect(MockWebSocket.instances).toHaveLength(2)
+    const reconnectedSocket = MockWebSocket.instances[1]
+    if (!reconnectedSocket) throw new Error('Expected reconnected socket')
+
+    reconnectedSocket.open()
+
+    expect(reconnectedSocket.sent).toContain(
+      JSON.stringify({
+        type: 'terminal_replay',
+        terminal_id: 'term-1',
+        last_seq: 11,
+      })
+    )
+
+    reconnectedSocket.message({
+      type: 'event',
+      event: 'terminal:output',
+      seq: 11,
+      payload: { terminal_id: 'term-1', data: 'hello' },
+    })
+    reconnectedSocket.message({
+      type: 'event',
+      event: 'terminal:output',
+      seq: 12,
+      payload: { terminal_id: 'term-1', data: 'world' },
+    })
+
+    expect(output).toEqual(['hello', 'world'])
+
+    unlisten()
   })
 })

@@ -943,6 +943,42 @@ export const ChatInput = memo(function ChatInput({
   // Handle command selection from the `/` popover (executes immediately)
   const handleCommandSelect = useCallback(
     (command: ClaudeCommand) => {
+      if (
+        command.source === 'builtin' &&
+        command.name === 'goal' &&
+        slashTriggerIndex !== null &&
+        inputRef.current
+      ) {
+        const currentValue = valueRef.current
+        const cursorPos = inputRef.current.selectionStart ?? currentValue.length
+        const beforeTrigger = currentValue.slice(0, slashTriggerIndex)
+        const afterQuery = currentValue.slice(cursorPos)
+        const insertedCommand = '/goal '
+        const newValue = beforeTrigger + insertedCommand + afterQuery
+
+        inputRef.current.value = newValue
+        valueRef.current = newValue
+        resizeTextarea()
+
+        clearTimeout(debouncedSaveRef.current)
+        if (activeSessionId) {
+          useChatStore.getState().setInputDraft(activeSessionId, newValue)
+        }
+        onHasValueChangeRef.current?.(Boolean(newValue.trim()))
+
+        setSlashPopoverOpen(false)
+        setSlashPopoverMode(null)
+        setSlashTriggerIndex(null)
+        setSlashQuery('')
+
+        requestAnimationFrame(() => {
+          const newCursorPos = beforeTrigger.length + insertedCommand.length
+          inputRef.current?.focus()
+          inputRef.current?.setSelectionRange(newCursorPos, newCursorPos)
+        })
+        return
+      }
+
       // Cancel pending debounced save (it still has the old "/command" value)
       clearTimeout(debouncedSaveRef.current)
 
@@ -966,7 +1002,13 @@ export const ChatInput = memo(function ChatInput({
       // Notify parent to execute command
       onCommandExecute?.(command)
     },
-    [activeSessionId, inputRef, onCommandExecute, resizeTextarea]
+    [
+      activeSessionId,
+      inputRef,
+      onCommandExecute,
+      resizeTextarea,
+      slashTriggerIndex,
+    ]
   )
 
   return (

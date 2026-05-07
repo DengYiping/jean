@@ -1,10 +1,11 @@
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use once_cell::sync::Lazy;
 use tauri::{AppHandle, Manager};
 
-use super::types::{Project, ProjectsData, WorktreeSlotState};
+use super::types::{Project, ProjectsData, WorktreeSlot, WorktreeSlotState};
 
 /// Global mutex to prevent concurrent read-modify-write races on projects.json.
 /// Multiple threads (e.g., fetch_worktrees_status) can call save_projects_data simultaneously,
@@ -187,46 +188,164 @@ fn load_projects_data_internal(app: &AppHandle) -> Result<ProjectsData, String> 
 
 fn reconcile_worktree_slots(data: &mut ProjectsData) -> bool {
     let mut changed = false;
-    let worktree_ids: std::collections::HashSet<String> =
-        data.worktrees.iter().map(|w| w.id.clone()).collect();
+    let recent_reservation_cutoff = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+        .saturating_sub(300);
+    let worktree_ids: HashSet<String> = data.worktrees.iter().map(|w| w.id.clone()).collect();
+    let mut existing_slot_ids: HashSet<String> = data
+        .worktree_slots
+        .iter()
+        .map(|slot| slot.id.clone())
+        .collect();
 
     for slot in &mut data.worktree_slots {
+        let live_worktree = data
+            .worktrees
+            .iter()
+            .filter(|worktree| worktree.archived_at.is_none())
+            .filter(|worktree| worktree.stable_slot_id.as_deref() == Some(slot.id.as_str()))
+            .max_by_key(|worktree| worktree.created_at);
+
+        if let Some(worktree) = live_worktree {
+            let slot_path_usable = is_usable_slot_path(&worktree.path);
+            if slot.path != worktree.path {
+                slot.path = worktree.path.clone();
+                changed = true;
+            }
+            if slot_path_usable {
+                if slot.state != WorktreeSlotState::Active {
+                    slot.state = WorktreeSlotState::Active;
+                    changed = true;
+                }
+                if slot.worktree_id.as_deref() != Some(worktree.id.as_str()) {
+                    slot.worktree_id = Some(worktree.id.clone());
+                    changed = true;
+                }
+                if slot.branch.as_deref() != Some(worktree.branch.as_str()) {
+                    slot.branch = Some(worktree.branch.clone());
+                    changed = true;
+                }
+                if slot.last_error.take().is_some() {
+                    changed = true;
+                }
+                continue;
+            }
+
+            let error = slot_path_error(&worktree.path);
+            if slot.state != WorktreeSlotState::Error {
+                slot.state = WorktreeSlotState::Error;
+                changed = true;
+            }
+            if slot.last_error.as_deref() != Some(error) {
+                slot.last_error = Some(error.to_string());
+                changed = true;
+            }
+            if slot.worktree_id.as_deref() != Some(worktree.id.as_str()) {
+                slot.worktree_id = Some(worktree.id.clone());
+                changed = true;
+            }
+            if slot.branch.as_deref() != Some(worktree.branch.as_str()) {
+                slot.branch = Some(worktree.branch.clone());
+                changed = true;
+            }
+            continue;
+        }
+
         match slot.state {
             WorktreeSlotState::Active => {
                 let Some(worktree_id) = slot.worktree_id.as_ref() else {
-                    slot.state = WorktreeSlotState::Idle;
-                    slot.branch = None;
-                    slot.last_error = None;
+                    if is_usable_slot_path(&slot.path) {
+                        slot.state = WorktreeSlotState::Idle;
+                        slot.branch = None;
+                        slot.last_error = None;
+                    } else {
+                        slot.state = WorktreeSlotState::Error;
+                        slot.last_error = Some(slot_path_error(&slot.path).to_string());
+                    }
                     changed = true;
                     continue;
                 };
 
                 if !worktree_ids.contains(worktree_id) {
-                    slot.state = WorktreeSlotState::Idle;
-                    slot.worktree_id = None;
-                    slot.branch = None;
-                    slot.last_error = None;
+                    if slot.created_at > recent_reservation_cutoff {
+                        continue;
+                    }
+                    if is_usable_slot_path(&slot.path) {
+                        slot.state = WorktreeSlotState::Idle;
+                        slot.worktree_id = None;
+                        slot.branch = None;
+                        slot.last_error = None;
+                    } else {
+                        slot.state = WorktreeSlotState::Error;
+                        slot.last_error = Some(slot_path_error(&slot.path).to_string());
+                    }
                     changed = true;
                     continue;
                 }
 
-                if !Path::new(&slot.path).exists() {
+                if !is_usable_slot_path(&slot.path) {
                     slot.state = WorktreeSlotState::Error;
-                    slot.last_error = Some("Slot path no longer exists".to_string());
+                    slot.last_error = Some(slot_path_error(&slot.path).to_string());
                     changed = true;
                 }
             }
             WorktreeSlotState::Idle => {
-                if !Path::new(&slot.path).exists() {
+                if !is_usable_slot_path(&slot.path) {
                     slot.state = WorktreeSlotState::Error;
-                    slot.last_error = Some("Slot path no longer exists".to_string());
+                    slot.last_error = Some(slot_path_error(&slot.path).to_string());
                     changed = true;
                 }
             }
             WorktreeSlotState::Error => {}
         }
     }
+
+    for worktree in data
+        .worktrees
+        .iter()
+        .filter(|worktree| worktree.archived_at.is_none())
+        .filter(|worktree| worktree.path.contains("/.jean-slots/"))
+    {
+        let Some(slot_id) = worktree.stable_slot_id.as_ref() else {
+            continue;
+        };
+        if existing_slot_ids.contains(slot_id) {
+            continue;
+        }
+        if !is_usable_slot_path(&worktree.path) {
+            continue;
+        }
+        data.worktree_slots.push(WorktreeSlot {
+            id: slot_id.clone(),
+            project_id: worktree.project_id.clone(),
+            path: worktree.path.clone(),
+            state: WorktreeSlotState::Active,
+            worktree_id: Some(worktree.id.clone()),
+            branch: Some(worktree.branch.clone()),
+            created_at: worktree.created_at,
+            last_used_at: worktree.created_at,
+            last_error: None,
+        });
+        existing_slot_ids.insert(slot_id.clone());
+        changed = true;
+    }
+
     changed
+}
+
+fn is_usable_slot_path(path: &str) -> bool {
+    let path = Path::new(path);
+    path.exists() && path.join(".git").exists()
+}
+
+fn slot_path_error(path: &str) -> &'static str {
+    if Path::new(path).exists() {
+        "Slot path is not a git worktree"
+    } else {
+        "Slot path no longer exists"
+    }
 }
 
 /// Load projects data from disk (with locking for thread safety)
@@ -379,7 +498,75 @@ pub fn resolve_editor_for_path(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::projects::types::{Project, ProjectsData, Worktree};
+    use crate::projects::types::{Project, ProjectsData, Worktree, WorktreeSlot};
+
+    fn test_worktree(id: &str, slot_id: Option<&str>, path: &str) -> Worktree {
+        Worktree {
+            id: id.to_string(),
+            project_id: "project-1".to_string(),
+            name: id.to_string(),
+            path: path.to_string(),
+            stable_slot_id: slot_id.map(ToOwned::to_owned),
+            branch: format!("{id}-branch"),
+            base_branch: None,
+            created_at: 10,
+            setup_output: None,
+            setup_script: None,
+            setup_success: None,
+            session_type: Default::default(),
+            pr_number: None,
+            pr_url: None,
+            pr_push_remote: None,
+            pr_push_branch: None,
+            issue_number: None,
+            linear_issue_identifier: None,
+            security_alert_number: None,
+            security_alert_url: None,
+            advisory_ghsa_id: None,
+            advisory_url: None,
+            cached_pr_status: None,
+            cached_check_status: None,
+            cached_behind_count: None,
+            cached_ahead_count: None,
+            cached_status_at: None,
+            cached_uncommitted_added: None,
+            cached_uncommitted_removed: None,
+            cached_branch_diff_added: None,
+            cached_branch_diff_removed: None,
+            cached_base_branch_ahead_count: None,
+            cached_base_branch_behind_count: None,
+            cached_worktree_ahead_count: None,
+            cached_unpushed_count: None,
+            order: 0,
+            label: None,
+            archived_at: None,
+            last_opened_at: None,
+            automation_id: None,
+            automation_name: None,
+            automation_owned: false,
+        }
+    }
+
+    fn test_slot(id: &str, path: &str, state: WorktreeSlotState) -> WorktreeSlot {
+        WorktreeSlot {
+            id: id.to_string(),
+            project_id: "project-1".to_string(),
+            path: path.to_string(),
+            state,
+            worktree_id: None,
+            branch: None,
+            created_at: 1,
+            last_used_at: 1,
+            last_error: Some("old error".to_string()),
+        }
+    }
+
+    fn make_git_like_slot(temp: &tempfile::TempDir, name: &str) -> String {
+        let slot_path = temp.path().join(".jean-slots").join(name);
+        std::fs::create_dir_all(&slot_path).expect("slot dir");
+        std::fs::write(slot_path.join(".git"), "gitdir: test").expect("git marker");
+        slot_path.to_string_lossy().to_string()
+    }
 
     #[test]
     fn test_sanitize_directory_name() {
@@ -556,5 +743,121 @@ mod tests {
             resolve_editor_for_path(&data, "/tmp/unknown/file.ts", None, None),
             "zed"
         );
+    }
+
+    #[test]
+    fn reconcile_repairs_error_slot_referenced_by_live_worktree() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let slot_path = make_git_like_slot(&temp, "demo-slot-1");
+        let mut data = ProjectsData {
+            projects: vec![],
+            worktrees: vec![test_worktree("worktree-1", Some("slot-1"), &slot_path)],
+            worktree_slots: vec![test_slot(
+                "slot-1",
+                "/missing/old-path",
+                WorktreeSlotState::Error,
+            )],
+        };
+
+        assert!(reconcile_worktree_slots(&mut data));
+
+        let slot = &data.worktree_slots[0];
+        assert_eq!(slot.state, WorktreeSlotState::Active);
+        assert_eq!(slot.path, slot_path);
+        assert_eq!(slot.worktree_id.as_deref(), Some("worktree-1"));
+        assert_eq!(slot.branch.as_deref(), Some("worktree-1-branch"));
+        assert_eq!(slot.last_error, None);
+    }
+
+    #[test]
+    fn reconcile_recreates_missing_slot_for_live_slotted_worktree() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let slot_path = make_git_like_slot(&temp, "demo-slot-2");
+        let mut data = ProjectsData {
+            projects: vec![],
+            worktrees: vec![test_worktree("worktree-2", Some("slot-2"), &slot_path)],
+            worktree_slots: vec![],
+        };
+
+        assert!(reconcile_worktree_slots(&mut data));
+
+        let slot = &data.worktree_slots[0];
+        assert_eq!(slot.id, "slot-2");
+        assert_eq!(slot.state, WorktreeSlotState::Active);
+        assert_eq!(slot.worktree_id.as_deref(), Some("worktree-2"));
+    }
+
+    #[test]
+    fn reconcile_keeps_corrupt_live_slot_in_error_state() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let slot_path = temp
+            .path()
+            .join(".jean-slots")
+            .join("demo-slot-3")
+            .to_string_lossy()
+            .to_string();
+        std::fs::create_dir_all(&slot_path).expect("slot dir");
+        let mut data = ProjectsData {
+            projects: vec![],
+            worktrees: vec![test_worktree("worktree-3", Some("slot-3"), &slot_path)],
+            worktree_slots: vec![test_slot("slot-3", &slot_path, WorktreeSlotState::Idle)],
+        };
+
+        assert!(reconcile_worktree_slots(&mut data));
+
+        let slot = &data.worktree_slots[0];
+        assert_eq!(slot.state, WorktreeSlotState::Error);
+        assert_eq!(
+            slot.last_error.as_deref(),
+            Some("Slot path is not a git worktree")
+        );
+        assert_eq!(slot.worktree_id.as_deref(), Some("worktree-3"));
+    }
+
+    #[test]
+    fn reconcile_active_slot_without_live_worktree_becomes_idle_when_usable() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let slot_path = make_git_like_slot(&temp, "demo-slot-4");
+        let mut slot = test_slot("slot-4", &slot_path, WorktreeSlotState::Active);
+        slot.worktree_id = Some("missing-worktree".to_string());
+        let mut data = ProjectsData {
+            projects: vec![],
+            worktrees: vec![],
+            worktree_slots: vec![slot],
+        };
+
+        assert!(reconcile_worktree_slots(&mut data));
+
+        let slot = &data.worktree_slots[0];
+        assert_eq!(slot.state, WorktreeSlotState::Idle);
+        assert_eq!(slot.worktree_id, None);
+        assert_eq!(slot.branch, None);
+        assert_eq!(slot.last_error, None);
+    }
+
+    #[test]
+    fn reconcile_keeps_recent_active_reservation_without_worktree_record() {
+        let recent = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let mut slot = test_slot(
+            "slot-5",
+            "/tmp/demo/.jean-slots/demo-slot-5",
+            WorktreeSlotState::Active,
+        );
+        slot.worktree_id = Some("pending-worktree".to_string());
+        slot.created_at = recent;
+        let mut data = ProjectsData {
+            projects: vec![],
+            worktrees: vec![],
+            worktree_slots: vec![slot],
+        };
+
+        assert!(!reconcile_worktree_slots(&mut data));
+
+        let slot = &data.worktree_slots[0];
+        assert_eq!(slot.state, WorktreeSlotState::Active);
+        assert_eq!(slot.worktree_id.as_deref(), Some("pending-worktree"));
     }
 }

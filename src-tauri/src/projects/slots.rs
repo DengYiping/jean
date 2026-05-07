@@ -181,6 +181,33 @@ pub fn mark_slot_error(
     save_projects_data(app, data)
 }
 
+pub fn abandon_reservation(
+    app: &AppHandle,
+    data: &mut ProjectsData,
+    reservation: &SlotReservation,
+) -> Result<(), String> {
+    if reservation.reused {
+        if let Some(slot) = data
+            .worktree_slots
+            .iter_mut()
+            .find(|slot| slot.id == reservation.slot_id)
+        {
+            slot.state = WorktreeSlotState::Idle;
+            slot.worktree_id = None;
+            slot.branch = None;
+            slot.last_used_at = now();
+            slot.last_error = None;
+        }
+    } else {
+        data.worktree_slots
+            .retain(|slot| slot.id != reservation.slot_id);
+        if Path::new(&reservation.path).exists() {
+            let _ = std::fs::remove_dir_all(&reservation.path);
+        }
+    }
+    save_projects_data(app, data)
+}
+
 pub fn reset_slot(app: &AppHandle, project_id: &str, slot_id: &str) -> Result<(), String> {
     let mut data = super::storage::load_projects_data(app)?;
     let slot = data

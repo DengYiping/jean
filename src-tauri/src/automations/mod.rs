@@ -32,6 +32,9 @@ impl AutomationManager {
     }
 
     pub fn start(&self) {
+        if let Err(error) = scheduler::mark_interrupted_runs(&self.app) {
+            log::warn!("Failed to mark interrupted automation runs: {error}");
+        }
         let manager = self.clone();
         manager.run_due_tick();
         thread::spawn(move || loop {

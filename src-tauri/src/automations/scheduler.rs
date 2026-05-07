@@ -9,9 +9,9 @@ use crate::chat::storage::with_sessions_mut;
 use crate::chat::types::{Backend, EffortLevel, Session, ThinkingLevel};
 use crate::chat::{resolve_default_backend, send_chat_message};
 use crate::http_server::EmitExt;
-use crate::projects::storage::{load_projects_data, sanitize_directory_name};
+use crate::projects::storage::{load_projects_data, sanitize_directory_name, save_projects_data};
 use crate::projects::types::{AutomationWorktreeMetadata, Worktree};
-use crate::projects::{archive_worktree, create_worktree};
+use crate::projects::{archive_worktree, create_worktree, slots};
 
 pub const AUTOMATION_TICK_INTERVAL_SECS: u64 = 30;
 
@@ -46,6 +46,14 @@ pub async fn run_due_automations(manager: &AutomationManager) -> Result<(), Stri
     }
 
     Ok(())
+}
+
+pub fn mark_interrupted_runs(app: &AppHandle) -> Result<(), String> {
+    let now = now_secs();
+    with_automations_mut(app, |automations| {
+        mark_interrupted_runs_in_list(automations, now);
+        Ok(())
+    })
 }
 
 pub async fn run_automation_by_id(
@@ -254,7 +262,7 @@ async fn run_fresh_target(
     )
     .await?;
 
-    archive_previous_fresh_runs(app, automation, &worktree.id).await?;
+    retire_previous_fresh_runs(app, automation, &worktree.id).await?;
     Ok(AutomationLastRunStatus::Completed)
 }
 
@@ -262,6 +270,22 @@ async fn wait_for_worktree_ready(app: &AppHandle, worktree_id: &str) -> Result<W
     let deadline = now_secs() + 120;
     loop {
         if let Some(worktree) = load_projects_data(app)?.find_worktree(worktree_id).cloned() {
+            if worktree.setup_script.is_some() && worktree.setup_success.is_none() {
+                if now_secs() >= deadline {
+                    return Err(format!(
+                        "Timed out waiting for automation worktree {} setup to finish.",
+                        worktree.name
+                    ));
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                continue;
+            }
+            if worktree.setup_success == Some(false) {
+                return Err(format!(
+                    "Automation worktree setup failed for {}.",
+                    worktree.name
+                ));
+            }
             return Ok(worktree);
         }
         if now_secs() >= deadline {
@@ -273,7 +297,7 @@ async fn wait_for_worktree_ready(app: &AppHandle, worktree_id: &str) -> Result<W
     }
 }
 
-async fn archive_previous_fresh_runs(
+async fn retire_previous_fresh_runs(
     app: &AppHandle,
     automation: &Automation,
     keep_worktree_id: &str,
@@ -289,11 +313,76 @@ async fn archive_previous_fresh_runs(
         .map(|worktree| worktree.id)
         .collect();
 
-    for worktree_id in worktree_ids {
-        archive_worktree(app.clone(), worktree_id).await?;
+    for worktree_id in &worktree_ids {
+        retire_fresh_automation_worktree(app, worktree_id).await?;
+    }
+
+    if !worktree_ids.is_empty() {
+        with_automations_mut(app, |automations| {
+            if let Some(entry) = automations
+                .iter_mut()
+                .find(|entry| entry.id == automation.id)
+            {
+                prune_session_mappings(entry, &worktree_ids);
+                entry.updated_at = now_secs();
+            }
+            Ok(())
+        })?;
     }
 
     Ok(())
+}
+
+async fn retire_fresh_automation_worktree(
+    app: &AppHandle,
+    worktree_id: &str,
+) -> Result<(), String> {
+    let data = load_projects_data(app)?;
+    let Some(worktree) = data.find_worktree(worktree_id).cloned() else {
+        return Ok(());
+    };
+
+    let Some(slot_id) = worktree.stable_slot_id.clone() else {
+        return archive_worktree(app.clone(), worktree_id.to_string()).await;
+    };
+
+    let project = data
+        .find_project(&worktree.project_id)
+        .ok_or_else(|| format!("Project not found: {}", worktree.project_id))?
+        .clone();
+
+    let mut data = load_projects_data(app)?;
+    slots::release_slot_for_worktree(
+        app,
+        &mut data,
+        &project,
+        &worktree.id,
+        &worktree.branch,
+        &slot_id,
+        &worktree.path,
+    )?;
+    data.remove_worktree(&worktree.id);
+    save_projects_data(app, &data)
+}
+
+fn mark_interrupted_runs_in_list(automations: &mut [Automation], now: u64) -> bool {
+    let mut changed = false;
+    for automation in automations {
+        if automation.last_run_status == Some(AutomationLastRunStatus::Running) {
+            automation.last_run_status = Some(AutomationLastRunStatus::Failed);
+            automation.last_error =
+                Some("Automation run was interrupted before Jean shut down.".to_string());
+            automation.updated_at = now;
+            changed = true;
+        }
+    }
+    changed
+}
+
+fn prune_session_mappings(automation: &mut Automation, worktree_ids: &[String]) {
+    for worktree_id in worktree_ids {
+        automation.session_ids_by_worktree_id.remove(worktree_id);
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -762,6 +851,35 @@ fn localize_naive(naive: chrono::NaiveDateTime) -> Option<chrono::DateTime<Local
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
+
+    fn test_automation(id: &str) -> Automation {
+        Automation {
+            id: id.to_string(),
+            project_id: "project-1".to_string(),
+            name: "Daily Triage".to_string(),
+            prompt: "Summarize".to_string(),
+            target_mode: AutomationTargetMode::FreshWorktree,
+            target_worktree_ids: vec![],
+            backend: None,
+            model: None,
+            provider: None,
+            execution_mode: None,
+            thinking_level: None,
+            effort_level: None,
+            schedule_rrule: "FREQ=DAILY;INTERVAL=1;BYHOUR=9;BYMINUTE=0".to_string(),
+            run_window_start_hour: None,
+            run_window_end_hour: None,
+            status: AutomationStatus::Enabled,
+            last_run_at: None,
+            next_run_at: None,
+            last_run_status: None,
+            last_error: None,
+            session_ids_by_worktree_id: HashMap::new(),
+            created_at: 1,
+            updated_at: 1,
+        }
+    }
 
     #[test]
     fn computes_next_daily_run() {
@@ -898,5 +1016,52 @@ mod tests {
         let name = build_fresh_worktree_name("Daily Triage!", 1_760_000_000);
         assert!(name.starts_with("automation-daily-triage-1760000000-"));
         assert!(!name.contains(' '));
+    }
+
+    #[test]
+    fn mark_interrupted_runs_marks_running_entries_failed() {
+        let mut running = test_automation("automation-1");
+        running.last_run_status = Some(AutomationLastRunStatus::Running);
+        let mut completed = test_automation("automation-2");
+        completed.last_run_status = Some(AutomationLastRunStatus::Completed);
+        let mut automations = vec![running, completed];
+
+        assert!(mark_interrupted_runs_in_list(&mut automations, 42));
+
+        assert_eq!(
+            automations[0].last_run_status,
+            Some(AutomationLastRunStatus::Failed)
+        );
+        assert_eq!(automations[0].updated_at, 42);
+        assert!(automations[0]
+            .last_error
+            .as_deref()
+            .is_some_and(|error| error.contains("interrupted")));
+        assert_eq!(
+            automations[1].last_run_status,
+            Some(AutomationLastRunStatus::Completed)
+        );
+        assert_eq!(automations[1].last_error, None);
+    }
+
+    #[test]
+    fn prune_session_mappings_removes_retired_worktree_ids() {
+        let mut automation = test_automation("automation-1");
+        automation
+            .session_ids_by_worktree_id
+            .insert("retired-1".to_string(), "session-1".to_string());
+        automation
+            .session_ids_by_worktree_id
+            .insert("keep".to_string(), "session-2".to_string());
+
+        prune_session_mappings(&mut automation, &["retired-1".to_string()]);
+
+        assert!(!automation
+            .session_ids_by_worktree_id
+            .contains_key("retired-1"));
+        assert_eq!(
+            automation.session_ids_by_worktree_id.get("keep"),
+            Some(&"session-2".to_string())
+        );
     }
 }

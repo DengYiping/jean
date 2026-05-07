@@ -1115,12 +1115,7 @@ pub async fn create_worktree(
                 // Also emit error event to remove the pending worktree from UI
                 if let Some(slot) = &slot_reservation_clone {
                     if let Ok(mut data) = load_projects_data(&app_clone) {
-                        let _ = slots::mark_slot_error(
-                            &app_clone,
-                            &mut data,
-                            &slot.slot_id,
-                            format!("Directory already exists: {worktree_path_clone}"),
-                        );
+                        let _ = slots::abandon_reservation(&app_clone, &mut data, slot);
                     }
                 }
                 let error_event = WorktreeCreateErrorEvent {
@@ -1189,12 +1184,7 @@ pub async fn create_worktree(
                         // Also emit error event to remove the pending worktree from UI
                         if let Some(slot) = &slot_reservation_clone {
                             if let Ok(mut data) = load_projects_data(&app_clone) {
-                                let _ = slots::mark_slot_error(
-                                    &app_clone,
-                                    &mut data,
-                                    &slot.slot_id,
-                                    format!("Branch already exists: {name_clone}"),
-                                );
+                                let _ = slots::abandon_reservation(&app_clone, &mut data, slot);
                             }
                         }
                         let error_event = WorktreeCreateErrorEvent {
@@ -1258,8 +1248,7 @@ pub async fn create_worktree(
                 log::error!("Background: Failed to create worktree: {e}");
                 if let Some(slot) = &slot_reservation_clone {
                     if let Ok(mut data) = load_projects_data(&app_clone) {
-                        let _ =
-                            slots::mark_slot_error(&app_clone, &mut data, &slot.slot_id, e.clone());
+                        let _ = slots::abandon_reservation(&app_clone, &mut data, slot);
                     }
                 }
                 let error_event = WorktreeCreateErrorEvent {
@@ -2113,6 +2102,11 @@ pub async fn create_worktree_from_existing_branch(
                 }
 
                 // Also emit error event to remove the pending worktree from UI
+                if let Some(slot) = &slot_reservation_clone {
+                    if let Ok(mut data) = load_projects_data(&app_clone) {
+                        let _ = slots::abandon_reservation(&app_clone, &mut data, slot);
+                    }
+                }
                 let error_event = WorktreeCreateErrorEvent {
                     id: worktree_id_clone,
                     project_id: project_id_clone,
@@ -2139,6 +2133,11 @@ pub async fn create_worktree_from_existing_branch(
             };
             if let Err(e) = create_result {
                 log::error!("Background: Failed to create worktree: {e}");
+                if let Some(slot) = &slot_reservation_clone {
+                    if let Ok(mut data) = load_projects_data(&app_clone) {
+                        let _ = slots::abandon_reservation(&app_clone, &mut data, slot);
+                    }
+                }
                 let error_event = WorktreeCreateErrorEvent {
                     id: worktree_id_clone,
                     project_id: project_id_clone,

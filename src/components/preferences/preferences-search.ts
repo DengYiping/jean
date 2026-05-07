@@ -578,6 +578,16 @@ const magicPromptDefinitions: {
     keywords: ['session recap prompt', 'recap prompt'],
   },
   {
+    key: 'automation_run',
+    title: 'Automation Run Prompt',
+    description: 'Prompt wrapper sent when automation runs start.',
+    keywords: [
+      'automation run prompt',
+      'scheduled prompt',
+      'automation variables',
+    ],
+  },
+  {
     key: 'claude_system_prompt',
     title: 'Claude System Prompt',
     description: 'System prompt applied to Claude sessions.',

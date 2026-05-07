@@ -499,9 +499,9 @@ fn resolve_http_server_bind_host(prefs: &AppPreferences) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        default_claude_system_prompt, default_codex_system_prompt, migrate_loaded_preferences,
-        resolve_http_server_bind_host, try_parse_cli_args, AppPreferences, CliArgs, CliCommand,
-        MagicPrompts,
+        default_automation_run_prompt, default_claude_system_prompt, default_codex_system_prompt,
+        migrate_loaded_preferences, resolve_http_server_bind_host, try_parse_cli_args,
+        AppPreferences, CliArgs, CliCommand, MagicPrompts,
     };
 
     #[test]
@@ -649,11 +649,13 @@ mod tests {
         prefs.session_naming_model = super::default_session_naming_model();
         prefs.magic_prompts.claude_system_prompt = Some(default_claude_system_prompt());
         prefs.magic_prompts.codex_system_prompt = Some(default_codex_system_prompt());
+        prefs.magic_prompts.automation_run = Some(default_automation_run_prompt());
 
         migrate_loaded_preferences(&mut prefs);
         assert!(prefs.magic_prompts.claude_system_prompt.is_none());
         assert!(prefs.magic_prompts.codex_system_prompt.is_none());
         assert!(prefs.magic_prompts.opencode_system_prompt.is_none());
+        assert!(prefs.magic_prompts.automation_run.is_none());
     }
 }
 
@@ -726,6 +728,8 @@ pub struct MagicPrompts {
     pub investigate_linear_issue: Option<String>,
     #[serde(default)]
     pub review_comments: Option<String>,
+    #[serde(default)]
+    pub automation_run: Option<String>,
     #[serde(default)]
     pub plan_approval_build: Option<String>,
     #[serde(default)]
@@ -1089,6 +1093,16 @@ When specifying subagent_type for Task tool calls, always use the fully qualifie
         .to_string()
 }
 
+pub(crate) fn default_automation_run_prompt() -> String {
+    r#"Automation: {automationName}
+Automation ID: {automationId}
+Automation memory: {automationMemoryPath}
+Last run: {lastRunAt}
+
+{prompt}"#
+        .to_string()
+}
+
 fn default_plan_approval_build_prompt() -> String {
     "Plan approved. Begin implementing the changes now. Do not re-explain the plan — start writing code."
         .to_string()
@@ -1341,7 +1355,7 @@ impl MagicPrompts {
     /// This ensures users who never customized a prompt get auto-updated defaults.
     fn migrate_defaults(&mut self) {
         type DefaultEntry<'a> = (fn() -> String, &'a mut Option<String>);
-        let defaults: [DefaultEntry; 17] = [
+        let defaults: [DefaultEntry; 18] = [
             (
                 default_investigate_issue_prompt,
                 &mut self.investigate_issue,
@@ -1377,6 +1391,7 @@ impl MagicPrompts {
                 default_investigate_linear_issue_prompt,
                 &mut self.investigate_linear_issue,
             ),
+            (default_automation_run_prompt, &mut self.automation_run),
             (
                 default_plan_approval_build_prompt,
                 &mut self.plan_approval_build,

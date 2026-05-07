@@ -60,6 +60,8 @@ export interface MagicPrompts {
   investigate_linear_issue: string | null
   /** Prompt for addressing inline PR review comments */
   review_comments: string | null
+  /** Prompt wrapper sent when automation runs start */
+  automation_run: string | null
   /** Prompt sent when approving a plan in build mode */
   plan_approval_build: string | null
   /** Prompt sent when approving a plan in yolo mode */
@@ -596,6 +598,13 @@ Address the following review comments from PR #{prNumber}
 
 </guidelines>`
 
+export const DEFAULT_AUTOMATION_RUN_PROMPT = `Automation: {automationName}
+Automation ID: {automationId}
+Automation memory: {automationMemoryPath}
+Last run: {lastRunAt}
+
+{prompt}`
+
 export const DEFAULT_PLAN_APPROVAL_BUILD_PROMPT = `Plan approved. Begin implementing the changes now. Do not re-explain the plan — start writing code.`
 
 export const DEFAULT_PLAN_APPROVAL_YOLO_PROMPT = `Plan approved (yolo mode). Begin implementing all changes immediately without asking for confirmation. Do not re-explain the plan — start writing code.`
@@ -623,6 +632,7 @@ export const DEFAULT_MAGIC_PROMPTS: MagicPrompts = {
   investigate_advisory: null,
   investigate_linear_issue: null,
   review_comments: null,
+  automation_run: null,
   plan_approval_build: null,
   plan_approval_yolo: null,
   plan_approval_codex: null,

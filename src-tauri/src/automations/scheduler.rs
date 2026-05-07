@@ -8,6 +8,7 @@ use crate::automations::AutomationManager;
 use crate::chat::storage::with_sessions_mut;
 use crate::chat::types::{Backend, EffortLevel, Session, ThinkingLevel};
 use crate::chat::{resolve_default_backend, send_chat_message};
+use crate::default_automation_run_prompt;
 use crate::http_server::EmitExt;
 use crate::projects::storage::{load_projects_data, sanitize_directory_name, save_projects_data};
 use crate::projects::types::{AutomationWorktreeMetadata, Worktree};
@@ -495,14 +496,39 @@ fn build_automation_prompt(app: &AppHandle, automation: &Automation) -> Result<S
         .last_run_at
         .map(format_timestamp)
         .unwrap_or_else(|| "never".to_string());
-    Ok(format!(
-        "Automation: {}\nAutomation ID: {}\nAutomation memory: {}\nLast run: {}\n\n{}",
-        automation.name,
-        automation.id,
-        memory_path.display(),
-        last_run,
-        automation.prompt
+    let preferences = crate::load_preferences_sync(app).unwrap_or_default();
+    let template = preferences
+        .magic_prompts
+        .automation_run
+        .as_deref()
+        .filter(|prompt| !prompt.trim().is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(default_automation_run_prompt);
+
+    Ok(render_automation_prompt(
+        &template,
+        &automation.name,
+        &automation.id,
+        &memory_path.display().to_string(),
+        &last_run,
+        &automation.prompt,
     ))
+}
+
+fn render_automation_prompt(
+    template: &str,
+    automation_name: &str,
+    automation_id: &str,
+    automation_memory_path: &str,
+    last_run_at: &str,
+    prompt: &str,
+) -> String {
+    template
+        .replace("{automationName}", automation_name)
+        .replace("{automationId}", automation_id)
+        .replace("{automationMemoryPath}", automation_memory_path)
+        .replace("{lastRunAt}", last_run_at)
+        .replace("{prompt}", prompt)
 }
 
 fn format_timestamp(timestamp: u64) -> String {
@@ -1016,6 +1042,54 @@ mod tests {
         let name = build_fresh_worktree_name("Daily Triage!", 1_760_000_000);
         assert!(name.starts_with("automation-daily-triage-1760000000-"));
         assert!(!name.contains(' '));
+    }
+
+    #[test]
+    fn renders_default_automation_prompt() {
+        let prompt = render_automation_prompt(
+            &default_automation_run_prompt(),
+            "Daily Triage",
+            "automation-1",
+            "/tmp/automation-1/memory.md",
+            "never",
+            "Summarize the queue.",
+        );
+
+        assert_eq!(
+            prompt,
+            "Automation: Daily Triage\nAutomation ID: automation-1\nAutomation memory: /tmp/automation-1/memory.md\nLast run: never\n\nSummarize the queue."
+        );
+    }
+
+    #[test]
+    fn renders_custom_automation_prompt_variables() {
+        let prompt = render_automation_prompt(
+            "Run {automationName} ({automationId}) after {lastRunAt}\nMemory: {automationMemoryPath}\n\nTask:\n{prompt}",
+            "Daily Triage",
+            "automation-1",
+            "/tmp/automation-1/memory.md",
+            "2026-05-07T09:00:00+01:00",
+            "Summarize the queue.",
+        );
+
+        assert_eq!(
+            prompt,
+            "Run Daily Triage (automation-1) after 2026-05-07T09:00:00+01:00\nMemory: /tmp/automation-1/memory.md\n\nTask:\nSummarize the queue."
+        );
+    }
+
+    #[test]
+    fn leaves_variables_inside_user_automation_prompt_untouched() {
+        let prompt = render_automation_prompt(
+            "{prompt}",
+            "Daily Triage",
+            "automation-1",
+            "/tmp/automation-1/memory.md",
+            "never",
+            "Keep literal {automationName} and {lastRunAt}.",
+        );
+
+        assert_eq!(prompt, "Keep literal {automationName} and {lastRunAt}.");
     }
 
     #[test]

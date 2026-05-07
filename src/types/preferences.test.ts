@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   CODEX_DEFAULT_MAGIC_PROMPT_EFFORTS,
+  DEFAULT_AUTOMATION_RUN_PROMPT,
   DEFAULT_CLAUDE_SYSTEM_PROMPT,
   DEFAULT_CODEX_SYSTEM_PROMPT,
   DEFAULT_MAGIC_PROMPT_EFFORTS,
@@ -107,6 +108,14 @@ describe('backend-specific system prompt defaults', () => {
     expect(DEFAULT_CLAUDE_SYSTEM_PROMPT).not.toHaveLength(0)
     expect(DEFAULT_CODEX_SYSTEM_PROMPT).toBe(DEFAULT_CLAUDE_SYSTEM_PROMPT)
     expect(DEFAULT_OPENCODE_SYSTEM_PROMPT).toBe('')
+  })
+})
+
+describe('automation run prompt defaults', () => {
+  it('keeps automation run customizable through shared defaults', () => {
+    expect(DEFAULT_MAGIC_PROMPTS.automation_run).toBeNull()
+    expect(DEFAULT_AUTOMATION_RUN_PROMPT).toContain('{prompt}')
+    expect(DEFAULT_AUTOMATION_RUN_PROMPT).toContain('{automationName}')
   })
 })
 

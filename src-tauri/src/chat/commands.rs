@@ -2075,7 +2075,8 @@ pub async fn send_chat_message(
                             "You are in PLANNING MODE (read-only sandbox). Create a detailed implementation plan. \
                              Do NOT attempt to make any file changes — you are running in a read-only sandbox and writes will fail. \
                              Describe exactly what changes you WOULD make: which files to create/modify, \
-                             what code to write, and in what order. End with any unresolved questions."
+                             what code to write, and in what order. Use the native plan tool/UI call to show the plan when available. \
+                             End with any unresolved questions."
                                 .to_string(),
                         );
                     }
@@ -2159,6 +2160,9 @@ pub async fn send_chat_message(
                             codex_binary.display()
                         ));
                     }
+
+                    // End-of-turn recap instruction (kept additive to the existing digest flow).
+                    system_prompt_parts.push(super::RECAP_INSTRUCTION.to_string());
 
                     // Collect context file paths (issues, PRs, saved contexts)
                     let mut all_context_paths: Vec<std::path::PathBuf> = Vec::new();
@@ -2463,6 +2467,9 @@ pub async fn send_chat_message(
                             codex_binary.display()
                         ));
                     }
+
+                    // End-of-turn recap instruction (kept additive to the existing digest flow).
+                    system_prompt_parts.push(super::RECAP_INSTRUCTION.to_string());
 
                     // Collect and inline context files (issues, PRs, saved contexts)
                     let mut context_content = String::new();
@@ -3256,6 +3263,169 @@ pub async fn mark_plan_approved(
             Err(format!("Session not found: {session_id}"))
         }
     })
+}
+
+// =============================================================================
+// Codex `/goal` long-horizon mode (codex backend only)
+// =============================================================================
+
+#[tauri::command]
+pub fn codex_goal_set(
+    app: AppHandle,
+    worktree_id: String,
+    worktree_path: String,
+    session_id: String,
+    objective: String,
+) -> Result<(), String> {
+    let trimmed = objective.trim();
+    if trimmed.is_empty() {
+        return Err("Goal objective cannot be empty".to_string());
+    }
+
+    let thread_id = codex_thread_id_for_session(&app, &worktree_id, &worktree_path, &session_id)?;
+
+    if let Some(thread_id) = thread_id {
+        super::codex_server::ensure_running(&app)?;
+        super::codex_server::send_request(
+            "thread/goal/set",
+            serde_json::json!({ "threadId": thread_id, "goal": trimmed }),
+        )?;
+    }
+
+    persist_codex_goal(
+        &app,
+        &worktree_id,
+        &worktree_path,
+        &session_id,
+        Some(trimmed.to_string()),
+    )?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn codex_goal_get(
+    app: AppHandle,
+    worktree_id: String,
+    worktree_path: String,
+    session_id: String,
+) -> Result<Option<String>, String> {
+    let thread_id = codex_thread_id_for_session(&app, &worktree_id, &worktree_path, &session_id)?;
+
+    let goal = if let Some(thread_id) = thread_id {
+        super::codex_server::ensure_running(&app)?;
+        let response = super::codex_server::send_request(
+            "thread/goal/get",
+            serde_json::json!({ "threadId": thread_id }),
+        )?;
+        response
+            .get("goal")
+            .and_then(|value| value.as_str())
+            .map(ToString::to_string)
+    } else {
+        with_sessions_mut(&app, &worktree_path, &worktree_id, |sessions| {
+            Ok(sessions
+                .find_session(&session_id)
+                .and_then(|session| session.codex_goal.clone()))
+        })?
+    };
+
+    persist_codex_goal(
+        &app,
+        &worktree_id,
+        &worktree_path,
+        &session_id,
+        goal.clone(),
+    )?;
+    Ok(goal)
+}
+
+#[tauri::command]
+pub fn codex_goal_clear(
+    app: AppHandle,
+    worktree_id: String,
+    worktree_path: String,
+    session_id: String,
+) -> Result<(), String> {
+    let thread_id = codex_thread_id_for_session(&app, &worktree_id, &worktree_path, &session_id)?;
+
+    if let Some(thread_id) = thread_id {
+        super::codex_server::ensure_running(&app)?;
+        super::codex_server::send_request(
+            "thread/goal/clear",
+            serde_json::json!({ "threadId": thread_id }),
+        )?;
+    }
+
+    persist_codex_goal(&app, &worktree_id, &worktree_path, &session_id, None)?;
+    Ok(())
+}
+
+fn codex_thread_id_for_session(
+    app: &AppHandle,
+    worktree_id: &str,
+    worktree_path: &str,
+    session_id: &str,
+) -> Result<Option<String>, String> {
+    with_sessions_mut(app, worktree_path, worktree_id, |sessions| {
+        let session = sessions
+            .find_session(session_id)
+            .ok_or_else(|| format!("Session not found: {session_id}"))?;
+        if !matches!(&session.backend, super::types::Backend::Codex) {
+            return Err("/goal is only available on codex sessions".to_string());
+        }
+        Ok(session.codex_thread_id.clone())
+    })
+}
+
+/// Push a buffered session goal into the Codex app-server once we have a thread id.
+pub fn flush_pending_codex_goal(app: &AppHandle, session_id: &str, thread_id: &str) {
+    let goal = with_existing_metadata_mut(app, session_id, |metadata| metadata.codex_goal.clone())
+        .ok()
+        .flatten();
+    let Some(objective) = goal else {
+        return;
+    };
+
+    if let Err(error) = super::codex_server::send_request(
+        "thread/goal/set",
+        serde_json::json!({ "threadId": thread_id, "goal": objective }),
+    ) {
+        log::warn!("Failed to flush buffered Codex goal: {error}");
+    }
+}
+
+pub(crate) fn persist_codex_goal(
+    app: &AppHandle,
+    worktree_id: &str,
+    worktree_path: &str,
+    session_id: &str,
+    goal: Option<String>,
+) -> Result<(), String> {
+    with_sessions_mut(app, worktree_path, worktree_id, |sessions| {
+        let session = sessions
+            .find_session_mut(session_id)
+            .ok_or_else(|| format!("Session not found: {session_id}"))?;
+        session.codex_goal = goal.clone();
+        Ok(())
+    })?;
+
+    emit_sessions_cache_invalidation(app);
+    let _ = app.emit_all(
+        "chat:codex_goal",
+        &CodexGoalEvent {
+            session_id: session_id.to_string(),
+            worktree_id: worktree_id.to_string(),
+            goal,
+        },
+    );
+    Ok(())
+}
+
+#[derive(serde::Serialize, Clone)]
+struct CodexGoalEvent {
+    session_id: String,
+    worktree_id: String,
+    goal: Option<String>,
 }
 
 // ============================================================================

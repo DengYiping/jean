@@ -109,6 +109,9 @@ export const defaultResponses: Record<string, unknown> = {
       is_unread: false,
     },
   },
+  codex_goal_set: null,
+  codex_goal_get: null,
+  codex_goal_clear: null,
 
   // Preferences
   load_preferences: mockPreferences,
@@ -141,6 +144,12 @@ export const defaultResponses: Record<string, unknown> = {
   uninstall_opencode_cli: null,
   resolve_claude_update_command: null,
   resolve_codex_update_command: null,
+  run_cli_path_update: {
+    success: true,
+    stdout: '',
+    stderr: '',
+    exit_code: 0,
+  },
   check_gh_cli_installed: {
     installed: true,
     version: '2.74.0',

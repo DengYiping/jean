@@ -516,6 +516,9 @@ pub struct Session {
     /// Codex CLI thread ID for resuming conversations
     #[serde(default)]
     pub codex_thread_id: Option<String>,
+    /// Codex `/goal` long-horizon objective (codex backend only)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub codex_goal: Option<String>,
     /// OpenCode session ID for resuming conversations
     #[serde(default)]
     pub opencode_session_id: Option<String>,
@@ -741,6 +744,7 @@ impl Session {
             backend,
             claude_session_id: None,
             codex_thread_id: None,
+            codex_goal: None,
             opencode_session_id: None,
             selected_model: None,
             selected_thinking_level: None,
@@ -1052,6 +1056,7 @@ impl SessionMetadata {
             backend: self.backend.clone(),
             claude_session_id: self.claude_session_id.clone(),
             codex_thread_id: self.codex_thread_id.clone(),
+            codex_goal: self.codex_goal.clone(),
             opencode_session_id: self.opencode_session_id.clone(),
             selected_model: self.selected_model.clone(),
             selected_thinking_level: self.selected_thinking_level.clone(),
@@ -1106,6 +1111,7 @@ impl SessionMetadata {
         self.backend = session.backend.clone();
         self.claude_session_id = session.claude_session_id.clone();
         self.codex_thread_id = session.codex_thread_id.clone();
+        self.codex_goal = session.codex_goal.clone();
         self.opencode_session_id = session.opencode_session_id.clone();
         self.selected_model = session.selected_model.clone();
         self.selected_thinking_level = session.selected_thinking_level.clone();
@@ -1405,6 +1411,9 @@ pub struct SessionMetadata {
     /// Codex CLI thread ID for resuming conversations
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub codex_thread_id: Option<String>,
+    /// Codex `/goal` long-horizon objective (codex backend only)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub codex_goal: Option<String>,
     /// OpenCode session ID for resuming conversations
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub opencode_session_id: Option<String>,
@@ -1597,6 +1606,7 @@ impl SessionMetadata {
             backend: Backend::default(),
             claude_session_id: None,
             codex_thread_id: None,
+            codex_goal: None,
             opencode_session_id: None,
             selected_model: None,
             selected_thinking_level: None,
@@ -2219,5 +2229,44 @@ mod tests {
 
         let restored: SessionMetadata = serde_json::from_value(json).unwrap();
         assert_eq!(restored.attention_updated_at, None);
+    }
+
+    #[test]
+    fn test_session_metadata_round_trips_codex_goal() {
+        let mut metadata = SessionMetadata::new(
+            "sess-123".to_string(),
+            "wt-456".to_string(),
+            "Test".to_string(),
+            0,
+        );
+        metadata.backend = Backend::Codex;
+        metadata.codex_goal = Some("Ship the migration safely".to_string());
+        metadata.digest = Some(SessionDigest {
+            chat_summary: "Migration in progress".to_string(),
+            last_action: "Validated the rollout plan".to_string(),
+            created_at: Some(123),
+            message_count: Some(4),
+        });
+
+        let mut session = metadata.to_session();
+        assert_eq!(
+            session.codex_goal.as_deref(),
+            Some("Ship the migration safely")
+        );
+        assert_eq!(
+            session
+                .digest
+                .as_ref()
+                .map(|digest| digest.chat_summary.as_str()),
+            Some("Migration in progress")
+        );
+
+        session.codex_goal = Some("Finish the migration and cleanup".to_string());
+        metadata.update_from_session(&session);
+
+        assert_eq!(
+            metadata.codex_goal.as_deref(),
+            Some("Finish the migration and cleanup")
+        );
     }
 }

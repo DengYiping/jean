@@ -23,6 +23,7 @@ const DEFAULT_CODEX_SYSTEM_PROMPT: &str = "\
 \n\
 - Make the plan extremely concise. Sacrifice grammar for the sake of concision.\n\
 - At the end of each plan, give me a list of unresolved questions to answer, if any.\n\
+- In planning mode, present plans using the backend's native plan tool/UI call when available (Claude ExitPlanMode, Codex update_plan/CodexPlan, Cursor/OpenCode equivalent), not plain text only.\n\
 \n\
 ## Not Plan Mode\n\
 \n\
@@ -297,7 +298,11 @@ pub fn build_thread_start_params(
         }
     }
 
-    // Permission mode mapping
+    // Permission mode mapping.
+    //
+    // Plan mode must never ask the user for permissions. It is read-only, so
+    // any attempted writes or denied commands should fail/decline rather than
+    // surfacing an approval prompt.
     match execution_mode.unwrap_or("plan") {
         "build" => {
             params["approvalPolicy"] = serde_json::json!("untrusted");
@@ -309,6 +314,7 @@ pub fn build_thread_start_params(
         }
         // "plan" or default: read-only sandbox
         _ => {
+            params["approvalPolicy"] = serde_json::json!("never");
             params["sandbox"] = serde_json::json!("read-only");
         }
     }
@@ -394,21 +400,19 @@ pub fn build_turn_start_params(
     match mode {
         "build" => {
             params["approvalPolicy"] = serde_json::json!("untrusted");
-            if !add_dirs.is_empty() {
-                let mut writable_roots: Vec<serde_json::Value> =
-                    vec![serde_json::json!(working_dir.to_string_lossy())];
-                for dir in add_dirs {
-                    writable_roots.push(serde_json::json!(dir));
-                }
-                params["sandboxPolicy"] = serde_json::json!({
-                    "type": "workspaceWrite",
-                    "writableRoots": writable_roots,
-                    "readOnlyAccess": { "type": "fullAccess" },
-                    "networkAccess": false,
-                    "excludeTmpdirEnvVar": false,
-                    "excludeSlashTmp": false,
-                });
+            let mut writable_roots: Vec<serde_json::Value> =
+                vec![serde_json::json!(working_dir.to_string_lossy())];
+            for dir in add_dirs {
+                writable_roots.push(serde_json::json!(dir));
             }
+            params["sandboxPolicy"] = serde_json::json!({
+                "type": "workspaceWrite",
+                "writableRoots": writable_roots,
+                "readOnlyAccess": { "type": "fullAccess" },
+                "networkAccess": true,
+                "excludeTmpdirEnvVar": false,
+                "excludeSlashTmp": false,
+            });
         }
         "yolo" => {
             params["approvalPolicy"] = serde_json::json!("never");
@@ -416,7 +420,17 @@ pub fn build_turn_start_params(
                 "type": "dangerFullAccess",
             });
         }
-        _ => {}
+        _ => {
+            params["approvalPolicy"] = serde_json::json!("never");
+            params["sandboxPolicy"] = serde_json::json!({
+                "type": "readOnly",
+                "writableRoots": [],
+                "readOnlyAccess": { "type": "fullAccess" },
+                "networkAccess": true,
+                "excludeTmpdirEnvVar": false,
+                "excludeSlashTmp": false,
+            });
+        }
     }
 
     // Override cwd per turn
@@ -533,6 +547,10 @@ pub fn execute_codex_via_server(
             return Err(e);
         }
     };
+
+    // If the user set a `/goal` before the first turn, flush it now that we
+    // have a live thread id. This is harmless on resume and heals server restarts.
+    super::commands::flush_pending_codex_goal(app, session_id, &thread_id);
 
     // Build turn params
     let turn_params = build_turn_start_params(
@@ -896,6 +914,7 @@ fn process_turn_events(
                     id,
                     &method,
                     &params,
+                    is_plan_mode,
                     is_build_mode,
                     &mut tool_calls,
                     &mut content_blocks,
@@ -1298,6 +1317,24 @@ fn process_server_notification(
                     },
                 },
             );
+        }
+        "thread/goal/updated" => {
+            let goal = params
+                .get("goal")
+                .and_then(|value| value.as_str())
+                .map(ToString::to_string);
+            if let Err(error) =
+                super::commands::persist_codex_goal(app, worktree_id, "", session_id, goal)
+            {
+                log::warn!("Failed to persist Codex goal update: {error}");
+            }
+        }
+        "thread/goal/cleared" => {
+            if let Err(error) =
+                super::commands::persist_codex_goal(app, worktree_id, "", session_id, None)
+            {
+                log::warn!("Failed to persist Codex goal clear: {error}");
+            }
         }
         "thread/tokenUsage/updated" => {
             if let Some(token_usage) = params.get("tokenUsage") {
@@ -1813,6 +1850,7 @@ fn handle_approval_request(
     rpc_id: u64,
     method: &str,
     params: &serde_json::Value,
+    is_plan_mode: bool,
     is_build_mode: bool,
     tool_calls: &mut Vec<ToolCall>,
     content_blocks: &mut Vec<ContentBlock>,
@@ -1837,6 +1875,17 @@ fn handle_approval_request(
             }
         }
         "item/commandExecution/requestApproval" => {
+            if is_plan_mode {
+                log::trace!("Declining Codex command approval in plan mode (rpc_id={rpc_id})");
+                if let Err(error) = super::codex_server::send_response(
+                    rpc_id,
+                    serde_json::json!({ "decision": "decline" }),
+                ) {
+                    log::error!("Failed to decline Codex command approval in plan mode: {error}");
+                }
+                return;
+            }
+
             // Emit permission denied event for the frontend
             let command = normalize_bash_display_command(
                 params.get("command").and_then(|v| v.as_str()).unwrap_or(""),
@@ -3670,6 +3719,22 @@ mod tests {
     }
 
     #[test]
+    fn plan_mode_uses_never_approval_policy_and_read_only_sandbox() {
+        let params = build_thread_start_params(
+            std::path::Path::new("/tmp"),
+            Some("gpt-5.4"),
+            Some("plan"),
+            false,
+            None,
+            false,
+            None,
+        );
+
+        assert_eq!(params["approvalPolicy"], "never");
+        assert_eq!(params["sandbox"], "read-only");
+    }
+
+    #[test]
     fn build_turns_set_untrusted_approval_policy() {
         let params = build_turn_start_params(
             "thread-1",
@@ -3682,6 +3747,56 @@ mod tests {
         );
 
         assert_eq!(params["approvalPolicy"], "untrusted");
+    }
+
+    #[test]
+    fn plan_turns_set_read_only_sandbox_policy() {
+        let params = build_turn_start_params(
+            "thread-1",
+            "Plan this",
+            std::path::Path::new("/tmp/worktree"),
+            Some("gpt-5.4"),
+            Some("plan"),
+            Some("medium"),
+            &[],
+        );
+
+        assert_eq!(params["approvalPolicy"], "never");
+        assert_eq!(params["sandboxPolicy"]["type"], "readOnly");
+        assert_eq!(
+            params["sandboxPolicy"]["writableRoots"],
+            serde_json::json!([])
+        );
+        assert_eq!(
+            params["sandboxPolicy"]["readOnlyAccess"]["type"],
+            "fullAccess"
+        );
+        assert_eq!(params["sandboxPolicy"]["networkAccess"], true);
+    }
+
+    #[test]
+    fn build_turns_set_workspace_write_sandbox_policy() {
+        let params = build_turn_start_params(
+            "thread-1",
+            "Build this",
+            std::path::Path::new("/tmp/worktree"),
+            Some("gpt-5.4"),
+            Some("build"),
+            Some("medium"),
+            &["/tmp/context".to_string()],
+        );
+
+        assert_eq!(params["approvalPolicy"], "untrusted");
+        assert_eq!(params["sandboxPolicy"]["type"], "workspaceWrite");
+        assert_eq!(
+            params["sandboxPolicy"]["writableRoots"],
+            serde_json::json!(["/tmp/worktree", "/tmp/context"])
+        );
+        assert_eq!(
+            params["sandboxPolicy"]["readOnlyAccess"]["type"],
+            "fullAccess"
+        );
+        assert_eq!(params["sandboxPolicy"]["networkAccess"], true);
     }
 
     #[test]

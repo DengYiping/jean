@@ -5,13 +5,16 @@ import type { AppCommand } from './types'
 export const agentBoardCommands: AppCommand[] = [
   {
     id: 'open-agent-board',
-    label: 'Open Agent Board',
-    description: 'Open the global agent kanban board',
+    label: 'Toggle Agent Board',
+    description: 'Switch between the workspace and global agent kanban board',
     icon: Kanban,
     group: 'navigation',
-    shortcut: 'mod+shift+k',
+    shortcut: 'mod+shift+a',
     execute: () => {
-      useUIStore.getState().setActiveMainView('agent_board')
+      const { activeMainView, setActiveMainView } = useUIStore.getState()
+      setActiveMainView(
+        activeMainView === 'agent_board' ? 'workspace' : 'agent_board'
+      )
     },
   },
   {
@@ -20,9 +23,9 @@ export const agentBoardCommands: AppCommand[] = [
     description: 'Create a new agent board todo',
     icon: Plus,
     group: 'navigation',
-    shortcut: 'mod+shift+a',
+    shortcut: 'mod+alt+a',
     execute: () => {
-      useUIStore.getState().setActiveMainView('agent_board')
+      useUIStore.getState().requestNewAgentTodoDialog()
       window.dispatchEvent(new CustomEvent('agent-board:new-todo'))
     },
   },

@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AgentBoardView } from './AgentBoardView'
+import { NewAgentTodoDialog } from './NewAgentTodoDialog'
 import { useChatStore } from '@/store/chat-store'
 import { useProjectsStore } from '@/store/projects-store'
 import { useUIStore } from '@/store/ui-store'
@@ -40,6 +41,22 @@ const item: AgentBoardItem = {
   planning_session_id: 'session-1',
   created_at: 1,
   updated_at: 1,
+}
+
+function AgentBoardHarness() {
+  const dialogOpen = useUIStore(state => state.pendingNewAgentTodoDialog)
+  const setDialogOpen = useUIStore(state => state.setNewAgentTodoDialogOpen)
+
+  return (
+    <>
+      <AgentBoardView />
+      <NewAgentTodoDialog
+        open={dialogOpen}
+        projects={[project]}
+        onOpenChange={setDialogOpen}
+      />
+    </>
+  )
 }
 
 vi.mock('@/services/projects', () => ({
@@ -83,7 +100,10 @@ describe('AgentBoardView', () => {
     Element.prototype.releasePointerCapture = vi.fn()
     Element.prototype.hasPointerCapture = vi.fn(() => true)
 
-    useUIStore.setState({ activeMainView: 'agent_board' })
+    useUIStore.setState({
+      activeMainView: 'agent_board',
+      pendingNewAgentTodoDialog: false,
+    })
     useProjectsStore.setState({
       selectedProjectId: null,
       selectedWorktreeId: null,
@@ -108,7 +128,7 @@ describe('AgentBoardView', () => {
   })
 
   it('creates todos with the selected effort level', async () => {
-    render(<AgentBoardView />)
+    render(<AgentBoardHarness />)
 
     fireEvent.click(screen.getByRole('button', { name: /add todo/i }))
     expect(screen.queryByPlaceholderText('Title (optional)')).toBeNull()
@@ -140,7 +160,7 @@ describe('AgentBoardView', () => {
   })
 
   it('creates a todo with Shift+Enter from the prompt field', async () => {
-    render(<AgentBoardView />)
+    render(<AgentBoardHarness />)
 
     fireEvent.click(screen.getByRole('button', { name: /add todo/i }))
     const promptInput = screen.getByPlaceholderText('Describe the work...')
@@ -159,10 +179,21 @@ describe('AgentBoardView', () => {
     })
   })
 
+  it('opens the todo dialog from a pending global shortcut request', async () => {
+    useUIStore.setState({ pendingNewAgentTodoDialog: true })
+
+    render(<AgentBoardHarness />)
+
+    expect(
+      await screen.findByRole('dialog', { name: 'New agent todo' })
+    ).toBeInTheDocument()
+    expect(useUIStore.getState().pendingNewAgentTodoDialog).toBe(true)
+  })
+
   it('opens the associated workspace session when a card is clicked', async () => {
     const listener = vi.fn()
     window.addEventListener('open-session-modal', listener)
-    render(<AgentBoardView />)
+    render(<AgentBoardHarness />)
 
     const card = screen
       .getByText('Implement board navigation')
@@ -238,7 +269,7 @@ describe('AgentBoardView', () => {
       } satisfies Worktree)
     })
 
-    render(<AgentBoardView />)
+    render(<AgentBoardHarness />)
 
     const card = screen
       .getByText('Implement board navigation')
@@ -268,7 +299,7 @@ describe('AgentBoardView', () => {
   })
 
   it('shows consolidated board columns', () => {
-    render(<AgentBoardView />)
+    render(<AgentBoardHarness />)
 
     for (const name of ['Todo', 'Plan', 'Implement', 'PR', 'Yolo', 'Archive']) {
       expect(screen.getByRole('heading', { name })).toBeInTheDocument()
@@ -290,7 +321,7 @@ describe('AgentBoardView', () => {
   it('shows a spinner for active work lanes', () => {
     item.lane = 'planning'
 
-    render(<AgentBoardView />)
+    render(<AgentBoardHarness />)
 
     expect(screen.getByLabelText('Work in progress')).toBeInTheDocument()
   })
@@ -299,7 +330,7 @@ describe('AgentBoardView', () => {
     item.lane = 'pr_opened'
     item.pr_url = 'https://github.com/acme/repo/pull/123'
 
-    render(<AgentBoardView />)
+    render(<AgentBoardHarness />)
 
     expect(
       screen.getByRole('link', {
@@ -309,7 +340,7 @@ describe('AgentBoardView', () => {
   })
 
   it('renders the lane selector as a compact non-clipping control', () => {
-    render(<AgentBoardView />)
+    render(<AgentBoardHarness />)
 
     expect(screen.getByRole('combobox')).toHaveClass('h-7', 'py-0', 'leading-7')
   })
@@ -319,7 +350,7 @@ describe('AgentBoardView', () => {
     item.implementation_session_id = 'session-1'
     item.active_run_status = 'cancelled'
 
-    render(<AgentBoardView />)
+    render(<AgentBoardHarness />)
 
     expect(screen.queryByLabelText('Work in progress')).not.toBeInTheDocument()
   })
@@ -328,7 +359,7 @@ describe('AgentBoardView', () => {
     item.lane = 'archived'
     item.archived_at = 2
 
-    render(<AgentBoardView />)
+    render(<AgentBoardHarness />)
 
     expect(screen.queryByLabelText('Archive card')).not.toBeInTheDocument()
     fireEvent.click(screen.getByLabelText('Delete archived worktree'))
@@ -359,7 +390,7 @@ describe('AgentBoardView', () => {
       },
     ]
 
-    const { rerender } = render(<AgentBoardView />)
+    const { rerender } = render(<AgentBoardHarness />)
 
     const card = screen
       .getByText('Implement board navigation')
@@ -370,7 +401,7 @@ describe('AgentBoardView', () => {
     expect(card).toHaveClass('animate-pulse')
 
     mockUnreadSessions.entries = []
-    rerender(<AgentBoardView />)
+    rerender(<AgentBoardHarness />)
 
     expect(card).not.toHaveClass('animate-pulse')
   })

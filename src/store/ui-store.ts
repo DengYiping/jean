@@ -25,6 +25,7 @@ export type MainView = 'workspace' | 'agent_board'
 
 interface UIState {
   activeMainView: MainView
+  pendingNewAgentTodoDialog: boolean
   leftSidebarVisible: boolean
   leftSidebarSize: number // Width in pixels, persisted across sessions
   rightSidebarVisible: boolean
@@ -177,6 +178,8 @@ interface UIState {
   setPendingUpdateVersion: (version: string | null) => void
   setUpdateModalVersion: (version: string | null) => void
   setActiveMainView: (view: MainView) => void
+  requestNewAgentTodoDialog: () => void
+  setNewAgentTodoDialogOpen: (open: boolean) => void
   githubDashboardOpen: boolean
   setGitHubDashboardOpen: (open: boolean) => void
 }
@@ -193,6 +196,7 @@ export const useUIStore = create<UIState>()(
   devtools(
     (set, get) => ({
       activeMainView: 'workspace',
+      pendingNewAgentTodoDialog: false,
       leftSidebarVisible: false,
       leftSidebarSize: 250, // Default width in pixels
       rightSidebarVisible: false,
@@ -751,6 +755,22 @@ export const useUIStore = create<UIState>()(
 
       setActiveMainView: (view: MainView) =>
         set({ activeMainView: view }, undefined, 'setActiveMainView'),
+
+      requestNewAgentTodoDialog: () =>
+        set(
+          { pendingNewAgentTodoDialog: true },
+          undefined,
+          'requestNewAgentTodoDialog'
+        ),
+
+      setNewAgentTodoDialogOpen: (open: boolean) => {
+        if (get().pendingNewAgentTodoDialog === open) return
+        set(
+          { pendingNewAgentTodoDialog: open },
+          undefined,
+          'setNewAgentTodoDialogOpen'
+        )
+      },
 
       setGitHubDashboardOpen: (open: boolean) =>
         set({ githubDashboardOpen: open }, undefined, 'setGitHubDashboardOpen'),

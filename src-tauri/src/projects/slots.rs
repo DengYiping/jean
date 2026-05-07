@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use tauri::AppHandle;
@@ -11,12 +11,26 @@ use super::storage::{
 use super::types::{Project, ProjectsData, WorktreeSlot, WorktreeSlotState};
 
 const MAX_IDLE_SLOTS_PER_PROJECT: usize = 4;
+pub(crate) const PRESERVED_SLOT_DIRS: &[&str] = &[
+    "target",
+    ".idea",
+    "node_modules",
+    ".venv",
+    "venv",
+    ".gradle",
+    "build",
+    "dist",
+    ".next",
+    ".pnpm-store",
+    ".bun",
+];
 
 #[derive(Debug, Clone)]
 pub struct SlotReservation {
     pub slot_id: String,
     pub path: String,
     pub reused: bool,
+    pub requires_worktree_create: bool,
 }
 
 fn now() -> u64 {
@@ -53,6 +67,7 @@ pub fn reserve_slot(
                 slot_id: slot.id.clone(),
                 path: slot.path.clone(),
                 reused: true,
+                requires_worktree_create: !Path::new(&slot.path).join(".git").exists(),
             }));
         }
 
@@ -87,6 +102,7 @@ pub fn reserve_slot(
             slot_id,
             path,
             reused: false,
+            requires_worktree_create: false,
         }))
     })
 }
@@ -132,6 +148,58 @@ pub fn prepare_reused_slot(
     Ok(())
 }
 
+pub fn create_worktree_in_preserved_slot(
+    project_path: &str,
+    slot_path: &str,
+    branch: &str,
+    base: &str,
+) -> Result<(), String> {
+    with_preserved_heavy_dirs(slot_path, |slot_path| {
+        git::create_worktree(project_path, &slot_path.to_string_lossy(), branch, base)
+    })
+}
+
+pub fn create_existing_branch_worktree_in_preserved_slot(
+    project_path: &str,
+    slot_path: &str,
+    branch: &str,
+) -> Result<(), String> {
+    with_preserved_heavy_dirs(slot_path, |slot_path| {
+        git::create_worktree_from_existing_branch(
+            project_path,
+            &slot_path.to_string_lossy(),
+            branch,
+        )
+    })
+}
+
+pub fn release_slot_path_preserving_heavy_dirs(
+    project_path: &str,
+    slot_path: &str,
+    branch: &str,
+) -> Result<(), String> {
+    with_preserved_heavy_dirs(slot_path, |slot_path| {
+        git::remove_worktree(project_path, &slot_path.to_string_lossy())?;
+        git::delete_branch(project_path, branch)
+    })
+}
+
+pub fn restore_heavy_dirs_to_slot_after_archive(
+    archive_path: &str,
+    slot_path: &str,
+) -> Result<(), String> {
+    let archive_path = Path::new(archive_path);
+    let slot_path = Path::new(slot_path);
+    let staging_dir = stage_heavy_dirs(archive_path)?;
+    if slot_path.exists() {
+        std::fs::remove_dir_all(slot_path)
+            .map_err(|e| format!("Failed to clear archived slot path: {e}"))?;
+    }
+    std::fs::create_dir_all(slot_path)
+        .map_err(|e| format!("Failed to recreate archived slot path: {e}"))?;
+    restore_staged_heavy_dirs(slot_path, staging_dir)
+}
+
 pub fn release_slot_for_worktree(
     app: &AppHandle,
     data: &mut ProjectsData,
@@ -141,10 +209,7 @@ pub fn release_slot_for_worktree(
     slot_id: &str,
     slot_path: &str,
 ) -> Result<(), String> {
-    git::reset_hard(slot_path)?;
-    git::clean_for_slot_reuse(slot_path)?;
-    git::detach_head(slot_path)?;
-    git::delete_branch(&project.path, branch)?;
+    release_slot_path_preserving_heavy_dirs(&project.path, slot_path, branch)?;
 
     if let Some(slot) = data
         .worktree_slots
@@ -160,6 +225,21 @@ pub fn release_slot_for_worktree(
     enforce_idle_limit(data, project);
     save_projects_data(app, data)?;
     Ok(())
+}
+
+pub fn mark_slot_idle(data: &mut ProjectsData, project: &Project, slot_id: &str) {
+    if let Some(slot) = data
+        .worktree_slots
+        .iter_mut()
+        .find(|slot| slot.id == slot_id)
+    {
+        slot.state = WorktreeSlotState::Idle;
+        slot.worktree_id = None;
+        slot.branch = None;
+        slot.last_used_at = now();
+        slot.last_error = None;
+    }
+    enforce_idle_limit(data, project);
 }
 
 pub fn mark_slot_error(
@@ -286,9 +366,100 @@ fn remove_slot_path(slot: &WorktreeSlot) {
     }
 }
 
+fn with_preserved_heavy_dirs<F>(slot_path: &str, action: F) -> Result<(), String>
+where
+    F: FnOnce(&Path) -> Result<(), String>,
+{
+    let slot_path = Path::new(slot_path);
+    let staging_dir = stage_heavy_dirs(slot_path)?;
+    if slot_path.exists() {
+        std::fs::remove_dir_all(slot_path)
+            .map_err(|e| format!("Failed to clear slot path: {e}"))?;
+    }
+
+    let action_result = action(slot_path);
+    if action_result.is_ok() {
+        std::fs::create_dir_all(slot_path)
+            .map_err(|e| format!("Failed to recreate slot path: {e}"))?;
+    } else if !slot_path.exists() {
+        std::fs::create_dir_all(slot_path)
+            .map_err(|e| format!("Failed to restore slot path after failure: {e}"))?;
+    }
+
+    let restore_result = restore_staged_heavy_dirs(slot_path, staging_dir);
+    action_result.and(restore_result)
+}
+
+fn stage_heavy_dirs(path: &Path) -> Result<Option<PathBuf>, String> {
+    if !path.exists() {
+        return Ok(None);
+    }
+
+    let parent = path
+        .parent()
+        .ok_or_else(|| "Slot path has no parent".to_string())?;
+    std::fs::create_dir_all(parent)
+        .map_err(|e| format!("Failed to create slot parent directory: {e}"))?;
+    let staging_dir = parent.join(format!(".jean-preserved-{}", Uuid::new_v4()));
+    std::fs::create_dir_all(&staging_dir)
+        .map_err(|e| format!("Failed to create slot preservation directory: {e}"))?;
+
+    let mut moved_any = false;
+    for entry in std::fs::read_dir(path).map_err(|e| format!("Failed to read slot path: {e}"))? {
+        let entry = entry.map_err(|e| format!("Failed to read slot entry: {e}"))?;
+        let file_type = entry
+            .file_type()
+            .map_err(|e| format!("Failed to inspect slot entry: {e}"))?;
+        if !file_type.is_dir() {
+            continue;
+        }
+        let name = entry.file_name();
+        let Some(name_str) = name.to_str() else {
+            continue;
+        };
+        if !PRESERVED_SLOT_DIRS.contains(&name_str) {
+            continue;
+        }
+        std::fs::rename(entry.path(), staging_dir.join(&name))
+            .map_err(|e| format!("Failed to preserve slot directory {name_str}: {e}"))?;
+        moved_any = true;
+    }
+
+    if moved_any {
+        Ok(Some(staging_dir))
+    } else {
+        let _ = std::fs::remove_dir_all(&staging_dir);
+        Ok(None)
+    }
+}
+
+fn restore_staged_heavy_dirs(slot_path: &Path, staging_dir: Option<PathBuf>) -> Result<(), String> {
+    let Some(staging_dir) = staging_dir else {
+        return Ok(());
+    };
+    std::fs::create_dir_all(slot_path)
+        .map_err(|e| format!("Failed to create slot path for preserved directories: {e}"))?;
+    for entry in std::fs::read_dir(&staging_dir)
+        .map_err(|e| format!("Failed to read preserved dirs: {e}"))?
+    {
+        let entry = entry.map_err(|e| format!("Failed to read preserved dir entry: {e}"))?;
+        let destination = slot_path.join(entry.file_name());
+        if destination.exists() {
+            std::fs::remove_dir_all(&destination)
+                .map_err(|e| format!("Failed to replace preserved directory: {e}"))?;
+        }
+        std::fs::rename(entry.path(), &destination)
+            .map_err(|e| format!("Failed to restore preserved directory: {e}"))?;
+    }
+    std::fs::remove_dir_all(&staging_dir)
+        .map_err(|e| format!("Failed to remove slot preservation directory: {e}"))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::process::Command;
 
     fn test_project() -> Project {
         Project {
@@ -330,6 +501,49 @@ mod tests {
             last_used_at,
             last_error: None,
         }
+    }
+
+    fn git(repo_path: &Path, args: &[&str]) {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(repo_path)
+            .output()
+            .expect("git command");
+        assert!(
+            output.status.success(),
+            "git {:?} failed: {}",
+            args,
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    fn test_repo() -> tempfile::TempDir {
+        let temp = tempfile::tempdir().expect("tempdir");
+        git(temp.path(), &["init", "-b", "main"]);
+        git(temp.path(), &["config", "user.email", "test@example.com"]);
+        git(temp.path(), &["config", "user.name", "Test User"]);
+        std::fs::write(temp.path().join("README.md"), "hello\n").expect("readme");
+        git(temp.path(), &["add", "README.md"]);
+        git(temp.path(), &["commit", "-m", "initial"]);
+        temp
+    }
+
+    fn make_git_worktree(repo_path: &Path, slot_path: &Path, branch: &str) {
+        let slot_path = slot_path.to_string_lossy().to_string();
+        git(
+            repo_path,
+            &["worktree", "add", "-b", branch, &slot_path, "main"],
+        );
+    }
+
+    fn add_slot_contents(slot_path: &Path) {
+        std::fs::create_dir_all(slot_path.join("target/debug")).expect("target");
+        std::fs::write(slot_path.join("target/debug/sentinel"), "target").expect("target file");
+        std::fs::create_dir_all(slot_path.join(".idea")).expect("idea");
+        std::fs::write(slot_path.join(".idea/workspace.xml"), "idea").expect("idea file");
+        std::fs::create_dir_all(slot_path.join("node_modules/pkg")).expect("node_modules");
+        std::fs::write(slot_path.join("node_modules/pkg/sentinel"), "node").expect("node file");
+        std::fs::write(slot_path.join("scratch.txt"), "delete me").expect("scratch");
     }
 
     #[test]
@@ -377,5 +591,85 @@ mod tests {
             .map(|slot| slot.id.clone())
             .collect();
         assert_eq!(ids, vec!["slot-2", "slot-3", "slot-4", "slot-5"]);
+    }
+
+    #[test]
+    fn release_preserves_heavyweight_dirs_without_git_metadata() {
+        let repo = test_repo();
+        let slot_path = repo.path().join(".jean-slots").join("demo-slot-1");
+        make_git_worktree(repo.path(), &slot_path, "feature-delete");
+        add_slot_contents(&slot_path);
+
+        release_slot_path_preserving_heavy_dirs(
+            &repo.path().to_string_lossy(),
+            &slot_path.to_string_lossy(),
+            "feature-delete",
+        )
+        .expect("release slot");
+
+        assert!(slot_path.exists());
+        assert!(!slot_path.join(".git").exists());
+        assert!(slot_path.join("target/debug/sentinel").exists());
+        assert!(slot_path.join(".idea/workspace.xml").exists());
+        assert!(slot_path.join("node_modules/pkg/sentinel").exists());
+        assert!(!slot_path.join("scratch.txt").exists());
+    }
+
+    #[test]
+    fn reusable_preserved_slot_restores_heavyweight_dirs_after_worktree_add() {
+        let repo = test_repo();
+        let slot_path = repo.path().join(".jean-slots").join("demo-slot-1");
+        make_git_worktree(repo.path(), &slot_path, "feature-delete");
+        add_slot_contents(&slot_path);
+        release_slot_path_preserving_heavy_dirs(
+            &repo.path().to_string_lossy(),
+            &slot_path.to_string_lossy(),
+            "feature-delete",
+        )
+        .expect("release slot");
+
+        create_worktree_in_preserved_slot(
+            &repo.path().to_string_lossy(),
+            &slot_path.to_string_lossy(),
+            "feature-reuse",
+            "main",
+        )
+        .expect("reuse slot");
+
+        assert!(slot_path.join(".git").exists());
+        assert!(slot_path.join("README.md").exists());
+        assert!(slot_path.join("target/debug/sentinel").exists());
+        assert!(slot_path.join(".idea/workspace.xml").exists());
+        assert!(slot_path.join("node_modules/pkg/sentinel").exists());
+    }
+
+    #[test]
+    fn archive_restores_heavyweight_dirs_to_slot_path() {
+        let repo = test_repo();
+        let slot_path = repo.path().join(".jean-slots").join("demo-slot-1");
+        let archive_path = repo.path().join("archived-feature");
+        make_git_worktree(repo.path(), &slot_path, "feature-archive");
+        add_slot_contents(&slot_path);
+
+        git::move_worktree(
+            &repo.path().to_string_lossy(),
+            &slot_path.to_string_lossy(),
+            &archive_path.to_string_lossy(),
+        )
+        .expect("move worktree");
+        restore_heavy_dirs_to_slot_after_archive(
+            &archive_path.to_string_lossy(),
+            &slot_path.to_string_lossy(),
+        )
+        .expect("restore heavy dirs");
+
+        assert!(archive_path.join(".git").exists());
+        assert!(!slot_path.join(".git").exists());
+        assert!(slot_path.join("target/debug/sentinel").exists());
+        assert!(slot_path.join(".idea/workspace.xml").exists());
+        assert!(slot_path.join("node_modules/pkg/sentinel").exists());
+        assert!(!archive_path.join("target/debug/sentinel").exists());
+        assert!(!archive_path.join(".idea/workspace.xml").exists());
+        assert!(!archive_path.join("node_modules/pkg/sentinel").exists());
     }
 }

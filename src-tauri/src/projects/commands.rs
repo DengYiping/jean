@@ -1201,7 +1201,7 @@ pub async fn create_worktree(
                 };
 
             if let Some(slot) = &slot_reservation_clone {
-                if slot.reused {
+                if slot.reused && !slot.requires_worktree_create {
                     if let Err(e) = slots::prepare_reused_slot(
                         &project_path,
                         &worktree_path_clone,
@@ -1233,9 +1233,19 @@ pub async fn create_worktree(
             // Create the git worktree (this is the slow operation)
             let create_result = if slot_reservation_clone
                 .as_ref()
-                .is_some_and(|slot| slot.reused)
+                .is_some_and(|slot| slot.reused && !slot.requires_worktree_create)
             {
                 Ok(())
+            } else if slot_reservation_clone
+                .as_ref()
+                .is_some_and(|slot| slot.requires_worktree_create)
+            {
+                slots::create_worktree_in_preserved_slot(
+                    &project_path,
+                    &worktree_path_clone,
+                    &branch_for_worktree,
+                    &effective_base,
+                )
             } else {
                 git::create_worktree(
                     &project_path,
@@ -2029,7 +2039,7 @@ pub async fn create_worktree_from_existing_branch(
             log::trace!("Background: Creating git worktree {name_clone} at {worktree_path_clone} using existing branch {branch_name_clone}");
 
             if let Some(slot) = &slot_reservation_clone {
-                if slot.reused {
+                if slot.reused && !slot.requires_worktree_create {
                     if let Err(e) = slots::prepare_reused_slot(
                         &project_path,
                         &worktree_path_clone,
@@ -2121,9 +2131,18 @@ pub async fn create_worktree_from_existing_branch(
             // Create the git worktree from existing branch
             let create_result = if slot_reservation_clone
                 .as_ref()
-                .is_some_and(|slot| slot.reused)
+                .is_some_and(|slot| slot.reused && !slot.requires_worktree_create)
             {
                 Ok(())
+            } else if slot_reservation_clone
+                .as_ref()
+                .is_some_and(|slot| slot.requires_worktree_create)
+            {
+                slots::create_existing_branch_worktree_in_preserved_slot(
+                    &project_path,
+                    &worktree_path_clone,
+                    &branch_name_clone,
+                )
             } else {
                 git::create_worktree_from_existing_branch(
                     &project_path,
@@ -3666,8 +3685,9 @@ async fn close_base_session_internal(
 /// Archive a worktree (keeps git worktree/branch on disk, just hides from UI)
 ///
 /// Unlike delete_worktree, this does NOT remove the git worktree or branch.
-/// Slotted worktrees are moved out of the slot path before being archived so
-/// future worktrees can reuse the stable slot.
+/// Slotted worktrees are moved out of the slot path before being archived.
+/// Heavyweight local directories are moved back into the idle slot so future
+/// worktrees can reuse them without keeping stale Git metadata in the slot.
 ///
 /// Note: Base sessions cannot be archived - use close_base_session instead.
 #[tauri::command]
@@ -3701,6 +3721,7 @@ pub async fn archive_worktree(app: AppHandle, worktree_id: String) -> Result<(),
         .clone();
     let project_id = worktree.project_id.clone();
     let slot_id = worktree.stable_slot_id.clone();
+    let slot_path = worktree.path.clone();
     let archive_path = if slot_id.is_some() {
         Some(archived_slotted_worktree_path(
             &app, &data, &project, worktree,
@@ -3710,10 +3731,8 @@ pub async fn archive_worktree(app: AppHandle, worktree_id: String) -> Result<(),
     };
 
     if let Some(path) = &archive_path {
-        git::move_worktree(&project.path, &worktree.path, path)?;
-        if Path::new(&worktree.path).exists() {
-            let _ = std::fs::remove_dir_all(&worktree.path);
-        }
+        git::move_worktree(&project.path, &slot_path, path)?;
+        slots::restore_heavy_dirs_to_slot_after_archive(path, &slot_path)?;
     }
 
     let worktree = data
@@ -3727,7 +3746,7 @@ pub async fn archive_worktree(app: AppHandle, worktree_id: String) -> Result<(),
         worktree.stable_slot_id = None;
     }
     if let Some(slot_id) = slot_id {
-        data.worktree_slots.retain(|slot| slot.id != slot_id);
+        slots::mark_slot_idle(&mut data, &project, &slot_id);
     }
 
     // Save the updated data
@@ -8743,16 +8762,32 @@ pub async fn merge_worktree_to_base(
                 log::error!("Failed to emit worktree:deleting event: {e}");
             }
 
-            // Remove the worktree
-            if let Err(e) = git::remove_worktree(&project.path, &worktree.path) {
-                log::error!("Failed to remove worktree after merge: {e}");
-                // Continue anyway - merge succeeded
-            }
+            if let Some(slot_id) = worktree.stable_slot_id.as_ref() {
+                let mut data = load_projects_data(&app)?;
+                if let Err(e) = slots::release_slot_for_worktree(
+                    &app,
+                    &mut data,
+                    &project,
+                    &worktree_id,
+                    &worktree.branch,
+                    slot_id,
+                    &worktree.path,
+                ) {
+                    log::error!("Failed to release slotted worktree after merge: {e}");
+                    let _ = slots::mark_slot_error(&app, &mut data, slot_id, e);
+                }
+            } else {
+                // Remove the worktree
+                if let Err(e) = git::remove_worktree(&project.path, &worktree.path) {
+                    log::error!("Failed to remove worktree after merge: {e}");
+                    // Continue anyway - merge succeeded
+                }
 
-            // Delete the branch
-            if let Err(e) = git::delete_branch(&project.path, &worktree.branch) {
-                log::error!("Failed to delete branch after merge: {e}");
-                // Continue anyway - merge succeeded
+                // Delete the branch
+                if let Err(e) = git::delete_branch(&project.path, &worktree.branch) {
+                    log::error!("Failed to delete branch after merge: {e}");
+                    // Continue anyway - merge succeeded
+                }
             }
 
             // Remove from storage

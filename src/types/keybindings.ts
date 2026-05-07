@@ -103,8 +103,8 @@ export const DEFAULT_KEYBINDINGS: KeybindingsMap = {
   open_github_dashboard: 'mod+shift+d',
   open_quick_menu: 'mod+period',
   open_usage_dropdown: 'mod+u',
-  open_agent_board: 'mod+shift+k',
-  new_agent_todo: 'mod+shift+a',
+  open_agent_board: 'mod+shift+a',
+  new_agent_todo: 'mod+alt+a',
 }
 
 // UI definitions for the settings pane
@@ -403,14 +403,14 @@ export const KEYBINDING_DEFINITIONS: KeybindingDefinition[] = [
     action: 'open_agent_board',
     label: 'Agent Board',
     description: 'Open the global agent board',
-    default_shortcut: 'mod+shift+k',
+    default_shortcut: 'mod+shift+a',
     category: 'navigation',
   },
   {
     action: 'new_agent_todo',
     label: 'New agent todo',
     description: 'Create a new todo card on the agent board',
-    default_shortcut: 'mod+shift+a',
+    default_shortcut: 'mod+alt+a',
     category: 'navigation',
   },
 ]

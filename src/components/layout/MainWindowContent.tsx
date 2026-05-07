@@ -13,6 +13,7 @@ import { useInstalledBackends } from '@/hooks/useInstalledBackends'
 import { scheduleIdleWork } from '@/lib/idle'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useSwipeBack } from '@/hooks/useSwipeBack'
+import { NewAgentTodoDialog } from '@/components/agent-board/NewAgentTodoDialog'
 
 const ChatWindow = lazy(() =>
   import('@/components/chat/ChatWindow').then(mod => ({
@@ -44,6 +45,12 @@ export function MainWindowContent({
   const activeWorktreePath = useChatStore(state => state.activeWorktreePath)
   const isMobile = useIsMobile()
   const activeMainView = useUIStore(state => state.activeMainView)
+  const agentTodoDialogOpen = useUIStore(
+    state => state.pendingNewAgentTodoDialog
+  )
+  const setNewAgentTodoDialogOpen = useUIStore(
+    state => state.setNewAgentTodoDialogOpen
+  )
   const swipeBackCallback = useCallback(() => {
     useChatStore.getState().clearActiveWorktree()
   }, [])
@@ -213,6 +220,11 @@ export function MainWindowContent({
           )}
         </div>
       )}
+      <NewAgentTodoDialog
+        open={agentTodoDialogOpen}
+        projects={projects}
+        onOpenChange={setNewAgentTodoDialogOpen}
+      />
     </div>
   )
 }

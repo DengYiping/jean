@@ -4,7 +4,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type KeyboardEvent,
   type PointerEvent,
 } from 'react'
 import {
@@ -22,30 +21,21 @@ import { invoke } from '@/lib/transport'
 import { cn } from '@/lib/utils'
 import { AGENT_BOARD_FOCUS_EVENT } from '@/lib/agent-board-navigation'
 import { openWorkspaceSession } from '@/lib/workspace-navigation'
+import { useUIStore } from '@/store/ui-store'
 import { useProjectsStore } from '@/store/projects-store'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { NativeSelect } from '@/components/ui/native-select'
 import {
   canMoveAgentBoardItem,
   type AgentBoardItem,
   type AgentBoardLane,
 } from '@/types/agent-board'
-import type { Backend, EffortLevel } from '@/types/chat'
 import type { Project, Worktree } from '@/types/projects'
 import { useProjects } from '@/services/projects'
 import {
   useAgentBoardItems,
-  useCreateAgentBoardItem,
   useDeleteAgentBoardItem,
   useMoveAgentBoardItem,
   useRefreshAgentBoardItems,
@@ -83,121 +73,6 @@ const AGENT_BOARD_COLUMNS: {
 const AGENT_BOARD_COLUMN_LABELS = Object.fromEntries(
   AGENT_BOARD_COLUMNS.map(column => [column.id, column.label])
 ) as Record<AgentBoardColumnId, string>
-
-interface NewAgentTodoDialogProps {
-  open: boolean
-  projects: Project[]
-  onOpenChange: (open: boolean) => void
-}
-
-function NewAgentTodoDialog({
-  open,
-  projects,
-  onOpenChange,
-}: NewAgentTodoDialogProps) {
-  const createItem = useCreateAgentBoardItem()
-  const realProjects = projects.filter(project => !project.is_folder)
-  const [projectId, setProjectId] = useState('')
-  const [backend, setBackend] = useState<Backend>('codex')
-  const [effortLevel, setEffortLevel] = useState<EffortLevel>('high')
-  const [prompt, setPrompt] = useState('')
-
-  useEffect(() => {
-    if (open && !projectId && realProjects[0]) {
-      setProjectId(realProjects[0].id)
-    }
-  }, [open, projectId, realProjects])
-
-  const handleSubmit = useCallback(async () => {
-    if (!projectId || !prompt.trim() || createItem.isPending) return
-    try {
-      await createItem.mutateAsync({
-        project_id: projectId,
-        prompt: prompt.trim(),
-        backend,
-        effort_level: effortLevel,
-      })
-      setPrompt('')
-      onOpenChange(false)
-    } catch (error) {
-      toast.error(`Failed to create todo: ${error}`)
-    }
-  }, [backend, createItem, effortLevel, onOpenChange, projectId, prompt])
-
-  const handlePromptKeyDown = useCallback(
-    (event: KeyboardEvent<HTMLTextAreaElement>) => {
-      if (event.key === 'Enter' && event.shiftKey) {
-        event.preventDefault()
-        void handleSubmit()
-      }
-    },
-    [handleSubmit]
-  )
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl">
-        <DialogHeader>
-          <DialogTitle>New agent todo</DialogTitle>
-        </DialogHeader>
-        <div className="grid gap-3">
-          <Textarea
-            className="min-h-32 resize-none"
-            placeholder="Describe the work..."
-            value={prompt}
-            onChange={event => setPrompt(event.target.value)}
-            onKeyDown={handlePromptKeyDown}
-          />
-          <div className="grid grid-cols-3 gap-2">
-            <NativeSelect
-              value={projectId}
-              onChange={event => setProjectId(event.target.value)}
-            >
-              {realProjects.map(project => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </NativeSelect>
-            <NativeSelect
-              value={backend}
-              onChange={event => setBackend(event.target.value as Backend)}
-            >
-              <option value="codex">Codex</option>
-              <option value="claude">Claude</option>
-              <option value="opencode">OpenCode</option>
-            </NativeSelect>
-            <NativeSelect
-              value={effortLevel}
-              onChange={event =>
-                setEffortLevel(event.target.value as EffortLevel)
-              }
-            >
-              <option value="low">Low</option>
-              <option value="medium">Medium</option>
-              <option value="high">High</option>
-              <option value="max">Max</option>
-            </NativeSelect>
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button
-            onClick={handleSubmit}
-            disabled={!projectId || !prompt.trim() || createItem.isPending}
-          >
-            {createItem.isPending && (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            )}
-            Create
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
 
 function planPreview(item: AgentBoardItem) {
   return item.prompt
@@ -299,18 +174,9 @@ export function AgentBoardView() {
   const moveItem = useMoveAgentBoardItem()
   const deleteItem = useDeleteAgentBoardItem()
   const refreshItems = useRefreshAgentBoardItems()
-  const [dialogOpen, setDialogOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [highlightItemId, setHighlightItemId] = useState<string | null>(null)
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null)
-
-  useEffect(() => {
-    const handler = () => {
-      setDialogOpen(true)
-    }
-    window.addEventListener('agent-board:new-todo', handler)
-    return () => window.removeEventListener('agent-board:new-todo', handler)
-  }, [])
 
   useEffect(() => {
     const handler = (event: Event) => {
@@ -465,7 +331,10 @@ export function AgentBoardView() {
             <RefreshCw className="h-4 w-4" />
             Refresh
           </Button>
-          <Button size="sm" onClick={() => setDialogOpen(true)}>
+          <Button
+            size="sm"
+            onClick={() => useUIStore.getState().requestNewAgentTodoDialog()}
+          >
             <Plus className="h-4 w-4" />
             Add todo
           </Button>
@@ -538,12 +407,6 @@ export function AgentBoardView() {
           )
         })}
       </div>
-
-      <NewAgentTodoDialog
-        open={dialogOpen}
-        projects={projects}
-        onOpenChange={setDialogOpen}
-      />
     </div>
   )
 }

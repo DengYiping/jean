@@ -449,10 +449,16 @@ function executeKeybindingAction(
       window.dispatchEvent(new CustomEvent('toggle-usage-menu'))
       break
     case 'open_agent_board':
-      useUIStore.getState().setActiveMainView('agent_board')
+      useUIStore
+        .getState()
+        .setActiveMainView(
+          useUIStore.getState().activeMainView === 'agent_board'
+            ? 'workspace'
+            : 'agent_board'
+        )
       break
     case 'new_agent_todo':
-      useUIStore.getState().setActiveMainView('agent_board')
+      useUIStore.getState().requestNewAgentTodoDialog()
       window.dispatchEvent(new CustomEvent('agent-board:new-todo'))
       break
     case 'toggle_session_label': {

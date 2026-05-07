@@ -147,6 +147,7 @@ describe('useMainWindowEventListeners terminal shortcuts', () => {
       gitDiffModalOpen: false,
       githubDashboardOpen: false,
       activeMainView: 'workspace',
+      pendingNewAgentTodoDialog: false,
     })
 
     useProjectsStore.setState({
@@ -344,10 +345,32 @@ describe('useMainWindowEventListeners terminal shortcuts', () => {
     expect(useProjectsStore.getState().addProjectDialogOpen).toBe(true)
   })
 
-  it('opens the agent board todo dialog when the shortcut is pressed', () => {
+  it('opens the agent board todo dialog without switching views', () => {
     const listener = vi.fn()
     window.addEventListener('agent-board:new-todo', listener)
 
+    renderHook(() => useMainWindowEventListeners(), {
+      wrapper: createWrapper(),
+    })
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'A',
+        code: 'KeyA',
+        metaKey: true,
+        altKey: true,
+        bubbles: true,
+      })
+    )
+
+    expect(useUIStore.getState().activeMainView).toBe('workspace')
+    expect(useUIStore.getState().pendingNewAgentTodoDialog).toBe(true)
+    expect(listener).toHaveBeenCalledTimes(1)
+
+    window.removeEventListener('agent-board:new-todo', listener)
+  })
+
+  it('toggles between workspace and agent board with the agent board shortcut', () => {
     renderHook(() => useMainWindowEventListeners(), {
       wrapper: createWrapper(),
     })
@@ -363,9 +386,20 @@ describe('useMainWindowEventListeners terminal shortcuts', () => {
     )
 
     expect(useUIStore.getState().activeMainView).toBe('agent_board')
-    expect(listener).toHaveBeenCalledTimes(1)
+    expect(useUIStore.getState().pendingNewAgentTodoDialog).toBe(false)
 
-    window.removeEventListener('agent-board:new-todo', listener)
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'A',
+        code: 'KeyA',
+        metaKey: true,
+        shiftKey: true,
+        bubbles: true,
+      })
+    )
+
+    expect(useUIStore.getState().activeMainView).toBe('workspace')
+    expect(useUIStore.getState().pendingNewAgentTodoDialog).toBe(false)
   })
 
   it('invalidates the agent board query from cache events', async () => {

@@ -23,8 +23,11 @@ test.describe('Agent board', () => {
     await expect(mockPage.getByText('Global Board')).toBeVisible()
 
     await mockPage.getByRole('button', { name: 'Workspace' }).click()
-    await mockPage.keyboard.press('ControlOrMeta+Shift+K')
+    await mockPage.keyboard.press('ControlOrMeta+Shift+A')
     await expect(mockPage.getByText('Global Board')).toBeVisible()
+
+    await mockPage.keyboard.press('ControlOrMeta+Shift+A')
+    await expect(mockPage.getByText('Global Board')).not.toBeVisible()
   })
 
   test('opens todo dialog from board button and creates a Todo card', async ({
@@ -47,6 +50,18 @@ test.describe('Agent board', () => {
 
     const todoLane = mockPage.locator('section').filter({ hasText: 'Todo' })
     await expect(todoLane.getByText('Fix board flow')).toBeVisible()
+  })
+
+  test('opens todo dialog from global shortcut', async ({ mockPage }) => {
+    await expect(mockPage.getByText('Test Project')).toBeVisible({
+      timeout: 5000,
+    })
+
+    await mockPage.keyboard.press('ControlOrMeta+Alt+A')
+    await expect(mockPage.getByText('Global Board')).not.toBeVisible()
+    await expect(
+      mockPage.getByRole('dialog', { name: 'New agent todo' })
+    ).toBeVisible()
   })
 
   test('drags Todo to Planning and opens the created session', async ({

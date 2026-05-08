@@ -24,7 +24,7 @@ Run via:
 bun run tauri:build:fast
 ```
 
-This wraps:
+This package script wraps:
 
 ```bash
 tauri build --bundles dmg --config '{"bundle":{"createUpdaterArtifacts":false}}' -- --profile release-fast

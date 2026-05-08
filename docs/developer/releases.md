@@ -9,36 +9,35 @@ The release system provides:
 - **Automated GitHub Actions workflow** for building releases
 - **Version management script** for updating all version files
 - **Auto-updater support** for seamless user updates
-- **Cross-platform builds** (currently macOS, easily extended)
+- **Cross-platform builds** for macOS, Linux, and Windows
 
 ## Initial Setup
 
 ### 1. Generate Signing Keys
 
-First, generate a keypair for signing updates:
+Generate a keypair for signing update artifacts when setting up a production release channel or fork:
 
 ```bash
-# Install Tauri CLI if not already installed
-bun add -g @tauri-apps/cli@next
-
-# Generate keypair
-tauri signer generate -w ~/.tauri/myapp.key
+# Generate keypair with the project Tauri CLI
+bun run tauri signer generate -w ~/.tauri/jean.key
 
 # This outputs:
-# Private key: (saved to ~/.tauri/myapp.key)
+# Private key: (saved to ~/.tauri/jean.key)
 # Public key: dW50cnVzdGVkIGNvbW1lbnQ6...
 ```
 
 ### 2. Configure GitHub Repository
 
-Add these secrets to your GitHub repository (Settings → Secrets and variables → Actions):
+Add these secrets and variables to your GitHub repository (Settings → Secrets and variables → Actions):
 
-- `TAURI_PRIVATE_KEY`: Content of `~/.tauri/myapp.key`
+- `TAURI_PRIVATE_KEY`: Content of `~/.tauri/jean.key`
 - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`: Password you set (if any)
+- `TAURI_UPDATER_PUBLIC_KEY`: Repository variable containing the public key for forked/non-default updater channels
+- Apple signing secrets (`APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`) when signed/notarized macOS artifacts are required
 
 ### 3. Update Configuration Files
 
-**Update `src-tauri/tauri.conf.json`:**
+**Update `src-tauri/tauri.conf.json` for your release channel:**
 
 ```json
 {
@@ -46,7 +45,7 @@ Add these secrets to your GitHub repository (Settings → Secrets and variables 
     "updater": {
       "active": true,
       "endpoints": [
-        "https://github.com/YOUR_USERNAME/YOUR_REPO/releases/latest/download/latest.json"
+        "https://github.com/coollabsio/jean/releases/latest/download/latest.json"
       ],
       "dialog": true,
       "pubkey": "YOUR_PUBLIC_KEY_FROM_STEP_1"
@@ -55,10 +54,13 @@ Add these secrets to your GitHub repository (Settings → Secrets and variables 
 }
 ```
 
-**Update GitHub workflow in `.github/workflows/release.yml`:**
+The checked-in workflow patches `version`, updater endpoint, updater artifact generation, and optional updater public key at build time. Forked repositories should set `TAURI_UPDATER_PUBLIC_KEY`; otherwise the workflow warns and keeps the checked-in public key.
 
-- Change `Tauri Template App` to your app name
-- Update release body text
+**Review GitHub workflow in `.github/workflows/release.yml`:**
+
+- Confirm matrix targets match the platforms you intend to publish
+- Confirm signing secrets exist for the artifacts you expect to ship
+- Confirm release upload behavior for AppImage and `latest.json`
 
 **Update bundle info in `tauri.conf.json`:**
 
@@ -81,13 +83,15 @@ Add these secrets to your GitHub repository (Settings → Secrets and variables 
    - Update versions in `package.json`, `Cargo.toml`, `tauri.conf.json`
    - Ask if you want to commit and push automatically
 
-3. **GitHub Actions will:**
-   - Build the app for all platforms
-   - Create a draft release
-   - Generate `latest.json` for auto-updates
-   - Upload all installers and signatures
+3. **Create or publish the GitHub release:**
+   - Use the prepared version as the release tag, for example `v1.0.0`
+   - Publishing a release triggers the release workflow
+   - `workflow_dispatch` can also create a draft release for the supplied version
 
-4. **Manually publish the draft release** on GitHub
+4. **GitHub Actions will:**
+   - Build the app for all platforms
+   - Generate `latest.json` when updater signing is configured
+   - Upload installers, signatures, and patched AppImage updater artifacts
 
 ### Manual Method
 
@@ -107,6 +111,8 @@ git add .
 git commit -m "chore: release v1.0.0"
 git tag v1.0.0
 git push origin main --tags
+
+# 4. Create or publish the GitHub release for v1.0.0
 ```
 
 ## Auto-Updater
@@ -114,7 +120,7 @@ git push origin main --tags
 The auto-updater provides:
 
 - **Automatic update checks** 5 seconds after app launch
-- **User-friendly dialogs** for update notifications
+- **Jean-owned update UX** through `UpdateAvailableModal`, title-bar pending state, and toast actions
 - **Background downloads** with progress tracking
 - **Seamless installation** with restart prompts
 - **Silent error handling** for network issues
@@ -156,9 +162,9 @@ const checkForUpdates = async () => {
 The updater is configured in `tauri.conf.json`:
 
 - **Active**: `true` to enable update checks
-- **Dialog**: `false`; Jean uses `UpdateAvailableModal` and toast actions
-- **Endpoints**: GitHub releases URL with template placeholder
-- **Public Key**: Template placeholder for signing verification
+- **Dialog**: currently `true` in Tauri config, while Jean's frontend owns the visible update modal/toast flow. Keep this aligned when changing updater behavior.
+- **Endpoints**: GitHub releases URL for the active release channel
+- **Public Key**: updater signing public key for the active release channel
 
 ## File Structure
 
@@ -181,7 +187,7 @@ Each release creates:
 
 - **macOS**: `.dmg` installer
 - **Windows**: `.msi` installer (when configured)
-- **Linux**: `.deb` and `.AppImage` (when configured)
+- **Linux**: `.deb`, `.rpm`, and AppImage artifacts. AppImage is also rebuilt through `scripts/build-appimage.sh` to apply the WebKitGTK compatibility wrapper.
 - **Auto-updater**: `latest.json` manifest and `.sig` signature files
 
 ## Troubleshooting

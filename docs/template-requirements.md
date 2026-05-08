@@ -13,7 +13,7 @@ This setup is designed to be highly effective for human developers and AI coding
 - State: TanStack Query & Zustand 5
 - Tests: Built-in for Rust & Vitest 4 for TS
 - CI & Releases: GitHub Actions + GitHub
-- DX: VSCode/Cursor, Claude Code
+- DX: VSCode/Cursor, Claude Code, Codex
 
 # The Walking Skeleton
 
@@ -22,7 +22,7 @@ This setup is designed to be highly effective for human developers and AI coding
 - Clean Tauri + React App
 - Tauri plugins for with clipboard and filesystem access.
 - Typechecking, linting and formatting via TypeScript, ESLint, Prettier, Cargo and Clippy with sensible default configs.
-- A minimal DX setup for VSCode, Cursor, Claude Code and Gemini.
+- A minimal DX setup for VSCode, Cursor, Claude Code, and Codex.
 - Simple bare-bones test framework for Rust (native) and TypeScript (vitest)
 - Clear state management "Onion":
   - useState -> Ephemeral internal component UI state
@@ -194,8 +194,8 @@ Since we're using Tailwind, there should be very little CSS. Some very complex c
 - Some basic resets to make things work more like a macOS app.
   - Resets to prevent scrolling and overflows.
   - Styling for Tauri windows.
-  - Cursor is never a pointer, except on plain text links or when overriden with a utility class
-  - No text selection by default, except where overriden or in inputs and textareas.
+  - Cursor is never a pointer, except on plain text links or when overridden with a utility class
+  - No text selection by default, except where overridden or in inputs and textareas.
 
 ## React Components System
 
@@ -249,7 +249,7 @@ The native menu system provides the following through Tauri's menu systems:
 
 - Main Menu
   - About -> Shows a native dialog with some basic info about the app, version etc
-  - Check for Updates -> Fires the auto=-update checker
+  - Check for Updates -> Fires the auto-update checker
   - Preferences -> Opens the preferences dialog
   - Quit -> Quits the app
 - Window
@@ -259,13 +259,13 @@ There is an obvious and easy-to-follow pattern for adding new menu items along w
 
 ## Keyboard Shortcuts System
 
-Global keyboard shortcuts are managed by `react-hotkeys-hook` inside an event listners hookwhich is loaded by `MainWindow`. These shortcuts fire events in the same pattern as everywhere else.
+Global keyboard shortcuts are managed by `react-hotkeys-hook` inside an event listeners hook loaded by `MainWindow`. These shortcuts fire events in the same pattern as everywhere else.
 
 ## Local Filesystem Access
 
 This app is pre-configured with the Tauri file system access, along with the necessary security measures to deny access to important places on the local file system. This is primarily used to read and write preferences persisted to disc, but it also makes it easy to build apps which need to read and write to the local file system.
 
-## Local Settings Persistance & Crash Reporting
+## Local Settings Persistence & Crash Reporting
 
 Local preferences are persisted to disc in the application's support directory as JSON files. There is also a pre-built mechanism for writing crash reports to this directory along with any potentially unsaved data which could not be properly written/synced to remote stores.
 
@@ -275,9 +275,9 @@ Local preferences are persisted to disc in the application's support directory a
 - `scripts/prepare-release.js` to assist with preparing and pushing a new release.
 - Release process documented in `docs/developer/releases.md` along with instructions for setting up the GitHub action correctly.
 
-## Auto-Updator
+## Auto-Updater
 
-- Auto-update mechanism which checks github for new releases on launch (or when "Check fo Updates" is clicked and installs and relaunches the application). This uses `tauri-plugin-process` and [updater](https://v2.tauri.app/plugin/updater/), and Tauri standard practices for doing this.
+- Auto-update mechanism which checks GitHub for new releases on launch or when "Check for Updates" is clicked. Jean stores a pending update, shows `UpdateAvailableModal`, downloads with toast progress, and restarts via `@tauri-apps/plugin-process`.
 
 ## Toast & Notification System
 
@@ -311,23 +311,24 @@ Tasks take the form `task-x-taskname.md`. To prioritise a task, change the "x" t
 
 ### AI Instructions
 
-A comprehensive `CLAUDE.md` is included, along with barebones cursor rules and `GEMINI.md` which simply point at claude's instructions.
+Repo-local agent instructions live in `AGENTS.md`. `CLAUDE.local.md` may exist as a private ignored overlay on individual machines. Cursor and Codex configuration are tracked separately in `.cursor/rules/main.mdc` and `.codex/environments/environment.toml`.
 
 ### Claude Code Agents
 
-Five Claude Code agents specific to this project are included:
+Five Claude Code agents specific to this project are included under `.claude/agents/`:
 
-- UI Designer -> Expert & passionate UI designer with 15 years experience building native-feeling desktop apps using web technology. Knows macOS design inside out and is expert at making Tauri/React apps beautiful and joyful to use. Equally great at tailwind and modern CSS, with a deep understanding of how React components should be composed to create beautiful, accessible and delightful UIs. Always sweats the details.
-- Tauri Genius -> World expert on the inner workings of Tauri and it's plugin ecosystem and highly skilled Rust engineer. Knows the JS/TS parts of Tauri as well as the rust parts.
-- React Genius -> World Expert at writing clean, performant and maintainable front-end systems with _exactly our stack_.
-- Technical writer -> Expert at writing clear, terse, unambiguous and information-dense technical docs about THIS PROJECT which are INCREDIBLE at helping both human and AI coders **really understand** the mental models and patterns required to work easily in this codebase. They know the codebase inside-out but only document the stuff their readers **need**. Their docs are so good at explaining the patterns, mental models and Weird Bits that people new to the project always say "it normally takes months of mistakes before I really get a codebase. These docs made that instant". Owns everything in `/docs/developer` and contributes to other technical docs as needed.
-- User Guide Writer -> Thirty years experience writing AMAZING guides for end users of technical software. The hardest part of this job is balancing "compelling", "complete", "correct", "engaging", "concise" and "clear". They know the product and its users inside-out. When a diagram, screenshot or video is better than words, they ask a human for help... clearly explaining what they need. They are responsible for user-facing docs and nothing else.
+- `codebase-mental-model-documenter` -> Developer documentation and architecture mental models.
+- `react-architect` -> React architecture, component design, state patterns, and performance.
+- `tauri-rust-expert` -> Tauri v2, Rust backend, plugins, commands, permissions, and distribution.
+- `ui-design-expert` -> Native-feeling desktop UI/UX design for Tauri React surfaces.
+- `user-guide-expert` -> User-facing guide content when a maintained user guide exists.
 
 ### Claude Code Commands
 
-One Claude Code Command is included. You should create more as your product evolves.
+Two Claude Code commands are included:
 
 - `/check` -> Checks everything meets `docs/developer/architecture-guide.md`, runs `bun run check:all`, and fixes any problems.
+- `/init` -> Helps initialize or refresh project context.
 
 ## Other Boilerplate Bits
 
@@ -336,7 +337,8 @@ Eg...
 - .gitignore
 - .prettierignore
 - .cursorignore
-- CLAUDE.local.md # Ignored by git. Use to set current task and any temporary memories.
+- AGENTS.md
+- CLAUDE.local.md # Ignored by git when present. Use only for private local overlay instructions.
 - LICENSE.md
 - README.md
 - docs/SECURITY.md

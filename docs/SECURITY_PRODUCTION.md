@@ -1,34 +1,28 @@
 # Security Production Guide
 
-⚠️ **CRITICAL: This template contains placeholder security configurations that MUST be changed before production deployment.**
+⚠️ **CRITICAL: Production distributors and forks must own their release identity, signing keys, and updater endpoint.**
 
 ## Overview
 
-This guide covers essential security configurations required before deploying your Tauri application to production. The template ships with development-friendly defaults that are **NOT secure** for production use.
+This guide covers the security configuration that must be reviewed before distributing Jean or a forked Jean build. The checked-in configuration is suitable for the current Jean distribution path, but forks must not reuse another distributor's updater identity or signing setup.
 
 ## Critical Security Requirements
 
 ### 1. Auto-Updater Keys (CRITICAL)
 
-**Status**: ❌ **PLACEHOLDER KEYS - REPLACE BEFORE PRODUCTION**
+**Status**: Review for every production distributor
 
-The template includes placeholder Ed25519 keys in `src-tauri/tauri.conf.json`. These are public and **completely insecure**.
+Jean's updater public key and endpoint live in `src-tauri/tauri.conf.json`. A fork or new production channel must generate its own updater keypair, publish its own public key, and keep the private key out of the repository. The GitHub release workflow can also patch the updater public key from the `TAURI_UPDATER_PUBLIC_KEY` repository variable.
 
 #### Generate Proper Updater Keys
 
-1. **Install Tauri CLI** (if not already installed):
+1. **Generate a new Ed25519 keypair** using the project Tauri CLI:
 
    ```bash
-   bun add -g @tauri-apps/cli
+   bun run tauri signer generate -w ~/.tauri/jean.key
    ```
 
-2. **Generate new Ed25519 keypair**:
-
-   ```bash
-   tauri signer generate -w ~/.tauri/myapp.key
-   ```
-
-3. **Update your configuration**:
+2. **Update your configuration**:
    - Copy the **public key** to `src-tauri/tauri.conf.json`:
      ```json
      {
@@ -42,14 +36,14 @@ The template includes placeholder Ed25519 keys in `src-tauri/tauri.conf.json`. T
    - Store the **private key** securely for signing releases
    - **Never commit the private key to version control**
 
-4. **Sign your releases**:
+3. **Sign your releases**:
    ```bash
-   tauri signer sign -k ~/.tauri/myapp.key -f path/to/your/app.tar.gz
+   bun run tauri signer sign -k ~/.tauri/jean.key -f path/to/your/app.tar.gz
    ```
 
 #### Environment Variables (Recommended)
 
-For CI/CD, store keys as environment variables:
+For CI/CD, store keys in the release environment. The GitHub workflow reads `TAURI_PRIVATE_KEY` from repository secrets and exposes it to Tauri as `TAURI_SIGNING_PRIVATE_KEY`.
 
 ```bash
 # In your CI environment
@@ -61,13 +55,13 @@ export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="your-key-password"
 
 **File**: `src-tauri/tauri.conf.json`
 
-Update all placeholder values:
+For a forked production distribution, update all release identity values:
 
 ```json
 {
-  "productName": "Your App Name",
+  "productName": "Jean",
   "version": "1.0.0",
-  "identifier": "com.yourcompany.yourapp",
+  "identifier": "com.yourcompany.jean",
   "bundle": {
     "publisher": "Your Company Name",
     "copyright": "Copyright © 2025 Your Company. All rights reserved."
@@ -77,9 +71,9 @@ Update all placeholder values:
 
 ### 3. Plugin Permissions Review
 
-**File**: `src-tauri/capabilities/desktop.json`
+**Files**: `src-tauri/capabilities/*.json`
 
-Review and minimize permissions based on your app's needs:
+Review and minimize permissions based on Jean's current surfaces. The repository currently uses capability files such as `default.json`, `desktop.json`, and `browser-pane.json`.
 
 ```json
 {
@@ -97,14 +91,14 @@ Review and minimize permissions based on your app's needs:
 
 ### 4. Content Security Policy (CSP)
 
-While less critical for Tauri apps (since React runs in Tauri's webview, not a browser), you may still want to configure CSP for defense in depth:
+Jean has an explicit CSP in `src-tauri/tauri.conf.json` because the app runs in both native Tauri and browser/headless modes. Keep any CSP changes aligned with required asset, IPC, and local-server access.
 
 **File**: `src-tauri/tauri.conf.json`
 
 ```json
 {
   "security": {
-    "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';"
+    "csp": "default-src 'self' 'unsafe-inline' 'unsafe-eval' ipc: http://ipc.localhost https://ipc.localhost; img-src 'self' asset: http://asset.localhost https://asset.localhost data: blob: https:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'"
   }
 }
 ```
@@ -128,11 +122,10 @@ Before deploying to production, ensure you have:
 
 ### Input Validation
 
-This template includes robust input validation for all Tauri commands:
+Jean should validate command inputs at the Rust boundary and avoid exposing native-only assumptions to browser/headless mode:
 
 - Filename validation prevents directory traversal attacks
 - String length limits prevent buffer overflow attempts
-- Theme validation ensures only allowed values
 - Data size limits prevent resource exhaustion
 
 ### Error Handling

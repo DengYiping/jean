@@ -14,9 +14,23 @@ ERROR: Strip call failed: /tmp/.mount_linuxdQq7uQo/usr/bin/strip: Jean.AppDir/us
 2. **linuxdeploy's embedded `strip` binary is too old** - Doesn't recognize section type 0x13 (`.relr.dyn`)
 3. **Incompatibility** - linuxdeploy AppImage was built before RELR support was added
 
+## Current Build Commands
+
+Jean now keeps the DEB/RPM build and the AppImage compatibility build as separate package scripts:
+
+```bash
+# Builds .deb and .rpm packages
+bun run tauri:build:linux
+
+# Builds an AppImage through the WebKitGTK compatibility wrapper
+bun run tauri:build:linux:appimage
+```
+
+`bun run tauri:build:linux` maps to `tauri build --bundles deb,rpm`. `bun run tauri:build:linux:appimage` runs `scripts/build-appimage.sh`, which sets `NO_STRIP`, replaces `AppRun` with `scripts/appimage-webkit-fix.sh`, repackages the AppImage, and creates updater artifacts when signing keys are available.
+
 ## Solutions
 
-### Option 1: Use DEB/RPM Instead (Recommended)
+### Option 1: Use DEB/RPM Instead (Recommended for Local Arch Builds)
 
 **DEB and RPM builds work successfully on Arch Linux:**
 
@@ -24,7 +38,7 @@ ERROR: Strip call failed: /tmp/.mount_linuxdQq7uQo/usr/bin/strip: Jean.AppDir/us
 bun run tauri:build:linux
 ```
 
-**Updated package.json:**
+**Current package.json script:**
 
 ```json
 "tauri:build:linux": "tauri build --bundles deb,rpm"
@@ -34,43 +48,38 @@ bun run tauri:build:linux
 
 - Works out of the box
 - Standard Linux package formats
-- Can be installed with: `sudo dpkg -i Jean_0.1.0_amd64.deb` or `sudo pacman -U Jean_0.1.0-1.x86_64.rpm`
-- Smaller file size (8MB vs 95MB)
+- Can be installed with the platform package manager, for example `sudo dpkg -i Jean_<version>_amd64.deb` or `sudo rpm -i Jean-<version>-1.x86_64.rpm`
+- Smaller than an unstripped AppImage
 
 **Cons:**
 
 - Not portable (requires package manager)
 - Doesn't run without installation
 
-### Option 2: Manual AppImage Build (with NO_STRIP)
+### Option 2: Scripted AppImage Build
 
-**AppImage requires setting `NO_STRIP=1` to skip linuxdeploy's stripping:**
+Use the dedicated AppImage script:
 
 ```bash
-# Build AppDir first
-bun run tauri build --bundles appimage 2>&1 | head -100
-
-# Then manually run linuxdeploy with NO_STRIP
-cd src-tauri/target/release/bundle/appimage
-NO_STRIP=1 ~/.cache/tauri/linuxdeploy-x86_64.AppImage --appdir Jean.AppDir --output appimage
-
-# Or run the appimage plugin directly
-NO_STRIP=1 ~/.cache/tauri/linuxdeploy-plugin-appimage.AppImage --appdir Jean.AppDir
+bun run tauri:build:linux:appimage
 ```
 
-**Result:** Creates 95MB `Jean-x86_64.AppImage` in `src-tauri/target/release/bundle/appimage/`
+The script first attempts `NO_STRIP=true bun run tauri build --bundles appimage`. If Tauri's AppImage phase fails because of the linuxdeploy strip issue, it falls back to manually running linuxdeploy with `NO_STRIP=1`. It then replaces `AppRun` with Jean's WebKitGTK compatibility wrapper and repackages the result.
+
+**Result:** Creates `Jean_<version>_<arch>.AppImage` in `src-tauri/target/release/bundle/appimage/`. If `TAURI_SIGNING_PRIVATE_KEY` is set, it also creates `.tar.gz` and `.sig` updater artifacts.
 
 **Pros:**
 
 - Portable AppImage
 - Works on any x86_64 Linux distribution
 - Single executable
+- Matches the release workflow's AppImage path
 
 **Cons:**
 
 - Larger file size (not stripped)
-- Manual two-step process
-- Tauri's automated build process fails
+- Requires Linux and the cached Tauri linuxdeploy binaries
+- Still carries the linuxdeploy/RELR workaround
 
 ### Option 3: Wait for Tauri/linuxdeploy Fix
 
@@ -85,14 +94,14 @@ This is a known issue:
 
 ### Working Solutions
 
-✅ **DEB package** (`Jean_0.1.0_amd64.deb`) - 8.1MB - **RECOMMENDED**
-✅ **RPM package** (`Jean_0.1.0-1.x86_64.rpm`) - 8.4MB
-✅ **AppImage** (`Jean-x86_64.AppImage`) - 95MB - Requires manual build with NO_STRIP=1
+✅ **DEB package** (`Jean_<version>_amd64.deb`) - built by `bun run tauri:build:linux` - **RECOMMENDED for local Arch builds**
+✅ **RPM package** (`Jean-<version>-1.x86_64.rpm`) - built by `bun run tauri:build:linux`
+✅ **AppImage** (`Jean_<version>_<arch>.AppImage`) - built by `bun run tauri:build:linux:appimage`
 
 ### Failed Solutions
 
-❌ Tauri automated AppImage build - Fails due to linuxdeploy stripping issue
-❌ Setting environment variables in package.json - `NO_STRIP=true` not passed through Tauri CLI
+❌ Plain `tauri build --bundles appimage` on affected hosts - Fails due to linuxdeploy stripping issue
+❌ Relying only on package.json environment variables - `NO_STRIP=true` is not enough for every Tauri/linuxdeploy phase
 
 ## Notes
 
@@ -100,8 +109,8 @@ This is a known issue:
 
 2. **Signing Key Error:** DEB/RPM build may fail if `TAURI_SIGNING_PRIVATE_KEY` is not set but public key exists in tauri.conf.json
 
-3. **AppImage size:** Unstripped AppImage is 95MB (vs ~40MB if stripped). This is expected behavior on Arch Linux due to the workaround.
+3. **AppImage size:** The AppImage is intentionally not stripped during the workaround, so it is larger than a stripped build. Exact size varies by version and architecture.
 
 ## Recommendation
 
-**For Arch Linux:** Use DEB/RPM packages for regular distribution. Use manual AppImage build only if portability is required.
+**For Arch Linux local builds:** Use DEB/RPM packages for regular testing. Use `bun run tauri:build:linux:appimage` when portability or release parity is required.

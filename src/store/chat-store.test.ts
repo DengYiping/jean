@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { useChatStore } from './chat-store'
+import { DEFAULT_MODEL, useChatStore } from './chat-store'
 import type {
   ToolCall,
   QueuedMessage,
@@ -57,6 +57,12 @@ describe('ChatStore', () => {
       sessionLabels: {},
       savingContext: {},
       skippedQuestionSessions: {},
+    })
+  })
+
+  describe('defaults', () => {
+    it('uses the current Claude default model id', () => {
+      expect(DEFAULT_MODEL).toBe('claude-opus-4-7')
     })
   })
 

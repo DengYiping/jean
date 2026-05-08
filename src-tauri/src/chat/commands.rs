@@ -353,13 +353,12 @@ pub async fn get_unread_count(app: AppHandle) -> Result<u32, String> {
     Ok(unread.entries.len() as u32)
 }
 
-/// Get a single session with full message history
-#[tauri::command]
-pub async fn get_session(
+async fn load_session_with_message_run_limit(
     app: AppHandle,
     worktree_id: String,
     worktree_path: String,
     session_id: String,
+    message_run_limit: Option<usize>,
 ) -> Result<Session, String> {
     log::debug!("[GetSession] session={session_id} worktree={worktree_id}");
     let sessions = load_sessions(&app, &worktree_path, &worktree_id)?;
@@ -369,24 +368,59 @@ pub async fn get_session(
         .ok_or_else(|| format!("Session not found: {session_id}"))?;
 
     // Load messages from NDJSON (single source of truth)
-    let mut messages = run_log::load_session_messages(&app, &session_id)?;
+    let mut loaded =
+        run_log::load_session_messages_window(&app, &session_id, message_run_limit, None)?;
     log::debug!(
         "[GetSession] session={session_id} loaded {} messages (backend={:?})",
-        messages.len(),
+        loaded.messages.len(),
         session.backend
     );
 
     // Apply approved plan status from session metadata
-    for msg in &mut messages {
+    for msg in &mut loaded.messages {
         if session.approved_plan_message_ids.contains(&msg.id) {
             msg.plan_approved = true;
         }
     }
 
-    session.last_message_at = messages.iter().map(|message| message.timestamp).max();
-    session.messages = messages;
+    session.last_message_at = loaded
+        .messages
+        .iter()
+        .map(|message| message.timestamp)
+        .max();
+    session.messages = loaded.messages;
+    session.total_runs = loaded.total_runs;
+    session.loaded_run_start_index = loaded.loaded_run_start_index;
     session.refresh_derived_state();
     Ok(session)
+}
+
+/// Get a single session with full message history
+#[tauri::command]
+pub async fn get_session(
+    app: AppHandle,
+    worktree_id: String,
+    worktree_path: String,
+    session_id: String,
+) -> Result<Session, String> {
+    load_session_with_message_run_limit(app, worktree_id, worktree_path, session_id, None).await
+}
+
+pub(crate) async fn get_session_windowed(
+    app: AppHandle,
+    worktree_id: String,
+    worktree_path: String,
+    session_id: String,
+    message_run_limit: usize,
+) -> Result<Session, String> {
+    load_session_with_message_run_limit(
+        app,
+        worktree_id,
+        worktree_path,
+        session_id,
+        Some(message_run_limit),
+    )
+    .await
 }
 
 /// Create a new session tab

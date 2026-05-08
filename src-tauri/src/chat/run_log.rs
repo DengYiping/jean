@@ -14,7 +14,8 @@ use super::storage::{
     get_session_dir, list_all_session_ids, load_metadata, save_metadata, with_metadata_mut,
 };
 use super::types::{
-    Backend, ChatMessage, ContentBlock, MessageRole, RunEntry, RunStatus, ToolCall, UsageData,
+    Backend, ChatMessage, ContentBlock, LoadedMessages, MessageRole, RunEntry, RunStatus, ToolCall,
+    UsageData,
 };
 
 // ============================================================================
@@ -922,23 +923,53 @@ pub fn load_session_messages(
     app: &tauri::AppHandle,
     session_id: &str,
 ) -> Result<Vec<ChatMessage>, String> {
+    Ok(load_session_messages_window(app, session_id, None, None)?.messages)
+}
+
+fn resolve_run_window(
+    total_runs: usize,
+    limit: Option<usize>,
+    before_run_index: Option<usize>,
+) -> (usize, usize) {
+    let end = before_run_index.unwrap_or(total_runs).min(total_runs);
+    let start = limit.map_or(0, |n| end.saturating_sub(n));
+    (start, end)
+}
+
+/// Load a window of messages for a session by parsing JSONL files.
+///
+/// - `limit`: max number of runs (most recent within window) to parse. `None` = all.
+/// - `before_run_index`: only parse runs strictly before this index. `None` = up to end.
+pub fn load_session_messages_window(
+    app: &tauri::AppHandle,
+    session_id: &str,
+    limit: Option<usize>,
+    before_run_index: Option<usize>,
+) -> Result<LoadedMessages, String> {
     let metadata = match load_metadata(app, session_id)? {
         Some(m) => m,
         None => {
             log::debug!("[LoadMessages] session={session_id} no metadata found");
-            return Ok(vec![]);
+            return Ok(LoadedMessages {
+                messages: vec![],
+                total_runs: 0,
+                loaded_run_start_index: 0,
+            });
         }
     };
 
+    let total_runs = metadata.runs.len();
+    let (start, end) = resolve_run_window(total_runs, limit, before_run_index);
+
     log::debug!(
-        "[LoadMessages] session={session_id} metadata has {} runs (backend={:?})",
-        metadata.runs.len(),
+        "[LoadMessages] session={session_id} metadata has {} runs (backend={:?}) — window [{start}..{end}]",
+        total_runs,
         metadata.backend
     );
 
     let mut messages = Vec::new();
 
-    for run in &metadata.runs {
+    for run in &metadata.runs[start..end] {
         // Skip user message for instant-cancelled runs (undo_send)
         // These have Cancelled status but no assistant_message_id
         let is_undo_send = run.status == RunStatus::Cancelled && run.assistant_message_id.is_none();
@@ -1039,7 +1070,11 @@ pub fn load_session_messages(
         }
     }
 
-    Ok(messages)
+    Ok(LoadedMessages {
+        messages,
+        total_runs,
+        loaded_run_start_index: start,
+    })
 }
 
 /// Mark any running run for this session as cancelled (called by cancel_process)
@@ -1499,4 +1534,29 @@ fn now_timestamp() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_run_window;
+
+    #[test]
+    fn resolve_run_window_defaults_to_full_history() {
+        assert_eq!(resolve_run_window(5, None, None), (0, 5));
+    }
+
+    #[test]
+    fn resolve_run_window_limits_to_recent_runs() {
+        assert_eq!(resolve_run_window(8, Some(3), None), (5, 8));
+    }
+
+    #[test]
+    fn resolve_run_window_honors_before_index() {
+        assert_eq!(resolve_run_window(8, Some(3), Some(6)), (3, 6));
+    }
+
+    #[test]
+    fn resolve_run_window_clamps_before_index() {
+        assert_eq!(resolve_run_window(4, Some(2), Some(9)), (2, 4));
+    }
 }

@@ -25,6 +25,14 @@ const DEFAULT_CODEX_SYSTEM_PROMPT: &str = "\
 - At the end of each plan, give me a list of unresolved questions to answer, if any.\n\
 - In planning mode, present plans using the backend's native plan tool/UI call when available (Claude ExitPlanMode, Codex update_plan/CodexPlan, Cursor/OpenCode equivalent), not plain text only.\n\
 \n\
+## Documentation First\n\
+\n\
+- Before designing or coding against any external library/framework/SDK/API/CLI, run WebSearch for current docs.\n\
+- Verify version, API shape, and breaking changes - training data may be stale.\n\
+- Cite the source URL in your plan or commit reasoning when behavior is non-obvious.\n\
+- Skip only for trivial edits to code already read this session.\n\
+- Do NOT use Context7 - WebSearch only.\n\
+\n\
 ## Not Plan Mode\n\
 \n\
 - After each finished task, please write a few bullet points on how to test the changes.\n\

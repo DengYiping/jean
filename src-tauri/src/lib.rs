@@ -301,7 +301,7 @@ fn default_auto_branch_naming() -> bool {
 }
 
 fn default_branch_naming_model() -> String {
-    "haiku".to_string() // Use Haiku by default for fast, cheap branch name generation
+    "sonnet".to_string() // Use Sonnet by default for higher-quality branch name generation
 }
 
 fn default_auto_session_naming() -> bool {
@@ -309,7 +309,7 @@ fn default_auto_session_naming() -> bool {
 }
 
 fn default_session_naming_model() -> String {
-    "haiku".to_string() // Use Haiku by default for fast, cheap session name generation
+    "sonnet".to_string() // Use Sonnet by default for higher-quality session names
 }
 
 fn default_font_size() -> u32 {
@@ -325,7 +325,7 @@ fn default_chat_font() -> String {
 }
 
 fn default_model() -> String {
-    "opus".to_string()
+    "claude-opus-4-7".to_string()
 }
 
 fn default_thinking_level() -> String {
@@ -657,6 +657,52 @@ mod tests {
         assert!(prefs.magic_prompts.codex_system_prompt.is_none());
         assert!(prefs.magic_prompts.opencode_system_prompt.is_none());
         assert!(prefs.magic_prompts.automation_run.is_none());
+    }
+
+    #[test]
+    fn app_preferences_defaults_use_current_claude_model_ids() {
+        let prefs = AppPreferences::default();
+
+        assert_eq!(prefs.selected_model, "claude-opus-4-7");
+        assert_eq!(prefs.branch_naming_model, "sonnet");
+        assert_eq!(prefs.session_naming_model, "sonnet");
+        assert_eq!(prefs.magic_prompt_models.pr_content_model, "sonnet");
+        assert_eq!(prefs.magic_prompt_models.commit_message_model, "sonnet");
+        assert_eq!(prefs.magic_prompt_models.release_notes_model, "sonnet");
+        assert_eq!(prefs.magic_prompt_models.session_naming_model, "sonnet");
+        assert_eq!(prefs.magic_prompt_models.session_recap_model, "sonnet");
+    }
+
+    #[test]
+    fn migrate_loaded_preferences_upgrades_legacy_naming_defaults() {
+        let mut prefs = AppPreferences::default();
+        prefs.branch_naming_model = "haiku".to_string();
+        prefs.session_naming_model = "haiku".to_string();
+
+        let needs_resave = migrate_loaded_preferences(&mut prefs);
+
+        assert!(needs_resave);
+        assert_eq!(prefs.branch_naming_model, "sonnet");
+        assert_eq!(prefs.session_naming_model, "sonnet");
+    }
+
+    #[test]
+    fn migrate_loaded_preferences_upgrades_legacy_lightweight_prompt_defaults() {
+        let mut prefs = AppPreferences::default();
+        prefs.magic_prompt_models.pr_content_model = "haiku".to_string();
+        prefs.magic_prompt_models.commit_message_model = "haiku".to_string();
+        prefs.magic_prompt_models.release_notes_model = "haiku".to_string();
+        prefs.magic_prompt_models.session_naming_model = "haiku".to_string();
+        prefs.magic_prompt_models.session_recap_model = "haiku".to_string();
+
+        let needs_resave = migrate_loaded_preferences(&mut prefs);
+
+        assert!(needs_resave);
+        assert_eq!(prefs.magic_prompt_models.pr_content_model, "sonnet");
+        assert_eq!(prefs.magic_prompt_models.commit_message_model, "sonnet");
+        assert_eq!(prefs.magic_prompt_models.release_notes_model, "sonnet");
+        assert_eq!(prefs.magic_prompt_models.session_naming_model, "sonnet");
+        assert_eq!(prefs.magic_prompt_models.session_recap_model, "sonnet");
     }
 }
 
@@ -1135,9 +1181,9 @@ pub struct MagicPromptModels {
     pub investigate_pr_model: String,
     #[serde(default = "default_model")]
     pub investigate_workflow_run_model: String,
-    #[serde(default = "default_haiku_model")]
+    #[serde(default = "default_lightweight_model")]
     pub pr_content_model: String,
-    #[serde(default = "default_haiku_model")]
+    #[serde(default = "default_lightweight_model")]
     pub commit_message_model: String,
     #[serde(default = "default_model")]
     pub code_review_model: String,
@@ -1145,11 +1191,11 @@ pub struct MagicPromptModels {
     pub context_summary_model: String,
     #[serde(default = "default_model")]
     pub resolve_conflicts_model: String,
-    #[serde(default = "default_haiku_model")]
+    #[serde(default = "default_lightweight_model")]
     pub release_notes_model: String,
-    #[serde(default = "default_haiku_model")]
+    #[serde(default = "default_lightweight_model")]
     pub session_naming_model: String,
-    #[serde(default = "default_haiku_model")]
+    #[serde(default = "default_lightweight_model")]
     pub session_recap_model: String,
     #[serde(default = "default_model")]
     pub investigate_security_alert_model: String,
@@ -1161,8 +1207,8 @@ pub struct MagicPromptModels {
     pub review_comments_model: String,
 }
 
-fn default_haiku_model() -> String {
-    "haiku".to_string()
+fn default_lightweight_model() -> String {
+    "sonnet".to_string()
 }
 
 impl Default for MagicPromptModels {
@@ -1171,14 +1217,14 @@ impl Default for MagicPromptModels {
             investigate_issue_model: default_model(),
             investigate_pr_model: default_model(),
             investigate_workflow_run_model: default_model(),
-            pr_content_model: default_haiku_model(),
-            commit_message_model: default_haiku_model(),
+            pr_content_model: default_lightweight_model(),
+            commit_message_model: default_lightweight_model(),
             code_review_model: default_model(),
             context_summary_model: default_model(),
             resolve_conflicts_model: default_model(),
-            release_notes_model: default_haiku_model(),
-            session_naming_model: default_haiku_model(),
-            session_recap_model: default_haiku_model(),
+            release_notes_model: default_lightweight_model(),
+            session_naming_model: default_lightweight_model(),
+            session_recap_model: default_lightweight_model(),
             investigate_security_alert_model: default_model(),
             investigate_advisory_model: default_model(),
             investigate_linear_issue_model: default_model(),
@@ -1194,6 +1240,7 @@ impl MagicPromptModels {
     /// other models are untouched. Returns true if any field changed.
     fn migrate_legacy_defaults(&mut self) -> bool {
         let new_opus = default_model();
+        let new_lightweight = default_lightweight_model();
         let opus_fields: [&mut String; 10] = [
             &mut self.investigate_issue_model,
             &mut self.investigate_pr_model,
@@ -1210,6 +1257,19 @@ impl MagicPromptModels {
         for field in opus_fields {
             if field == "opus" {
                 *field = new_opus.clone();
+                changed = true;
+            }
+        }
+        let lightweight_fields: [&mut String; 5] = [
+            &mut self.pr_content_model,
+            &mut self.commit_message_model,
+            &mut self.release_notes_model,
+            &mut self.session_naming_model,
+            &mut self.session_recap_model,
+        ];
+        for field in lightweight_fields {
+            if field == "haiku" {
+                *field = new_lightweight.clone();
                 changed = true;
             }
         }

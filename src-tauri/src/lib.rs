@@ -129,6 +129,8 @@ pub struct AppPreferences {
     pub syntax_theme_light: String, // Syntax highlighting theme for light mode
     #[serde(default = "default_session_recap_enabled")]
     pub session_recap_enabled: bool, // Show session recap when returning to unfocused sessions
+    #[serde(default = "default_recap_prompting_enabled")]
+    pub recap_prompting_enabled: bool, // Ask assistants to append an end-of-turn recap in chat responses
     #[serde(default = "default_parallel_execution_prompt_enabled")]
     pub parallel_execution_prompt_enabled: bool, // Add system prompt to encourage parallel sub-agent execution
     #[serde(default = "default_compact_chat_view_enabled")]
@@ -401,6 +403,10 @@ fn default_file_edit_mode() -> String {
 }
 
 fn default_session_recap_enabled() -> bool {
+    false // Disabled by default (experimental)
+}
+
+fn default_recap_prompting_enabled() -> bool {
     false // Disabled by default (experimental)
 }
 
@@ -691,6 +697,13 @@ mod tests {
         assert_eq!(prefs.magic_prompt_models.release_notes_model, "sonnet");
         assert_eq!(prefs.magic_prompt_models.session_naming_model, "sonnet");
         assert_eq!(prefs.magic_prompt_models.session_recap_model, "sonnet");
+    }
+
+    #[test]
+    fn app_preferences_defaults_disable_recap_prompting() {
+        let prefs = AppPreferences::default();
+
+        assert!(!prefs.recap_prompting_enabled);
     }
 
     #[test]
@@ -1621,6 +1634,7 @@ impl Default for AppPreferences {
             syntax_theme_dark: default_syntax_theme_dark(),
             syntax_theme_light: default_syntax_theme_light(),
             session_recap_enabled: default_session_recap_enabled(),
+            recap_prompting_enabled: default_recap_prompting_enabled(),
             parallel_execution_prompt_enabled: default_parallel_execution_prompt_enabled(),
             compact_chat_view_enabled: default_compact_chat_view_enabled(),
             magic_prompts: MagicPrompts::default(),

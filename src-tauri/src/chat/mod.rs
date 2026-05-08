@@ -45,10 +45,49 @@ Rules:
 static ACTIVE_TAILER_COUNT: once_cell::sync::Lazy<AtomicUsize> =
     once_cell::sync::Lazy::new(|| AtomicUsize::new(0));
 
+pub(crate) fn push_recap_instruction_if_enabled(
+    system_prompt_parts: &mut Vec<String>,
+    recap_prompting_enabled: bool,
+) {
+    if recap_prompting_enabled {
+        system_prompt_parts.push(RECAP_INSTRUCTION.to_string());
+    }
+}
+
+pub(crate) fn is_recap_prompting_enabled(app: &tauri::AppHandle) -> bool {
+    crate::load_preferences_sync(app)
+        .map(|preferences| preferences.recap_prompting_enabled)
+        .unwrap_or(false)
+}
+
 pub fn increment_tailer_count() {
     ACTIVE_TAILER_COUNT.fetch_add(1, Ordering::Relaxed);
 }
 
 pub fn decrement_tailer_count() {
     ACTIVE_TAILER_COUNT.fetch_sub(1, Ordering::Relaxed);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn push_recap_instruction_if_enabled_skips_when_disabled() {
+        let mut parts = vec!["Existing prompt".to_string()];
+
+        push_recap_instruction_if_enabled(&mut parts, false);
+
+        assert_eq!(parts, vec!["Existing prompt".to_string()]);
+    }
+
+    #[test]
+    fn push_recap_instruction_if_enabled_appends_when_enabled() {
+        let mut parts = vec!["Existing prompt".to_string()];
+
+        push_recap_instruction_if_enabled(&mut parts, true);
+
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[1], RECAP_INSTRUCTION);
+    }
 }

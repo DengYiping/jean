@@ -9,6 +9,7 @@ import {
   DEFAULT_MAGIC_PROMPT_MODELS,
   DEFAULT_MAGIC_PROMPT_PROVIDERS,
   DEFAULT_OPENCODE_SYSTEM_PROMPT,
+  defaultPreferences,
   magicPromptReasoningOptions,
   isMagicPromptModelCompatibleWithBackend,
   OPENCODE_DEFAULT_MAGIC_PROMPT_EFFORTS,
@@ -41,6 +42,12 @@ describe('magic prompt backend resolution', () => {
     expect(
       resolveMagicPromptBackend(undefined, 'review_comments_backend', 'weird')
     ).toBe('claude')
+  })
+})
+
+describe('preference defaults', () => {
+  it('keeps recap prompting disabled by default', () => {
+    expect(defaultPreferences.recap_prompting_enabled).toBe(false)
   })
 })
 

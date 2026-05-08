@@ -74,6 +74,18 @@ export const ExperimentalPane: React.FC = () => {
           </InlineField>
 
           <InlineField
+            label="Recap prompting"
+            description="Ask the assistant to add a final Recap section to chat responses"
+          >
+            <Switch
+              checked={preferences?.recap_prompting_enabled ?? false}
+              onCheckedChange={checked => {
+                patchPreferences.mutate({ recap_prompting_enabled: checked })
+              }}
+            />
+          </InlineField>
+
+          <InlineField
             label="Automatic session recap"
             description="Auto-generate AI summary when returning to unfocused sessions. Press R on canvas to generate on-demand."
           >

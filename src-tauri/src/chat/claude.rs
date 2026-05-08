@@ -574,8 +574,10 @@ fn build_claude_args(
         ));
     }
 
-    // End-of-turn recap instruction (compact view and recap-aware surfaces can use this block).
-    system_prompt_parts.push(super::RECAP_INSTRUCTION.to_string());
+    super::push_recap_instruction_if_enabled(
+        &mut system_prompt_parts,
+        super::is_recap_prompting_enabled(app),
+    );
 
     // Collect all context files (issues and PRs) and concatenate into a single file
     let mut all_context_paths: Vec<std::path::PathBuf> = Vec::new();

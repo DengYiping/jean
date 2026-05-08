@@ -501,6 +501,7 @@ fn resolve_http_server_bind_host(prefs: &AppPreferences) -> String {
 mod tests {
     use super::{
         default_automation_run_prompt, default_claude_system_prompt, default_codex_system_prompt,
+        default_pr_content_prompt, legacy_pr_content_prompt_without_session_recap,
         migrate_loaded_preferences, resolve_http_server_bind_host, try_parse_cli_args,
         AppPreferences, CliArgs, CliCommand, MagicPrompts,
     };
@@ -657,6 +658,25 @@ mod tests {
         assert!(prefs.magic_prompts.codex_system_prompt.is_none());
         assert!(prefs.magic_prompts.opencode_system_prompt.is_none());
         assert!(prefs.magic_prompts.automation_run.is_none());
+    }
+
+    #[test]
+    fn default_pr_content_prompt_includes_context_and_session_recap() {
+        let prompt = default_pr_content_prompt();
+
+        assert!(prompt.contains("{context}"));
+        assert!(prompt.contains("{session_recap}"));
+    }
+
+    #[test]
+    fn migrate_loaded_preferences_normalizes_legacy_pr_content_default() {
+        let mut prefs = AppPreferences::default();
+        prefs.magic_prompts.pr_content = Some(legacy_pr_content_prompt_without_session_recap());
+
+        let needs_resave = migrate_loaded_preferences(&mut prefs);
+
+        assert!(needs_resave);
+        assert!(prefs.magic_prompts.pr_content.is_none());
     }
 
     #[test]
@@ -865,9 +885,78 @@ fn default_pr_content_prompt() -> String {
 <commit_count>{commit_count}</commit_count>
 </context>
 
+<related_context>
+{context}
+</related_context>
+
 <session_recap>
 {session_recap}
 </session_recap>
+
+<commits>
+{commits}
+</commits>
+
+<diff>
+{diff}
+</diff>"#
+        .to_string()
+}
+
+fn legacy_pr_content_prompt_without_session_recap() -> String {
+    r#"<task>Generate a pull request title and description</task>
+
+<context>
+<source_branch>{current_branch}</source_branch>
+<target_branch>{target_branch}</target_branch>
+<commit_count>{commit_count}</commit_count>
+</context>
+
+<related_context>
+{context}
+</related_context>
+
+<commits>
+{commits}
+</commits>
+
+<diff>
+{diff}
+</diff>"#
+        .to_string()
+}
+
+fn legacy_pr_content_prompt_without_related_context() -> String {
+    r#"<task>Generate a pull request title and description</task>
+
+<context>
+<source_branch>{current_branch}</source_branch>
+<target_branch>{target_branch}</target_branch>
+<commit_count>{commit_count}</commit_count>
+</context>
+
+<session_recap>
+{session_recap}
+</session_recap>
+
+<commits>
+{commits}
+</commits>
+
+<diff>
+{diff}
+</diff>"#
+        .to_string()
+}
+
+fn legacy_pr_content_prompt_without_context_or_session_recap() -> String {
+    r#"<task>Generate a pull request title and description</task>
+
+<context>
+<source_branch>{current_branch}</source_branch>
+<target_branch>{target_branch}</target_branch>
+<commit_count>{commit_count}</commit_count>
+</context>
 
 <commits>
 {commits}
@@ -1416,17 +1505,16 @@ impl MagicPrompts {
         true
     }
 
-    /// Migrate prompts that match the current default to None.
+    /// Migrate prompts that match current or legacy defaults to None.
     /// This ensures users who never customized a prompt get auto-updated defaults.
-    fn migrate_defaults(&mut self) {
+    fn migrate_defaults(&mut self) -> bool {
         type DefaultEntry<'a> = (fn() -> String, &'a mut Option<String>);
-        let defaults: [DefaultEntry; 18] = [
+        let defaults: [DefaultEntry; 17] = [
             (
                 default_investigate_issue_prompt,
                 &mut self.investigate_issue,
             ),
             (default_investigate_pr_prompt, &mut self.investigate_pr),
-            (default_pr_content_prompt, &mut self.pr_content),
             (default_commit_message_prompt, &mut self.commit_message),
             (default_code_review_prompt, &mut self.code_review),
             (default_context_summary_prompt, &mut self.context_summary),
@@ -1471,14 +1559,39 @@ impl MagicPrompts {
             ),
         ];
 
+        let mut changed = false;
         for (default_fn, field) in defaults {
-            if let Some(ref value) = field {
-                if value == &default_fn() {
-                    *field = None;
-                }
-            }
+            changed |= migrate_prompt_to_none_if_default(field, &[default_fn]);
         }
+
+        changed |= migrate_prompt_to_none_if_default(
+            &mut self.pr_content,
+            &[
+                default_pr_content_prompt,
+                legacy_pr_content_prompt_without_session_recap,
+                legacy_pr_content_prompt_without_related_context,
+                legacy_pr_content_prompt_without_context_or_session_recap,
+            ],
+        );
+
+        changed
     }
+}
+
+fn migrate_prompt_to_none_if_default(
+    prompt: &mut Option<String>,
+    defaults: &[fn() -> String],
+) -> bool {
+    let Some(value) = prompt.as_deref() else {
+        return false;
+    };
+
+    if defaults.iter().any(|default_fn| value == default_fn()) {
+        *prompt = None;
+        return true;
+    }
+
+    false
 }
 
 impl Default for AppPreferences {
@@ -1601,9 +1714,9 @@ fn migrate_loaded_preferences(preferences: &mut AppPreferences) -> bool {
         .magic_prompts
         .migrate_legacy_global_system_prompt();
 
-    // Migrate magic prompts: convert prompts matching current defaults to None
-    // so they auto-update when new defaults are shipped
-    preferences.magic_prompts.migrate_defaults();
+    // Migrate magic prompts: convert prompts matching current or legacy defaults
+    // to None so they auto-update when new defaults are shipped.
+    needs_resave |= preferences.magic_prompts.migrate_defaults();
 
     needs_resave |= preferences.magic_prompt_models.migrate_legacy_defaults();
     if preferences.branch_naming_model == "haiku" {
@@ -1854,19 +1967,7 @@ async fn load_preferences(app: AppHandle) -> Result<AppPreferences, String> {
     })?;
 
     normalize_preferences(&mut preferences);
-    let _needs_resave = migrate_loaded_preferences(&mut preferences);
-
-    // Migrate legacy magic-prompt model names ("opus" → "claude-opus-4-7")
-    // and legacy auto-naming models ("haiku" → "sonnet")
-    let mut needs_resave = preferences.magic_prompt_models.migrate_legacy_defaults();
-    if preferences.branch_naming_model == "haiku" {
-        preferences.branch_naming_model = default_branch_naming_model();
-        needs_resave = true;
-    }
-    if preferences.session_naming_model == "haiku" {
-        preferences.session_naming_model = default_session_naming_model();
-        needs_resave = true;
-    }
+    let mut needs_resave = migrate_loaded_preferences(&mut preferences);
 
     // Migrate CLI profiles: move settings_json from preferences.json to standalone files
     for profile in &mut preferences.custom_cli_profiles {

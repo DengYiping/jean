@@ -45,11 +45,11 @@ export function useDragAndDropImages(
     let unlisten: (() => void) | null = null
 
     const setup = async () => {
-      const { getCurrentWindow } = await import('@tauri-apps/api/window')
-      const appWindow = getCurrentWindow()
+      const { getCurrentWebview } = await import('@tauri-apps/api/webview')
+      const currentWebview = getCurrentWebview()
 
       let lastDropTime = 0
-      const unlistenFn = await appWindow.onDragDropEvent(event => {
+      const unlistenFn = await currentWebview.onDragDropEvent(event => {
         if (event.payload.type === 'enter') {
           // Files entered the window
           setIsDragging(true)
@@ -117,7 +117,9 @@ export function useDragAndDropImages(
       }
     }
 
-    setup()
+    setup().catch(error => {
+      logger.error('Failed to set up image drag-and-drop listener:', error)
+    })
 
     return () => {
       cancelled = true

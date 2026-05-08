@@ -343,6 +343,10 @@ const PROMPT_SECTIONS: PromptSection[] = [
             name: '{commit_count}',
             description: 'Number of commits in the PR',
           },
+          {
+            name: '{context}',
+            description: 'Loaded related context for the PR',
+          },
           { name: '{commits}', description: 'List of commit messages' },
           {
             name: '{session_recap}',

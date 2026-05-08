@@ -344,6 +344,10 @@ const PROMPT_SECTIONS: PromptSection[] = [
             description: 'Number of commits in the PR',
           },
           { name: '{commits}', description: 'List of commit messages' },
+          {
+            name: '{session_recap}',
+            description: 'Generated recap of the active session',
+          },
           { name: '{diff}', description: 'Git diff of all changes' },
         ],
         defaultValue: DEFAULT_PR_CONTENT_PROMPT,

@@ -6013,6 +6013,10 @@ const PR_CONTENT_PROMPT: &str = r#"<task>Generate a pull request title and descr
 {context}
 </related_context>
 
+<session_recap>
+{session_recap}
+</session_recap>
+
 <commits>
 {commits}
 </commits>
@@ -6159,6 +6163,56 @@ fn get_branch_diff(repo_path: &str, target_branch: &str, head_ref: &str) -> Resu
     Ok(truncate_diff_at_file_boundaries(&diff, 200_000))
 }
 
+fn format_session_recap_for_pr(digest: &crate::chat::types::SessionDigest) -> String {
+    format!(
+        "Summary: {}\nLast action: {}",
+        digest.chat_summary, digest.last_action
+    )
+}
+
+async fn resolve_session_recap_for_pr(app: &AppHandle, session_id: Option<&str>) -> String {
+    let Some(session_id) = session_id.map(str::trim).filter(|id| !id.is_empty()) else {
+        return String::new();
+    };
+
+    match try_resolve_session_recap_for_pr(app, session_id).await {
+        Ok(recap) => recap,
+        Err(error) => {
+            log::warn!("Failed to resolve PR session recap for session {session_id}: {error}");
+            String::new()
+        }
+    }
+}
+
+async fn try_resolve_session_recap_for_pr(
+    app: &AppHandle,
+    session_id: &str,
+) -> Result<String, String> {
+    let messages = crate::chat::run_log::load_session_messages(app, session_id)?;
+    if messages.len() < 2 {
+        return Ok(String::new());
+    }
+
+    if let Some(metadata) = crate::chat::storage::load_metadata(app, session_id)? {
+        if let Some(digest) = metadata.digest {
+            if digest.message_count.unwrap_or(0) >= messages.len() {
+                return Ok(format_session_recap_for_pr(&digest));
+            }
+        }
+    }
+
+    let digest = crate::chat::generate_session_digest(app.clone(), session_id.to_string()).await?;
+    let formatted = format_session_recap_for_pr(&digest);
+
+    if let Err(error) =
+        crate::chat::update_session_digest(app.clone(), session_id.to_string(), digest).await
+    {
+        log::warn!("Failed to persist PR session recap for session {session_id}: {error}");
+    }
+
+    Ok(formatted)
+}
+
 /// Get commit messages between current branch and target branch
 fn get_branch_commits(
     repo_path: &str,
@@ -6219,6 +6273,7 @@ fn generate_pr_content(
     custom_prompt: Option<&str>,
     model: Option<&str>,
     context: &str,
+    session_recap: &str,
     custom_profile_name: Option<&str>,
     worktree_id: Option<&str>,
     magic_backend: Option<&str>,
@@ -6239,13 +6294,16 @@ fn generate_pr_content(
         .filter(|p| !p.trim().is_empty())
         .unwrap_or(PR_CONTENT_PROMPT);
 
-    let prompt = prompt_template
-        .replace("{current_branch}", current_branch)
-        .replace("{target_branch}", target_branch)
-        .replace("{commit_count}", &commit_count.to_string())
-        .replace("{context}", context)
-        .replace("{commits}", &commits)
-        .replace("{diff}", &diff);
+    let prompt = build_pr_content_prompt(
+        Some(prompt_template),
+        current_branch,
+        target_branch,
+        commit_count,
+        context,
+        session_recap,
+        &commits,
+        &diff,
+    );
 
     let model_str = model.unwrap_or("haiku");
 
@@ -6371,6 +6429,31 @@ fn generate_pr_content(
         log::error!("Failed to parse PR content JSON: {e}, content: {json_content}");
         format!("Failed to parse PR content: {e}")
     })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_pr_content_prompt(
+    custom_prompt: Option<&str>,
+    current_branch: &str,
+    target_branch: &str,
+    commit_count: u32,
+    context: &str,
+    session_recap: &str,
+    commits: &str,
+    diff: &str,
+) -> String {
+    let prompt_template = custom_prompt
+        .filter(|p| !p.trim().is_empty())
+        .unwrap_or(PR_CONTENT_PROMPT);
+
+    prompt_template
+        .replace("{current_branch}", current_branch)
+        .replace("{target_branch}", target_branch)
+        .replace("{commit_count}", &commit_count.to_string())
+        .replace("{context}", context)
+        .replace("{session_recap}", session_recap)
+        .replace("{commits}", commits)
+        .replace("{diff}", diff)
 }
 
 /// Parse PR number and URL from gh pr create output
@@ -6622,6 +6705,8 @@ pub async fn create_pr_with_ai_content(
         }
     }
 
+    let session_recap = resolve_session_recap_for_pr(&app, session_id.as_deref()).await;
+
     // Generate PR content using Claude CLI
     log::trace!("Generating PR content with AI");
     let pr_magic_backend = crate::get_preferences_path(&app)
@@ -6637,6 +6722,7 @@ pub async fn create_pr_with_ai_content(
         custom_prompt.as_deref(),
         model.as_deref(),
         &context_content,
+        &session_recap,
         custom_profile_name.as_deref(),
         Some(worktree_id),
         pr_magic_backend.as_deref(),
@@ -6940,6 +7026,8 @@ pub async fn generate_pr_update_content(
         }
     }
 
+    let session_recap = resolve_session_recap_for_pr(&app, session_id.as_deref()).await;
+
     // Generate PR content using Claude CLI — only include pushed commits
     let remote_head = format!("origin/{current_branch}");
     let pr_magic_backend = crate::get_preferences_path(&app)
@@ -6955,6 +7043,7 @@ pub async fn generate_pr_update_content(
         custom_prompt.as_deref(),
         model.as_deref(),
         &context_content,
+        &session_recap,
         custom_profile_name.as_deref(),
         Some(worktree_id),
         pr_magic_backend.as_deref(),
@@ -10683,6 +10772,59 @@ Body
         let json = result.unwrap();
         assert!(json.contains("Fallback title"));
         assert!(json.contains("Fallback body"));
+    }
+
+    #[test]
+    fn build_pr_content_prompt_replaces_session_recap() {
+        let prompt = build_pr_content_prompt(
+            None,
+            "feature-branch",
+            "main",
+            2,
+            "Loaded issue context",
+            "Summary: Implemented feature\nLast action: Ran tests",
+            "abc123 feat: add feature",
+            "diff --git a/file b/file",
+        );
+
+        assert!(prompt.contains("<session_recap>"));
+        assert!(prompt.contains("Summary: Implemented feature"));
+        assert!(!prompt.contains("{session_recap}"));
+    }
+
+    #[test]
+    fn build_pr_content_prompt_replaces_session_recap_in_custom_prompt() {
+        let prompt = build_pr_content_prompt(
+            Some("Branch {current_branch}\nRecap: {session_recap}"),
+            "feature-branch",
+            "main",
+            2,
+            "",
+            "Summary: Custom recap",
+            "",
+            "",
+        );
+
+        assert_eq!(
+            prompt,
+            "Branch feature-branch\nRecap: Summary: Custom recap"
+        );
+    }
+
+    #[test]
+    fn build_pr_content_prompt_removes_session_recap_placeholder_when_empty() {
+        let prompt = build_pr_content_prompt(
+            Some("Recap: {session_recap}"),
+            "feature-branch",
+            "main",
+            2,
+            "",
+            "",
+            "",
+            "",
+        );
+
+        assert_eq!(prompt, "Recap: ");
     }
 
     #[test]

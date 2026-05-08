@@ -955,6 +955,7 @@ export interface AppPreferences {
   syntax_theme_dark: SyntaxTheme // Syntax highlighting theme for dark mode
   syntax_theme_light: SyntaxTheme // Syntax highlighting theme for light mode
   session_recap_enabled: boolean // Show session recap when returning to unfocused sessions
+  recap_prompting_enabled: boolean // Ask assistants to append an end-of-turn recap in chat responses
   parallel_execution_prompt_enabled: boolean // Add system prompt to encourage parallel sub-agent execution
   compact_chat_view_enabled: boolean // Collapse intermediate tool calls/replies into a single ticker line, only showing the latest activity
   magic_prompts: MagicPrompts // Customizable prompts for AI-powered features
@@ -1639,6 +1640,7 @@ export const defaultPreferences: AppPreferences = {
   syntax_theme_dark: 'vitesse-black',
   syntax_theme_light: 'github-light',
   session_recap_enabled: false, // Default: disabled (experimental)
+  recap_prompting_enabled: false, // Default: disabled (experimental)
   parallel_execution_prompt_enabled: false, // Default: disabled (experimental)
   compact_chat_view_enabled: false, // Default: disabled (experimental)
   magic_prompts: DEFAULT_MAGIC_PROMPTS,

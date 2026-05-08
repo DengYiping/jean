@@ -388,6 +388,7 @@ const sectionEntries: PreferenceSearchEntry[] = [
     sectionTitle: 'Experimental',
     keywords: [
       'parallel execution prompting',
+      'recap prompting',
       'automatic session recap',
       'recap model',
     ],

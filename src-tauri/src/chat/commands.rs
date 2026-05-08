@@ -2195,8 +2195,10 @@ pub async fn send_chat_message(
                         ));
                     }
 
-                    // End-of-turn recap instruction (kept additive to the existing digest flow).
-                    system_prompt_parts.push(super::RECAP_INSTRUCTION.to_string());
+                    super::push_recap_instruction_if_enabled(
+                        &mut system_prompt_parts,
+                        super::is_recap_prompting_enabled(&thread_app),
+                    );
 
                     // Collect context file paths (issues, PRs, saved contexts)
                     let mut all_context_paths: Vec<std::path::PathBuf> = Vec::new();
@@ -2502,8 +2504,10 @@ pub async fn send_chat_message(
                         ));
                     }
 
-                    // End-of-turn recap instruction (kept additive to the existing digest flow).
-                    system_prompt_parts.push(super::RECAP_INSTRUCTION.to_string());
+                    super::push_recap_instruction_if_enabled(
+                        &mut system_prompt_parts,
+                        super::is_recap_prompting_enabled(&thread_app),
+                    );
 
                     // Collect and inline context files (issues, PRs, saved contexts)
                     let mut context_content = String::new();

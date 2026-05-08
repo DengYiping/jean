@@ -51,6 +51,82 @@ describe('agent harness fan-out', () => {
     )
   })
 
+  it('falls back to the current Claude default model id when needed', () => {
+    expect(getDefaultModelForBackend('claude', undefined, '')).toBe(
+      'claude-opus-4-7'
+    )
+  })
+
+  it('uses the Claude default model when fan-out preferences contain an empty model', async () => {
+    const invoke = vi.fn(
+      async (command: string, args?: Record<string, unknown>) => {
+        if (command === 'create_worktree') {
+          return makeWorktree('claude-wt', 'slot-claude')
+        }
+        if (command === 'get_sessions') {
+          return {
+            worktree_id: String(args?.worktreeId ?? ''),
+            active_session_id: 'claude-session',
+            sessions: [makeSession('claude-session')],
+            version: 2,
+          } satisfies WorktreeSessions
+        }
+        return null
+      }
+    )
+    const sendMessage = vi.fn()
+
+    await executeAgentHarnessFanout({
+      projectId: 'project-1',
+      targetBackends: ['claude'],
+      snapshot: {
+        sourceSessionId: 'source-session',
+        message: 'claude prompt',
+        images: [],
+        files: [],
+        skills: [],
+        textFiles: [],
+      },
+      executionMode: 'build',
+      selectedThinkingLevel: 'think',
+      selectedEffortLevel: 'high',
+      selectedProvider: null,
+      currentModel: '',
+      preferences: {
+        selected_model: '',
+      },
+      sourceHasUncommittedChanges: false,
+      invoke: invoke as unknown as ExecuteAgentHarnessFanoutParams['invoke'],
+      listen: vi.fn(),
+      sendMessage,
+      clearSnapshot: vi.fn(),
+      onDirtyWarning: vi.fn(),
+      onWorktreeReady: vi.fn(),
+      onSessionPrepared: vi.fn(),
+      resolveCustomProfile: model => ({ model }),
+      getMcpConfig: backend => `mcp:${backend}`,
+      resolveParallelExecutionPrompt: sessionId => `parallel:${sessionId}`,
+    })
+
+    expect(invoke).toHaveBeenCalledWith('set_session_model', {
+      worktreeId: 'claude-wt',
+      worktreePath: '/repo/claude-wt',
+      sessionId: 'claude-session',
+      model: 'claude-opus-4-7',
+    })
+    expect(sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 'claude-session',
+        worktreeId: 'claude-wt',
+        model: 'claude-opus-4-7',
+        thinkingLevel: 'think',
+        mcpConfig: 'mcp:claude',
+        parallelExecutionPrompt: 'parallel:claude-session',
+        backend: 'claude',
+      })
+    )
+  })
+
   it('creates one worktree per harness and sends the same prompt to each', async () => {
     const createdWorktrees = [
       makeWorktree('codex-wt', 'slot-codex'),

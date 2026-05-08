@@ -321,18 +321,22 @@ function App() {
           }
         }
       }
-      // Seed active sessions (with full chat history/messages).
+      // Seed active sessions with the server-provided init snapshot.
+      // /api/init may return a bounded window for fast reconnect/first paint,
+      // so truncated sessions are immediately marked stale for a background
+      // full-history refetch when the session view mounts.
       // Use function updater to avoid overwriting cache that has MORE messages
       // (e.g., from chat:done upsert that arrived before this reconnect seed).
       if (data.activeSessions) {
+        const truncatedSessionIds: string[] = []
         for (const [sessionId, initSession] of Object.entries(
           data.activeSessions
         )) {
+          const init = initSession as Session
           queryClient.setQueryData<Session>(
             chatQueryKeys.session(sessionId),
             old => {
-              if (!old) return initSession as Session
-              const init = initSession as Session
+              if (!old) return init
               if (old.messages.length > init.messages.length) {
                 logger.warn('[seedCache] preserving cached messages', {
                   sessionId,
@@ -367,6 +371,17 @@ function App() {
               )
             }
           }
+
+          if ((init.loaded_run_start_index ?? 0) > 0) {
+            truncatedSessionIds.push(sessionId)
+          }
+        }
+
+        for (const sessionId of truncatedSessionIds) {
+          void queryClient.invalidateQueries({
+            queryKey: chatQueryKeys.session(sessionId),
+            refetchType: 'active',
+          })
         }
       }
       // Replace sendingSessionIds with exactly the server's running sessions.

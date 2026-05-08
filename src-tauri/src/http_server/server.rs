@@ -259,6 +259,7 @@ async fn auth_handler(Query(params): Query<WsAuth>, State(state): State<AppState
 /// session at init. Plenty to reconstruct an in-flight turn; full stream
 /// continues over the WebSocket connection.
 const INIT_REPLAY_EVENT_CAP: usize = 200;
+const INIT_MESSAGE_WINDOW: usize = 50;
 
 /// Initial data endpoint. Returns only the data needed to render the view the
 /// user lands on (project list + currently-selected project's worktrees +
@@ -529,8 +530,14 @@ async fn init_handler(Query(params): Query<WsAuth>, State(state): State<AppState
                         let wt_path = wt.path.clone();
                         let sess_id = session_id.clone();
                         async move {
-                            match crate::chat::get_session(app, wt_id, wt_path, sess_id.clone())
-                                .await
+                            match crate::chat::get_session_windowed(
+                                app,
+                                wt_id,
+                                wt_path,
+                                sess_id.clone(),
+                                INIT_MESSAGE_WINDOW,
+                            )
+                            .await
                             {
                                 Ok(session) => Some((sess_id, session)),
                                 Err(e) => {

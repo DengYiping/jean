@@ -180,6 +180,10 @@ export const DEFAULT_PR_CONTENT_PROMPT = `<task>Generate a pull request title an
 {context}
 </related_context>
 
+<session_recap>
+{session_recap}
+</session_recap>
+
 <commits>
 {commits}
 </commits>

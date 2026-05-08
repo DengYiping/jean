@@ -819,6 +819,10 @@ fn default_pr_content_prompt() -> String {
 <commit_count>{commit_count}</commit_count>
 </context>
 
+<session_recap>
+{session_recap}
+</session_recap>
+
 <commits>
 {commits}
 </commits>

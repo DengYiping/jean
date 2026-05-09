@@ -8,13 +8,7 @@ import { useUIStore } from '@/store/ui-store'
 import { usePreferences } from '@/services/preferences'
 import { useSendMessage, readPlanFile, chatQueryKeys } from '@/services/chat'
 import { invoke, listen } from '@/lib/transport'
-import { appendSkillPromptContext } from '@/lib/skill-prompt'
-import type {
-  EffortLevel,
-  Session,
-  ThinkingLevel,
-  WorktreeSessions,
-} from '@/types/chat'
+import type { Session, WorktreeSessions } from '@/types/chat'
 import type {
   Worktree,
   WorktreeCreatedEvent,
@@ -27,63 +21,9 @@ import {
   extractTextFilePaths,
 } from '../message-content-utils'
 import { navigateToApprovedWorktree } from '../worktree-approval-navigation'
+import { resolveApprovedPlanContinuation } from './approved-plan-continuation'
 import { completePlanApprovalTransition } from './plan-approval-transition'
 import { markWorktreeSilentReady } from '@/services/worktree-silent-ready'
-
-const THINKING_LEVEL_VALUES = new Set<ThinkingLevel>([
-  'off',
-  'think',
-  'megathink',
-  'ultrathink',
-])
-
-function isThinkingLevel(
-  value: string | null | undefined
-): value is ThinkingLevel {
-  if (!value) return false
-  return THINKING_LEVEL_VALUES.has(value as ThinkingLevel)
-}
-
-function mapCodexReasoningToEffort(
-  value: string | null | undefined
-): EffortLevel | undefined {
-  switch (value) {
-    case 'low':
-      return 'low'
-    case 'medium':
-      return 'medium'
-    case 'high':
-      return 'high'
-    case 'xhigh':
-    case 'max':
-      return 'max'
-    default:
-      return undefined
-  }
-}
-
-function getDefaultModelForBackend(
-  backend: 'claude' | 'codex' | 'opencode' | 'cursor' | undefined,
-  preferences:
-    | {
-        selected_model?: string | null
-        selected_codex_model?: string | null
-        selected_opencode_model?: string | null
-        selected_cursor_model?: string | null
-      }
-    | undefined
-): string {
-  if (backend === 'codex') {
-    return preferences?.selected_codex_model ?? 'gpt-5.4'
-  }
-  if (backend === 'opencode') {
-    return preferences?.selected_opencode_model ?? 'opencode/gpt-5.3-codex'
-  }
-  if (backend === 'cursor') {
-    return preferences?.selected_cursor_model ?? 'cursor/auto'
-  }
-  return preferences?.selected_model ?? 'claude-opus-4-7'
-}
 
 interface UseWorktreeApprovalParams {
   worktreeId: string
@@ -267,113 +207,39 @@ export function useWorktreeApproval({
       const textFilePaths = extractTextFilePaths(allUserContent)
 
       // Step 8: Send plan as first message with mode-specific overrides
-      const isYolo = mode === 'yolo'
-      const modeLabel = isYolo ? 'Yolo' : 'Build'
-      const originalBackend = card.session.backend as
-        | 'claude'
-        | 'codex'
-        | 'opencode'
-        | undefined
-      const modeBackendPref = isYolo
-        ? preferences?.yolo_backend
-        : preferences?.build_backend
-      const modeModelPref = isYolo
-        ? preferences?.yolo_model
-        : preferences?.build_model
-      const modeThinkingPref = isYolo
-        ? preferences?.yolo_thinking_level
-        : preferences?.build_thinking_level
-      const modeEffortPref = isYolo
-        ? preferences?.yolo_effort_level
-        : preferences?.build_effort_level
-      const modeBackendOverride = modeBackendPref as
-        | 'claude'
-        | 'codex'
-        | 'opencode'
-        | null
-      const backend = (modeBackendOverride ?? originalBackend ?? undefined) as
-        | 'claude'
-        | 'codex'
-        | 'opencode'
-        | undefined
-      const model =
-        modeModelPref ??
-        (modeBackendOverride
-          ? getDefaultModelForBackend(backend, preferences)
-          : (card.session.selected_model ??
-            getDefaultModelForBackend(backend, preferences)))
-      const modeOverride =
-        modeModelPref || modeBackendOverride
-          ? [backend, model].filter(Boolean).join(' / ')
-          : ''
-      let thinkingLevel: ThinkingLevel = 'off'
-      let effortLevel: EffortLevel | undefined
-      if (backend === 'codex') {
-        const defaultCodexEffort =
-          mapCodexReasoningToEffort(
-            preferences?.default_codex_reasoning_effort
-          ) ?? 'high'
-        effortLevel =
-          mapCodexReasoningToEffort(modeEffortPref) ?? defaultCodexEffort
-      } else {
-        const fallbackThinking = isThinkingLevel(preferences?.thinking_level)
-          ? preferences.thinking_level
-          : 'off'
-        thinkingLevel = isThinkingLevel(modeThinkingPref)
-          ? modeThinkingPref
-          : fallbackThinking
-        effortLevel = mapCodexReasoningToEffort(modeEffortPref)
-      }
       const resolvedPlanFilePath =
         card.planFilePath || chatStore.getPlanFilePath(sessionId)
-      const planFileLine = resolvedPlanFilePath
-        ? `\nPlan file: ${resolvedPlanFilePath}\n`
-        : ''
-      const configPrefix = modeOverride
-        ? `[${modeLabel}: ${modeOverride}]\n`
-        : ''
-      let message = `${configPrefix}Execute this plan. Implement all changes described.${planFileLine}\n\n<plan>\n${planContent}\n</plan>`
-
-      message = appendSkillPromptContext(
-        message,
-        skillPaths.map(path => ({ path }))
-      )
-      if (imagePaths.length > 0) {
-        const imageRefs = imagePaths
-          .map(
-            p => `[Image attached: ${p} - Use the Read tool to view this image]`
-          )
-          .join('\n')
-        message = `${message}\n\n${imageRefs}`
-      }
-      if (textFilePaths.length > 0) {
-        const textFileRefs = textFilePaths
-          .map(
-            p =>
-              `[Text file attached: ${p} - Use the Read tool to view this file]`
-          )
-          .join('\n')
-        message = `${message}\n\n${textFileRefs}`
-      }
+      const continuation = resolveApprovedPlanContinuation({
+        mode,
+        planContent,
+        planFilePath: resolvedPlanFilePath,
+        originalBackend: card.session.backend,
+        originalModel: card.session.selected_model,
+        preferences,
+        imagePaths,
+        skillPaths,
+        textFilePaths,
+      })
 
       chatStore.setExecutionMode(newSession.id, mode)
-      chatStore.setLastSentMessage(newSession.id, message)
+      chatStore.setLastSentMessage(newSession.id, continuation.message)
       chatStore.setError(newSession.id, null)
       chatStore.addSendingSession(newSession.id)
-      chatStore.setSelectedModel(newSession.id, model)
+      chatStore.setSelectedModel(newSession.id, continuation.model)
       chatStore.setExecutingMode(newSession.id, mode)
-      if (backend) {
-        chatStore.setSelectedBackend(
-          newSession.id,
-          backend as 'claude' | 'codex' | 'opencode'
-        )
+      if (continuation.backend) {
+        chatStore.setSelectedBackend(newSession.id, continuation.backend)
       }
 
       queryClient.setQueryData<Session>(
         chatQueryKeys.session(newSession.id),
         old =>
           old
-            ? { ...old, backend: backend ?? old.backend, selected_model: model }
+            ? {
+                ...old,
+                backend: continuation.backend ?? old.backend,
+                selected_model: continuation.model,
+              }
             : old
       )
 
@@ -382,16 +248,16 @@ export function useWorktreeApproval({
         worktreeId: readyWorktree.id,
         worktreePath: readyWorktree.path,
         sessionId: newSession.id,
-        model,
+        model: continuation.model,
       }).catch(err =>
         logger.error('[useWorktreeApproval] Failed to persist model:', err)
       )
-      if (backend) {
+      if (continuation.backend) {
         await invoke('set_session_backend', {
           worktreeId: readyWorktree.id,
           worktreePath: readyWorktree.path,
           sessionId: newSession.id,
-          backend,
+          backend: continuation.backend,
         }).catch(err =>
           logger.error('[useWorktreeApproval] Failed to persist backend:', err)
         )
@@ -401,13 +267,13 @@ export function useWorktreeApproval({
         sessionId: newSession.id,
         worktreeId: readyWorktree.id,
         worktreePath: readyWorktree.path,
-        message,
-        model,
+        message: continuation.message,
+        model: continuation.model,
         executionMode: mode,
-        thinkingLevel,
-        effortLevel,
+        thinkingLevel: continuation.thinkingLevel,
+        effortLevel: continuation.effortLevel,
         customProfileName: card.session.selected_provider ?? undefined,
-        backend,
+        backend: continuation.backend,
       })
 
       // Optionally close the original session

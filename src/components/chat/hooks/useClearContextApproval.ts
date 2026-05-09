@@ -11,75 +11,15 @@ import {
   chatQueryKeys,
 } from '@/services/chat'
 import { invoke } from '@/lib/transport'
-import { appendSkillPromptContext } from '@/lib/skill-prompt'
-import type {
-  EffortLevel,
-  Session,
-  ThinkingLevel,
-  WorktreeSessions,
-} from '@/types/chat'
+import type { Session, WorktreeSessions } from '@/types/chat'
 import type { SessionCardData } from '../session-card-utils'
 import {
   extractImagePaths,
   extractSkillPaths,
   extractTextFilePaths,
 } from '../message-content-utils'
+import { resolveApprovedPlanContinuation } from './approved-plan-continuation'
 import { completePlanApprovalTransition } from './plan-approval-transition'
-
-const THINKING_LEVEL_VALUES = new Set<ThinkingLevel>([
-  'off',
-  'think',
-  'megathink',
-  'ultrathink',
-])
-
-function isThinkingLevel(
-  value: string | null | undefined
-): value is ThinkingLevel {
-  if (!value) return false
-  return THINKING_LEVEL_VALUES.has(value as ThinkingLevel)
-}
-
-function mapCodexReasoningToEffort(
-  value: string | null | undefined
-): EffortLevel | undefined {
-  switch (value) {
-    case 'low':
-      return 'low'
-    case 'medium':
-      return 'medium'
-    case 'high':
-      return 'high'
-    case 'xhigh':
-    case 'max':
-      return 'max'
-    default:
-      return undefined
-  }
-}
-
-function getDefaultModelForBackend(
-  backend: 'claude' | 'codex' | 'opencode' | 'cursor' | undefined,
-  preferences:
-    | {
-        selected_model?: string | null
-        selected_codex_model?: string | null
-        selected_opencode_model?: string | null
-        selected_cursor_model?: string | null
-      }
-    | undefined
-): string {
-  if (backend === 'codex') {
-    return preferences?.selected_codex_model ?? 'gpt-5.4'
-  }
-  if (backend === 'opencode') {
-    return preferences?.selected_opencode_model ?? 'opencode/gpt-5.3-codex'
-  }
-  if (backend === 'cursor') {
-    return preferences?.selected_cursor_model ?? 'cursor/auto'
-  }
-  return preferences?.selected_model ?? 'claude-opus-4-7'
-}
 
 interface UseClearContextApprovalParams {
   worktreeId: string
@@ -179,110 +119,31 @@ export function useClearContextApproval({
       const skillPaths = extractSkillPaths(allUserContent)
       const textFilePaths = extractTextFilePaths(allUserContent)
 
-      // Step 5: Send plan as first message using mode-specific overrides
-      // Fallback chain: mode override → original session → global default
-      const isYolo = mode === 'yolo'
-      const modeLabel = isYolo ? 'Yolo' : 'Build'
-      const originalBackend = card.session.backend as
-        | 'claude'
-        | 'codex'
-        | 'opencode'
-        | undefined
-      const modeBackendPref = isYolo
-        ? preferences?.yolo_backend
-        : preferences?.build_backend
-      const modeModelPref = isYolo
-        ? preferences?.yolo_model
-        : preferences?.build_model
-      const modeThinkingPref = isYolo
-        ? preferences?.yolo_thinking_level
-        : preferences?.build_thinking_level
-      const modeEffortPref = isYolo
-        ? preferences?.yolo_effort_level
-        : preferences?.build_effort_level
-      const modeBackendOverride = modeBackendPref as
-        | 'claude'
-        | 'codex'
-        | 'opencode'
-        | null
-      const backend = (modeBackendOverride ?? originalBackend ?? undefined) as
-        | 'claude'
-        | 'codex'
-        | 'opencode'
-        | undefined
-      const model =
-        modeModelPref ??
-        (modeBackendOverride
-          ? getDefaultModelForBackend(backend, preferences)
-          : (card.session.selected_model ??
-            getDefaultModelForBackend(backend, preferences)))
-      const modeOverride =
-        modeModelPref || modeBackendOverride
-          ? [backend, model].filter(Boolean).join(' / ')
-          : ''
-      if (modeOverride) toast.info(`${modeLabel}: ${modeOverride}`)
-      let thinkingLevel: ThinkingLevel = 'off'
-      let effortLevel: EffortLevel | undefined
-      if (backend === 'codex') {
-        const defaultCodexEffort =
-          mapCodexReasoningToEffort(
-            preferences?.default_codex_reasoning_effort
-          ) ?? 'high'
-        effortLevel =
-          mapCodexReasoningToEffort(modeEffortPref) ?? defaultCodexEffort
-      } else {
-        const fallbackThinking = isThinkingLevel(preferences?.thinking_level)
-          ? preferences.thinking_level
-          : 'off'
-        thinkingLevel = isThinkingLevel(modeThinkingPref)
-          ? modeThinkingPref
-          : fallbackThinking
-        effortLevel = mapCodexReasoningToEffort(modeEffortPref)
-      }
       const resolvedPlanFilePath =
         card.planFilePath || store.getPlanFilePath(sessionId)
-      const planFileLine = resolvedPlanFilePath
-        ? `\nPlan file: ${resolvedPlanFilePath}\n`
-        : ''
-      const configPrefix = modeOverride
-        ? `[${modeLabel}: ${modeOverride}]\n`
-        : ''
-      let message = `${configPrefix}Execute this plan. Implement all changes described.${planFileLine}\n\n<plan>\n${planContent}\n</plan>`
-
-      // Re-attach references from the original session so Claude can read them
-      message = appendSkillPromptContext(
-        message,
-        skillPaths.map(path => ({ path }))
-      )
-      if (imagePaths.length > 0) {
-        const imageRefs = imagePaths
-          .map(
-            p => `[Image attached: ${p} - Use the Read tool to view this image]`
-          )
-          .join('\n')
-        message = `${message}\n\n${imageRefs}`
-      }
-      if (textFilePaths.length > 0) {
-        const textFileRefs = textFilePaths
-          .map(
-            p =>
-              `[Text file attached: ${p} - Use the Read tool to view this file]`
-          )
-          .join('\n')
-        message = `${message}\n\n${textFileRefs}`
+      const continuation = resolveApprovedPlanContinuation({
+        mode,
+        planContent,
+        planFilePath: resolvedPlanFilePath,
+        originalBackend: card.session.backend,
+        originalModel: card.session.selected_model,
+        preferences,
+        imagePaths,
+        skillPaths,
+        textFilePaths,
+      })
+      if (continuation.modeOverride) {
+        toast.info(`${continuation.modeLabel}: ${continuation.modeOverride}`)
       }
 
       store.setExecutionMode(newSession.id, mode)
-      store.setLastSentMessage(newSession.id, message)
+      store.setLastSentMessage(newSession.id, continuation.message)
       store.setError(newSession.id, null)
       store.addSendingSession(newSession.id)
-      store.setSelectedModel(newSession.id, model)
+      store.setSelectedModel(newSession.id, continuation.model)
       store.setExecutingMode(newSession.id, mode)
-      if (backend) {
-        store.setSelectedBackend(
-          newSession.id,
-          backend as 'claude' | 'codex' | 'opencode'
-        )
+      if (continuation.backend) {
+        store.setSelectedBackend(newSession.id, continuation.backend)
       }
       // Optimistically update TanStack Query cache so UI shows correct backend/model
       // immediately. Without this, session?.backend (from query cache) defaults to 'claude'
@@ -291,7 +152,11 @@ export function useClearContextApproval({
         chatQueryKeys.session(newSession.id),
         old =>
           old
-            ? { ...old, backend: backend ?? old.backend, selected_model: model }
+            ? {
+                ...old,
+                backend: continuation.backend ?? old.backend,
+                selected_model: continuation.model,
+              }
             : old
       )
 
@@ -301,16 +166,16 @@ export function useClearContextApproval({
         worktreeId,
         worktreePath,
         sessionId: newSession.id,
-        model,
+        model: continuation.model,
       }).catch(err =>
         logger.error('[useClearContextApproval] Failed to persist model:', err)
       )
-      if (backend) {
+      if (continuation.backend) {
         await invoke('set_session_backend', {
           worktreeId,
           worktreePath,
           sessionId: newSession.id,
-          backend,
+          backend: continuation.backend,
         }).catch(err =>
           logger.error(
             '[useClearContextApproval] Failed to persist backend:',
@@ -323,13 +188,13 @@ export function useClearContextApproval({
         sessionId: newSession.id,
         worktreeId,
         worktreePath,
-        message,
-        model,
+        message: continuation.message,
+        model: continuation.model,
         executionMode: mode,
-        thinkingLevel,
-        effortLevel,
+        thinkingLevel: continuation.thinkingLevel,
+        effortLevel: continuation.effortLevel,
         customProfileName: card.session.selected_provider ?? undefined,
-        backend,
+        backend: continuation.backend,
       })
 
       // Optionally close the original session immediately.

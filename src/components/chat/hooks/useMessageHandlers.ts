@@ -41,6 +41,7 @@ import type {
 } from '@/types/projects'
 import { logger } from '@/lib/logger'
 import { buildPlanApprovalMessage } from '../plan-approval-message'
+import { resolveApprovedPlanContinuation } from './approved-plan-continuation'
 import { completePlanApprovalTransition } from './plan-approval-transition'
 
 /** Git commands to auto-approve for magic prompts (no permission prompts needed) */
@@ -182,37 +183,6 @@ function isThinkingLevel(
 ): value is ThinkingLevel {
   if (!value) return false
   return THINKING_LEVEL_VALUES.has(value as ThinkingLevel)
-}
-
-function mapCodexReasoningToEffort(
-  value: string | null | undefined
-): EffortLevel | undefined {
-  switch (value) {
-    case 'low':
-      return 'low'
-    case 'medium':
-      return 'medium'
-    case 'high':
-      return 'high'
-    case 'xhigh':
-    case 'max':
-      return 'max'
-    default:
-      return undefined
-  }
-}
-
-function getDefaultModelForBackend(
-  backend: Session['backend'] | undefined,
-  preferences: AppPreferences | undefined
-): string {
-  if (backend === 'codex') {
-    return preferences?.selected_codex_model ?? 'gpt-5.4'
-  }
-  if (backend === 'opencode') {
-    return preferences?.selected_opencode_model ?? 'opencode/gpt-5.3-codex'
-  }
-  return preferences?.selected_model ?? 'claude-opus-4-7'
 }
 
 function getBackendFromModel(
@@ -1189,7 +1159,6 @@ export function useMessageHandlers({
         ? yoloThinkingLevelRef
         : buildThinkingLevelRef
       const modeEffortRef = isYolo ? yoloEffortLevelRef : buildEffortLevelRef
-      const modeLabel = isYolo ? 'Yolo' : 'Build'
 
       const currentSessionBackend = queryClient.getQueryData<Session>(
         chatQueryKeys.session(sessionId)
@@ -1197,33 +1166,30 @@ export function useMessageHandlers({
       const prefs = queryClient.getQueryData<AppPreferences>(
         preferencesQueryKeys.preferences()
       )
-      const modeBackendOverride =
-        (modeBackendRef.current as Session['backend']) ?? null
-      const resolvedBackend = modeBackendOverride ?? undefined
-      const modelBackend = resolvedBackend ?? currentSessionBackend
-      const resolvedModel =
-        modeModelRef.current ??
-        (modeBackendOverride
-          ? getDefaultModelForBackend(modelBackend, prefs)
-          : selectedModelRef.current)
-      const modeOverride =
-        modeModelRef.current || modeBackendOverride
-          ? [resolvedBackend, resolvedModel].filter(Boolean).join(' / ')
-          : ''
-      const planMessage = modeOverride
-        ? `[${modeLabel}: ${modeOverride}]\nExecute this plan. Implement all changes described.\n\n<plan>\n${planContent}\n</plan>`
-        : `Execute this plan. Implement all changes described.\n\n<plan>\n${planContent}\n</plan>`
+      const continuation = resolveApprovedPlanContinuation({
+        mode,
+        planContent,
+        originalBackend: currentSessionBackend,
+        originalModel: selectedModelRef.current,
+        preferences: prefs,
+        modeBackendOverride: modeBackendRef.current,
+        modeModelOverride: modeModelRef.current,
+        modeThinkingOverride: modeThinkingRef.current,
+        modeEffortOverride: modeEffortRef.current,
+        fallbackThinkingLevel: selectedThinkingLevelRef.current,
+        fallbackEffortLevel: selectedEffortLevelRef.current,
+        useAdaptiveThinking: useAdaptiveThinkingRef.current,
+        returnOriginalBackend: false,
+        useNonAdaptiveEffortOverride: false,
+      })
       store.setExecutionMode(newSession.id, mode)
-      store.setLastSentMessage(newSession.id, planMessage)
+      store.setLastSentMessage(newSession.id, continuation.message)
       store.setError(newSession.id, null)
       store.addSendingSession(newSession.id)
-      store.setSelectedModel(newSession.id, resolvedModel)
+      store.setSelectedModel(newSession.id, continuation.model)
       store.setExecutingMode(newSession.id, mode)
-      if (resolvedBackend) {
-        store.setSelectedBackend(
-          newSession.id,
-          resolvedBackend as 'claude' | 'codex' | 'opencode'
-        )
+      if (continuation.backend) {
+        store.setSelectedBackend(newSession.id, continuation.backend)
       }
       // Optimistically update TanStack Query cache so UI shows correct backend/model
       // immediately. Without this, session?.backend (from query cache) defaults to 'claude'
@@ -1234,8 +1200,8 @@ export function useMessageHandlers({
           old
             ? {
                 ...old,
-                backend: resolvedBackend ?? old.backend,
-                selected_model: resolvedModel,
+                backend: continuation.backend ?? old.backend,
+                selected_model: continuation.model,
               }
             : old
       )
@@ -1246,48 +1212,32 @@ export function useMessageHandlers({
         worktreeId,
         worktreePath,
         sessionId: newSession.id,
-        model: resolvedModel,
+        model: continuation.model,
       }).catch(err =>
         logger.error('[clearContext] Failed to persist model:', err)
       )
-      if (resolvedBackend) {
+      if (continuation.backend) {
         await invoke('set_session_backend', {
           worktreeId,
           worktreePath,
           sessionId: newSession.id,
-          backend: resolvedBackend,
+          backend: continuation.backend,
         }).catch(err =>
           logger.error('[clearContext] Failed to persist backend:', err)
         )
-      }
-
-      const effectiveBackend = resolvedBackend ?? currentSessionBackend
-      let resolvedThinkingLevel: ThinkingLevel =
-        selectedThinkingLevelRef.current
-      let resolvedEffortLevel: EffortLevel | undefined = undefined
-      if (isThinkingLevel(modeThinkingRef.current)) {
-        resolvedThinkingLevel = modeThinkingRef.current
-      }
-      if (effectiveBackend === 'codex') {
-        resolvedThinkingLevel = 'off'
-      }
-      if (effectiveBackend === 'codex' || useAdaptiveThinkingRef.current) {
-        resolvedEffortLevel =
-          mapCodexReasoningToEffort(modeEffortRef.current) ??
-          selectedEffortLevelRef.current
       }
       sendMessage.mutate({
         sessionId: newSession.id,
         worktreeId,
         worktreePath,
-        message: planMessage,
-        model: resolvedModel,
+        message: continuation.message,
+        model: continuation.model,
         executionMode: mode,
-        thinkingLevel: resolvedThinkingLevel,
-        effortLevel: resolvedEffortLevel,
+        thinkingLevel: continuation.thinkingLevel,
+        effortLevel: continuation.effortLevel,
         mcpConfig: getMcpConfig(),
         customProfileName: getCustomProfileName(),
-        backend: resolvedBackend,
+        backend: continuation.backend,
       })
 
       // Optionally close the original session immediately.
@@ -1427,7 +1377,6 @@ export function useMessageHandlers({
         ? yoloThinkingLevelRef
         : buildThinkingLevelRef
       const modeEffortRef = isYolo ? yoloEffortLevelRef : buildEffortLevelRef
-      const modeLabel = isYolo ? 'Yolo' : 'Build'
 
       const currentSessionBackend = queryClient.getQueryData<Session>(
         chatQueryKeys.session(sessionId)
@@ -1435,33 +1384,30 @@ export function useMessageHandlers({
       const prefs = queryClient.getQueryData<AppPreferences>(
         preferencesQueryKeys.preferences()
       )
-      const modeBackendOverride =
-        (modeBackendRef.current as Session['backend']) ?? null
-      const resolvedBackend = modeBackendOverride ?? undefined
-      const modelBackend = resolvedBackend ?? currentSessionBackend
-      const resolvedModel =
-        modeModelRef.current ??
-        (modeBackendOverride
-          ? getDefaultModelForBackend(modelBackend, prefs)
-          : selectedModelRef.current)
-      const modeOverride =
-        modeModelRef.current || modeBackendOverride
-          ? [resolvedBackend, resolvedModel].filter(Boolean).join(' / ')
-          : ''
-      const planMessage = modeOverride
-        ? `[${modeLabel}: ${modeOverride}]\nExecute this plan. Implement all changes described.\n\n<plan>\n${planContent}\n</plan>`
-        : `Execute this plan. Implement all changes described.\n\n<plan>\n${planContent}\n</plan>`
+      const continuation = resolveApprovedPlanContinuation({
+        mode,
+        planContent,
+        originalBackend: currentSessionBackend,
+        originalModel: selectedModelRef.current,
+        preferences: prefs,
+        modeBackendOverride: modeBackendRef.current,
+        modeModelOverride: modeModelRef.current,
+        modeThinkingOverride: modeThinkingRef.current,
+        modeEffortOverride: modeEffortRef.current,
+        fallbackThinkingLevel: selectedThinkingLevelRef.current,
+        fallbackEffortLevel: selectedEffortLevelRef.current,
+        useAdaptiveThinking: useAdaptiveThinkingRef.current,
+        returnOriginalBackend: false,
+        useNonAdaptiveEffortOverride: false,
+      })
       store.setExecutionMode(newSession.id, mode)
-      store.setLastSentMessage(newSession.id, planMessage)
+      store.setLastSentMessage(newSession.id, continuation.message)
       store.setError(newSession.id, null)
       store.addSendingSession(newSession.id)
-      store.setSelectedModel(newSession.id, resolvedModel)
+      store.setSelectedModel(newSession.id, continuation.model)
       store.setExecutingMode(newSession.id, mode)
-      if (resolvedBackend) {
-        store.setSelectedBackend(
-          newSession.id,
-          resolvedBackend as 'claude' | 'codex' | 'opencode'
-        )
+      if (continuation.backend) {
+        store.setSelectedBackend(newSession.id, continuation.backend)
       }
       // Optimistically update TanStack Query cache so UI shows correct backend/model immediately.
       queryClient.setQueryData<Session>(
@@ -1470,8 +1416,8 @@ export function useMessageHandlers({
           old
             ? {
                 ...old,
-                backend: resolvedBackend ?? old.backend,
-                selected_model: resolvedModel,
+                backend: continuation.backend ?? old.backend,
+                selected_model: continuation.model,
               }
             : old
       )
@@ -1482,16 +1428,16 @@ export function useMessageHandlers({
         worktreeId,
         worktreePath,
         sessionId: newSession.id,
-        model: resolvedModel,
+        model: continuation.model,
       }).catch(err =>
         logger.error('[streamingClearContext] Failed to persist model:', err)
       )
-      if (resolvedBackend) {
+      if (continuation.backend) {
         await invoke('set_session_backend', {
           worktreeId,
           worktreePath,
           sessionId: newSession.id,
-          backend: resolvedBackend,
+          backend: continuation.backend,
         }).catch(err =>
           logger.error(
             '[streamingClearContext] Failed to persist backend:',
@@ -1499,34 +1445,18 @@ export function useMessageHandlers({
           )
         )
       }
-
-      const effectiveBackend = resolvedBackend ?? currentSessionBackend
-      let resolvedThinkingLevel: ThinkingLevel =
-        selectedThinkingLevelRef.current
-      let resolvedEffortLevel: EffortLevel | undefined = undefined
-      if (isThinkingLevel(modeThinkingRef.current)) {
-        resolvedThinkingLevel = modeThinkingRef.current
-      }
-      if (effectiveBackend === 'codex') {
-        resolvedThinkingLevel = 'off'
-      }
-      if (effectiveBackend === 'codex' || useAdaptiveThinkingRef.current) {
-        resolvedEffortLevel =
-          mapCodexReasoningToEffort(modeEffortRef.current) ??
-          selectedEffortLevelRef.current
-      }
       sendMessage.mutate({
         sessionId: newSession.id,
         worktreeId,
         worktreePath,
-        message: planMessage,
-        model: resolvedModel,
+        message: continuation.message,
+        model: continuation.model,
         executionMode: mode,
-        thinkingLevel: resolvedThinkingLevel,
-        effortLevel: resolvedEffortLevel,
+        thinkingLevel: continuation.thinkingLevel,
+        effortLevel: continuation.effortLevel,
         mcpConfig: getMcpConfig(),
         customProfileName: getCustomProfileName(),
-        backend: resolvedBackend,
+        backend: continuation.backend,
       })
 
       // Optionally close the original session immediately.
@@ -1759,7 +1689,6 @@ export function useMessageHandlers({
         ? yoloThinkingLevelRef
         : buildThinkingLevelRef
       const modeEffortRef = isYolo ? yoloEffortLevelRef : buildEffortLevelRef
-      const modeLabel = isYolo ? 'Yolo' : 'Build'
 
       const currentSessionBackend = queryClient.getQueryData<Session>(
         chatQueryKeys.session(sessionId)
@@ -1767,33 +1696,30 @@ export function useMessageHandlers({
       const prefs = queryClient.getQueryData<AppPreferences>(
         preferencesQueryKeys.preferences()
       )
-      const modeBackendOverride =
-        (modeBackendRef.current as Session['backend']) ?? null
-      const resolvedBackend = modeBackendOverride ?? undefined
-      const modelBackend = resolvedBackend ?? currentSessionBackend
-      const resolvedModel =
-        modeModelRef.current ??
-        (modeBackendOverride
-          ? getDefaultModelForBackend(modelBackend, prefs)
-          : selectedModelRef.current)
-      const modeOverride =
-        modeModelRef.current || modeBackendOverride
-          ? [resolvedBackend, resolvedModel].filter(Boolean).join(' / ')
-          : ''
-      const planMessage = modeOverride
-        ? `[${modeLabel}: ${modeOverride}]\nExecute this plan. Implement all changes described.\n\n<plan>\n${planContent}\n</plan>`
-        : `Execute this plan. Implement all changes described.\n\n<plan>\n${planContent}\n</plan>`
+      const continuation = resolveApprovedPlanContinuation({
+        mode,
+        planContent,
+        originalBackend: currentSessionBackend,
+        originalModel: selectedModelRef.current,
+        preferences: prefs,
+        modeBackendOverride: modeBackendRef.current,
+        modeModelOverride: modeModelRef.current,
+        modeThinkingOverride: modeThinkingRef.current,
+        modeEffortOverride: modeEffortRef.current,
+        fallbackThinkingLevel: selectedThinkingLevelRef.current,
+        fallbackEffortLevel: selectedEffortLevelRef.current,
+        useAdaptiveThinking: useAdaptiveThinkingRef.current,
+        returnOriginalBackend: false,
+        useNonAdaptiveEffortOverride: false,
+      })
       store.setExecutionMode(newSession.id, mode)
-      store.setLastSentMessage(newSession.id, planMessage)
+      store.setLastSentMessage(newSession.id, continuation.message)
       store.setError(newSession.id, null)
       store.addSendingSession(newSession.id)
-      store.setSelectedModel(newSession.id, resolvedModel)
+      store.setSelectedModel(newSession.id, continuation.model)
       store.setExecutingMode(newSession.id, mode)
-      if (resolvedBackend) {
-        store.setSelectedBackend(
-          newSession.id,
-          resolvedBackend as 'claude' | 'codex' | 'opencode'
-        )
+      if (continuation.backend) {
+        store.setSelectedBackend(newSession.id, continuation.backend)
       }
       queryClient.setQueryData<Session>(
         chatQueryKeys.session(newSession.id),
@@ -1801,8 +1727,8 @@ export function useMessageHandlers({
           old
             ? {
                 ...old,
-                backend: resolvedBackend ?? old.backend,
-                selected_model: resolvedModel,
+                backend: continuation.backend ?? old.backend,
+                selected_model: continuation.model,
               }
             : old
       )
@@ -1811,48 +1737,32 @@ export function useMessageHandlers({
         worktreeId: readyWorktree.id,
         worktreePath: readyWorktree.path,
         sessionId: newSession.id,
-        model: resolvedModel,
+        model: continuation.model,
       }).catch(err =>
         logger.error('[worktreeApproval] Failed to persist model:', err)
       )
-      if (resolvedBackend) {
+      if (continuation.backend) {
         await invoke('set_session_backend', {
           worktreeId: readyWorktree.id,
           worktreePath: readyWorktree.path,
           sessionId: newSession.id,
-          backend: resolvedBackend,
+          backend: continuation.backend,
         }).catch(err =>
           logger.error('[worktreeApproval] Failed to persist backend:', err)
         )
-      }
-
-      const effectiveBackend = resolvedBackend ?? currentSessionBackend
-      let resolvedThinkingLevel: ThinkingLevel =
-        selectedThinkingLevelRef.current
-      let resolvedEffortLevel: EffortLevel | undefined = undefined
-      if (isThinkingLevel(modeThinkingRef.current)) {
-        resolvedThinkingLevel = modeThinkingRef.current
-      }
-      if (effectiveBackend === 'codex') {
-        resolvedThinkingLevel = 'off'
-      }
-      if (effectiveBackend === 'codex' || useAdaptiveThinkingRef.current) {
-        resolvedEffortLevel =
-          mapCodexReasoningToEffort(modeEffortRef.current) ??
-          selectedEffortLevelRef.current
       }
       sendMessage.mutate({
         sessionId: newSession.id,
         worktreeId: readyWorktree.id,
         worktreePath: readyWorktree.path,
-        message: planMessage,
-        model: resolvedModel,
+        message: continuation.message,
+        model: continuation.model,
         executionMode: mode,
-        thinkingLevel: resolvedThinkingLevel,
-        effortLevel: resolvedEffortLevel,
+        thinkingLevel: continuation.thinkingLevel,
+        effortLevel: continuation.effortLevel,
         mcpConfig: getMcpConfig(),
         customProfileName: getCustomProfileName(),
-        backend: resolvedBackend,
+        backend: continuation.backend,
       })
 
       // Optionally close the original session
@@ -2073,7 +1983,6 @@ export function useMessageHandlers({
         ? yoloThinkingLevelRef
         : buildThinkingLevelRef
       const modeEffortRef = isYolo ? yoloEffortLevelRef : buildEffortLevelRef
-      const modeLabel = isYolo ? 'Yolo' : 'Build'
 
       const currentSessionBackend = queryClient.getQueryData<Session>(
         chatQueryKeys.session(sessionId)
@@ -2081,33 +1990,30 @@ export function useMessageHandlers({
       const prefs = queryClient.getQueryData<AppPreferences>(
         preferencesQueryKeys.preferences()
       )
-      const modeBackendOverride =
-        (modeBackendRef.current as Session['backend']) ?? null
-      const resolvedBackend = modeBackendOverride ?? undefined
-      const modelBackend = resolvedBackend ?? currentSessionBackend
-      const resolvedModel =
-        modeModelRef.current ??
-        (modeBackendOverride
-          ? getDefaultModelForBackend(modelBackend, prefs)
-          : selectedModelRef.current)
-      const modeOverride =
-        modeModelRef.current || modeBackendOverride
-          ? [resolvedBackend, resolvedModel].filter(Boolean).join(' / ')
-          : ''
-      const planMessage = modeOverride
-        ? `[${modeLabel}: ${modeOverride}]\nExecute this plan. Implement all changes described.\n\n<plan>\n${planContent}\n</plan>`
-        : `Execute this plan. Implement all changes described.\n\n<plan>\n${planContent}\n</plan>`
+      const continuation = resolveApprovedPlanContinuation({
+        mode,
+        planContent,
+        originalBackend: currentSessionBackend,
+        originalModel: selectedModelRef.current,
+        preferences: prefs,
+        modeBackendOverride: modeBackendRef.current,
+        modeModelOverride: modeModelRef.current,
+        modeThinkingOverride: modeThinkingRef.current,
+        modeEffortOverride: modeEffortRef.current,
+        fallbackThinkingLevel: selectedThinkingLevelRef.current,
+        fallbackEffortLevel: selectedEffortLevelRef.current,
+        useAdaptiveThinking: useAdaptiveThinkingRef.current,
+        returnOriginalBackend: false,
+        useNonAdaptiveEffortOverride: false,
+      })
       store.setExecutionMode(newSession.id, mode)
-      store.setLastSentMessage(newSession.id, planMessage)
+      store.setLastSentMessage(newSession.id, continuation.message)
       store.setError(newSession.id, null)
       store.addSendingSession(newSession.id)
-      store.setSelectedModel(newSession.id, resolvedModel)
+      store.setSelectedModel(newSession.id, continuation.model)
       store.setExecutingMode(newSession.id, mode)
-      if (resolvedBackend) {
-        store.setSelectedBackend(
-          newSession.id,
-          resolvedBackend as 'claude' | 'codex' | 'opencode'
-        )
+      if (continuation.backend) {
+        store.setSelectedBackend(newSession.id, continuation.backend)
       }
       queryClient.setQueryData<Session>(
         chatQueryKeys.session(newSession.id),
@@ -2115,8 +2021,8 @@ export function useMessageHandlers({
           old
             ? {
                 ...old,
-                backend: resolvedBackend ?? old.backend,
-                selected_model: resolvedModel,
+                backend: continuation.backend ?? old.backend,
+                selected_model: continuation.model,
               }
             : old
       )
@@ -2125,19 +2031,19 @@ export function useMessageHandlers({
         worktreeId: readyWorktree.id,
         worktreePath: readyWorktree.path,
         sessionId: newSession.id,
-        model: resolvedModel,
+        model: continuation.model,
       }).catch(err =>
         logger.error(
           '[streamingWorktreeApproval] Failed to persist model:',
           err
         )
       )
-      if (resolvedBackend) {
+      if (continuation.backend) {
         await invoke('set_session_backend', {
           worktreeId: readyWorktree.id,
           worktreePath: readyWorktree.path,
           sessionId: newSession.id,
-          backend: resolvedBackend,
+          backend: continuation.backend,
         }).catch(err =>
           logger.error(
             '[streamingWorktreeApproval] Failed to persist backend:',
@@ -2145,34 +2051,18 @@ export function useMessageHandlers({
           )
         )
       }
-
-      const effectiveBackend = resolvedBackend ?? currentSessionBackend
-      let resolvedThinkingLevel: ThinkingLevel =
-        selectedThinkingLevelRef.current
-      let resolvedEffortLevel: EffortLevel | undefined = undefined
-      if (isThinkingLevel(modeThinkingRef.current)) {
-        resolvedThinkingLevel = modeThinkingRef.current
-      }
-      if (effectiveBackend === 'codex') {
-        resolvedThinkingLevel = 'off'
-      }
-      if (effectiveBackend === 'codex' || useAdaptiveThinkingRef.current) {
-        resolvedEffortLevel =
-          mapCodexReasoningToEffort(modeEffortRef.current) ??
-          selectedEffortLevelRef.current
-      }
       sendMessage.mutate({
         sessionId: newSession.id,
         worktreeId: readyWorktree.id,
         worktreePath: readyWorktree.path,
-        message: planMessage,
-        model: resolvedModel,
+        message: continuation.message,
+        model: continuation.model,
         executionMode: mode,
-        thinkingLevel: resolvedThinkingLevel,
-        effortLevel: resolvedEffortLevel,
+        thinkingLevel: continuation.thinkingLevel,
+        effortLevel: continuation.effortLevel,
         mcpConfig: getMcpConfig(),
         customProfileName: getCustomProfileName(),
-        backend: resolvedBackend,
+        backend: continuation.backend,
       })
 
       // Optionally close the original session

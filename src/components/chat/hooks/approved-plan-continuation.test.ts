@@ -118,4 +118,29 @@ describe('resolveApprovedPlanContinuation', () => {
       effortLevel: 'max',
     })
   })
+
+  it('can use the original backend for reasoning without returning it as a send override', () => {
+    const continuation = resolveApprovedPlanContinuation({
+      mode: 'yolo',
+      planContent: 'Apply changes',
+      originalBackend: 'codex',
+      originalModel: 'gpt-5.4',
+      preferences: {
+        ...basePreferences,
+        yolo_effort_level: null,
+      },
+      fallbackThinkingLevel: 'ultrathink',
+      fallbackEffortLevel: 'medium',
+      returnOriginalBackend: false,
+      useNonAdaptiveEffortOverride: false,
+    })
+
+    expect(continuation).toMatchObject({
+      backend: undefined,
+      model: 'gpt-5.4',
+      modeOverride: '',
+      thinkingLevel: 'off',
+      effortLevel: 'medium',
+    })
+  })
 })

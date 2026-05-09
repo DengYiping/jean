@@ -33,6 +33,15 @@ interface ResolveApprovedPlanContinuationParams {
   originalBackend?: Backend | null
   originalModel?: string | null
   preferences?: ApprovalContinuationPreferences
+  modeBackendOverride?: string | null
+  modeModelOverride?: string | null
+  modeThinkingOverride?: string | null
+  modeEffortOverride?: string | null
+  fallbackThinkingLevel?: ThinkingLevel
+  fallbackEffortLevel?: EffortLevel
+  useAdaptiveThinking?: boolean
+  returnOriginalBackend?: boolean
+  useNonAdaptiveEffortOverride?: boolean
   imagePaths?: string[]
   skillPaths?: string[]
   textFilePaths?: string[]
@@ -134,56 +143,81 @@ export function resolveApprovedPlanContinuation({
   originalBackend,
   originalModel,
   preferences,
+  modeBackendOverride,
+  modeModelOverride,
+  modeThinkingOverride,
+  modeEffortOverride,
+  fallbackThinkingLevel,
+  fallbackEffortLevel,
+  useAdaptiveThinking = false,
+  returnOriginalBackend = true,
+  useNonAdaptiveEffortOverride = true,
   imagePaths = [],
   skillPaths = [],
   textFilePaths = [],
 }: ResolveApprovedPlanContinuationParams): ApprovedPlanContinuation {
   const isYolo = mode === 'yolo'
   const modeLabel = isYolo ? 'Yolo' : 'Build'
-  const modeBackendPref = isYolo
-    ? preferences?.yolo_backend
-    : preferences?.build_backend
-  const modeModelPref = isYolo
-    ? preferences?.yolo_model
-    : preferences?.build_model
-  const modeThinkingPref = isYolo
-    ? preferences?.yolo_thinking_level
-    : preferences?.build_thinking_level
-  const modeEffortPref = isYolo
-    ? preferences?.yolo_effort_level
-    : preferences?.build_effort_level
+  const modeBackendPref =
+    modeBackendOverride ??
+    (isYolo ? preferences?.yolo_backend : preferences?.build_backend)
+  const modeModelPref =
+    modeModelOverride ??
+    (isYolo ? preferences?.yolo_model : preferences?.build_model)
+  const modeThinkingPref =
+    modeThinkingOverride ??
+    (isYolo
+      ? preferences?.yolo_thinking_level
+      : preferences?.build_thinking_level)
+  const modeEffortPref =
+    modeEffortOverride ??
+    (isYolo ? preferences?.yolo_effort_level : preferences?.build_effort_level)
 
-  const modeBackendOverride = isBackend(modeBackendPref)
+  const resolvedBackendOverride = isBackend(modeBackendPref)
     ? modeBackendPref
     : null
-  const backend = modeBackendOverride ?? originalBackend ?? undefined
+  const effectiveBackend =
+    resolvedBackendOverride ?? originalBackend ?? undefined
+  const backend =
+    resolvedBackendOverride ??
+    (returnOriginalBackend ? (originalBackend ?? undefined) : undefined)
   const model =
     modeModelPref ??
-    (modeBackendOverride
-      ? getDefaultModelForBackend(backend, preferences)
-      : (originalModel ?? getDefaultModelForBackend(backend, preferences)))
+    (resolvedBackendOverride
+      ? getDefaultModelForBackend(effectiveBackend, preferences)
+      : (originalModel ??
+        getDefaultModelForBackend(effectiveBackend, preferences)))
   const modeOverride =
-    modeModelPref || modeBackendOverride
+    modeModelPref || resolvedBackendOverride
       ? [backend, model].filter(Boolean).join(' / ')
       : ''
 
   let thinkingLevel: ThinkingLevel = 'off'
   let effortLevel: EffortLevel | undefined
 
-  if (backend === 'codex') {
+  if (effectiveBackend === 'codex') {
     const defaultCodexEffort =
       mapCodexReasoningToEffort(preferences?.default_codex_reasoning_effort) ??
       'high'
     effortLevel =
-      mapCodexReasoningToEffort(modeEffortPref) ?? defaultCodexEffort
+      mapCodexReasoningToEffort(modeEffortPref) ??
+      fallbackEffortLevel ??
+      defaultCodexEffort
   } else {
-    const fallbackThinking = isThinkingLevel(preferences?.thinking_level)
-      ? preferences.thinking_level
-      : 'off'
+    const fallbackThinking = fallbackThinkingLevel
+      ? fallbackThinkingLevel
+      : isThinkingLevel(preferences?.thinking_level)
+        ? preferences.thinking_level
+        : 'off'
     thinkingLevel = isThinkingLevel(modeThinkingPref)
       ? modeThinkingPref
       : fallbackThinking
-    effortLevel = mapCodexReasoningToEffort(modeEffortPref)
+    if (useAdaptiveThinking) {
+      effortLevel =
+        mapCodexReasoningToEffort(modeEffortPref) ?? fallbackEffortLevel
+    } else if (useNonAdaptiveEffortOverride) {
+      effortLevel = mapCodexReasoningToEffort(modeEffortPref)
+    }
   }
 
   const planFileLine = planFilePath ? `\nPlan file: ${planFilePath}\n` : ''

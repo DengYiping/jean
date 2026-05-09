@@ -6,6 +6,7 @@ import { agentBoardQueryKeys } from '@/services/agent-board'
 import {
   DEFAULT_PARALLEL_EXECUTION_PROMPT,
   defaultPreferences,
+  type AppPreferences,
 } from '@/types/preferences'
 import { useChatStore } from '@/store/chat-store'
 import type * as ChatService from '@/services/chat'
@@ -14,20 +15,24 @@ import type { Session } from '@/types/chat'
 import type { SessionCardData } from '../session-card-utils'
 import { usePlanApproval } from './usePlanApproval'
 
-const { mockInvoke, mockMarkPlanApproved, mockSendMessageMutate } = vi.hoisted(
-  () => ({
-    mockInvoke: vi.fn(),
-    mockMarkPlanApproved: vi.fn(),
-    mockSendMessageMutate: vi.fn(),
-  })
-)
+const {
+  mockInvoke,
+  mockMarkPlanApproved,
+  mockSendMessageMutate,
+  mockPreferences,
+} = vi.hoisted(() => ({
+  mockInvoke: vi.fn(),
+  mockMarkPlanApproved: vi.fn(),
+  mockSendMessageMutate: vi.fn(),
+  mockPreferences: { current: undefined as AppPreferences | undefined },
+}))
 
 vi.mock('@/lib/transport', () => ({
   invoke: (...args: unknown[]) => mockInvoke(...args),
 }))
 
 vi.mock('@/services/preferences', () => ({
-  usePreferences: () => ({ data: defaultPreferences }),
+  usePreferences: () => ({ data: mockPreferences.current }),
 }))
 
 vi.mock('@/services/claude-cli', () => ({
@@ -92,6 +97,7 @@ function planCard(): SessionCardData {
 describe('usePlanApproval', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockPreferences.current = defaultPreferences
     useChatStore.setState({
       parallelExecutionPromptEnabledBySession: {},
     })
@@ -175,6 +181,61 @@ describe('usePlanApproval', () => {
         sessionId: 'session-1',
         executionMode: 'build',
         parallelExecutionPrompt: DEFAULT_PARALLEL_EXECUTION_PROMPT,
+      })
+    )
+  })
+
+  it('does not apply build overrides configured for a different backend', async () => {
+    mockPreferences.current = {
+      ...defaultPreferences,
+      default_backend: 'codex',
+      selected_model: 'sonnet',
+      build_backend: 'claude',
+      build_model: 'claude-opus-4-7',
+      build_thinking_level: 'ultrathink',
+      build_effort_level: 'max',
+      thinking_level: 'think',
+      default_effort_level: 'medium',
+    } as AppPreferences
+
+    const queryClient = createTestQueryClient()
+    const { result } = renderHook(
+      () =>
+        usePlanApproval({
+          worktreeId: 'worktree-1',
+          worktreePath: '/tmp/worktree-1',
+        }),
+      { wrapper: createWrapper(queryClient) }
+    )
+
+    act(() => {
+      result.current.handlePlanApproval(planCard())
+    })
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith(
+        'update_session_state',
+        expect.objectContaining({
+          selectedExecutionMode: 'build',
+        })
+      )
+    })
+    await waitFor(() => {
+      expect(mockSendMessageMutate).toHaveBeenCalled()
+    })
+
+    expect(mockSendMessageMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        backend: 'codex',
+        executionMode: 'build',
+        model: 'sonnet',
+        thinkingLevel: 'think',
+        effortLevel: 'medium',
+      })
+    )
+    expect(mockSendMessageMutate).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: 'claude-opus-4-7',
       })
     )
   })

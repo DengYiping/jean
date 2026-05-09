@@ -6,12 +6,7 @@ import { useChatStore } from '@/store/chat-store'
 import { useProjectsStore } from '@/store/projects-store'
 import { useUIStore } from '@/store/ui-store'
 import { usePreferences } from '@/services/preferences'
-import {
-  useSendMessage,
-  markPlanApproved,
-  readPlanFile,
-  chatQueryKeys,
-} from '@/services/chat'
+import { useSendMessage, readPlanFile, chatQueryKeys } from '@/services/chat'
 import { invoke, listen } from '@/lib/transport'
 import { appendSkillPromptContext } from '@/lib/skill-prompt'
 import type {
@@ -32,7 +27,7 @@ import {
   extractTextFilePaths,
 } from '../message-content-utils'
 import { navigateToApprovedWorktree } from '../worktree-approval-navigation'
-import { applyOptimisticPlanApproval } from './optimistic-plan-approval'
+import { completePlanApprovalTransition } from './plan-approval-transition'
 import { markWorktreeSilentReady } from '@/services/worktree-silent-ready'
 
 const THINKING_LEVEL_VALUES = new Set<ThinkingLevel>([
@@ -124,40 +119,18 @@ export function useWorktreeApproval({
       const sessionId = card.session.id
       const messageId = card.pendingPlanMessageId
 
-      // Step 1: Mark plan approved on original session
-      if (messageId) {
-        markPlanApproved(worktreeId, worktreePath, sessionId, messageId)
-        applyOptimisticPlanApproval({
-          queryClient,
-          sessionId,
-          worktreeId,
-          messageId,
-        })
-
-        queryClient.invalidateQueries({
-          queryKey: chatQueryKeys.sessions(worktreeId),
-        })
-      }
-
-      // Clear waiting state on original session
-      const store = useChatStore.getState()
-      store.clearToolCalls(sessionId)
-      store.clearStreamingContentBlocks(sessionId)
-      store.setSessionReviewing(sessionId, false)
-      store.setWaitingForInput(sessionId, false)
-      store.setPendingPlanMessageId(sessionId, null)
-
-      invoke('update_session_state', {
+      // Step 1: Approve the plan and clear waiting state on the original session
+      void completePlanApprovalTransition({
+        queryClient,
         worktreeId,
         worktreePath,
         sessionId,
-        waitingForInput: false,
-        waitingForInputType: null,
-      }).catch(err => {
-        logger.error(
-          '[useWorktreeApproval] Failed to clear waiting state:',
-          err
-        )
+        messageId,
+        logContext: 'useWorktreeApproval',
+      }).finally(() => {
+        queryClient.invalidateQueries({
+          queryKey: chatQueryKeys.sessions(worktreeId),
+        })
       })
 
       // Step 2: Resolve plan content
@@ -352,7 +325,7 @@ export function useWorktreeApproval({
         effortLevel = mapCodexReasoningToEffort(modeEffortPref)
       }
       const resolvedPlanFilePath =
-        card.planFilePath || store.getPlanFilePath(sessionId)
+        card.planFilePath || chatStore.getPlanFilePath(sessionId)
       const planFileLine = resolvedPlanFilePath
         ? `\nPlan file: ${resolvedPlanFilePath}\n`
         : ''

@@ -35,7 +35,6 @@ import {
   useSetSessionBackend,
   useSetSessionProvider,
   useCreateSession,
-  markPlanApproved as markPlanApprovedService,
   chatQueryKeys,
   useUpdateSessionState,
 } from '@/services/chat'
@@ -184,7 +183,7 @@ import { usePlanState } from './hooks/usePlanState'
 import { useActiveTodosAndAgents } from './hooks/useActiveTodosAndAgents'
 import { usePendingAttachments } from './hooks/usePendingAttachments'
 import { useQueuedMessages } from './hooks/useQueuedMessages'
-import { applyOptimisticPlanApproval } from './hooks/optimistic-plan-approval'
+import { completePlanApprovalTransition } from './hooks/plan-approval-transition'
 import { dedupeInFlightAssistantMessage } from './in-flight-message-dedupe'
 import { shouldShowPermissionApproval } from './permission-approval-utils'
 import {
@@ -1163,26 +1162,16 @@ export function ChatWindow({
       if (!activeSessionId || !activeWorktreeId || !activeWorktreePath) return
 
       // Mark pending plan approved if exists
-      if (pendingPlanMessage) {
-        markPlanApprovedService(
-          activeWorktreeId,
-          activeWorktreePath,
-          activeSessionId,
-          pendingPlanMessage.id
-        )
-        applyOptimisticPlanApproval({
-          queryClient,
-          sessionId: activeSessionId,
-          worktreeId: activeWorktreeId,
-          messageId: pendingPlanMessage.id,
-        })
-      }
+      void completePlanApprovalTransition({
+        queryClient,
+        worktreeId: activeWorktreeId,
+        worktreePath: activeWorktreePath,
+        sessionId: activeSessionId,
+        messageId: pendingPlanMessage?.id,
+        logContext: 'PlanDialog CC Yolo',
+      })
 
       const store = useChatStore.getState()
-      store.clearToolCalls(activeSessionId)
-      store.clearStreamingContentBlocks(activeSessionId)
-      store.setSessionReviewing(activeSessionId, false)
-      store.setWaitingForInput(activeSessionId, false)
 
       // Create new session
       let newSession: Session
@@ -1320,26 +1309,16 @@ export function ChatWindow({
       if (!activeSessionId || !activeWorktreeId || !activeWorktreePath) return
 
       // Mark pending plan approved if exists
-      if (pendingPlanMessage) {
-        markPlanApprovedService(
-          activeWorktreeId,
-          activeWorktreePath,
-          activeSessionId,
-          pendingPlanMessage.id
-        )
-        applyOptimisticPlanApproval({
-          queryClient,
-          sessionId: activeSessionId,
-          worktreeId: activeWorktreeId,
-          messageId: pendingPlanMessage.id,
-        })
-      }
+      void completePlanApprovalTransition({
+        queryClient,
+        worktreeId: activeWorktreeId,
+        worktreePath: activeWorktreePath,
+        sessionId: activeSessionId,
+        messageId: pendingPlanMessage?.id,
+        logContext: 'PlanDialog CC Build',
+      })
 
       const store = useChatStore.getState()
-      store.clearToolCalls(activeSessionId)
-      store.clearStreamingContentBlocks(activeSessionId)
-      store.setSessionReviewing(activeSessionId, false)
-      store.setWaitingForInput(activeSessionId, false)
 
       // Create new session
       let newSession: Session
@@ -1486,26 +1465,16 @@ export function ChatWindow({
       const toastId = toast.loading('Creating worktree...')
 
       // Mark pending plan approved if exists
-      if (pendingPlanMessage) {
-        markPlanApprovedService(
-          activeWorktreeId,
-          activeWorktreePath,
-          activeSessionId,
-          pendingPlanMessage.id
-        )
-        applyOptimisticPlanApproval({
-          queryClient,
-          sessionId: activeSessionId,
-          worktreeId: activeWorktreeId,
-          messageId: pendingPlanMessage.id,
-        })
-      }
+      void completePlanApprovalTransition({
+        queryClient,
+        worktreeId: activeWorktreeId,
+        worktreePath: activeWorktreePath,
+        sessionId: activeSessionId,
+        messageId: pendingPlanMessage?.id,
+        logContext: 'PlanDialog Worktree',
+      })
 
       const store = useChatStore.getState()
-      store.clearToolCalls(activeSessionId)
-      store.clearStreamingContentBlocks(activeSessionId)
-      store.setSessionReviewing(activeSessionId, false)
-      store.setWaitingForInput(activeSessionId, false)
 
       // Create new worktree
       let pendingWorktree: Worktree

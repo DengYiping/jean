@@ -7,7 +7,6 @@ import { usePreferences } from '@/services/preferences'
 import {
   useCreateSession,
   useSendMessage,
-  markPlanApproved,
   readPlanFile,
   chatQueryKeys,
 } from '@/services/chat'
@@ -25,7 +24,7 @@ import {
   extractSkillPaths,
   extractTextFilePaths,
 } from '../message-content-utils'
-import { applyOptimisticPlanApproval } from './optimistic-plan-approval'
+import { completePlanApprovalTransition } from './plan-approval-transition'
 
 const THINKING_LEVEL_VALUES = new Set<ThinkingLevel>([
   'off',
@@ -110,40 +109,18 @@ export function useClearContextApproval({
       const sessionId = card.session.id
       const messageId = card.pendingPlanMessageId
 
-      // Step 1: Mark plan approved on original session
-      if (messageId) {
-        markPlanApproved(worktreeId, worktreePath, sessionId, messageId)
-        applyOptimisticPlanApproval({
-          queryClient,
-          sessionId,
-          worktreeId,
-          messageId,
-        })
-
-        queryClient.invalidateQueries({
-          queryKey: chatQueryKeys.sessions(worktreeId),
-        })
-      }
-
-      // Clear waiting state on original session
-      const store = useChatStore.getState()
-      store.clearToolCalls(sessionId)
-      store.clearStreamingContentBlocks(sessionId)
-      store.setSessionReviewing(sessionId, false)
-      store.setWaitingForInput(sessionId, false)
-      store.setPendingPlanMessageId(sessionId, null)
-
-      invoke('update_session_state', {
+      // Step 1: Approve the plan and clear waiting state on the original session
+      void completePlanApprovalTransition({
+        queryClient,
         worktreeId,
         worktreePath,
         sessionId,
-        waitingForInput: false,
-        waitingForInputType: null,
-      }).catch(err => {
-        logger.error(
-          '[useClearContextApproval] Failed to clear waiting state:',
-          err
-        )
+        messageId,
+        logContext: 'useClearContextApproval',
+      }).finally(() => {
+        queryClient.invalidateQueries({
+          queryKey: chatQueryKeys.sessions(worktreeId),
+        })
       })
 
       // Step 2: Resolve plan content
@@ -174,6 +151,7 @@ export function useClearContextApproval({
       }
 
       // Step 4: Switch to new session
+      const store = useChatStore.getState()
       store.setActiveSession(worktreeId, newSession.id)
       store.addUserInitiatedSession(newSession.id)
 

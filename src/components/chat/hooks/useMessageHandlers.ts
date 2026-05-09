@@ -4,7 +4,6 @@ import { toast } from 'sonner'
 import { invoke, listen } from '@/lib/transport'
 import {
   chatQueryKeys,
-  markPlanApproved as markPlanApprovedService,
   readPlanFile,
   persistEnqueue,
   formatAnswersForCodexRequestUserInput,
@@ -42,7 +41,6 @@ import type {
 } from '@/types/projects'
 import { logger } from '@/lib/logger'
 import { buildPlanApprovalMessage } from '../plan-approval-message'
-import { applyOptimisticPlanApproval } from './optimistic-plan-approval'
 import { completePlanApprovalTransition } from './plan-approval-transition'
 
 /** Git commands to auto-approve for magic prompts (no permission prompts needed) */
@@ -1153,22 +1151,20 @@ export function useMessageHandlers({
       }
 
       // Mark plan approved on original session
-      markPlanApprovedService(worktreeId, worktreePath, sessionId, messageId)
-      applyOptimisticPlanApproval({
+      void completePlanApprovalTransition({
         queryClient,
-        sessionId,
         worktreeId,
+        worktreePath,
+        sessionId,
         messageId,
-      })
-      queryClient.invalidateQueries({
-        queryKey: chatQueryKeys.sessions(worktreeId),
+        logContext: 'clearContext',
+      }).finally(() => {
+        queryClient.invalidateQueries({
+          queryKey: chatQueryKeys.sessions(worktreeId),
+        })
       })
 
       const store = useChatStore.getState()
-      store.clearToolCalls(sessionId)
-      store.clearStreamingContentBlocks(sessionId)
-      store.setSessionReviewing(sessionId, false)
-      store.setWaitingForInput(sessionId, false)
 
       // Create new session
       let newSession: Session
@@ -1644,22 +1640,20 @@ export function useMessageHandlers({
       }
 
       // Mark plan approved on original session
-      markPlanApprovedService(worktreeId, worktreePath, sessionId, messageId)
-      applyOptimisticPlanApproval({
+      void completePlanApprovalTransition({
         queryClient,
-        sessionId,
         worktreeId,
+        worktreePath,
+        sessionId,
         messageId,
-      })
-      queryClient.invalidateQueries({
-        queryKey: chatQueryKeys.sessions(worktreeId),
+        logContext: 'worktreeApproval',
+      }).finally(() => {
+        queryClient.invalidateQueries({
+          queryKey: chatQueryKeys.sessions(worktreeId),
+        })
       })
 
       const store = useChatStore.getState()
-      store.clearToolCalls(sessionId)
-      store.clearStreamingContentBlocks(sessionId)
-      store.setSessionReviewing(sessionId, false)
-      store.setWaitingForInput(sessionId, false)
 
       // Create new worktree
       let pendingWorktree: Worktree

@@ -32,11 +32,9 @@ import { markWorktreeSilentReady } from '@/services/worktree-silent-ready'
 import { getCodexPermissionApprovalMode } from '../permission-approval-utils'
 import { generateId } from '@/lib/uuid'
 import { preferencesQueryKeys } from '@/services/preferences'
-import { agentBoardQueryKeys } from '@/services/agent-board'
 import { useProjectsStore } from '@/store/projects-store'
 import { useUIStore } from '@/store/ui-store'
 import type { AppPreferences } from '@/types/preferences'
-import type { AgentBoardItem } from '@/types/agent-board'
 import type {
   Worktree,
   WorktreeCreatedEvent,
@@ -45,25 +43,13 @@ import type {
 import { logger } from '@/lib/logger'
 import { buildPlanApprovalMessage } from '../plan-approval-message'
 import { applyOptimisticPlanApproval } from './optimistic-plan-approval'
+import { completePlanApprovalTransition } from './plan-approval-transition'
 
 /** Git commands to auto-approve for magic prompts (no permission prompts needed) */
 export const GIT_ALLOWED_TOOLS = [
   'Bash(git:*)', // All git commands
   // gh-cli/claude-cli are auto-allowed via --allowedTools in build_claude_args()
 ]
-
-function refreshAgentBoardAfterPlanApproval(
-  queryClient: QueryClient,
-  source: string
-) {
-  return invoke<AgentBoardItem[]>('refresh_agent_board_items')
-    .then(items => {
-      queryClient.setQueryData(agentBoardQueryKeys.all, items)
-    })
-    .catch(err => {
-      logger.error(`[${source}] Failed to refresh board:`, err)
-    })
-}
 
 function commandFromBashPattern(pattern: string): string | null {
   const match = pattern.match(/^Bash\((.+)\)$/)
@@ -678,37 +664,13 @@ export function useMessageHandlers({
       const worktreePath = activeWorktreePathRef.current
       if (!sessionId || !worktreeId || !worktreePath) return
 
-      // Mark plan as approved in the message (persisted to disk)
-      // Optimistically update the UI to hide the approve button
-      applyOptimisticPlanApproval({
-        queryClient,
-        sessionId,
-        worktreeId,
-        messageId,
-      })
-
-      // Explicitly set to build mode (not toggle, to avoid switching back to plan if already in build)
       const {
-        setExecutionMode: setMode,
         addSendingSession,
         setSelectedModel,
         setLastSentMessage,
         setError,
         setExecutingMode,
-        setSessionReviewing,
-        setWaitingForInput,
-        setPendingPlanMessageId,
-        clearToolCalls,
-        clearStreamingContentBlocks,
       } = useChatStore.getState()
-      setMode(sessionId, 'build')
-
-      // Clear the preserved tool calls and review state since we're sending a response
-      clearToolCalls(sessionId)
-      clearStreamingContentBlocks(sessionId)
-      setSessionReviewing(sessionId, false)
-      setWaitingForInput(sessionId, false)
-      setPendingPlanMessageId(sessionId, null)
 
       // Mark as at-bottom so Tier 4 / Tier 2 auto-scroll kicks in when
       // streaming starts. Don't physically scroll — let native CSS scroll
@@ -749,62 +711,42 @@ export function useMessageHandlers({
       addSendingSession(sessionId)
       setSelectedModel(sessionId, buildModel)
       setExecutingMode(sessionId, 'build')
-      const markPromise = markPlanApprovedService(
+
+      completePlanApprovalTransition({
+        queryClient,
         worktreeId,
         worktreePath,
         sessionId,
-        messageId
-      ).catch(err => {
-        console.error('[useMessageHandlers] markPlanApproved failed:', err)
-      })
+        messageId,
+        nextExecutionMode: 'build',
+        logContext: 'useMessageHandlers',
+      }).finally(() => {
+        queryClient.invalidateQueries({
+          queryKey: chatQueryKeys.sessions(worktreeId),
+        })
 
-      markPromise
-        .then(() =>
-          invoke('update_session_state', {
+        sendMessage.mutate(
+          {
+            sessionId,
             worktreeId,
             worktreePath,
-            sessionId,
-            waitingForInput: false,
-            waitingForInputType: null,
-            selectedExecutionMode: 'build',
-          })
-        )
-        .then(() =>
-          refreshAgentBoardAfterPlanApproval(queryClient, 'useMessageHandlers')
-        )
-        .catch(err => {
-          console.error(
-            '[useMessageHandlers] Failed to clear waiting state:',
-            err
-          )
-        })
-        .finally(() => {
-          queryClient.invalidateQueries({
-            queryKey: chatQueryKeys.sessions(worktreeId),
-          })
-
-          sendMessage.mutate(
-            {
-              sessionId,
-              worktreeId,
-              worktreePath,
-              message,
-              model: buildModel,
-              executionMode: 'build',
-              thinkingLevel: buildThinking,
-              effortLevel: useAdaptiveThinkingRef.current
-                ? buildEffort
-                : undefined,
-              mcpConfig: getMcpConfig(),
-              customProfileName: getCustomProfileName(),
+            message,
+            model: buildModel,
+            executionMode: 'build',
+            thinkingLevel: buildThinking,
+            effortLevel: useAdaptiveThinkingRef.current
+              ? buildEffort
+              : undefined,
+            mcpConfig: getMcpConfig(),
+            customProfileName: getCustomProfileName(),
+          },
+          {
+            onSettled: () => {
+              inputRef.current?.focus()
             },
-            {
-              onSettled: () => {
-                inputRef.current?.focus()
-              },
-            }
-          )
-        })
+          }
+        )
+      })
     },
     [
       activeSessionIdRef,
@@ -837,37 +779,13 @@ export function useMessageHandlers({
       const worktreePath = activeWorktreePathRef.current
       if (!sessionId || !worktreeId || !worktreePath) return
 
-      // Mark plan as approved in the message (persisted to disk)
-      // Optimistically update the UI to hide the approve button
-      applyOptimisticPlanApproval({
-        queryClient,
-        sessionId,
-        worktreeId,
-        messageId,
-      })
-
-      // Set to yolo mode for auto-approval of all future tools
       const {
-        setExecutionMode: setMode,
         addSendingSession,
         setSelectedModel,
         setLastSentMessage,
         setError,
         setExecutingMode,
-        setSessionReviewing,
-        setWaitingForInput,
-        setPendingPlanMessageId,
-        clearToolCalls,
-        clearStreamingContentBlocks,
       } = useChatStore.getState()
-      setMode(sessionId, 'yolo')
-
-      // Clear the preserved tool calls and review state since we're sending a response
-      clearToolCalls(sessionId)
-      clearStreamingContentBlocks(sessionId)
-      setSessionReviewing(sessionId, false)
-      setWaitingForInput(sessionId, false)
-      setPendingPlanMessageId(sessionId, null)
 
       // Mark as at-bottom so Tier 4 / Tier 2 auto-scroll kicks in when
       // streaming starts. Don't physically scroll — let native CSS scroll
@@ -906,62 +824,42 @@ export function useMessageHandlers({
       addSendingSession(sessionId)
       setSelectedModel(sessionId, yoloModel)
       setExecutingMode(sessionId, 'yolo')
-      const markPromise = markPlanApprovedService(
+
+      completePlanApprovalTransition({
+        queryClient,
         worktreeId,
         worktreePath,
         sessionId,
-        messageId
-      ).catch(err => {
-        console.error('[useMessageHandlers] markPlanApproved failed:', err)
-      })
+        messageId,
+        nextExecutionMode: 'yolo',
+        logContext: 'useMessageHandlers',
+      }).finally(() => {
+        queryClient.invalidateQueries({
+          queryKey: chatQueryKeys.sessions(worktreeId),
+        })
 
-      markPromise
-        .then(() =>
-          invoke('update_session_state', {
+        sendMessage.mutate(
+          {
+            sessionId,
             worktreeId,
             worktreePath,
-            sessionId,
-            waitingForInput: false,
-            waitingForInputType: null,
-            selectedExecutionMode: 'yolo',
-          })
-        )
-        .then(() =>
-          refreshAgentBoardAfterPlanApproval(queryClient, 'useMessageHandlers')
-        )
-        .catch(err => {
-          console.error(
-            '[useMessageHandlers] Failed to clear waiting state:',
-            err
-          )
-        })
-        .finally(() => {
-          queryClient.invalidateQueries({
-            queryKey: chatQueryKeys.sessions(worktreeId),
-          })
-
-          sendMessage.mutate(
-            {
-              sessionId,
-              worktreeId,
-              worktreePath,
-              message,
-              model: yoloModel,
-              executionMode: 'yolo',
-              thinkingLevel: yoloThinking,
-              effortLevel: useAdaptiveThinkingRef.current
-                ? yoloEffort
-                : undefined,
-              mcpConfig: getMcpConfig(),
-              customProfileName: getCustomProfileName(),
+            message,
+            model: yoloModel,
+            executionMode: 'yolo',
+            thinkingLevel: yoloThinking,
+            effortLevel: useAdaptiveThinkingRef.current
+              ? yoloEffort
+              : undefined,
+            mcpConfig: getMcpConfig(),
+            customProfileName: getCustomProfileName(),
+          },
+          {
+            onSettled: () => {
+              inputRef.current?.focus()
             },
-            {
-              onSettled: () => {
-                inputRef.current?.focus()
-              },
-            }
-          )
-        })
+          }
+        )
+      })
     },
     [
       activeSessionIdRef,

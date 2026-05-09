@@ -4,7 +4,6 @@ import { toast } from 'sonner'
 import { invoke, listen } from '@/lib/transport'
 import {
   chatQueryKeys,
-  markPlanApproved as markPlanApprovedService,
   readPlanFile,
   persistEnqueue,
   formatAnswersForCodexRequestUserInput,
@@ -32,11 +31,9 @@ import { markWorktreeSilentReady } from '@/services/worktree-silent-ready'
 import { getCodexPermissionApprovalMode } from '../permission-approval-utils'
 import { generateId } from '@/lib/uuid'
 import { preferencesQueryKeys } from '@/services/preferences'
-import { agentBoardQueryKeys } from '@/services/agent-board'
 import { useProjectsStore } from '@/store/projects-store'
 import { useUIStore } from '@/store/ui-store'
 import type { AppPreferences } from '@/types/preferences'
-import type { AgentBoardItem } from '@/types/agent-board'
 import type {
   Worktree,
   WorktreeCreatedEvent,
@@ -44,26 +41,16 @@ import type {
 } from '@/types/projects'
 import { logger } from '@/lib/logger'
 import { buildPlanApprovalMessage } from '../plan-approval-message'
-import { applyOptimisticPlanApproval } from './optimistic-plan-approval'
+import { resolveApprovedPlanContinuation } from './approved-plan-continuation'
+import { completePlanApprovalTransition } from './plan-approval-transition'
+import { sendApprovedPlanContinuation } from './send-approved-plan-continuation'
+import { closeOriginalApprovedSession } from './close-original-approved-session'
 
 /** Git commands to auto-approve for magic prompts (no permission prompts needed) */
 export const GIT_ALLOWED_TOOLS = [
   'Bash(git:*)', // All git commands
   // gh-cli/claude-cli are auto-allowed via --allowedTools in build_claude_args()
 ]
-
-function refreshAgentBoardAfterPlanApproval(
-  queryClient: QueryClient,
-  source: string
-) {
-  return invoke<AgentBoardItem[]>('refresh_agent_board_items')
-    .then(items => {
-      queryClient.setQueryData(agentBoardQueryKeys.all, items)
-    })
-    .catch(err => {
-      logger.error(`[${source}] Failed to refresh board:`, err)
-    })
-}
 
 function commandFromBashPattern(pattern: string): string | null {
   const match = pattern.match(/^Bash\((.+)\)$/)
@@ -198,37 +185,6 @@ function isThinkingLevel(
 ): value is ThinkingLevel {
   if (!value) return false
   return THINKING_LEVEL_VALUES.has(value as ThinkingLevel)
-}
-
-function mapCodexReasoningToEffort(
-  value: string | null | undefined
-): EffortLevel | undefined {
-  switch (value) {
-    case 'low':
-      return 'low'
-    case 'medium':
-      return 'medium'
-    case 'high':
-      return 'high'
-    case 'xhigh':
-    case 'max':
-      return 'max'
-    default:
-      return undefined
-  }
-}
-
-function getDefaultModelForBackend(
-  backend: Session['backend'] | undefined,
-  preferences: AppPreferences | undefined
-): string {
-  if (backend === 'codex') {
-    return preferences?.selected_codex_model ?? 'gpt-5.4'
-  }
-  if (backend === 'opencode') {
-    return preferences?.selected_opencode_model ?? 'opencode/gpt-5.3-codex'
-  }
-  return preferences?.selected_model ?? 'claude-opus-4-7'
 }
 
 function getBackendFromModel(
@@ -678,37 +634,13 @@ export function useMessageHandlers({
       const worktreePath = activeWorktreePathRef.current
       if (!sessionId || !worktreeId || !worktreePath) return
 
-      // Mark plan as approved in the message (persisted to disk)
-      // Optimistically update the UI to hide the approve button
-      applyOptimisticPlanApproval({
-        queryClient,
-        sessionId,
-        worktreeId,
-        messageId,
-      })
-
-      // Explicitly set to build mode (not toggle, to avoid switching back to plan if already in build)
       const {
-        setExecutionMode: setMode,
         addSendingSession,
         setSelectedModel,
         setLastSentMessage,
         setError,
         setExecutingMode,
-        setSessionReviewing,
-        setWaitingForInput,
-        setPendingPlanMessageId,
-        clearToolCalls,
-        clearStreamingContentBlocks,
       } = useChatStore.getState()
-      setMode(sessionId, 'build')
-
-      // Clear the preserved tool calls and review state since we're sending a response
-      clearToolCalls(sessionId)
-      clearStreamingContentBlocks(sessionId)
-      setSessionReviewing(sessionId, false)
-      setWaitingForInput(sessionId, false)
-      setPendingPlanMessageId(sessionId, null)
 
       // Mark as at-bottom so Tier 4 / Tier 2 auto-scroll kicks in when
       // streaming starts. Don't physically scroll — let native CSS scroll
@@ -749,62 +681,42 @@ export function useMessageHandlers({
       addSendingSession(sessionId)
       setSelectedModel(sessionId, buildModel)
       setExecutingMode(sessionId, 'build')
-      const markPromise = markPlanApprovedService(
+
+      completePlanApprovalTransition({
+        queryClient,
         worktreeId,
         worktreePath,
         sessionId,
-        messageId
-      ).catch(err => {
-        console.error('[useMessageHandlers] markPlanApproved failed:', err)
-      })
+        messageId,
+        nextExecutionMode: 'build',
+        logContext: 'useMessageHandlers',
+      }).finally(() => {
+        queryClient.invalidateQueries({
+          queryKey: chatQueryKeys.sessions(worktreeId),
+        })
 
-      markPromise
-        .then(() =>
-          invoke('update_session_state', {
+        sendMessage.mutate(
+          {
+            sessionId,
             worktreeId,
             worktreePath,
-            sessionId,
-            waitingForInput: false,
-            waitingForInputType: null,
-            selectedExecutionMode: 'build',
-          })
-        )
-        .then(() =>
-          refreshAgentBoardAfterPlanApproval(queryClient, 'useMessageHandlers')
-        )
-        .catch(err => {
-          console.error(
-            '[useMessageHandlers] Failed to clear waiting state:',
-            err
-          )
-        })
-        .finally(() => {
-          queryClient.invalidateQueries({
-            queryKey: chatQueryKeys.sessions(worktreeId),
-          })
-
-          sendMessage.mutate(
-            {
-              sessionId,
-              worktreeId,
-              worktreePath,
-              message,
-              model: buildModel,
-              executionMode: 'build',
-              thinkingLevel: buildThinking,
-              effortLevel: useAdaptiveThinkingRef.current
-                ? buildEffort
-                : undefined,
-              mcpConfig: getMcpConfig(),
-              customProfileName: getCustomProfileName(),
+            message,
+            model: buildModel,
+            executionMode: 'build',
+            thinkingLevel: buildThinking,
+            effortLevel: useAdaptiveThinkingRef.current
+              ? buildEffort
+              : undefined,
+            mcpConfig: getMcpConfig(),
+            customProfileName: getCustomProfileName(),
+          },
+          {
+            onSettled: () => {
+              inputRef.current?.focus()
             },
-            {
-              onSettled: () => {
-                inputRef.current?.focus()
-              },
-            }
-          )
-        })
+          }
+        )
+      })
     },
     [
       activeSessionIdRef,
@@ -837,37 +749,13 @@ export function useMessageHandlers({
       const worktreePath = activeWorktreePathRef.current
       if (!sessionId || !worktreeId || !worktreePath) return
 
-      // Mark plan as approved in the message (persisted to disk)
-      // Optimistically update the UI to hide the approve button
-      applyOptimisticPlanApproval({
-        queryClient,
-        sessionId,
-        worktreeId,
-        messageId,
-      })
-
-      // Set to yolo mode for auto-approval of all future tools
       const {
-        setExecutionMode: setMode,
         addSendingSession,
         setSelectedModel,
         setLastSentMessage,
         setError,
         setExecutingMode,
-        setSessionReviewing,
-        setWaitingForInput,
-        setPendingPlanMessageId,
-        clearToolCalls,
-        clearStreamingContentBlocks,
       } = useChatStore.getState()
-      setMode(sessionId, 'yolo')
-
-      // Clear the preserved tool calls and review state since we're sending a response
-      clearToolCalls(sessionId)
-      clearStreamingContentBlocks(sessionId)
-      setSessionReviewing(sessionId, false)
-      setWaitingForInput(sessionId, false)
-      setPendingPlanMessageId(sessionId, null)
 
       // Mark as at-bottom so Tier 4 / Tier 2 auto-scroll kicks in when
       // streaming starts. Don't physically scroll — let native CSS scroll
@@ -906,62 +794,42 @@ export function useMessageHandlers({
       addSendingSession(sessionId)
       setSelectedModel(sessionId, yoloModel)
       setExecutingMode(sessionId, 'yolo')
-      const markPromise = markPlanApprovedService(
+
+      completePlanApprovalTransition({
+        queryClient,
         worktreeId,
         worktreePath,
         sessionId,
-        messageId
-      ).catch(err => {
-        console.error('[useMessageHandlers] markPlanApproved failed:', err)
-      })
+        messageId,
+        nextExecutionMode: 'yolo',
+        logContext: 'useMessageHandlers',
+      }).finally(() => {
+        queryClient.invalidateQueries({
+          queryKey: chatQueryKeys.sessions(worktreeId),
+        })
 
-      markPromise
-        .then(() =>
-          invoke('update_session_state', {
+        sendMessage.mutate(
+          {
+            sessionId,
             worktreeId,
             worktreePath,
-            sessionId,
-            waitingForInput: false,
-            waitingForInputType: null,
-            selectedExecutionMode: 'yolo',
-          })
-        )
-        .then(() =>
-          refreshAgentBoardAfterPlanApproval(queryClient, 'useMessageHandlers')
-        )
-        .catch(err => {
-          console.error(
-            '[useMessageHandlers] Failed to clear waiting state:',
-            err
-          )
-        })
-        .finally(() => {
-          queryClient.invalidateQueries({
-            queryKey: chatQueryKeys.sessions(worktreeId),
-          })
-
-          sendMessage.mutate(
-            {
-              sessionId,
-              worktreeId,
-              worktreePath,
-              message,
-              model: yoloModel,
-              executionMode: 'yolo',
-              thinkingLevel: yoloThinking,
-              effortLevel: useAdaptiveThinkingRef.current
-                ? yoloEffort
-                : undefined,
-              mcpConfig: getMcpConfig(),
-              customProfileName: getCustomProfileName(),
+            message,
+            model: yoloModel,
+            executionMode: 'yolo',
+            thinkingLevel: yoloThinking,
+            effortLevel: useAdaptiveThinkingRef.current
+              ? yoloEffort
+              : undefined,
+            mcpConfig: getMcpConfig(),
+            customProfileName: getCustomProfileName(),
+          },
+          {
+            onSettled: () => {
+              inputRef.current?.focus()
             },
-            {
-              onSettled: () => {
-                inputRef.current?.focus()
-              },
-            }
-          )
-        })
+          }
+        )
+      })
     },
     [
       activeSessionIdRef,
@@ -1255,22 +1123,20 @@ export function useMessageHandlers({
       }
 
       // Mark plan approved on original session
-      markPlanApprovedService(worktreeId, worktreePath, sessionId, messageId)
-      applyOptimisticPlanApproval({
+      void completePlanApprovalTransition({
         queryClient,
-        sessionId,
         worktreeId,
+        worktreePath,
+        sessionId,
         messageId,
-      })
-      queryClient.invalidateQueries({
-        queryKey: chatQueryKeys.sessions(worktreeId),
+        logContext: 'clearContext',
+      }).finally(() => {
+        queryClient.invalidateQueries({
+          queryKey: chatQueryKeys.sessions(worktreeId),
+        })
       })
 
       const store = useChatStore.getState()
-      store.clearToolCalls(sessionId)
-      store.clearStreamingContentBlocks(sessionId)
-      store.setSessionReviewing(sessionId, false)
-      store.setWaitingForInput(sessionId, false)
 
       // Create new session
       let newSession: Session
@@ -1295,7 +1161,6 @@ export function useMessageHandlers({
         ? yoloThinkingLevelRef
         : buildThinkingLevelRef
       const modeEffortRef = isYolo ? yoloEffortLevelRef : buildEffortLevelRef
-      const modeLabel = isYolo ? 'Yolo' : 'Build'
 
       const currentSessionBackend = queryClient.getQueryData<Session>(
         chatQueryKeys.session(sessionId)
@@ -1303,137 +1168,46 @@ export function useMessageHandlers({
       const prefs = queryClient.getQueryData<AppPreferences>(
         preferencesQueryKeys.preferences()
       )
-      const modeBackendOverride =
-        (modeBackendRef.current as Session['backend']) ?? null
-      const resolvedBackend = modeBackendOverride ?? undefined
-      const modelBackend = resolvedBackend ?? currentSessionBackend
-      const resolvedModel =
-        modeModelRef.current ??
-        (modeBackendOverride
-          ? getDefaultModelForBackend(modelBackend, prefs)
-          : selectedModelRef.current)
-      const modeOverride =
-        modeModelRef.current || modeBackendOverride
-          ? [resolvedBackend, resolvedModel].filter(Boolean).join(' / ')
-          : ''
-      const planMessage = modeOverride
-        ? `[${modeLabel}: ${modeOverride}]\nExecute this plan. Implement all changes described.\n\n<plan>\n${planContent}\n</plan>`
-        : `Execute this plan. Implement all changes described.\n\n<plan>\n${planContent}\n</plan>`
-      store.setExecutionMode(newSession.id, mode)
-      store.setLastSentMessage(newSession.id, planMessage)
-      store.setError(newSession.id, null)
-      store.addSendingSession(newSession.id)
-      store.setSelectedModel(newSession.id, resolvedModel)
-      store.setExecutingMode(newSession.id, mode)
-      if (resolvedBackend) {
-        store.setSelectedBackend(
-          newSession.id,
-          resolvedBackend as 'claude' | 'codex' | 'opencode'
-        )
-      }
-      // Optimistically update TanStack Query cache so UI shows correct backend/model
-      // immediately. Without this, session?.backend (from query cache) defaults to 'claude'
-      // and overrides the Zustand value in the backend resolution chain.
-      queryClient.setQueryData<Session>(
-        chatQueryKeys.session(newSession.id),
-        old =>
-          old
-            ? {
-                ...old,
-                backend: resolvedBackend ?? old.backend,
-                selected_model: resolvedModel,
-              }
-            : old
-      )
-
-      // Persist model and backend to Rust session BEFORE sending so send_chat_message
-      // reads the updated session state (both use with_sessions_mut, so ordering matters)
-      await invoke('set_session_model', {
-        worktreeId,
-        worktreePath,
-        sessionId: newSession.id,
-        model: resolvedModel,
-      }).catch(err =>
-        logger.error('[clearContext] Failed to persist model:', err)
-      )
-      if (resolvedBackend) {
-        await invoke('set_session_backend', {
+      const continuation = resolveApprovedPlanContinuation({
+        mode,
+        planContent,
+        originalBackend: currentSessionBackend,
+        originalModel: selectedModelRef.current,
+        preferences: prefs,
+        modeBackendOverride: modeBackendRef.current,
+        modeModelOverride: modeModelRef.current,
+        modeThinkingOverride: modeThinkingRef.current,
+        modeEffortOverride: modeEffortRef.current,
+        fallbackThinkingLevel: selectedThinkingLevelRef.current,
+        fallbackEffortLevel: selectedEffortLevelRef.current,
+        useAdaptiveThinking: useAdaptiveThinkingRef.current,
+        returnOriginalBackend: false,
+        useNonAdaptiveEffortOverride: false,
+      })
+      await sendApprovedPlanContinuation({
+        queryClient,
+        sendMessage,
+        target: {
+          sessionId: newSession.id,
           worktreeId,
           worktreePath,
-          sessionId: newSession.id,
-          backend: resolvedBackend,
-        }).catch(err =>
-          logger.error('[clearContext] Failed to persist backend:', err)
-        )
-      }
-
-      const effectiveBackend = resolvedBackend ?? currentSessionBackend
-      let resolvedThinkingLevel: ThinkingLevel =
-        selectedThinkingLevelRef.current
-      let resolvedEffortLevel: EffortLevel | undefined = undefined
-      if (isThinkingLevel(modeThinkingRef.current)) {
-        resolvedThinkingLevel = modeThinkingRef.current
-      }
-      if (effectiveBackend === 'codex') {
-        resolvedThinkingLevel = 'off'
-      }
-      if (effectiveBackend === 'codex' || useAdaptiveThinkingRef.current) {
-        resolvedEffortLevel =
-          mapCodexReasoningToEffort(modeEffortRef.current) ??
-          selectedEffortLevelRef.current
-      }
-      sendMessage.mutate({
-        sessionId: newSession.id,
-        worktreeId,
-        worktreePath,
-        message: planMessage,
-        model: resolvedModel,
-        executionMode: mode,
-        thinkingLevel: resolvedThinkingLevel,
-        effortLevel: resolvedEffortLevel,
+        },
+        mode,
+        continuation,
+        logContext: 'clearContext',
         mcpConfig: getMcpConfig(),
         customProfileName: getCustomProfileName(),
-        backend: resolvedBackend,
       })
 
-      // Optionally close the original session immediately.
-      // cancel_process_if_running (used by close/archive) safely skips idle sessions,
-      // and with_sessions_mut uses a per-worktree mutex so there's no file-level race.
-      if (prefs?.close_original_on_clear_context) {
-        const command =
-          prefs.removal_behavior === 'archive'
-            ? 'archive_session'
-            : 'close_session'
-
-        // Optimistically remove from UI immediately
-        queryClient.setQueryData<WorktreeSessions>(
-          chatQueryKeys.sessions(worktreeId),
-          old => {
-            if (!old) return old
-            return {
-              ...old,
-              sessions: old.sessions.filter(s => s.id !== sessionId),
-              active_session_id:
-                old.active_session_id === sessionId
-                  ? newSession.id
-                  : old.active_session_id,
-            }
-          }
-        )
-
-        invoke(command, { worktreeId, worktreePath, sessionId })
-          .then(() =>
-            queryClient.invalidateQueries({
-              queryKey: chatQueryKeys.sessions(worktreeId),
-            })
-          )
-          .catch(err =>
-            logger.error(
-              '[useMessageHandlers] Failed to close original session:',
-              err
-            )
-          )
-      }
+      closeOriginalApprovedSession({
+        queryClient,
+        preferences: prefs,
+        worktreeId,
+        worktreePath,
+        sessionId,
+        replacementSessionId: newSession.id,
+        logContext: 'useMessageHandlers',
+      })
     },
     [
       activeSessionIdRef,
@@ -1533,7 +1307,6 @@ export function useMessageHandlers({
         ? yoloThinkingLevelRef
         : buildThinkingLevelRef
       const modeEffortRef = isYolo ? yoloEffortLevelRef : buildEffortLevelRef
-      const modeLabel = isYolo ? 'Yolo' : 'Build'
 
       const currentSessionBackend = queryClient.getQueryData<Session>(
         chatQueryKeys.session(sessionId)
@@ -1541,138 +1314,46 @@ export function useMessageHandlers({
       const prefs = queryClient.getQueryData<AppPreferences>(
         preferencesQueryKeys.preferences()
       )
-      const modeBackendOverride =
-        (modeBackendRef.current as Session['backend']) ?? null
-      const resolvedBackend = modeBackendOverride ?? undefined
-      const modelBackend = resolvedBackend ?? currentSessionBackend
-      const resolvedModel =
-        modeModelRef.current ??
-        (modeBackendOverride
-          ? getDefaultModelForBackend(modelBackend, prefs)
-          : selectedModelRef.current)
-      const modeOverride =
-        modeModelRef.current || modeBackendOverride
-          ? [resolvedBackend, resolvedModel].filter(Boolean).join(' / ')
-          : ''
-      const planMessage = modeOverride
-        ? `[${modeLabel}: ${modeOverride}]\nExecute this plan. Implement all changes described.\n\n<plan>\n${planContent}\n</plan>`
-        : `Execute this plan. Implement all changes described.\n\n<plan>\n${planContent}\n</plan>`
-      store.setExecutionMode(newSession.id, mode)
-      store.setLastSentMessage(newSession.id, planMessage)
-      store.setError(newSession.id, null)
-      store.addSendingSession(newSession.id)
-      store.setSelectedModel(newSession.id, resolvedModel)
-      store.setExecutingMode(newSession.id, mode)
-      if (resolvedBackend) {
-        store.setSelectedBackend(
-          newSession.id,
-          resolvedBackend as 'claude' | 'codex' | 'opencode'
-        )
-      }
-      // Optimistically update TanStack Query cache so UI shows correct backend/model immediately.
-      queryClient.setQueryData<Session>(
-        chatQueryKeys.session(newSession.id),
-        old =>
-          old
-            ? {
-                ...old,
-                backend: resolvedBackend ?? old.backend,
-                selected_model: resolvedModel,
-              }
-            : old
-      )
-
-      // Persist model and backend to Rust session BEFORE sending so send_chat_message
-      // reads the updated session state (both use with_sessions_mut, so ordering matters)
-      await invoke('set_session_model', {
-        worktreeId,
-        worktreePath,
-        sessionId: newSession.id,
-        model: resolvedModel,
-      }).catch(err =>
-        logger.error('[streamingClearContext] Failed to persist model:', err)
-      )
-      if (resolvedBackend) {
-        await invoke('set_session_backend', {
+      const continuation = resolveApprovedPlanContinuation({
+        mode,
+        planContent,
+        originalBackend: currentSessionBackend,
+        originalModel: selectedModelRef.current,
+        preferences: prefs,
+        modeBackendOverride: modeBackendRef.current,
+        modeModelOverride: modeModelRef.current,
+        modeThinkingOverride: modeThinkingRef.current,
+        modeEffortOverride: modeEffortRef.current,
+        fallbackThinkingLevel: selectedThinkingLevelRef.current,
+        fallbackEffortLevel: selectedEffortLevelRef.current,
+        useAdaptiveThinking: useAdaptiveThinkingRef.current,
+        returnOriginalBackend: false,
+        useNonAdaptiveEffortOverride: false,
+      })
+      await sendApprovedPlanContinuation({
+        queryClient,
+        sendMessage,
+        target: {
+          sessionId: newSession.id,
           worktreeId,
           worktreePath,
-          sessionId: newSession.id,
-          backend: resolvedBackend,
-        }).catch(err =>
-          logger.error(
-            '[streamingClearContext] Failed to persist backend:',
-            err
-          )
-        )
-      }
-
-      const effectiveBackend = resolvedBackend ?? currentSessionBackend
-      let resolvedThinkingLevel: ThinkingLevel =
-        selectedThinkingLevelRef.current
-      let resolvedEffortLevel: EffortLevel | undefined = undefined
-      if (isThinkingLevel(modeThinkingRef.current)) {
-        resolvedThinkingLevel = modeThinkingRef.current
-      }
-      if (effectiveBackend === 'codex') {
-        resolvedThinkingLevel = 'off'
-      }
-      if (effectiveBackend === 'codex' || useAdaptiveThinkingRef.current) {
-        resolvedEffortLevel =
-          mapCodexReasoningToEffort(modeEffortRef.current) ??
-          selectedEffortLevelRef.current
-      }
-      sendMessage.mutate({
-        sessionId: newSession.id,
-        worktreeId,
-        worktreePath,
-        message: planMessage,
-        model: resolvedModel,
-        executionMode: mode,
-        thinkingLevel: resolvedThinkingLevel,
-        effortLevel: resolvedEffortLevel,
+        },
+        mode,
+        continuation,
+        logContext: 'streamingClearContext',
         mcpConfig: getMcpConfig(),
         customProfileName: getCustomProfileName(),
-        backend: resolvedBackend,
       })
 
-      // Optionally close the original session immediately.
-      // cancel_process_if_running (used by close/archive) safely skips idle sessions,
-      // and with_sessions_mut uses a per-worktree mutex so there's no file-level race.
-      if (prefs?.close_original_on_clear_context) {
-        const command =
-          prefs.removal_behavior === 'archive'
-            ? 'archive_session'
-            : 'close_session'
-
-        // Optimistically remove from UI immediately
-        queryClient.setQueryData<WorktreeSessions>(
-          chatQueryKeys.sessions(worktreeId),
-          old => {
-            if (!old) return old
-            return {
-              ...old,
-              sessions: old.sessions.filter(s => s.id !== sessionId),
-              active_session_id:
-                old.active_session_id === sessionId
-                  ? newSession.id
-                  : old.active_session_id,
-            }
-          }
-        )
-
-        invoke(command, { worktreeId, worktreePath, sessionId })
-          .then(() =>
-            queryClient.invalidateQueries({
-              queryKey: chatQueryKeys.sessions(worktreeId),
-            })
-          )
-          .catch(err =>
-            logger.error(
-              '[useMessageHandlers] Failed to close original session:',
-              err
-            )
-          )
-      }
+      closeOriginalApprovedSession({
+        queryClient,
+        preferences: prefs,
+        worktreeId,
+        worktreePath,
+        sessionId,
+        replacementSessionId: newSession.id,
+        logContext: 'useMessageHandlers',
+      })
     },
     [
       activeSessionIdRef,
@@ -1746,22 +1427,20 @@ export function useMessageHandlers({
       }
 
       // Mark plan approved on original session
-      markPlanApprovedService(worktreeId, worktreePath, sessionId, messageId)
-      applyOptimisticPlanApproval({
+      void completePlanApprovalTransition({
         queryClient,
-        sessionId,
         worktreeId,
+        worktreePath,
+        sessionId,
         messageId,
-      })
-      queryClient.invalidateQueries({
-        queryKey: chatQueryKeys.sessions(worktreeId),
+        logContext: 'worktreeApproval',
+      }).finally(() => {
+        queryClient.invalidateQueries({
+          queryKey: chatQueryKeys.sessions(worktreeId),
+        })
       })
 
       const store = useChatStore.getState()
-      store.clearToolCalls(sessionId)
-      store.clearStreamingContentBlocks(sessionId)
-      store.setSessionReviewing(sessionId, false)
-      store.setWaitingForInput(sessionId, false)
 
       // Create new worktree
       let pendingWorktree: Worktree
@@ -1867,7 +1546,6 @@ export function useMessageHandlers({
         ? yoloThinkingLevelRef
         : buildThinkingLevelRef
       const modeEffortRef = isYolo ? yoloEffortLevelRef : buildEffortLevelRef
-      const modeLabel = isYolo ? 'Yolo' : 'Build'
 
       const currentSessionBackend = queryClient.getQueryData<Session>(
         chatQueryKeys.session(sessionId)
@@ -1875,125 +1553,45 @@ export function useMessageHandlers({
       const prefs = queryClient.getQueryData<AppPreferences>(
         preferencesQueryKeys.preferences()
       )
-      const modeBackendOverride =
-        (modeBackendRef.current as Session['backend']) ?? null
-      const resolvedBackend = modeBackendOverride ?? undefined
-      const modelBackend = resolvedBackend ?? currentSessionBackend
-      const resolvedModel =
-        modeModelRef.current ??
-        (modeBackendOverride
-          ? getDefaultModelForBackend(modelBackend, prefs)
-          : selectedModelRef.current)
-      const modeOverride =
-        modeModelRef.current || modeBackendOverride
-          ? [resolvedBackend, resolvedModel].filter(Boolean).join(' / ')
-          : ''
-      const planMessage = modeOverride
-        ? `[${modeLabel}: ${modeOverride}]\nExecute this plan. Implement all changes described.\n\n<plan>\n${planContent}\n</plan>`
-        : `Execute this plan. Implement all changes described.\n\n<plan>\n${planContent}\n</plan>`
-      store.setExecutionMode(newSession.id, mode)
-      store.setLastSentMessage(newSession.id, planMessage)
-      store.setError(newSession.id, null)
-      store.addSendingSession(newSession.id)
-      store.setSelectedModel(newSession.id, resolvedModel)
-      store.setExecutingMode(newSession.id, mode)
-      if (resolvedBackend) {
-        store.setSelectedBackend(
-          newSession.id,
-          resolvedBackend as 'claude' | 'codex' | 'opencode'
-        )
-      }
-      queryClient.setQueryData<Session>(
-        chatQueryKeys.session(newSession.id),
-        old =>
-          old
-            ? {
-                ...old,
-                backend: resolvedBackend ?? old.backend,
-                selected_model: resolvedModel,
-              }
-            : old
-      )
-
-      await invoke('set_session_model', {
-        worktreeId: readyWorktree.id,
-        worktreePath: readyWorktree.path,
-        sessionId: newSession.id,
-        model: resolvedModel,
-      }).catch(err =>
-        logger.error('[worktreeApproval] Failed to persist model:', err)
-      )
-      if (resolvedBackend) {
-        await invoke('set_session_backend', {
+      const continuation = resolveApprovedPlanContinuation({
+        mode,
+        planContent,
+        originalBackend: currentSessionBackend,
+        originalModel: selectedModelRef.current,
+        preferences: prefs,
+        modeBackendOverride: modeBackendRef.current,
+        modeModelOverride: modeModelRef.current,
+        modeThinkingOverride: modeThinkingRef.current,
+        modeEffortOverride: modeEffortRef.current,
+        fallbackThinkingLevel: selectedThinkingLevelRef.current,
+        fallbackEffortLevel: selectedEffortLevelRef.current,
+        useAdaptiveThinking: useAdaptiveThinkingRef.current,
+        returnOriginalBackend: false,
+        useNonAdaptiveEffortOverride: false,
+      })
+      await sendApprovedPlanContinuation({
+        queryClient,
+        sendMessage,
+        target: {
+          sessionId: newSession.id,
           worktreeId: readyWorktree.id,
           worktreePath: readyWorktree.path,
-          sessionId: newSession.id,
-          backend: resolvedBackend,
-        }).catch(err =>
-          logger.error('[worktreeApproval] Failed to persist backend:', err)
-        )
-      }
-
-      const effectiveBackend = resolvedBackend ?? currentSessionBackend
-      let resolvedThinkingLevel: ThinkingLevel =
-        selectedThinkingLevelRef.current
-      let resolvedEffortLevel: EffortLevel | undefined = undefined
-      if (isThinkingLevel(modeThinkingRef.current)) {
-        resolvedThinkingLevel = modeThinkingRef.current
-      }
-      if (effectiveBackend === 'codex') {
-        resolvedThinkingLevel = 'off'
-      }
-      if (effectiveBackend === 'codex' || useAdaptiveThinkingRef.current) {
-        resolvedEffortLevel =
-          mapCodexReasoningToEffort(modeEffortRef.current) ??
-          selectedEffortLevelRef.current
-      }
-      sendMessage.mutate({
-        sessionId: newSession.id,
-        worktreeId: readyWorktree.id,
-        worktreePath: readyWorktree.path,
-        message: planMessage,
-        model: resolvedModel,
-        executionMode: mode,
-        thinkingLevel: resolvedThinkingLevel,
-        effortLevel: resolvedEffortLevel,
+        },
+        mode,
+        continuation,
+        logContext: 'worktreeApproval',
         mcpConfig: getMcpConfig(),
         customProfileName: getCustomProfileName(),
-        backend: resolvedBackend,
       })
 
-      // Optionally close the original session
-      if (prefs?.close_original_on_clear_context) {
-        const closeCommand =
-          prefs.removal_behavior === 'archive'
-            ? 'archive_session'
-            : 'close_session'
-
-        queryClient.setQueryData<WorktreeSessions>(
-          chatQueryKeys.sessions(worktreeId),
-          old => {
-            if (!old) return old
-            return {
-              ...old,
-              sessions: old.sessions.filter(s => s.id !== sessionId),
-            }
-          }
-        )
-
-        invoke(closeCommand, { worktreeId, worktreePath, sessionId })
-          .then(() =>
-            queryClient.invalidateQueries({
-              queryKey: chatQueryKeys.sessions(worktreeId),
-            })
-          )
-          .catch(err =>
-            console.error(
-              '[worktreeApproval] Failed to close original session:',
-              err
-            )
-          )
-      }
+      closeOriginalApprovedSession({
+        queryClient,
+        preferences: prefs,
+        worktreeId,
+        worktreePath,
+        sessionId,
+        logContext: 'worktreeApproval',
+      })
     },
     [
       activeSessionIdRef,
@@ -2181,7 +1779,6 @@ export function useMessageHandlers({
         ? yoloThinkingLevelRef
         : buildThinkingLevelRef
       const modeEffortRef = isYolo ? yoloEffortLevelRef : buildEffortLevelRef
-      const modeLabel = isYolo ? 'Yolo' : 'Build'
 
       const currentSessionBackend = queryClient.getQueryData<Session>(
         chatQueryKeys.session(sessionId)
@@ -2189,131 +1786,45 @@ export function useMessageHandlers({
       const prefs = queryClient.getQueryData<AppPreferences>(
         preferencesQueryKeys.preferences()
       )
-      const modeBackendOverride =
-        (modeBackendRef.current as Session['backend']) ?? null
-      const resolvedBackend = modeBackendOverride ?? undefined
-      const modelBackend = resolvedBackend ?? currentSessionBackend
-      const resolvedModel =
-        modeModelRef.current ??
-        (modeBackendOverride
-          ? getDefaultModelForBackend(modelBackend, prefs)
-          : selectedModelRef.current)
-      const modeOverride =
-        modeModelRef.current || modeBackendOverride
-          ? [resolvedBackend, resolvedModel].filter(Boolean).join(' / ')
-          : ''
-      const planMessage = modeOverride
-        ? `[${modeLabel}: ${modeOverride}]\nExecute this plan. Implement all changes described.\n\n<plan>\n${planContent}\n</plan>`
-        : `Execute this plan. Implement all changes described.\n\n<plan>\n${planContent}\n</plan>`
-      store.setExecutionMode(newSession.id, mode)
-      store.setLastSentMessage(newSession.id, planMessage)
-      store.setError(newSession.id, null)
-      store.addSendingSession(newSession.id)
-      store.setSelectedModel(newSession.id, resolvedModel)
-      store.setExecutingMode(newSession.id, mode)
-      if (resolvedBackend) {
-        store.setSelectedBackend(
-          newSession.id,
-          resolvedBackend as 'claude' | 'codex' | 'opencode'
-        )
-      }
-      queryClient.setQueryData<Session>(
-        chatQueryKeys.session(newSession.id),
-        old =>
-          old
-            ? {
-                ...old,
-                backend: resolvedBackend ?? old.backend,
-                selected_model: resolvedModel,
-              }
-            : old
-      )
-
-      await invoke('set_session_model', {
-        worktreeId: readyWorktree.id,
-        worktreePath: readyWorktree.path,
-        sessionId: newSession.id,
-        model: resolvedModel,
-      }).catch(err =>
-        logger.error(
-          '[streamingWorktreeApproval] Failed to persist model:',
-          err
-        )
-      )
-      if (resolvedBackend) {
-        await invoke('set_session_backend', {
+      const continuation = resolveApprovedPlanContinuation({
+        mode,
+        planContent,
+        originalBackend: currentSessionBackend,
+        originalModel: selectedModelRef.current,
+        preferences: prefs,
+        modeBackendOverride: modeBackendRef.current,
+        modeModelOverride: modeModelRef.current,
+        modeThinkingOverride: modeThinkingRef.current,
+        modeEffortOverride: modeEffortRef.current,
+        fallbackThinkingLevel: selectedThinkingLevelRef.current,
+        fallbackEffortLevel: selectedEffortLevelRef.current,
+        useAdaptiveThinking: useAdaptiveThinkingRef.current,
+        returnOriginalBackend: false,
+        useNonAdaptiveEffortOverride: false,
+      })
+      await sendApprovedPlanContinuation({
+        queryClient,
+        sendMessage,
+        target: {
+          sessionId: newSession.id,
           worktreeId: readyWorktree.id,
           worktreePath: readyWorktree.path,
-          sessionId: newSession.id,
-          backend: resolvedBackend,
-        }).catch(err =>
-          logger.error(
-            '[streamingWorktreeApproval] Failed to persist backend:',
-            err
-          )
-        )
-      }
-
-      const effectiveBackend = resolvedBackend ?? currentSessionBackend
-      let resolvedThinkingLevel: ThinkingLevel =
-        selectedThinkingLevelRef.current
-      let resolvedEffortLevel: EffortLevel | undefined = undefined
-      if (isThinkingLevel(modeThinkingRef.current)) {
-        resolvedThinkingLevel = modeThinkingRef.current
-      }
-      if (effectiveBackend === 'codex') {
-        resolvedThinkingLevel = 'off'
-      }
-      if (effectiveBackend === 'codex' || useAdaptiveThinkingRef.current) {
-        resolvedEffortLevel =
-          mapCodexReasoningToEffort(modeEffortRef.current) ??
-          selectedEffortLevelRef.current
-      }
-      sendMessage.mutate({
-        sessionId: newSession.id,
-        worktreeId: readyWorktree.id,
-        worktreePath: readyWorktree.path,
-        message: planMessage,
-        model: resolvedModel,
-        executionMode: mode,
-        thinkingLevel: resolvedThinkingLevel,
-        effortLevel: resolvedEffortLevel,
+        },
+        mode,
+        continuation,
+        logContext: 'streamingWorktreeApproval',
         mcpConfig: getMcpConfig(),
         customProfileName: getCustomProfileName(),
-        backend: resolvedBackend,
       })
 
-      // Optionally close the original session
-      if (prefs?.close_original_on_clear_context) {
-        const closeCommand =
-          prefs.removal_behavior === 'archive'
-            ? 'archive_session'
-            : 'close_session'
-
-        queryClient.setQueryData<WorktreeSessions>(
-          chatQueryKeys.sessions(worktreeId),
-          old => {
-            if (!old) return old
-            return {
-              ...old,
-              sessions: old.sessions.filter(s => s.id !== sessionId),
-            }
-          }
-        )
-
-        invoke(closeCommand, { worktreeId, worktreePath, sessionId })
-          .then(() =>
-            queryClient.invalidateQueries({
-              queryKey: chatQueryKeys.sessions(worktreeId),
-            })
-          )
-          .catch(err =>
-            logger.error(
-              '[streamingWorktreeApproval] Failed to close original session:',
-              err
-            )
-          )
-      }
+      closeOriginalApprovedSession({
+        queryClient,
+        preferences: prefs,
+        worktreeId,
+        worktreePath,
+        sessionId,
+        logContext: 'streamingWorktreeApproval',
+      })
     },
     [
       activeSessionIdRef,

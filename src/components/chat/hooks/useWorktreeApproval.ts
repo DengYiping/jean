@@ -24,6 +24,7 @@ import { navigateToApprovedWorktree } from '../worktree-approval-navigation'
 import { resolveApprovedPlanContinuation } from './approved-plan-continuation'
 import { completePlanApprovalTransition } from './plan-approval-transition'
 import { sendApprovedPlanContinuation } from './send-approved-plan-continuation'
+import { closeOriginalApprovedSession } from './close-original-approved-session'
 import { markWorktreeSilentReady } from '@/services/worktree-silent-ready'
 
 interface UseWorktreeApprovalParams {
@@ -236,37 +237,14 @@ export function useWorktreeApproval({
         customProfileName: card.session.selected_provider ?? undefined,
       })
 
-      // Optionally close the original session
-      if (preferences?.close_original_on_clear_context) {
-        const command =
-          preferences.removal_behavior === 'archive'
-            ? 'archive_session'
-            : 'close_session'
-
-        queryClient.setQueryData<WorktreeSessions>(
-          chatQueryKeys.sessions(worktreeId),
-          old => {
-            if (!old) return old
-            return {
-              ...old,
-              sessions: old.sessions.filter(s => s.id !== sessionId),
-            }
-          }
-        )
-
-        invoke(command, { worktreeId, worktreePath, sessionId })
-          .then(() =>
-            queryClient.invalidateQueries({
-              queryKey: chatQueryKeys.sessions(worktreeId),
-            })
-          )
-          .catch(err =>
-            logger.error(
-              '[useWorktreeApproval] Failed to close original session:',
-              err
-            )
-          )
-      }
+      closeOriginalApprovedSession({
+        queryClient,
+        preferences,
+        worktreeId,
+        worktreePath,
+        sessionId,
+        logContext: 'useWorktreeApproval',
+      })
     },
     [worktreeId, worktreePath, projectId, queryClient, preferences, sendMessage]
   )

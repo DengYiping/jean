@@ -184,6 +184,7 @@ import { useActiveTodosAndAgents } from './hooks/useActiveTodosAndAgents'
 import { usePendingAttachments } from './hooks/usePendingAttachments'
 import { useQueuedMessages } from './hooks/useQueuedMessages'
 import { completePlanApprovalTransition } from './hooks/plan-approval-transition'
+import { resolveApprovedPlanContinuation } from './hooks/approved-plan-continuation'
 import { dedupeInFlightAssistantMessage } from './in-flight-message-dedupe'
 import { shouldShowPermissionApproval } from './permission-approval-utils'
 import {
@@ -1156,6 +1157,51 @@ export function ChatWindow({
     setIsPlanDialogOpen(true)
   }, [latestPlanContent])
 
+  const resolvePlanDialogContinuation = useCallback(
+    (mode: 'build' | 'yolo', editedPlanContent: string) => {
+      const isYolo = mode === 'yolo'
+      const modeModelRef = isYolo ? yoloModelRef : buildModelRef
+      const modeBackendRef = isYolo ? yoloBackendRef : buildBackendRef
+      const modeThinkingRef = isYolo
+        ? yoloThinkingLevelRef
+        : buildThinkingLevelRef
+      const modeEffortRef = isYolo ? yoloEffortLevelRef : buildEffortLevelRef
+
+      return resolveApprovedPlanContinuation({
+        mode,
+        planContent: editedPlanContent,
+        originalBackend: session?.backend,
+        originalModel: selectedModelRef.current,
+        preferences,
+        modeBackendOverride: modeBackendRef.current,
+        modeModelOverride: modeModelRef.current,
+        modeThinkingOverride: modeThinkingRef.current,
+        modeEffortOverride: modeEffortRef.current,
+        fallbackThinkingLevel: selectedThinkingLevelRef.current,
+        fallbackEffortLevel: selectedEffortLevelRef.current,
+        useAdaptiveThinking: useAdaptiveThinkingRef.current,
+        returnOriginalBackend: false,
+        useNonAdaptiveEffortOverride: false,
+      })
+    },
+    [
+      buildBackendRef,
+      buildEffortLevelRef,
+      buildModelRef,
+      buildThinkingLevelRef,
+      preferences,
+      selectedEffortLevelRef,
+      selectedModelRef,
+      selectedThinkingLevelRef,
+      session?.backend,
+      useAdaptiveThinkingRef,
+      yoloBackendRef,
+      yoloEffortLevelRef,
+      yoloModelRef,
+      yoloThinkingLevelRef,
+    ]
+  )
+
   // Clear context approval handler for PlanDialog
   const handlePlanDialogClearContextApprove = useCallback(
     async (editedPlanContent: string) => {
@@ -1189,34 +1235,21 @@ export function ChatWindow({
       store.setActiveSession(activeWorktreeId, newSession.id)
 
       // Send plan as first message in YOLO mode
-      const yoloBackend =
-        (yoloBackendRef.current as Session['backend']) ?? undefined
-      const yoloModel =
-        yoloModelRef.current ??
-        (yoloBackend === 'codex'
-          ? (preferences?.selected_codex_model ?? 'gpt-5.4')
-          : yoloBackend === 'opencode'
-            ? (preferences?.selected_opencode_model ?? 'opencode/gpt-5.3-codex')
-            : selectedModelRef.current)
-      const yoloOverride =
-        yoloModelRef.current || yoloBackend
-          ? [yoloBackend, yoloModel].filter(Boolean).join(' / ')
-          : ''
-      if (yoloOverride) toast.info(`Yolo: ${yoloOverride}`)
-      const message = yoloOverride
-        ? `[Yolo: ${yoloOverride}]\nExecute this plan. Implement all changes described.\n\n<plan>\n${editedPlanContent}\n</plan>`
-        : `Execute this plan. Implement all changes described.\n\n<plan>\n${editedPlanContent}\n</plan>`
+      const continuation = resolvePlanDialogContinuation(
+        'yolo',
+        editedPlanContent
+      )
+      if (continuation.modeOverride) {
+        toast.info(`${continuation.modeLabel}: ${continuation.modeOverride}`)
+      }
       store.setExecutionMode(newSession.id, 'yolo')
-      store.setLastSentMessage(newSession.id, message)
+      store.setLastSentMessage(newSession.id, continuation.message)
       store.setError(newSession.id, null)
       store.addSendingSession(newSession.id)
-      store.setSelectedModel(newSession.id, yoloModel)
+      store.setSelectedModel(newSession.id, continuation.model)
       store.setExecutingMode(newSession.id, 'yolo')
-      if (yoloBackend) {
-        store.setSelectedBackend(
-          newSession.id,
-          yoloBackend as 'claude' | 'codex' | 'opencode'
-        )
+      if (continuation.backend) {
+        store.setSelectedBackend(newSession.id, continuation.backend)
       }
       // Optimistically update TanStack Query cache so UI shows correct backend/model immediately.
       queryClient.setQueryData<Session>(
@@ -1225,8 +1258,8 @@ export function ChatWindow({
           old
             ? {
                 ...old,
-                backend: yoloBackend ?? old.backend,
-                selected_model: yoloModel,
+                backend: continuation.backend ?? old.backend,
+                selected_model: continuation.model,
               }
             : old
       )
@@ -1237,50 +1270,31 @@ export function ChatWindow({
         worktreeId: activeWorktreeId,
         worktreePath: activeWorktreePath,
         sessionId: newSession.id,
-        model: yoloModel,
+        model: continuation.model,
       }).catch(err =>
         logger.error('[PlanDialog CC Yolo] Failed to persist model:', err)
       )
-      if (yoloBackend) {
+      if (continuation.backend) {
         await invoke('set_session_backend', {
           worktreeId: activeWorktreeId,
           worktreePath: activeWorktreePath,
           sessionId: newSession.id,
-          backend: yoloBackend,
+          backend: continuation.backend,
         }).catch(err =>
           logger.error('[PlanDialog CC Yolo] Failed to persist backend:', err)
         )
       }
 
-      const effectiveYoloBackend = yoloBackend ?? session?.backend
-      const yoloModeThinking = yoloThinkingLevelRef.current
-      const yoloThinkingLevel: ThinkingLevel =
-        effectiveYoloBackend === 'codex'
-          ? 'off'
-          : ((yoloModeThinking ??
-              selectedThinkingLevelRef.current) as ThinkingLevel)
-      const yoloEffortLevel: EffortLevel | undefined =
-        effectiveYoloBackend === 'codex'
-          ? ((
-              {
-                low: 'low',
-                medium: 'medium',
-                high: 'high',
-                xhigh: 'max',
-                max: 'max',
-              } as Record<string, EffortLevel>
-            )[yoloModeThinking ?? ''] ?? selectedEffortLevelRef.current)
-          : undefined
       sendMessage.mutate({
         sessionId: newSession.id,
         worktreeId: activeWorktreeId,
         worktreePath: activeWorktreePath,
-        message,
-        model: yoloModel,
+        message: continuation.message,
+        model: continuation.model,
         executionMode: 'yolo',
-        thinkingLevel: yoloThinkingLevel,
-        effortLevel: yoloEffortLevel,
-        backend: yoloBackend,
+        thinkingLevel: continuation.thinkingLevel,
+        effortLevel: continuation.effortLevel,
+        backend: continuation.backend,
       })
     },
     [
@@ -1291,15 +1305,7 @@ export function ChatWindow({
       queryClient,
       createSession,
       sendMessage,
-      selectedModelRef,
-      yoloModelRef,
-      yoloBackendRef,
-      yoloThinkingLevelRef,
-      selectedThinkingLevelRef,
-      selectedEffortLevelRef,
-      preferences?.selected_codex_model,
-      preferences?.selected_opencode_model,
-      session?.backend,
+      resolvePlanDialogContinuation,
     ]
   )
 
@@ -1336,34 +1342,21 @@ export function ChatWindow({
       store.setActiveSession(activeWorktreeId, newSession.id)
 
       // Send plan as first message in build mode using build overrides
-      const buildBackend =
-        (buildBackendRef.current as Session['backend']) ?? undefined
-      const buildModel =
-        buildModelRef.current ??
-        (buildBackend === 'codex'
-          ? (preferences?.selected_codex_model ?? 'gpt-5.4')
-          : buildBackend === 'opencode'
-            ? (preferences?.selected_opencode_model ?? 'opencode/gpt-5.3-codex')
-            : selectedModelRef.current)
-      const buildOverride =
-        buildModelRef.current || buildBackend
-          ? [buildBackend, buildModel].filter(Boolean).join(' / ')
-          : ''
-      if (buildOverride) toast.info(`Build: ${buildOverride}`)
-      const message = buildOverride
-        ? `[Build: ${buildOverride}]\nExecute this plan. Implement all changes described.\n\n<plan>\n${editedPlanContent}\n</plan>`
-        : `Execute this plan. Implement all changes described.\n\n<plan>\n${editedPlanContent}\n</plan>`
+      const continuation = resolvePlanDialogContinuation(
+        'build',
+        editedPlanContent
+      )
+      if (continuation.modeOverride) {
+        toast.info(`${continuation.modeLabel}: ${continuation.modeOverride}`)
+      }
       store.setExecutionMode(newSession.id, 'build')
-      store.setLastSentMessage(newSession.id, message)
+      store.setLastSentMessage(newSession.id, continuation.message)
       store.setError(newSession.id, null)
       store.addSendingSession(newSession.id)
-      store.setSelectedModel(newSession.id, buildModel)
+      store.setSelectedModel(newSession.id, continuation.model)
       store.setExecutingMode(newSession.id, 'build')
-      if (buildBackend) {
-        store.setSelectedBackend(
-          newSession.id,
-          buildBackend as 'claude' | 'codex' | 'opencode'
-        )
+      if (continuation.backend) {
+        store.setSelectedBackend(newSession.id, continuation.backend)
       }
       // Optimistically update TanStack Query cache so UI shows correct backend/model immediately.
       queryClient.setQueryData<Session>(
@@ -1372,8 +1365,8 @@ export function ChatWindow({
           old
             ? {
                 ...old,
-                backend: buildBackend ?? old.backend,
-                selected_model: buildModel,
+                backend: continuation.backend ?? old.backend,
+                selected_model: continuation.model,
               }
             : old
       )
@@ -1384,50 +1377,31 @@ export function ChatWindow({
         worktreeId: activeWorktreeId,
         worktreePath: activeWorktreePath,
         sessionId: newSession.id,
-        model: buildModel,
+        model: continuation.model,
       }).catch(err =>
         logger.error('[PlanDialog CC Build] Failed to persist model:', err)
       )
-      if (buildBackend) {
+      if (continuation.backend) {
         await invoke('set_session_backend', {
           worktreeId: activeWorktreeId,
           worktreePath: activeWorktreePath,
           sessionId: newSession.id,
-          backend: buildBackend,
+          backend: continuation.backend,
         }).catch(err =>
           logger.error('[PlanDialog CC Build] Failed to persist backend:', err)
         )
       }
 
-      const effectiveBuildBackend = buildBackend ?? session?.backend
-      const buildModeThinking = buildThinkingLevelRef.current
-      const buildThinkingLevel: ThinkingLevel =
-        effectiveBuildBackend === 'codex'
-          ? 'off'
-          : ((buildModeThinking ??
-              selectedThinkingLevelRef.current) as ThinkingLevel)
-      const buildEffortLevel: EffortLevel | undefined =
-        effectiveBuildBackend === 'codex'
-          ? ((
-              {
-                low: 'low',
-                medium: 'medium',
-                high: 'high',
-                xhigh: 'max',
-                max: 'max',
-              } as Record<string, EffortLevel>
-            )[buildModeThinking ?? ''] ?? selectedEffortLevelRef.current)
-          : undefined
       sendMessage.mutate({
         sessionId: newSession.id,
         worktreeId: activeWorktreeId,
         worktreePath: activeWorktreePath,
-        message,
-        model: buildModel,
+        message: continuation.message,
+        model: continuation.model,
         executionMode: 'build',
-        thinkingLevel: buildThinkingLevel,
-        effortLevel: buildEffortLevel,
-        backend: buildBackend,
+        thinkingLevel: continuation.thinkingLevel,
+        effortLevel: continuation.effortLevel,
+        backend: continuation.backend,
       })
     },
     [
@@ -1438,15 +1412,7 @@ export function ChatWindow({
       queryClient,
       createSession,
       sendMessage,
-      selectedModelRef,
-      buildModelRef,
-      buildBackendRef,
-      buildThinkingLevelRef,
-      selectedThinkingLevelRef,
-      selectedEffortLevelRef,
-      preferences?.selected_codex_model,
-      preferences?.selected_opencode_model,
-      session?.backend,
+      resolvePlanDialogContinuation,
     ]
   )
 
@@ -1559,41 +1525,21 @@ export function ChatWindow({
       store.addUserInitiatedSession(newSession.id)
 
       // Resolve mode-specific overrides
-      const isYolo = mode === 'yolo'
-      const modeLabel = isYolo ? 'Yolo' : 'Build'
-      const modeBackendRef = isYolo ? yoloBackendRef : buildBackendRef
-      const modeModelRef = isYolo ? yoloModelRef : buildModelRef
-      const modeThinkingRef = isYolo
-        ? yoloThinkingLevelRef
-        : buildThinkingLevelRef
-      const modeBackend =
-        (modeBackendRef.current as Session['backend']) ?? undefined
-      const modeModel =
-        modeModelRef.current ??
-        (modeBackend === 'codex'
-          ? (preferences?.selected_codex_model ?? 'gpt-5.4')
-          : modeBackend === 'opencode'
-            ? (preferences?.selected_opencode_model ?? 'opencode/gpt-5.3-codex')
-            : selectedModelRef.current)
-      const modeOverride =
-        modeModelRef.current || modeBackend
-          ? [modeBackend, modeModel].filter(Boolean).join(' / ')
-          : ''
-      if (modeOverride) toast.info(`${modeLabel}: ${modeOverride}`)
-      const message = modeOverride
-        ? `[${modeLabel}: ${modeOverride}]\nExecute this plan. Implement all changes described.\n\n<plan>\n${editedPlanContent}\n</plan>`
-        : `Execute this plan. Implement all changes described.\n\n<plan>\n${editedPlanContent}\n</plan>`
+      const continuation = resolvePlanDialogContinuation(
+        mode,
+        editedPlanContent
+      )
+      if (continuation.modeOverride) {
+        toast.info(`${continuation.modeLabel}: ${continuation.modeOverride}`)
+      }
       store.setExecutionMode(newSession.id, mode)
-      store.setLastSentMessage(newSession.id, message)
+      store.setLastSentMessage(newSession.id, continuation.message)
       store.setError(newSession.id, null)
       store.addSendingSession(newSession.id)
-      store.setSelectedModel(newSession.id, modeModel)
+      store.setSelectedModel(newSession.id, continuation.model)
       store.setExecutingMode(newSession.id, mode)
-      if (modeBackend) {
-        store.setSelectedBackend(
-          newSession.id,
-          modeBackend as 'claude' | 'codex' | 'opencode'
-        )
+      if (continuation.backend) {
+        store.setSelectedBackend(newSession.id, continuation.backend)
       }
       queryClient.setQueryData<Session>(
         chatQueryKeys.session(newSession.id),
@@ -1601,8 +1547,8 @@ export function ChatWindow({
           old
             ? {
                 ...old,
-                backend: modeBackend ?? old.backend,
-                selected_model: modeModel,
+                backend: continuation.backend ?? old.backend,
+                selected_model: continuation.model,
               }
             : old
       )
@@ -1611,59 +1557,42 @@ export function ChatWindow({
         worktreeId: readyWorktree.id,
         worktreePath: readyWorktree.path,
         sessionId: newSession.id,
-        model: modeModel,
+        model: continuation.model,
       }).catch(err =>
         logger.error(
-          `[PlanDialog WT ${modeLabel}] Failed to persist model:`,
+          `[PlanDialog WT ${continuation.modeLabel}] Failed to persist model:`,
           err
         )
       )
-      if (modeBackend) {
+      if (continuation.backend) {
         await invoke('set_session_backend', {
           worktreeId: readyWorktree.id,
           worktreePath: readyWorktree.path,
           sessionId: newSession.id,
-          backend: modeBackend,
+          backend: continuation.backend,
         }).catch(err =>
           logger.error(
-            `[PlanDialog WT ${modeLabel}] Failed to persist backend:`,
+            `[PlanDialog WT ${continuation.modeLabel}] Failed to persist backend:`,
             err
           )
         )
       }
 
-      const effectiveBackend = modeBackend ?? session?.backend
-      const modeThinking = modeThinkingRef.current
-      const thinkingLevel: ThinkingLevel =
-        effectiveBackend === 'codex'
-          ? 'off'
-          : ((modeThinking ??
-              selectedThinkingLevelRef.current) as ThinkingLevel)
-      const effortLevel: EffortLevel | undefined =
-        effectiveBackend === 'codex'
-          ? ((
-              {
-                low: 'low',
-                medium: 'medium',
-                high: 'high',
-                xhigh: 'max',
-                max: 'max',
-              } as Record<string, EffortLevel>
-            )[modeThinking ?? ''] ?? selectedEffortLevelRef.current)
-          : undefined
       sendMessage.mutate({
         sessionId: newSession.id,
         worktreeId: readyWorktree.id,
         worktreePath: readyWorktree.path,
-        message,
-        model: modeModel,
+        message: continuation.message,
+        model: continuation.model,
         executionMode: mode,
-        thinkingLevel,
-        effortLevel,
-        backend: modeBackend,
+        thinkingLevel: continuation.thinkingLevel,
+        effortLevel: continuation.effortLevel,
+        backend: continuation.backend,
       })
 
-      toast.success(`Plan sent to new worktree (${modeLabel})`, { id: toastId })
+      toast.success(`Plan sent to new worktree (${continuation.modeLabel})`, {
+        id: toastId,
+      })
     },
     [
       activeSessionId,
@@ -1673,18 +1602,7 @@ export function ChatWindow({
       pendingPlanMessage,
       queryClient,
       sendMessage,
-      selectedModelRef,
-      buildModelRef,
-      buildBackendRef,
-      buildThinkingLevelRef,
-      yoloModelRef,
-      yoloBackendRef,
-      yoloThinkingLevelRef,
-      selectedThinkingLevelRef,
-      selectedEffortLevelRef,
-      preferences?.selected_codex_model,
-      preferences?.selected_opencode_model,
-      session?.backend,
+      resolvePlanDialogContinuation,
     ]
   )
 

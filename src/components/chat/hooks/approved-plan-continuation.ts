@@ -47,7 +47,7 @@ interface ResolveApprovedPlanContinuationParams {
   textFilePaths?: string[]
 }
 
-interface ApprovedPlanContinuation {
+export interface ApprovedPlanContinuation {
   backend?: Backend
   model: string
   modeLabel: 'Build' | 'Yolo'

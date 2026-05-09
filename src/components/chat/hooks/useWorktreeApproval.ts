@@ -23,6 +23,7 @@ import {
 import { navigateToApprovedWorktree } from '../worktree-approval-navigation'
 import { resolveApprovedPlanContinuation } from './approved-plan-continuation'
 import { completePlanApprovalTransition } from './plan-approval-transition'
+import { sendApprovedPlanContinuation } from './send-approved-plan-continuation'
 import { markWorktreeSilentReady } from '@/services/worktree-silent-ready'
 
 interface UseWorktreeApprovalParams {
@@ -221,59 +222,18 @@ export function useWorktreeApproval({
         textFilePaths,
       })
 
-      chatStore.setExecutionMode(newSession.id, mode)
-      chatStore.setLastSentMessage(newSession.id, continuation.message)
-      chatStore.setError(newSession.id, null)
-      chatStore.addSendingSession(newSession.id)
-      chatStore.setSelectedModel(newSession.id, continuation.model)
-      chatStore.setExecutingMode(newSession.id, mode)
-      if (continuation.backend) {
-        chatStore.setSelectedBackend(newSession.id, continuation.backend)
-      }
-
-      queryClient.setQueryData<Session>(
-        chatQueryKeys.session(newSession.id),
-        old =>
-          old
-            ? {
-                ...old,
-                backend: continuation.backend ?? old.backend,
-                selected_model: continuation.model,
-              }
-            : old
-      )
-
-      // Persist model and backend before sending
-      await invoke('set_session_model', {
-        worktreeId: readyWorktree.id,
-        worktreePath: readyWorktree.path,
-        sessionId: newSession.id,
-        model: continuation.model,
-      }).catch(err =>
-        logger.error('[useWorktreeApproval] Failed to persist model:', err)
-      )
-      if (continuation.backend) {
-        await invoke('set_session_backend', {
+      await sendApprovedPlanContinuation({
+        queryClient,
+        sendMessage,
+        target: {
+          sessionId: newSession.id,
           worktreeId: readyWorktree.id,
           worktreePath: readyWorktree.path,
-          sessionId: newSession.id,
-          backend: continuation.backend,
-        }).catch(err =>
-          logger.error('[useWorktreeApproval] Failed to persist backend:', err)
-        )
-      }
-
-      sendMessage.mutate({
-        sessionId: newSession.id,
-        worktreeId: readyWorktree.id,
-        worktreePath: readyWorktree.path,
-        message: continuation.message,
-        model: continuation.model,
-        executionMode: mode,
-        thinkingLevel: continuation.thinkingLevel,
-        effortLevel: continuation.effortLevel,
+        },
+        mode,
+        continuation,
+        logContext: 'useWorktreeApproval',
         customProfileName: card.session.selected_provider ?? undefined,
-        backend: continuation.backend,
       })
 
       // Optionally close the original session

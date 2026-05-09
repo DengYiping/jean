@@ -20,6 +20,7 @@ import {
 } from '../message-content-utils'
 import { resolveApprovedPlanContinuation } from './approved-plan-continuation'
 import { completePlanApprovalTransition } from './plan-approval-transition'
+import { sendApprovedPlanContinuation } from './send-approved-plan-continuation'
 
 interface UseClearContextApprovalParams {
   worktreeId: string
@@ -136,65 +137,18 @@ export function useClearContextApproval({
         toast.info(`${continuation.modeLabel}: ${continuation.modeOverride}`)
       }
 
-      store.setExecutionMode(newSession.id, mode)
-      store.setLastSentMessage(newSession.id, continuation.message)
-      store.setError(newSession.id, null)
-      store.addSendingSession(newSession.id)
-      store.setSelectedModel(newSession.id, continuation.model)
-      store.setExecutingMode(newSession.id, mode)
-      if (continuation.backend) {
-        store.setSelectedBackend(newSession.id, continuation.backend)
-      }
-      // Optimistically update TanStack Query cache so UI shows correct backend/model
-      // immediately. Without this, session?.backend (from query cache) defaults to 'claude'
-      // and overrides the Zustand value in the backend resolution chain.
-      queryClient.setQueryData<Session>(
-        chatQueryKeys.session(newSession.id),
-        old =>
-          old
-            ? {
-                ...old,
-                backend: continuation.backend ?? old.backend,
-                selected_model: continuation.model,
-              }
-            : old
-      )
-
-      // Persist model and backend to Rust session BEFORE sending so send_chat_message
-      // reads the updated session state (both use with_sessions_mut, so ordering matters)
-      await invoke('set_session_model', {
-        worktreeId,
-        worktreePath,
-        sessionId: newSession.id,
-        model: continuation.model,
-      }).catch(err =>
-        logger.error('[useClearContextApproval] Failed to persist model:', err)
-      )
-      if (continuation.backend) {
-        await invoke('set_session_backend', {
+      await sendApprovedPlanContinuation({
+        queryClient,
+        sendMessage,
+        target: {
+          sessionId: newSession.id,
           worktreeId,
           worktreePath,
-          sessionId: newSession.id,
-          backend: continuation.backend,
-        }).catch(err =>
-          logger.error(
-            '[useClearContextApproval] Failed to persist backend:',
-            err
-          )
-        )
-      }
-
-      sendMessage.mutate({
-        sessionId: newSession.id,
-        worktreeId,
-        worktreePath,
-        message: continuation.message,
-        model: continuation.model,
-        executionMode: mode,
-        thinkingLevel: continuation.thinkingLevel,
-        effortLevel: continuation.effortLevel,
+        },
+        mode,
+        continuation,
+        logContext: 'useClearContextApproval',
         customProfileName: card.session.selected_provider ?? undefined,
-        backend: continuation.backend,
       })
 
       // Optionally close the original session immediately.

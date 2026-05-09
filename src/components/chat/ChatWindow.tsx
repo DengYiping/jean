@@ -185,6 +185,7 @@ import { usePendingAttachments } from './hooks/usePendingAttachments'
 import { useQueuedMessages } from './hooks/useQueuedMessages'
 import { completePlanApprovalTransition } from './hooks/plan-approval-transition'
 import { resolveApprovedPlanContinuation } from './hooks/approved-plan-continuation'
+import { sendApprovedPlanContinuation } from './hooks/send-approved-plan-continuation'
 import { dedupeInFlightAssistantMessage } from './in-flight-message-dedupe'
 import { shouldShowPermissionApproval } from './permission-approval-utils'
 import {
@@ -1242,59 +1243,17 @@ export function ChatWindow({
       if (continuation.modeOverride) {
         toast.info(`${continuation.modeLabel}: ${continuation.modeOverride}`)
       }
-      store.setExecutionMode(newSession.id, 'yolo')
-      store.setLastSentMessage(newSession.id, continuation.message)
-      store.setError(newSession.id, null)
-      store.addSendingSession(newSession.id)
-      store.setSelectedModel(newSession.id, continuation.model)
-      store.setExecutingMode(newSession.id, 'yolo')
-      if (continuation.backend) {
-        store.setSelectedBackend(newSession.id, continuation.backend)
-      }
-      // Optimistically update TanStack Query cache so UI shows correct backend/model immediately.
-      queryClient.setQueryData<Session>(
-        chatQueryKeys.session(newSession.id),
-        old =>
-          old
-            ? {
-                ...old,
-                backend: continuation.backend ?? old.backend,
-                selected_model: continuation.model,
-              }
-            : old
-      )
-
-      // Persist model and backend to Rust session BEFORE sending so send_chat_message
-      // reads the updated session state (both use with_sessions_mut, so ordering matters)
-      await invoke('set_session_model', {
-        worktreeId: activeWorktreeId,
-        worktreePath: activeWorktreePath,
-        sessionId: newSession.id,
-        model: continuation.model,
-      }).catch(err =>
-        logger.error('[PlanDialog CC Yolo] Failed to persist model:', err)
-      )
-      if (continuation.backend) {
-        await invoke('set_session_backend', {
+      await sendApprovedPlanContinuation({
+        queryClient,
+        sendMessage,
+        target: {
+          sessionId: newSession.id,
           worktreeId: activeWorktreeId,
           worktreePath: activeWorktreePath,
-          sessionId: newSession.id,
-          backend: continuation.backend,
-        }).catch(err =>
-          logger.error('[PlanDialog CC Yolo] Failed to persist backend:', err)
-        )
-      }
-
-      sendMessage.mutate({
-        sessionId: newSession.id,
-        worktreeId: activeWorktreeId,
-        worktreePath: activeWorktreePath,
-        message: continuation.message,
-        model: continuation.model,
-        executionMode: 'yolo',
-        thinkingLevel: continuation.thinkingLevel,
-        effortLevel: continuation.effortLevel,
-        backend: continuation.backend,
+        },
+        mode: 'yolo',
+        continuation,
+        logContext: 'PlanDialog CC Yolo',
       })
     },
     [
@@ -1349,59 +1308,17 @@ export function ChatWindow({
       if (continuation.modeOverride) {
         toast.info(`${continuation.modeLabel}: ${continuation.modeOverride}`)
       }
-      store.setExecutionMode(newSession.id, 'build')
-      store.setLastSentMessage(newSession.id, continuation.message)
-      store.setError(newSession.id, null)
-      store.addSendingSession(newSession.id)
-      store.setSelectedModel(newSession.id, continuation.model)
-      store.setExecutingMode(newSession.id, 'build')
-      if (continuation.backend) {
-        store.setSelectedBackend(newSession.id, continuation.backend)
-      }
-      // Optimistically update TanStack Query cache so UI shows correct backend/model immediately.
-      queryClient.setQueryData<Session>(
-        chatQueryKeys.session(newSession.id),
-        old =>
-          old
-            ? {
-                ...old,
-                backend: continuation.backend ?? old.backend,
-                selected_model: continuation.model,
-              }
-            : old
-      )
-
-      // Persist model and backend to Rust session BEFORE sending so send_chat_message
-      // reads the updated session state (both use with_sessions_mut, so ordering matters)
-      await invoke('set_session_model', {
-        worktreeId: activeWorktreeId,
-        worktreePath: activeWorktreePath,
-        sessionId: newSession.id,
-        model: continuation.model,
-      }).catch(err =>
-        logger.error('[PlanDialog CC Build] Failed to persist model:', err)
-      )
-      if (continuation.backend) {
-        await invoke('set_session_backend', {
+      await sendApprovedPlanContinuation({
+        queryClient,
+        sendMessage,
+        target: {
+          sessionId: newSession.id,
           worktreeId: activeWorktreeId,
           worktreePath: activeWorktreePath,
-          sessionId: newSession.id,
-          backend: continuation.backend,
-        }).catch(err =>
-          logger.error('[PlanDialog CC Build] Failed to persist backend:', err)
-        )
-      }
-
-      sendMessage.mutate({
-        sessionId: newSession.id,
-        worktreeId: activeWorktreeId,
-        worktreePath: activeWorktreePath,
-        message: continuation.message,
-        model: continuation.model,
-        executionMode: 'build',
-        thinkingLevel: continuation.thinkingLevel,
-        effortLevel: continuation.effortLevel,
-        backend: continuation.backend,
+        },
+        mode: 'build',
+        continuation,
+        logContext: 'PlanDialog CC Build',
       })
     },
     [
@@ -1532,62 +1449,17 @@ export function ChatWindow({
       if (continuation.modeOverride) {
         toast.info(`${continuation.modeLabel}: ${continuation.modeOverride}`)
       }
-      store.setExecutionMode(newSession.id, mode)
-      store.setLastSentMessage(newSession.id, continuation.message)
-      store.setError(newSession.id, null)
-      store.addSendingSession(newSession.id)
-      store.setSelectedModel(newSession.id, continuation.model)
-      store.setExecutingMode(newSession.id, mode)
-      if (continuation.backend) {
-        store.setSelectedBackend(newSession.id, continuation.backend)
-      }
-      queryClient.setQueryData<Session>(
-        chatQueryKeys.session(newSession.id),
-        old =>
-          old
-            ? {
-                ...old,
-                backend: continuation.backend ?? old.backend,
-                selected_model: continuation.model,
-              }
-            : old
-      )
-
-      await invoke('set_session_model', {
-        worktreeId: readyWorktree.id,
-        worktreePath: readyWorktree.path,
-        sessionId: newSession.id,
-        model: continuation.model,
-      }).catch(err =>
-        logger.error(
-          `[PlanDialog WT ${continuation.modeLabel}] Failed to persist model:`,
-          err
-        )
-      )
-      if (continuation.backend) {
-        await invoke('set_session_backend', {
+      await sendApprovedPlanContinuation({
+        queryClient,
+        sendMessage,
+        target: {
+          sessionId: newSession.id,
           worktreeId: readyWorktree.id,
           worktreePath: readyWorktree.path,
-          sessionId: newSession.id,
-          backend: continuation.backend,
-        }).catch(err =>
-          logger.error(
-            `[PlanDialog WT ${continuation.modeLabel}] Failed to persist backend:`,
-            err
-          )
-        )
-      }
-
-      sendMessage.mutate({
-        sessionId: newSession.id,
-        worktreeId: readyWorktree.id,
-        worktreePath: readyWorktree.path,
-        message: continuation.message,
-        model: continuation.model,
-        executionMode: mode,
-        thinkingLevel: continuation.thinkingLevel,
-        effortLevel: continuation.effortLevel,
-        backend: continuation.backend,
+        },
+        mode,
+        continuation,
+        logContext: `PlanDialog WT ${continuation.modeLabel}`,
       })
 
       toast.success(`Plan sent to new worktree (${continuation.modeLabel})`, {

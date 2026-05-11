@@ -36,10 +36,14 @@ describe('useMessageSending', () => {
       draftSkillBindings: {},
       waitingForInputSessionIds: {},
       sendingSessionIds: {},
+      executionModes: {},
     })
   })
 
-  function renderUseMessageSending(inputValue: string) {
+  function renderUseMessageSending(
+    inputValue: string,
+    goalMode?: 'build' | 'yolo'
+  ) {
     const input = document.createElement('textarea')
     input.value = inputValue
 
@@ -63,7 +67,9 @@ describe('useMessageSending', () => {
         mcpServersDataRef: { current: [] },
         enabledMcpServersRef: { current: [] },
         selectedBackendRef: { current: 'codex' },
-        preferences: undefined,
+        preferences: goalMode
+          ? { codex_goal_execution_mode: goalMode }
+          : undefined,
         sendMessage,
         queryClient: new QueryClient(),
         markAtBottom: vi.fn(),
@@ -82,17 +88,15 @@ describe('useMessageSending', () => {
     }
   }
 
-  it('sets a codex goal before sending the trimmed message body', async () => {
+  it('starts a codex goal in build mode by default', async () => {
     mockInvoke.mockResolvedValue(null)
     const { result, sendMessage, clearInputDraft, clearChatInputState } =
       renderUseMessageSending('/goal Ship the migration')
 
     await act(async () => {
-      result.current.handleSubmit({
+      await result.current.handleSubmit({
         preventDefault: vi.fn(),
       } as unknown as FormEvent)
-      await Promise.resolve()
-      await Promise.resolve()
     })
 
     expect(mockInvoke).toHaveBeenCalledWith('codex_goal_set', {
@@ -101,12 +105,14 @@ describe('useMessageSending', () => {
       sessionId: 'session-1',
       objective: 'Ship the migration',
     })
+    expect(useChatStore.getState().executionModes['session-1']).toBe('build')
     expect(sendMessage.mutate).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionId: 'session-1',
         worktreeId: 'worktree-1',
         worktreePath: '/tmp/worktree-1',
-        message: 'Ship the migration',
+        message: 'Work toward the active goal:\n\nShip the migration',
+        executionMode: 'build',
         backend: 'codex',
       }),
       expect.any(Object)
@@ -115,16 +121,38 @@ describe('useMessageSending', () => {
     expect(clearChatInputState).toHaveBeenCalled()
   })
 
+  it('starts a codex goal in yolo mode when configured', async () => {
+    mockInvoke.mockResolvedValue(null)
+    const { result, sendMessage } = renderUseMessageSending(
+      '/goal Ship the migration',
+      'yolo'
+    )
+
+    await act(async () => {
+      await result.current.handleSubmit({
+        preventDefault: vi.fn(),
+      } as unknown as FormEvent)
+    })
+
+    expect(useChatStore.getState().executionModes['session-1']).toBe('yolo')
+    expect(sendMessage.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        executionMode: 'yolo',
+        message: 'Work toward the active goal:\n\nShip the migration',
+      }),
+      expect.any(Object)
+    )
+  })
+
   it('clears a codex goal without sending a chat turn', async () => {
     mockInvoke.mockResolvedValue(null)
     const { result, sendMessage, clearInputDraft, clearChatInputState } =
       renderUseMessageSending('/goal clear')
 
     await act(async () => {
-      result.current.handleSubmit({
+      await result.current.handleSubmit({
         preventDefault: vi.fn(),
       } as unknown as FormEvent)
-      await Promise.resolve()
     })
 
     expect(mockInvoke).toHaveBeenCalledWith('codex_goal_clear', {

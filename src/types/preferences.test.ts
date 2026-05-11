@@ -10,8 +10,10 @@ import {
   DEFAULT_MAGIC_PROMPT_PROVIDERS,
   DEFAULT_OPENCODE_SYSTEM_PROMPT,
   defaultPreferences,
+  getCodexFastInfo,
   magicPromptReasoningOptions,
   isMagicPromptModelCompatibleWithBackend,
+  normalizeCodexModel,
   OPENCODE_DEFAULT_MAGIC_PROMPT_EFFORTS,
   resolveMagicPromptBackend,
   type MagicPromptBackends,
@@ -82,6 +84,41 @@ describe('magic prompt model compatibility', () => {
         'claude'
       )
     ).toBe(false)
+  })
+})
+
+describe('codex fast model handling', () => {
+  it('recognizes the supported fast-tier base and fast variants', () => {
+    expect(getCodexFastInfo('gpt-5.5')).toMatchObject({
+      supportsFast: true,
+      isFast: false,
+      baseModel: 'gpt-5.5',
+      fastModel: 'gpt-5.5-fast',
+    })
+    expect(getCodexFastInfo('gpt-5.5-fast')).toMatchObject({
+      supportsFast: true,
+      isFast: true,
+      baseModel: 'gpt-5.5',
+      fastModel: 'gpt-5.5-fast',
+    })
+    expect(getCodexFastInfo('gpt-5.4-mini')).toMatchObject({
+      supportsFast: true,
+      isFast: false,
+      baseModel: 'gpt-5.4-mini',
+      fastModel: 'gpt-5.4-mini-fast',
+    })
+    expect(getCodexFastInfo('gpt-5.4-mini-fast')).toMatchObject({
+      supportsFast: true,
+      isFast: true,
+      baseModel: 'gpt-5.4-mini',
+      fastModel: 'gpt-5.4-mini-fast',
+    })
+  })
+
+  it('normalizes persisted fast-tier defaults back to their base model', () => {
+    expect(normalizeCodexModel('gpt-5.5-fast')).toBe('gpt-5.5')
+    expect(normalizeCodexModel('gpt-5.4-fast')).toBe('gpt-5.4')
+    expect(normalizeCodexModel('gpt-5.4-mini-fast')).toBe('gpt-5.4-mini')
   })
 })
 

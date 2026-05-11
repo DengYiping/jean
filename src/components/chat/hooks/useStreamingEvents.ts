@@ -231,6 +231,27 @@ function applyCodexMcpElicitationWaitingState(
   }
 }
 
+function clearSessionAttentionForRunningTurn(session: Session): Session {
+  return {
+    ...session,
+    waiting_for_input: false,
+    waiting_for_input_type: null,
+    pending_plan_message_id: undefined,
+    is_reviewing: false,
+    last_run_status: 'running',
+    session_derived_state: session.session_derived_state
+      ? {
+          ...session.session_derived_state,
+          is_waiting: false,
+          waiting_type: null,
+          has_question: false,
+          has_exit_plan: false,
+          pending_plan_message_id: null,
+        }
+      : session.session_derived_state,
+  }
+}
+
 function mergePermissionDenials(
   currentDenials: PermissionDenial[] | undefined,
   newDenials: PermissionDenial[]
@@ -356,7 +377,53 @@ export default function useStreamingEvents({
       // Check if THIS client initiated the send (sender calls addSendingSession
       // before sendMessage.mutate, so it's already in sendingSessionIds).
       const isSender = !!useChatStore.getState().sendingSessionIds[session_id]
+      // A remote client may start a new turn while this client still has the
+      // previous turn parked as waiting/reviewing locally. Clear those stale
+      // terminal flags before marking the session as running.
+      useChatStore.setState(state => {
+        if (
+          !state.waitingForInputSessionIds[session_id] &&
+          !state.reviewingSessions[session_id] &&
+          state.pendingPlanMessageIds[session_id] == null
+        ) {
+          return state
+        }
+        const { [session_id]: _waiting, ...waitingForInputSessionIds } =
+          state.waitingForInputSessionIds
+        const { [session_id]: _reviewing, ...reviewingSessions } =
+          state.reviewingSessions
+        const { [session_id]: _pendingPlan, ...pendingPlanMessageIds } =
+          state.pendingPlanMessageIds
+        return {
+          waitingForInputSessionIds,
+          reviewingSessions,
+          pendingPlanMessageIds,
+        }
+      })
       addSendingSession(session_id)
+      queryClient.setQueryData<Session>(
+        chatQueryKeys.session(session_id),
+        old => (old ? clearSessionAttentionForRunningTurn(old) : old)
+      )
+      queryClient.setQueriesData<WorktreeSessions>(
+        { queryKey: chatQueryKeys.sessions(wtId) },
+        old =>
+          old
+            ? {
+                ...old,
+                sessions: old.sessions.map(session =>
+                  session.id === session_id
+                    ? clearSessionAttentionForRunningTurn(session)
+                    : session
+                ),
+              }
+            : old
+      )
+      updateAllSessionsCache(queryClient, wtId, session =>
+        session.id === session_id
+          ? clearSessionAttentionForRunningTurn(session)
+          : session
+      )
       // Only invalidate for non-sender clients. The sender already has correct
       // optimistic state; refetching can overwrite it with stale disk data
       // (especially on WebSocket where dispatch is concurrent).
@@ -2045,6 +2112,7 @@ export default function useStreamingEvents({
           (useChatStore.getState().messageQueues[session_id] ?? []).length > 0
         const shouldRestoreMessage =
           !hasQueuedMessages && (undo_send || !hasContent)
+        let persistCancelledMessage: Promise<unknown> = Promise.resolve()
 
         // Update TanStack Query cache FIRST (before clearing Zustand streaming state)
         // This ensures the persisted message exists before StreamingMessage unmounts
@@ -2146,19 +2214,19 @@ export default function useStreamingEvents({
           // Persist partial content to JSONL so it survives app reload.
           // The backend command handler may not have finished writing yet
           // (e.g., OpenCode POST still in-flight).
-          invoke('save_cancelled_message', {
+          persistCancelledMessage = invoke('save_cancelled_message', {
             sessionId: session_id,
             worktreeId: sessionWorktreeId ?? eventWorktreeId,
             worktreePath: '',
             content: content ?? '',
             toolCalls: toolCalls ?? [],
             contentBlocks: contentBlocks ?? [],
-          }).catch(err =>
+          }).catch(err => {
             logger.debug(
               '[useStreamingEvents] Failed to persist partial cancelled content:',
               err
             )
-          )
+          })
           toast.info('Request cancelled')
         }
 
@@ -2176,8 +2244,8 @@ export default function useStreamingEvents({
           }
         }
 
-        // Persist cancel state to disk BEFORE invalidating queries
-        // This prevents a race where invalidation refetches stale waiting_for_input: true from disk
+        // Persist both the cancelled message and the cancel state before invalidating queries.
+        // Otherwise a refetch can race the JSONL/session-state writes and rehydrate stale data.
         const resolvedWorktreeId = sessionWorktreeId || eventWorktreeId
         const { worktreePaths } = useChatStore.getState()
         const wtPath = resolvedWorktreeId
@@ -2202,23 +2270,24 @@ export default function useStreamingEvents({
               )?.messages.length ?? 0) > 0
             : true
 
-          invoke('update_session_state', {
-            worktreeId: resolvedWorktreeId,
-            worktreePath: wtPath,
-            sessionId: session_id,
-            waitingForInput: false,
-            waitingForInputType: null,
-            isReviewing: isNowReviewing,
-          })
-            .catch(err =>
+          void Promise.allSettled([
+            persistCancelledMessage,
+            invoke('update_session_state', {
+              worktreeId: resolvedWorktreeId,
+              worktreePath: wtPath,
+              sessionId: session_id,
+              waitingForInput: false,
+              waitingForInputType: null,
+              isReviewing: isNowReviewing,
+            }).catch(err => {
               logger.debug(
                 '[useStreamingEvents] Failed to persist cancel state:',
                 err
               )
-            )
-            .finally(invalidateSessions)
+            }),
+          ]).finally(invalidateSessions)
         } else {
-          invalidateSessions()
+          void persistCancelledMessage.finally(invalidateSessions)
         }
       }
     )

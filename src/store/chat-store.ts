@@ -43,7 +43,7 @@ export type { ClaudeModel, CodexModel }
 export const DEFAULT_MODEL: ClaudeModel = 'claude-opus-4-7'
 
 /** Default Codex model */
-export const DEFAULT_CODEX_MODEL: CodexModel = 'gpt-5.4'
+export const DEFAULT_CODEX_MODEL: CodexModel = 'gpt-5.5'
 
 /** Default thinking level */
 export const DEFAULT_THINKING_LEVEL: ThinkingLevel = 'off'

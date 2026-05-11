@@ -2,7 +2,12 @@ import { useEffect, useRef, useCallback, useMemo } from 'react'
 import { useChatStore } from '@/store/chat-store'
 import { useUIStore } from '@/store/ui-store'
 import { useUpdateSessionState, useSessions } from '@/services/chat'
+import { sessionCanBeWaiting } from '@/components/chat/session-card-utils'
 import { logger } from '@/lib/logger'
+import {
+  beginSessionStateHydration,
+  endSessionStateHydration,
+} from '@/lib/session-state-hydration'
 import type {
   CodexMcpElicitation,
   QuestionAnswer,
@@ -286,14 +291,67 @@ export function useSessionStatePersistence() {
   useEffect(() => {
     if (!activeSessionId || !sessionsData) return
 
+    const session = sessionsData.sessions.find(s => s.id === activeSessionId)
+    if (!session) return
+
+    const waitingForInput =
+      session.session_derived_state?.is_waiting ??
+      (sessionCanBeWaiting(session) && (session.waiting_for_input ?? false))
+    const persistedPendingPlanMessageId = waitingForInput
+      ? (session.session_derived_state?.pending_plan_message_id ??
+        session.pending_plan_message_id ??
+        null)
+      : null
+    const isReviewing = session.is_reviewing ?? false
+
+    // Always resync waiting/review status from backend refetches.
+    // The rest of session-scoped state still loads once per session to avoid
+    // overwriting in-memory edits while the user is active.
+    const statusCurrentState = useChatStore.getState()
+    const statusUpdates: Partial<typeof statusCurrentState> = {}
+    const currentWaiting =
+      statusCurrentState.waitingForInputSessionIds[activeSessionId] ?? false
+    if (currentWaiting !== waitingForInput) {
+      statusUpdates.waitingForInputSessionIds = {
+        ...statusCurrentState.waitingForInputSessionIds,
+        [activeSessionId]: waitingForInput,
+      }
+    }
+    const currentReviewing =
+      statusCurrentState.reviewingSessions[activeSessionId] ?? false
+    if (currentReviewing !== isReviewing) {
+      statusUpdates.reviewingSessions = {
+        ...statusCurrentState.reviewingSessions,
+        [activeSessionId]: isReviewing,
+      }
+    }
+    const currentPendingPlanMessageId =
+      statusCurrentState.pendingPlanMessageIds[activeSessionId] ?? null
+    if (currentPendingPlanMessageId !== persistedPendingPlanMessageId) {
+      const { [activeSessionId]: _removed, ...restPendingPlanMessageIds } =
+        statusCurrentState.pendingPlanMessageIds
+      statusUpdates.pendingPlanMessageIds = {
+        ...restPendingPlanMessageIds,
+        ...(persistedPendingPlanMessageId
+          ? { [activeSessionId]: persistedPendingPlanMessageId }
+          : {}),
+      }
+    }
+
+    if (Object.keys(statusUpdates).length > 0) {
+      beginSessionStateHydration()
+      try {
+        useChatStore.setState(statusUpdates)
+      } finally {
+        endSessionStateHydration()
+      }
+    }
+
     // Only load from disk when switching to a new session.
     // Re-loading on every sessionsData refetch would overwrite in-memory
     // Zustand state with stale on-disk data (due to 500ms debounced saves),
     // causing answered questions / fixed findings to flicker.
     if (loadedSessionRef.current === activeSessionId) return
-
-    const session = sessionsData.sessions.find(s => s.id === activeSessionId)
-    if (!session) return
 
     // Mark as loaded only after finding the session (retry on next refetch if not found)
     loadedSessionRef.current = activeSessionId
@@ -374,13 +432,13 @@ export function useSessionStatePersistence() {
     }
 
     // Load reviewing status (handle both true and false to fix asymmetry bug)
-    const isReviewing = session.is_reviewing ?? false
-    const currentReviewing =
+    const initialReviewing = isReviewing
+    const initialCurrentReviewing =
       currentState.reviewingSessions[activeSessionId] ?? false
-    if (currentReviewing !== isReviewing) {
+    if (initialCurrentReviewing !== initialReviewing) {
       updates.reviewingSessions = {
         ...currentState.reviewingSessions,
-        [activeSessionId]: isReviewing,
+        [activeSessionId]: initialReviewing,
       }
     }
 
@@ -401,13 +459,13 @@ export function useSessionStatePersistence() {
     }
 
     // Load waiting for input status
-    const waitingForInput = session.waiting_for_input ?? false
-    const currentWaiting =
+    const initialWaitingForInput = waitingForInput
+    const initialCurrentWaiting =
       currentState.waitingForInputSessionIds[activeSessionId] ?? false
-    if (currentWaiting !== waitingForInput) {
+    if (initialCurrentWaiting !== initialWaitingForInput) {
       updates.waitingForInputSessionIds = {
         ...currentState.waitingForInputSessionIds,
-        [activeSessionId]: waitingForInput,
+        [activeSessionId]: initialWaitingForInput,
       }
     }
 
@@ -420,12 +478,9 @@ export function useSessionStatePersistence() {
     }
 
     // Load pending plan message ID only while the session is actually waiting.
-    const persistedPendingPlanMessageId = waitingForInput
-      ? (session.pending_plan_message_id ?? null)
-      : null
-    const currentPendingPlanMessageId =
+    const currentInitialPendingPlanMessageId =
       currentState.pendingPlanMessageIds[activeSessionId] ?? null
-    if (currentPendingPlanMessageId !== persistedPendingPlanMessageId) {
+    if (currentInitialPendingPlanMessageId !== persistedPendingPlanMessageId) {
       const { [activeSessionId]: _removed, ...restPendingPlanMessageIds } =
         currentState.pendingPlanMessageIds
       updates.pendingPlanMessageIds = {

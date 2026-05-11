@@ -2,6 +2,8 @@ import type { ThinkingLevel, EffortLevel, ExecutionMode } from './chat'
 import { DEFAULT_KEYBINDINGS, type KeybindingsMap } from './keybindings'
 import { isMacOS, isWindows } from '../lib/platform'
 
+export type CodexGoalExecutionMode = Extract<ExecutionMode, 'build' | 'yolo'>
+
 // =============================================================================
 // Notification Sounds
 // =============================================================================
@@ -991,6 +993,8 @@ export interface AppPreferences {
   custom_cli_profiles: CustomCliProfile[] // Custom CLI settings profiles (e.g., OpenRouter, MiniMax)
   default_provider: string | null // Default provider profile name (null = Anthropic direct)
   default_project_id: string | null // Default repo/project used by desktop CLI yolo requests
+  favorite_models: string[] // Favourited model keys ("backend:model") shown at the top of the desktop picker
+  fast_mode_models: string[] // Model keys ("backend:baseModel") with remembered fast-tier selection
 
   confirm_session_close: boolean // Show confirmation dialog before closing sessions/worktrees
   default_execution_mode: ExecutionMode // Default execution mode for new sessions: 'plan', 'build', or 'yolo'
@@ -1001,6 +1005,7 @@ export interface AppPreferences {
   codex_update_command: string | null // Optional Codex install/update command, e.g. "npm install -g @openai/codex"
   opencode_launch_command: string | null // Optional OpenCode launcher command, e.g. "dvx opencode"
   default_codex_reasoning_effort: CodexReasoningEffort // Default reasoning effort for Codex: 'low' | 'medium' | 'high' | 'xhigh'
+  codex_goal_execution_mode: CodexGoalExecutionMode // Execution mode used when starting a Codex /goal
   codex_multi_agent_enabled: boolean // Enable Codex multi-agent collaboration (experimental)
   codex_max_agent_threads: number // Max concurrent agent threads (1-8) when multi-agent is enabled
   restore_last_session: boolean // Restore last session when switching projects (default: true)
@@ -1146,6 +1151,52 @@ export const modelOptions: { value: ClaudeModel; label: string }[] = [
   { value: 'haiku', label: 'Claude Haiku' },
 ]
 
+export interface FastModelInfo {
+  supportsFast: boolean
+  isFast: boolean
+  baseModel: string
+  fastModel?: string
+}
+
+export const CLAUDE_FAST_MODEL_MAP = {
+  'claude-opus-4-6': 'claude-opus-4-6-fast',
+  'claude-opus-4-6[1m]': 'claude-opus-4-6[1m]-fast',
+  opus: 'opus-fast',
+} as const
+
+type ClaudeFastBaseModel = keyof typeof CLAUDE_FAST_MODEL_MAP
+
+const CLAUDE_FAST_TO_BASE = Object.fromEntries(
+  Object.entries(CLAUDE_FAST_MODEL_MAP).map(([baseModel, fastModel]) => [
+    fastModel,
+    baseModel,
+  ])
+) as Record<string, ClaudeFastBaseModel>
+
+export function getClaudeFastInfo(model: string): FastModelInfo {
+  if (model in CLAUDE_FAST_MODEL_MAP) {
+    const baseModel = model as ClaudeFastBaseModel
+    return {
+      supportsFast: true,
+      isFast: false,
+      baseModel,
+      fastModel: CLAUDE_FAST_MODEL_MAP[baseModel],
+    }
+  }
+
+  const baseModel = CLAUDE_FAST_TO_BASE[model]
+  if (baseModel) {
+    return {
+      supportsFast: true,
+      isFast: true,
+      baseModel,
+      fastModel: model,
+    }
+  }
+
+  return { supportsFast: false, isFast: false, baseModel: model }
+}
+
 export const thinkingLevelOptions: { value: ThinkingLevel; label: string }[] = [
   { value: 'off', label: 'Off' },
   { value: 'think', label: 'Think (4K)' },
@@ -1197,8 +1248,49 @@ export const codexModelOptions: { value: CodexModel; label: string }[] = [
   { value: 'gpt-5.1-codex-mini', label: 'GPT 5.1 Codex Mini' },
 ]
 
+export const CODEX_FAST_MODEL_MAP = {
+  'gpt-5.5': 'gpt-5.5-fast',
+  'gpt-5.4': 'gpt-5.4-fast',
+  'gpt-5.4-mini': 'gpt-5.4-mini-fast',
+} as const
+
+type CodexFastBaseModel = keyof typeof CODEX_FAST_MODEL_MAP
+
+const CODEX_FAST_TO_BASE = Object.fromEntries(
+  Object.entries(CODEX_FAST_MODEL_MAP).map(([baseModel, fastModel]) => [
+    fastModel,
+    baseModel,
+  ])
+) as Record<string, CodexFastBaseModel>
+
+export function getCodexFastInfo(model: string): FastModelInfo {
+  if (model in CODEX_FAST_MODEL_MAP) {
+    const baseModel = model as CodexFastBaseModel
+    return {
+      supportsFast: true,
+      isFast: false,
+      baseModel,
+      fastModel: CODEX_FAST_MODEL_MAP[baseModel],
+    }
+  }
+
+  const baseModel = CODEX_FAST_TO_BASE[model]
+  if (baseModel) {
+    return {
+      supportsFast: true,
+      isFast: true,
+      baseModel,
+      fastModel: model,
+    }
+  }
+
+  return { supportsFast: false, isFast: false, baseModel: model }
+}
+
 const deprecatedCodexFastModelMap = {
+  'gpt-5.5-fast': 'gpt-5.5',
   'gpt-5.4-fast': 'gpt-5.4',
+  'gpt-5.4-mini-fast': 'gpt-5.4-mini',
   'gpt-5.3-fast': 'gpt-5.3',
   'gpt-5.3-codex-fast': 'gpt-5.3-codex',
   'gpt-5.2-codex-fast': 'gpt-5.2-codex',
@@ -1214,7 +1306,7 @@ export function normalizeCodexModel(model: string): CodexModel {
     ]
   }
 
-  return isCodexModel(model) ? model : 'gpt-5.4'
+  return isCodexModel(model) ? model : 'gpt-5.5'
 }
 
 export type CodexReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh'
@@ -1255,6 +1347,14 @@ export const codexReasoningOptions: {
   { value: 'xhigh', label: 'Extra High' },
 ]
 
+export const codexGoalExecutionModeOptions: {
+  value: CodexGoalExecutionMode
+  label: string
+}[] = [
+  { value: 'build', label: 'Build' },
+  { value: 'yolo', label: 'Yolo' },
+]
+
 // =============================================================================
 // CLI Backend
 // =============================================================================
@@ -1266,6 +1366,38 @@ export const backendOptions: { value: CliBackend; label: string }[] = [
   { value: 'codex', label: 'Codex' },
   { value: 'opencode', label: 'OpenCode' },
 ]
+
+export function getModelFastInfo(
+  backend: CliBackend,
+  model: string
+): FastModelInfo {
+  if (backend === 'claude') return getClaudeFastInfo(model)
+  if (backend === 'codex') return getCodexFastInfo(model)
+  return { supportsFast: false, isFast: false, baseModel: model }
+}
+
+export function getModelPreferenceKey(
+  backend: CliBackend,
+  model: string
+): string {
+  const { baseModel } = getModelFastInfo(backend, model)
+  return `${backend}:${baseModel}`
+}
+
+export function resolveRememberedFastModel(
+  backend: CliBackend,
+  model: string,
+  rememberedFastModelKeys: readonly string[]
+): string {
+  const fastInfo = getModelFastInfo(backend, model)
+  if (fastInfo.isFast || !fastInfo.supportsFast || !fastInfo.fastModel) {
+    return model
+  }
+
+  return rememberedFastModelKeys.includes(getModelPreferenceKey(backend, model))
+    ? fastInfo.fastModel
+    : model
+}
 
 export function resolveMagicPromptBackend(
   backends: MagicPromptBackends | undefined,
@@ -1773,15 +1905,18 @@ export const defaultPreferences: AppPreferences = {
   custom_cli_profiles: [],
   default_provider: null,
   default_project_id: null,
+  favorite_models: [], // Default: no favourites
+  fast_mode_models: [], // Default: no remembered fast tiers
   confirm_session_close: true, // Default: enabled (show confirmation)
   default_execution_mode: 'plan', // Default: plan mode
   default_backend: 'claude', // Default: Claude
-  selected_codex_model: 'gpt-5.4', // Default: latest Codex model
+  selected_codex_model: 'gpt-5.5', // Default: latest Codex model
   selected_opencode_model: 'opencode/gpt-5.3-codex', // Default OpenCode model
   claude_update_command: null, // Default: use Jean's built-in Claude guidance
   codex_update_command: null, // Default: use Jean's built-in Codex guidance
   opencode_launch_command: null, // Default: use opencode directly from PATH
   default_codex_reasoning_effort: 'high', // Default: high reasoning
+  codex_goal_execution_mode: 'build', // Default: /goal starts in build mode
   codex_multi_agent_enabled: false, // Default: disabled
   codex_max_agent_threads: 3, // Default: 3 threads
   restore_last_session: true, // Default: enabled

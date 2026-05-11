@@ -127,6 +127,43 @@ export interface ChatStoreState {
   sessionLabels: Record<string, LabelData>
 }
 
+export function sessionCanBeWaiting(session: Session): boolean {
+  return (
+    !session.last_run_status ||
+    session.last_run_status === 'running' ||
+    session.last_run_status === 'resumable' ||
+    (session.last_run_status === 'completed' &&
+      session.waiting_for_input_type === 'plan')
+  )
+}
+
+export function getEffectiveSessionWaiting(
+  session: Session,
+  storeState: Pick<
+    ChatStoreState,
+    'waitingForInputSessionIds' | 'reviewingSessions'
+  >
+): boolean {
+  if (!sessionCanBeWaiting(session)) return false
+
+  const derived = session.session_derived_state
+  if (derived?.is_waiting ?? session.waiting_for_input ?? false) {
+    return true
+  }
+
+  const isReviewing =
+    (storeState.reviewingSessions[session.id] ?? false) ||
+    !!session.is_reviewing ||
+    !!session.review_results ||
+    derived?.status === 'review'
+
+  if (isReviewing) {
+    return false
+  }
+
+  return storeState.waitingForInputSessionIds[session.id] ?? false
+}
+
 export function computeSessionCardData(
   session: Session,
   storeState: ChatStoreState
@@ -150,6 +187,11 @@ export function computeSessionCardData(
   const answeredSet = answeredQuestions[session.id]
   const isStoreReviewing = reviewingSessions[session.id] ?? false
   const derived = session.session_derived_state
+  const isReviewing =
+    isStoreReviewing ||
+    !!session.is_reviewing ||
+    !!session.review_results ||
+    derived?.status === 'review'
 
   // Check streaming tool calls for waiting state
   const hasStreamingQuestion = toolCalls.some(
@@ -163,17 +205,12 @@ export function computeSessionCardData(
   // A session's waiting flag is only meaningful while the run is active, resumable,
   // or parked after a plan approval. Otherwise (e.g. completed non-plan run) the
   // flag is stale and must not be trusted — either in persisted state or Zustand.
-  const runCanBeWaiting =
-    !session.last_run_status ||
-    session.last_run_status === 'running' ||
-    session.last_run_status === 'resumable' ||
-    (session.last_run_status === 'completed' &&
-      session.waiting_for_input_type === 'plan')
+  const runCanBeWaiting = sessionCanBeWaiting(session)
 
   // Check persisted session state for waiting status
   const hasPendingQuestion =
     runCanBeWaiting &&
-    !isStoreReviewing &&
+    !isReviewing &&
     !sessionSending &&
     !hasStreamingQuestion &&
     (derived?.has_question ??
@@ -181,7 +218,7 @@ export function computeSessionCardData(
         (session.waiting_for_input_type ?? 'question') === 'question'))
   const hasPendingExitPlan =
     runCanBeWaiting &&
-    !isStoreReviewing &&
+    !isReviewing &&
     !sessionSending &&
     !hasStreamingExitPlan &&
     (derived?.has_exit_plan ??
@@ -235,17 +272,20 @@ export function computeSessionCardData(
   }
 
   // Use persisted waiting state as fallback when messages aren't loaded.
-  const isExplicitlyWaiting =
-    (waitingForInputSessionIds[session.id] ?? false) &&
-    (session.waiting_for_input ?? false)
+  const isExplicitlyWaiting = getEffectiveSessionWaiting(session, {
+    waitingForInputSessionIds,
+    reviewingSessions,
+  })
+  const hasActionableStreamingPlan = hasStreamingExitPlan && !sessionSending
   const isWaitingFromMessages =
-    hasStreamingQuestion ||
-    hasStreamingExitPlan ||
-    hasPendingQuestion ||
-    hasPendingExitPlan
+    runCanBeWaiting &&
+    (hasStreamingQuestion ||
+      hasActionableStreamingPlan ||
+      hasPendingQuestion ||
+      hasPendingExitPlan)
   // Once the local store has already moved the session into review, a stale
   // sessions-list refetch should not pull it back into waiting.
-  const canUsePersistedWaitingFallback = !sessionSending && !isStoreReviewing
+  const canUsePersistedWaitingFallback = !sessionSending && !isReviewing
   // When sessionSending is true, persisted waiting_for_input from TanStack Query
   // may be stale (not yet refetched after approval). Only use it as fallback when idle.
   const isWaiting = sessionSending
@@ -320,7 +360,7 @@ export function computeSessionCardData(
     status = 'vibing'
   } else if (sessionSending && executionMode === 'yolo') {
     status = 'yoloing'
-  } else if (isStoreReviewing || session.review_results) {
+  } else if (isReviewing) {
     status = 'review'
   } else if (!sessionSending && derived?.status) {
     status =

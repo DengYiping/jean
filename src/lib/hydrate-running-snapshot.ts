@@ -25,10 +25,11 @@ function extractSnapshotText(message: ChatMessage): string {
  */
 export function hydrateRunningSnapshot(
   sessionId: string,
-  message: ChatMessage
+  message: ChatMessage,
+  options: { allowWhileSending?: boolean } = {}
 ): boolean {
   const store = useChatStore.getState()
-  if (store.sendingSessionIds[sessionId]) {
+  if (!options.allowWhileSending && store.sendingSessionIds[sessionId]) {
     return false
   }
 

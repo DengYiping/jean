@@ -263,11 +263,13 @@ pub(crate) fn build_codex_prompt_with_parallel_request(
     )
 }
 
-/// Split "gpt-5.4-fast" → ("gpt-5.4", true). Only gpt-5.4-fast is recognised;
-/// older models that happened to end in `-fast` are left unchanged.
-fn split_fast_model(model: &str) -> (&str, bool) {
+/// Split supported Codex fast-tier models into their base model and service tier.
+/// Older models that happened to end in `-fast` are left unchanged.
+pub(crate) fn split_fast_model(model: &str) -> (&str, bool) {
     match model {
+        "gpt-5.5-fast" => ("gpt-5.5", true),
         "gpt-5.4-fast" => ("gpt-5.4", true),
+        "gpt-5.4-mini-fast" => ("gpt-5.4-mini", true),
         other => (other.strip_suffix("-fast").unwrap_or(other), false),
     }
 }
@@ -382,7 +384,7 @@ pub fn build_turn_start_params(
         params["effort"] = serde_json::json!(effort);
     }
 
-    let (collaboration_model, is_fast) = model.map(split_fast_model).unwrap_or(("gpt-5.4", false));
+    let (collaboration_model, is_fast) = model.map(split_fast_model).unwrap_or(("gpt-5.5", false));
     let mut settings = serde_json::json!({
         "model": collaboration_model,
     });
@@ -556,6 +558,12 @@ pub fn execute_codex_via_server(
         }
     };
 
+    if let Err(error) = super::storage::with_existing_metadata_mut(app, session_id, |metadata| {
+        metadata.codex_thread_id = Some(thread_id.clone());
+    }) {
+        log::warn!("Failed to persist Codex thread id for recovery: {error}");
+    }
+
     // If the user set a `/goal` before the first turn, flush it now that we
     // have a live thread id. This is harmless on resume and heals server restarts.
     super::commands::flush_pending_codex_goal(app, session_id, &thread_id);
@@ -608,6 +616,9 @@ pub fn execute_codex_via_server(
         &turn_start_rx,
         &event_rx,
         None,
+        None,
+        None,
+        true,
     );
     super::decrement_tailer_count();
 
@@ -676,6 +687,9 @@ pub fn execute_codex_compact_via_server(
         &request_rx,
         &event_rx,
         Some("manual"),
+        None,
+        None,
+        true,
     );
     super::decrement_tailer_count();
 
@@ -683,6 +697,644 @@ pub fn execute_codex_compact_via_server(
     super::registry::unregister_codex_turn(session_id);
 
     Ok(response)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CodexResumeDisposition {
+    Active,
+    Idle,
+    Failed,
+    Interrupted,
+}
+
+fn codex_thread_status_type(response: &serde_json::Value) -> Option<&str> {
+    response
+        .get("thread")
+        .and_then(|thread| thread.get("status"))
+        .and_then(|status| {
+            status
+                .get("type")
+                .and_then(|value| value.as_str())
+                .or_else(|| status.as_str())
+        })
+}
+
+fn codex_thread_turns(response: &serde_json::Value) -> Option<&Vec<serde_json::Value>> {
+    response
+        .get("thread")
+        .and_then(|thread| thread.get("turns"))
+        .and_then(|turns| turns.as_array())
+}
+
+fn select_codex_recovery_turn<'a>(
+    response: &'a serde_json::Value,
+    preferred_turn_id: Option<&str>,
+) -> Option<&'a serde_json::Value> {
+    let turns = codex_thread_turns(response)?;
+    if let Some(preferred_turn_id) = preferred_turn_id.filter(|turn_id| !turn_id.is_empty()) {
+        if let Some(turn) = turns
+            .iter()
+            .find(|turn| turn.get("id").and_then(|value| value.as_str()) == Some(preferred_turn_id))
+        {
+            return Some(turn);
+        }
+    }
+    turns.last()
+}
+
+fn selected_codex_recovery_turn_id(
+    response: &serde_json::Value,
+    preferred_turn_id: Option<&str>,
+) -> Option<String> {
+    select_codex_recovery_turn(response, preferred_turn_id)
+        .and_then(|turn| turn.get("id").and_then(|value| value.as_str()))
+        .map(ToString::to_string)
+}
+
+fn codex_turn_status(turn: &serde_json::Value) -> Option<&str> {
+    turn.get("status").and_then(|status| {
+        status
+            .get("type")
+            .and_then(|value| value.as_str())
+            .or_else(|| status.as_str())
+    })
+}
+
+fn classify_codex_resume(
+    response: &serde_json::Value,
+    preferred_turn_id: Option<&str>,
+    had_active_turn: bool,
+) -> CodexResumeDisposition {
+    let thread_status = codex_thread_status_type(response);
+    let turn_status =
+        select_codex_recovery_turn(response, preferred_turn_id).and_then(codex_turn_status);
+
+    match turn_status {
+        Some("failed") => CodexResumeDisposition::Failed,
+        Some("interrupted") => CodexResumeDisposition::Interrupted,
+        Some("inProgress") => CodexResumeDisposition::Active,
+        Some("completed") => CodexResumeDisposition::Idle,
+        _ if had_active_turn && thread_status == Some("active") => CodexResumeDisposition::Active,
+        _ => CodexResumeDisposition::Idle,
+    }
+}
+
+fn codex_turn_error_message(turn: &serde_json::Value) -> Option<String> {
+    let error = turn.get("error")?;
+    error
+        .get("message")
+        .and_then(|value| value.as_str())
+        .or_else(|| error.as_str())
+        .map(ToString::to_string)
+}
+
+fn codex_thread_snapshot_has_assistant_content(
+    response: &serde_json::Value,
+    preferred_turn_id: Option<&str>,
+) -> bool {
+    select_codex_recovery_turn(response, preferred_turn_id)
+        .and_then(|turn| turn.get("items").and_then(|value| value.as_array()))
+        .map(|items| {
+            items.iter().any(|item| {
+                let normalized = normalize_item_types(item);
+                !matches!(
+                    normalized.get("type").and_then(|value| value.as_str()),
+                    Some("user_message" | "hook_prompt")
+                )
+            })
+        })
+        .unwrap_or(false)
+}
+
+fn codex_thread_snapshot_history_lines(
+    response: &serde_json::Value,
+    preferred_turn_id: Option<&str>,
+    include_result_marker: bool,
+) -> Vec<String> {
+    let Some(turn) = select_codex_recovery_turn(response, preferred_turn_id) else {
+        return Vec::new();
+    };
+
+    let mut lines = Vec::new();
+    if let Some(items) = turn.get("items").and_then(|value| value.as_array()) {
+        for item in items {
+            let normalized = normalize_item_types(item);
+            let item_type = normalized
+                .get("type")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            if matches!(item_type, "user_message" | "hook_prompt") {
+                continue;
+            }
+
+            let started = serde_json::json!({
+                "type": "item.started",
+                "item": normalized,
+            });
+            if let Ok(line) = serde_json::to_string(&started) {
+                lines.push(line);
+            }
+
+            let completed = serde_json::json!({
+                "type": "item.completed",
+                "item": normalized,
+            });
+            if let Ok(line) = serde_json::to_string(&completed) {
+                lines.push(line);
+            }
+        }
+    }
+
+    match codex_turn_status(turn) {
+        Some("failed") => {
+            let failed = serde_json::json!({
+                "type": "turn.failed",
+                "error": turn.get("error").cloned().unwrap_or(serde_json::Value::Null),
+            });
+            if let Ok(line) = serde_json::to_string(&failed) {
+                lines.push(line);
+            }
+        }
+        Some("completed") if include_result_marker => {
+            lines.push(r#"{"type":"result"}"#.to_string());
+        }
+        _ => {}
+    }
+
+    lines
+}
+
+fn append_codex_thread_snapshot_to_history_file(
+    output_file: &std::path::Path,
+    response: &serde_json::Value,
+    preferred_turn_id: Option<&str>,
+    include_result_marker: bool,
+) -> Result<(), String> {
+    use std::io::Write;
+
+    let lines =
+        codex_thread_snapshot_history_lines(response, preferred_turn_id, include_result_marker);
+    if lines.is_empty() {
+        return Ok(());
+    }
+
+    let existing = std::fs::read_to_string(output_file).unwrap_or_default();
+    let existing_lines: std::collections::HashSet<&str> = existing.lines().map(str::trim).collect();
+
+    let mut writer = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(output_file)
+        .map_err(|error| format!("Failed to open Codex recovery history: {error}"))?;
+
+    for line in lines {
+        if existing_lines.contains(line.as_str()) {
+            continue;
+        }
+        writeln!(writer, "{line}")
+            .map_err(|error| format!("Failed to append Codex recovery history: {error}"))?;
+    }
+    writer
+        .flush()
+        .map_err(|error| format!("Failed to flush Codex recovery history: {error}"))?;
+
+    Ok(())
+}
+
+fn emit_codex_done(app: &tauri::AppHandle, session_id: &str, worktree_id: &str) {
+    let _ = app.emit_all(
+        "chat:done",
+        &DoneEvent {
+            session_id: session_id.to_string(),
+            worktree_id: worktree_id.to_string(),
+            waiting_for_plan: false,
+        },
+    );
+}
+
+fn run_was_explicitly_cancelled(app: &tauri::AppHandle, session_id: &str, run_id: &str) -> bool {
+    super::storage::load_metadata(app, session_id)
+        .ok()
+        .flatten()
+        .and_then(|metadata| {
+            metadata
+                .runs
+                .iter()
+                .find(|run| run.run_id == run_id)
+                .map(|run| run.status == super::types::RunStatus::Cancelled || run.cancelled)
+        })
+        .unwrap_or(false)
+}
+
+fn persist_codex_recovered_completion_state(
+    app: &tauri::AppHandle,
+    session_id: &str,
+    worktree_id: &str,
+    run_id: &str,
+    thread_id: &str,
+    assistant_message_id: &str,
+) -> Result<(), String> {
+    let Some(mut metadata) = super::storage::load_metadata(app, session_id)? else {
+        return Ok(());
+    };
+    let Some(run) = metadata
+        .runs
+        .iter()
+        .find(|run| run.run_id == run_id)
+        .cloned()
+    else {
+        return Ok(());
+    };
+
+    let recovered_message = super::run_log::read_run_log(app, session_id, run_id)
+        .ok()
+        .and_then(|lines| parse_codex_run_to_message(&lines, &run).ok());
+    let has_blocking_tool = recovered_message.as_ref().is_some_and(|message| {
+        message
+            .tool_calls
+            .iter()
+            .any(|tool_call| matches!(tool_call.name.as_str(), "AskUserQuestion" | "ExitPlanMode"))
+    });
+    let has_question_tool = recovered_message.as_ref().is_some_and(|message| {
+        message
+            .tool_calls
+            .iter()
+            .any(|tool_call| tool_call.name == "AskUserQuestion")
+    });
+    let is_plan_mode_with_content = run.execution_mode.as_deref() == Some("plan")
+        && recovered_message
+            .as_ref()
+            .is_some_and(|message| !message.content.is_empty());
+    let attention_updated_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    metadata.codex_thread_id = Some(thread_id.to_string());
+    if has_blocking_tool {
+        metadata.waiting_for_input = true;
+        metadata.waiting_for_input_type = Some(
+            if has_question_tool {
+                "question"
+            } else {
+                "plan"
+            }
+            .to_string(),
+        );
+        metadata.pending_plan_message_id = if has_question_tool {
+            None
+        } else {
+            Some(assistant_message_id.to_string())
+        };
+        metadata.is_reviewing = false;
+        metadata.attention_updated_at = Some(attention_updated_at);
+    } else if is_plan_mode_with_content {
+        metadata.waiting_for_input = true;
+        metadata.waiting_for_input_type = Some("plan".to_string());
+        metadata.pending_plan_message_id = Some(assistant_message_id.to_string());
+        metadata.is_reviewing = false;
+        metadata.attention_updated_at = Some(attention_updated_at);
+    } else {
+        metadata.waiting_for_input = false;
+        metadata.waiting_for_input_type = None;
+        metadata.pending_plan_message_id = None;
+        metadata.is_reviewing = true;
+    }
+
+    super::storage::save_metadata(app, &metadata)?;
+
+    let execution_mode = run.execution_mode.clone();
+    super::storage::with_sessions_mut(app, "", worktree_id, |sessions| {
+        let session = sessions
+            .find_session_mut(session_id)
+            .ok_or_else(|| format!("Session not found: {session_id}"))?;
+        session.codex_thread_id = Some(thread_id.to_string());
+        session.last_run_status = Some(super::types::RunStatus::Completed);
+        session.last_run_execution_mode = execution_mode.clone();
+
+        if has_blocking_tool {
+            session.waiting_for_input = true;
+            session.waiting_for_input_type = Some(
+                if has_question_tool {
+                    "question"
+                } else {
+                    "plan"
+                }
+                .to_string(),
+            );
+            session.pending_plan_message_id = if has_question_tool {
+                None
+            } else {
+                Some(assistant_message_id.to_string())
+            };
+            session.is_reviewing = false;
+            session.updated_at = attention_updated_at;
+        } else if is_plan_mode_with_content {
+            session.waiting_for_input = true;
+            session.waiting_for_input_type = Some("plan".to_string());
+            session.pending_plan_message_id = Some(assistant_message_id.to_string());
+            session.is_reviewing = false;
+            session.updated_at = attention_updated_at;
+        } else {
+            session.waiting_for_input = false;
+            session.waiting_for_input_type = None;
+            session.pending_plan_message_id = None;
+            session.is_reviewing = true;
+        }
+
+        Ok(())
+    })?;
+    super::commands::emit_sessions_cache_invalidation(app);
+
+    Ok(())
+}
+
+/// Resume a Codex session after Jean crashed.
+///
+/// Returns `Ok(true)` when recovery reached a terminal state and updated the
+/// run log, or `Ok(false)` when the thread is gone and the caller should mark
+/// the run as crashed.
+pub fn resume_codex_after_crash(
+    app: &tauri::AppHandle,
+    session_id: &str,
+    worktree_id: &str,
+    run_id: &str,
+    thread_id: &str,
+) -> Result<bool, String> {
+    use super::codex_server;
+    use super::run_log::RunLogWriter;
+    use super::storage::get_session_dir;
+
+    log::info!("Codex crash recovery: session={session_id}, thread={thread_id}, run={run_id}");
+
+    codex_server::ensure_running(app)?;
+
+    // Register before thread/resume so any immediate notifications are buffered
+    // instead of being dropped before the recovery event loop starts.
+    let (event_tx, event_rx) = std::sync::mpsc::channel();
+    let registration_id = codex_server::register_session(
+        thread_id,
+        codex_server::SessionContext {
+            registration_id: 0,
+            session_id: session_id.to_string(),
+            worktree_id: worktree_id.to_string(),
+            event_tx,
+        },
+    );
+
+    let resume_result = codex_server::send_request(
+        "thread/resume",
+        serde_json::json!({
+            "threadId": thread_id,
+            "persistExtendedHistory": true,
+        }),
+    );
+
+    match resume_result {
+        Err(error) => {
+            let has_result = super::run_log::jsonl_has_result_line(app, session_id, run_id);
+            codex_server::unregister_session(thread_id, registration_id);
+
+            if has_result {
+                if let Ok(mut writer) = RunLogWriter::resume(app, session_id, run_id) {
+                    let assistant_message_id = uuid::Uuid::new_v4().to_string();
+                    if let Err(complete_error) = writer.complete(&assistant_message_id, None, None)
+                    {
+                        log::error!(
+                            "Failed to complete Codex run from existing JSONL after recovery error: {complete_error}"
+                        );
+                    } else if let Err(state_error) = persist_codex_recovered_completion_state(
+                        app,
+                        session_id,
+                        worktree_id,
+                        run_id,
+                        thread_id,
+                        &assistant_message_id,
+                    ) {
+                        log::error!(
+                            "Failed to persist recovered Codex completion state: {state_error}"
+                        );
+                    }
+                }
+                emit_codex_done(app, session_id, worktree_id);
+                return Ok(true);
+            }
+
+            log::warn!("Codex crash recovery: thread/resume failed for {thread_id}: {error}");
+            Ok(false)
+        }
+        Ok(response) => {
+            let recovery_turn_id = selected_codex_recovery_turn_id(&response, None);
+            let disposition = classify_codex_resume(&response, recovery_turn_id.as_deref(), true);
+            let session_dir = get_session_dir(app, session_id)?;
+            let output_file = session_dir.join(format!("{run_id}.jsonl"));
+
+            if disposition == CodexResumeDisposition::Active {
+                let recovered_turn_id = recovery_turn_id.clone().unwrap_or_default();
+                super::registry::register_codex_turn(
+                    session_id.to_string(),
+                    thread_id.to_string(),
+                    recovered_turn_id.clone(),
+                );
+
+                let execution_mode =
+                    super::storage::load_metadata(app, session_id)?.and_then(|metadata| {
+                        metadata
+                            .runs
+                            .iter()
+                            .find(|run| run.run_id == run_id)
+                            .and_then(|run| run.execution_mode.clone())
+                    });
+                let is_plan_mode = execution_mode.as_deref() == Some("plan");
+                let is_build_mode = execution_mode.as_deref() == Some("build");
+                let (turn_start_tx, turn_start_rx) = std::sync::mpsc::channel();
+                let _ = turn_start_tx.send(Ok(if recovered_turn_id.is_empty() {
+                    serde_json::json!({})
+                } else {
+                    serde_json::json!({
+                        "turn": { "id": recovered_turn_id }
+                    })
+                }));
+
+                super::increment_tailer_count();
+                let response = process_turn_events(
+                    app,
+                    session_id,
+                    worktree_id,
+                    thread_id,
+                    &output_file,
+                    is_plan_mode,
+                    is_build_mode,
+                    &turn_start_rx,
+                    &event_rx,
+                    None,
+                    Some(std::time::Duration::from_secs(15)),
+                    recovery_turn_id.as_deref(),
+                    false,
+                );
+                super::decrement_tailer_count();
+
+                codex_server::unregister_session(thread_id, registration_id);
+                super::registry::unregister_codex_turn(session_id);
+
+                if let Ok(mut writer) = RunLogWriter::resume(app, session_id, run_id) {
+                    let assistant_message_id = uuid::Uuid::new_v4().to_string();
+                    if response.error_emitted {
+                        if let Err(error) = writer.crash() {
+                            log::error!(
+                                "Failed to mark Codex run crashed after recovery error: {error}"
+                            );
+                        }
+                        emit_codex_done(app, session_id, worktree_id);
+                    } else if response.cancelled {
+                        if run_was_explicitly_cancelled(app, session_id, run_id) {
+                            if let Err(error) = writer.cancel(Some(&assistant_message_id), None) {
+                                log::error!(
+                                    "Failed to cancel recovered Codex run after explicit cancel: {error}"
+                                );
+                            }
+                        } else if let Err(error) = writer.crash() {
+                            log::error!(
+                                "Recovered Codex turn was interrupted without user cancel; failed to mark run crashed: {error}"
+                            );
+                        }
+                        emit_codex_done(app, session_id, worktree_id);
+                    } else if let Err(error) =
+                        writer.complete(&assistant_message_id, None, response.usage)
+                    {
+                        log::error!("Failed to complete recovered Codex run: {error}");
+                    } else if let Err(error) = persist_codex_recovered_completion_state(
+                        app,
+                        session_id,
+                        worktree_id,
+                        run_id,
+                        thread_id,
+                        &assistant_message_id,
+                    ) {
+                        log::error!("Failed to persist Codex recovered completion state: {error}");
+                    }
+                }
+
+                return Ok(true);
+            }
+
+            codex_server::unregister_session(thread_id, registration_id);
+            let has_result = super::run_log::jsonl_has_result_line(app, session_id, run_id);
+
+            if !has_result {
+                if let Err(error) = append_codex_thread_snapshot_to_history_file(
+                    &output_file,
+                    &response,
+                    recovery_turn_id.as_deref(),
+                    disposition == CodexResumeDisposition::Idle,
+                ) {
+                    log::warn!("Failed to append Codex recovery snapshot: {error}");
+                }
+            }
+
+            match disposition {
+                CodexResumeDisposition::Failed => {
+                    if let Some(turn) =
+                        select_codex_recovery_turn(&response, recovery_turn_id.as_deref())
+                    {
+                        let raw_error = codex_turn_error_message(turn)
+                            .unwrap_or_else(|| "Unknown Codex error".to_string());
+                        let _ = app.emit_all(
+                            "chat:error",
+                            &ErrorEvent {
+                                session_id: session_id.to_string(),
+                                worktree_id: worktree_id.to_string(),
+                                error: format_codex_user_error(&raw_error),
+                            },
+                        );
+                    }
+                    if let Ok(mut writer) = RunLogWriter::resume(app, session_id, run_id) {
+                        if let Err(error) = writer.crash() {
+                            log::error!(
+                                "Failed to mark failed Codex run crashed during recovery: {error}"
+                            );
+                        }
+                    }
+                    emit_codex_done(app, session_id, worktree_id);
+                    return Ok(true);
+                }
+                CodexResumeDisposition::Interrupted => {
+                    if let Ok(mut writer) = RunLogWriter::resume(app, session_id, run_id) {
+                        let assistant_message_id = uuid::Uuid::new_v4().to_string();
+                        if run_was_explicitly_cancelled(app, session_id, run_id) {
+                            if let Err(error) = writer.cancel(Some(&assistant_message_id), None) {
+                                log::error!(
+                                    "Failed to cancel interrupted Codex run during recovery: {error}"
+                                );
+                            }
+                        } else if let Err(error) = writer.crash() {
+                            log::error!(
+                                "Recovered Codex turn was interrupted without user cancel; failed to mark run crashed: {error}"
+                            );
+                        }
+                    }
+                    emit_codex_done(app, session_id, worktree_id);
+                    return Ok(true);
+                }
+                CodexResumeDisposition::Active => unreachable!(),
+                CodexResumeDisposition::Idle => {}
+            }
+
+            if has_result {
+                if let Ok(mut writer) = RunLogWriter::resume(app, session_id, run_id) {
+                    let assistant_message_id = uuid::Uuid::new_v4().to_string();
+                    if let Err(error) = writer.complete(&assistant_message_id, None, None) {
+                        log::error!("Failed to complete recovered Codex run: {error}");
+                    } else if let Err(error) = persist_codex_recovered_completion_state(
+                        app,
+                        session_id,
+                        worktree_id,
+                        run_id,
+                        thread_id,
+                        &assistant_message_id,
+                    ) {
+                        log::error!("Failed to persist Codex recovered completion state: {error}");
+                    }
+                }
+                emit_codex_done(app, session_id, worktree_id);
+                return Ok(true);
+            }
+
+            if !codex_thread_snapshot_has_assistant_content(&response, recovery_turn_id.as_deref())
+            {
+                log::warn!(
+                    "Codex crash recovery: thread idle with no assistant items for run {run_id}; marking crashed"
+                );
+                if let Ok(mut writer) = RunLogWriter::resume(app, session_id, run_id) {
+                    if let Err(error) = writer.crash() {
+                        log::error!(
+                            "Failed to mark Codex run crashed during recovery (empty snapshot): {error}"
+                        );
+                    }
+                }
+                emit_codex_done(app, session_id, worktree_id);
+                return Ok(true);
+            }
+
+            if let Ok(mut writer) = RunLogWriter::resume(app, session_id, run_id) {
+                let assistant_message_id = uuid::Uuid::new_v4().to_string();
+                if let Err(error) = writer.complete(&assistant_message_id, None, None) {
+                    log::error!("Failed to complete recovered Codex run: {error}");
+                } else if let Err(error) = persist_codex_recovered_completion_state(
+                    app,
+                    session_id,
+                    worktree_id,
+                    run_id,
+                    thread_id,
+                    &assistant_message_id,
+                ) {
+                    log::error!("Failed to persist Codex recovered completion state: {error}");
+                }
+            }
+            emit_codex_done(app, session_id, worktree_id);
+            Ok(true)
+        }
+    }
 }
 
 /// Start a new Codex thread via app-server.
@@ -747,6 +1399,9 @@ fn process_turn_events(
     turn_start_rx: &std::sync::mpsc::Receiver<Result<serde_json::Value, String>>,
     event_rx: &std::sync::mpsc::Receiver<super::codex_server::ServerEvent>,
     compact_trigger: Option<&str>,
+    status_poll_interval: Option<std::time::Duration>,
+    recovery_turn_id: Option<&str>,
+    emit_cancelled_on_server_interrupt: bool,
 ) -> CodexResponse {
     use super::codex_server::ServerEvent;
     use std::io::Write;
@@ -766,6 +1421,7 @@ fn process_turn_events(
     let mut usage: Option<UsageData> = None;
     let mut turn_start_resolved = false;
     let mut last_activity = Instant::now();
+    let mut last_status_poll = Instant::now();
     let mut received_completed_agent_message = false;
     let mut awaiting_server_response = false;
 
@@ -822,6 +1478,77 @@ fn process_turn_events(
         let event = match event_rx.recv_timeout(Duration::from_millis(200)) {
             Ok(e) => e,
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                if let Some(interval) = status_poll_interval {
+                    if last_status_poll.elapsed() >= interval {
+                        last_status_poll = Instant::now();
+                        match super::codex_server::send_request(
+                            "thread/read",
+                            serde_json::json!({
+                                "threadId": thread_id,
+                                "includeTurns": true,
+                            }),
+                        ) {
+                            Ok(snapshot) => {
+                                let disposition =
+                                    classify_codex_resume(&snapshot, recovery_turn_id, true);
+                                if disposition == CodexResumeDisposition::Active {
+                                    last_activity = Instant::now();
+                                    continue;
+                                }
+
+                                if let Some(ref mut writer) = output_writer {
+                                    let _ = writer.flush();
+                                }
+                                if let Err(error) = append_codex_thread_snapshot_to_history_file(
+                                    output_file,
+                                    &snapshot,
+                                    recovery_turn_id,
+                                    false,
+                                ) {
+                                    log::warn!(
+                                        "Failed to append Codex recovery snapshot after idle poll: {error}"
+                                    );
+                                }
+
+                                match disposition {
+                                    CodexResumeDisposition::Failed => {
+                                        if let Some(turn) =
+                                            select_codex_recovery_turn(&snapshot, recovery_turn_id)
+                                        {
+                                            let raw_error = codex_turn_error_message(turn)
+                                                .unwrap_or_else(|| {
+                                                    "Unknown Codex error".to_string()
+                                                });
+                                            let _ = app.emit_all(
+                                                "chat:error",
+                                                &ErrorEvent {
+                                                    session_id: session_id.to_string(),
+                                                    worktree_id: worktree_id.to_string(),
+                                                    error: format_codex_user_error(&raw_error),
+                                                },
+                                            );
+                                        }
+                                        error_emitted = true;
+                                        break;
+                                    }
+                                    CodexResumeDisposition::Interrupted => {
+                                        cancelled = true;
+                                        server_interrupted = true;
+                                        break;
+                                    }
+                                    CodexResumeDisposition::Idle => {
+                                        break;
+                                    }
+                                    CodexResumeDisposition::Active => unreachable!(),
+                                }
+                            }
+                            Err(error) => {
+                                log::warn!("Codex recovery status poll failed: {error}");
+                            }
+                        }
+                    }
+                }
+
                 let idle_timeout =
                     codex_turn_idle_timeout(!pending_tool_ids.is_empty(), awaiting_server_response);
                 if last_activity.elapsed() >= idle_timeout {
@@ -993,7 +1720,7 @@ fn process_turn_events(
                         .any(|tool_call| tool_call.name == "ExitPlanMode"),
             },
         );
-    } else if server_interrupted && !error_emitted {
+    } else if emit_cancelled_on_server_interrupt && server_interrupted && !error_emitted {
         // Server-initiated interruption (e.g., Codex ended the turn while an
         // approval request was still pending). User-initiated cancellation is
         // handled by registry::cancel_process() which emits chat:cancelled
@@ -1327,10 +2054,7 @@ fn process_server_notification(
             );
         }
         "thread/goal/updated" => {
-            let goal = params
-                .get("goal")
-                .and_then(|value| value.as_str())
-                .map(ToString::to_string);
+            let goal = super::commands::extract_codex_goal_objective(params);
             if let Err(error) =
                 super::commands::persist_codex_goal(app, worktree_id, "", session_id, goal)
             {
@@ -3582,8 +4306,43 @@ mod tests {
     }
 
     #[test]
-    fn split_fast_model_recognises_gpt_5_4_fast() {
+    fn gpt_5_5_fast_enables_fast_service_tier() {
+        let params = build_thread_start_params(
+            std::path::Path::new("/tmp"),
+            Some("gpt-5.5-fast"),
+            Some("plan"),
+            false,
+            None,
+            false,
+            None,
+        );
+        assert_eq!(params["model"], "gpt-5.5");
+        assert_eq!(params["serviceTier"], "fast");
+    }
+
+    #[test]
+    fn gpt_5_4_mini_fast_enables_fast_service_tier() {
+        let params = build_thread_start_params(
+            std::path::Path::new("/tmp"),
+            Some("gpt-5.4-mini-fast"),
+            Some("plan"),
+            false,
+            None,
+            false,
+            None,
+        );
+        assert_eq!(params["model"], "gpt-5.4-mini");
+        assert_eq!(params["serviceTier"], "fast");
+    }
+
+    #[test]
+    fn split_fast_model_recognises_supported_fast_models() {
+        assert_eq!(split_fast_model("gpt-5.5-fast"), ("gpt-5.5", true));
         assert_eq!(split_fast_model("gpt-5.4-fast"), ("gpt-5.4", true));
+        assert_eq!(
+            split_fast_model("gpt-5.4-mini-fast"),
+            ("gpt-5.4-mini", true)
+        );
     }
 
     #[test]
@@ -3594,6 +4353,7 @@ mod tests {
 
     #[test]
     fn split_fast_model_passes_through_normal_models() {
+        assert_eq!(split_fast_model("gpt-5.5"), ("gpt-5.5", false));
         assert_eq!(split_fast_model("gpt-5.4"), ("gpt-5.4", false));
         assert_eq!(split_fast_model("o3"), ("o3", false));
     }
@@ -3877,6 +4637,137 @@ mod tests {
             codex_turn_idle_timeout(false, false),
             std::time::Duration::from_secs(5 * 60)
         );
+    }
+
+    #[test]
+    fn classify_codex_resume_reads_thread_status_object() {
+        let response = serde_json::json!({
+            "thread": {
+                "status": { "type": "active" },
+                "turns": [
+                    { "id": "turn-1", "status": "inProgress" }
+                ]
+            }
+        });
+
+        assert_eq!(
+            classify_codex_resume(&response, Some("turn-1"), true),
+            CodexResumeDisposition::Active
+        );
+    }
+
+    #[test]
+    fn classify_codex_resume_prefers_failed_and_interrupted_turns() {
+        let failed = serde_json::json!({
+            "thread": {
+                "status": { "type": "idle" },
+                "turns": [{ "id": "turn-1", "status": "failed" }]
+            }
+        });
+        let interrupted = serde_json::json!({
+            "thread": {
+                "status": { "type": "idle" },
+                "turns": [{ "id": "turn-1", "status": "interrupted" }]
+            }
+        });
+
+        assert_eq!(
+            classify_codex_resume(&failed, Some("turn-1"), true),
+            CodexResumeDisposition::Failed
+        );
+        assert_eq!(
+            classify_codex_resume(&interrupted, Some("turn-1"), true),
+            CodexResumeDisposition::Interrupted
+        );
+    }
+
+    #[test]
+    fn classify_codex_resume_prefers_selected_turn_over_latest_turn() {
+        let response = serde_json::json!({
+            "thread": {
+                "status": { "type": "active" },
+                "turns": [
+                    { "id": "old-turn", "status": "completed" },
+                    { "id": "new-turn", "status": "inProgress" }
+                ]
+            }
+        });
+
+        assert_eq!(
+            classify_codex_resume(&response, Some("old-turn"), true),
+            CodexResumeDisposition::Idle
+        );
+    }
+
+    #[test]
+    fn codex_thread_snapshot_history_lines_skip_user_items_and_normalize_types() {
+        let response = serde_json::json!({
+            "thread": {
+                "status": { "type": "idle" },
+                "turns": [
+                    {
+                        "id": "turn-1",
+                        "status": "completed",
+                        "items": [
+                            { "id": "user-1", "type": "userMessage", "text": "prompt" },
+                            {
+                                "id": "cmd-1",
+                                "type": "commandExecution",
+                                "command": "git status",
+                                "aggregatedOutput": "clean"
+                            },
+                            { "id": "msg-1", "type": "agentMessage", "text": "done" }
+                        ]
+                    }
+                ]
+            }
+        });
+
+        let lines = codex_thread_snapshot_history_lines(&response, Some("turn-1"), true);
+        assert_eq!(lines.len(), 5);
+        assert!(lines.iter().all(|line| !line.contains("userMessage")));
+        assert_eq!(
+            lines.last().map(String::as_str),
+            Some(r#"{"type":"result"}"#)
+        );
+
+        let first: serde_json::Value = serde_json::from_str(&lines[0]).expect("json line");
+        assert_eq!(first["type"], "item.started");
+        assert_eq!(first["item"]["type"], "command_execution");
+        assert_eq!(first["item"]["aggregated_output"], "clean");
+    }
+
+    #[test]
+    fn codex_thread_snapshot_has_assistant_content_ignores_user_only_turns() {
+        let user_only = serde_json::json!({
+            "thread": {
+                "status": { "type": "idle" },
+                "turns": [{
+                    "id": "turn-1",
+                    "status": "completed",
+                    "items": [{ "id": "user-1", "type": "userMessage", "text": "prompt" }]
+                }]
+            }
+        });
+        let assistant = serde_json::json!({
+            "thread": {
+                "status": { "type": "idle" },
+                "turns": [{
+                    "id": "turn-1",
+                    "status": "completed",
+                    "items": [{ "id": "msg-1", "type": "agentMessage", "text": "done" }]
+                }]
+            }
+        });
+
+        assert!(!codex_thread_snapshot_has_assistant_content(
+            &user_only,
+            Some("turn-1")
+        ));
+        assert!(codex_thread_snapshot_has_assistant_content(
+            &assistant,
+            Some("turn-1")
+        ));
     }
 
     #[test]

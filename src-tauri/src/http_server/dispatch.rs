@@ -247,6 +247,7 @@ pub async fn dispatch_command(
                 linked_project_ids,
             )
             .await?;
+            emit_cache_invalidation(app, &["projects"]);
             to_value(result)
         }
         "reorder_projects" => {

@@ -49,7 +49,7 @@ describe('useDragAndDropImages', () => {
     })
 
     // isNativeApp() checks this marker before registering native drop listeners.
-    Object.assign(window, { __TAURI_INTERNALS__: {} })
+    Object.assign(window, { __TAURI_INTERNALS__: { invoke: vi.fn() } })
 
     useChatStore.setState({
       pendingImages: {},

@@ -64,7 +64,7 @@ describe('preferences service', () => {
     vi.clearAllMocks()
     // Mock Tauri environment
     Object.defineProperty(window, '__TAURI_INTERNALS__', {
-      value: {},
+      value: { invoke: vi.fn() },
       configurable: true,
     })
   })
@@ -146,6 +146,8 @@ describe('preferences service', () => {
         custom_cli_profiles: [],
         default_provider: null,
         default_project_id: null,
+        favorite_models: [],
+        fast_mode_models: [],
 
         auto_save_context: true,
         auto_pull_base_branch: true,
@@ -153,12 +155,13 @@ describe('preferences service', () => {
         confirm_session_close: true,
         default_execution_mode: 'plan',
         default_backend: 'claude',
-        selected_codex_model: 'gpt-5.4',
+        selected_codex_model: 'gpt-5.5',
         selected_opencode_model: 'opencode/gpt-5.3-codex',
         claude_update_command: null,
         codex_update_command: null,
         opencode_launch_command: null,
         default_codex_reasoning_effort: 'high',
+        codex_goal_execution_mode: 'build',
         codex_multi_agent_enabled: false,
         codex_max_agent_threads: 3,
         restore_last_session: true,
@@ -204,6 +207,7 @@ describe('preferences service', () => {
 
       expect(result.current.data?.theme).toBe('system')
       expect(result.current.data?.selected_model).toBe('claude-opus-4-7')
+      expect(result.current.data?.selected_codex_model).toBe('gpt-5.5')
       expect(result.current.data?.compact_chat_view_enabled).toBe(false)
     })
 
@@ -301,6 +305,8 @@ describe('preferences service', () => {
         custom_cli_profiles: [],
         default_provider: null,
         default_project_id: null,
+        favorite_models: [],
+        fast_mode_models: [],
 
         auto_save_context: true,
         auto_pull_base_branch: true,
@@ -308,12 +314,13 @@ describe('preferences service', () => {
         confirm_session_close: true,
         default_execution_mode: 'plan',
         default_backend: 'claude',
-        selected_codex_model: 'gpt-5.4',
+        selected_codex_model: 'gpt-5.5',
         selected_opencode_model: 'opencode/gpt-5.3-codex',
         claude_update_command: null,
         codex_update_command: null,
         opencode_launch_command: null,
         default_codex_reasoning_effort: 'high',
+        codex_goal_execution_mode: 'build',
         codex_multi_agent_enabled: false,
         codex_max_agent_threads: 3,
         restore_last_session: true,
@@ -407,6 +414,8 @@ describe('preferences service', () => {
         custom_cli_profiles: [],
         default_provider: null,
         default_project_id: null,
+        favorite_models: [],
+        fast_mode_models: [],
 
         auto_save_context: true,
         auto_pull_base_branch: true,
@@ -421,6 +430,7 @@ describe('preferences service', () => {
         codex_update_command: null,
         opencode_launch_command: null,
         default_codex_reasoning_effort: 'high',
+        codex_goal_execution_mode: 'build',
         codex_multi_agent_enabled: false,
         codex_max_agent_threads: 3,
         restore_last_session: true,
@@ -452,23 +462,30 @@ describe('preferences service', () => {
       expect(result.current.data?.selected_codex_model).toBe('gpt-5.3')
     })
 
-    it('migrates gpt-5.4-fast to gpt-5.4', async () => {
-      const { invoke } = await import('@/lib/transport')
-      const prefsWithDeprecatedFastModel = {
-        ...defaultPreferences,
-        selected_codex_model:
-          'gpt-5.4-fast' as AppPreferences['selected_codex_model'],
+    it.each([
+      ['gpt-5.5-fast', 'gpt-5.5'],
+      ['gpt-5.4-fast', 'gpt-5.4'],
+      ['gpt-5.4-mini-fast', 'gpt-5.4-mini'],
+    ] as const)(
+      'migrates %s to %s',
+      async (persistedModel, normalizedModel) => {
+        const { invoke } = await import('@/lib/transport')
+        const prefsWithDeprecatedFastModel = {
+          ...defaultPreferences,
+          selected_codex_model:
+            persistedModel as AppPreferences['selected_codex_model'],
+        }
+        vi.mocked(invoke).mockResolvedValueOnce(prefsWithDeprecatedFastModel)
+
+        const { result } = renderHook(() => usePreferences(), {
+          wrapper: createWrapper(queryClient),
+        })
+
+        await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+        expect(result.current.data?.selected_codex_model).toBe(normalizedModel)
       }
-      vi.mocked(invoke).mockResolvedValueOnce(prefsWithDeprecatedFastModel)
-
-      const { result } = renderHook(() => usePreferences(), {
-        wrapper: createWrapper(queryClient),
-      })
-
-      await waitFor(() => expect(result.current.isSuccess).toBe(true))
-
-      expect(result.current.data?.selected_codex_model).toBe('gpt-5.4')
-    })
+    )
 
     it.each([
       'gpt-5.5',
@@ -596,6 +613,8 @@ describe('preferences service', () => {
         custom_cli_profiles: [],
         default_provider: null,
         default_project_id: null,
+        favorite_models: [],
+        fast_mode_models: [],
 
         auto_save_context: true,
         auto_pull_base_branch: true,
@@ -603,12 +622,13 @@ describe('preferences service', () => {
         confirm_session_close: true,
         default_execution_mode: 'plan',
         default_backend: 'claude',
-        selected_codex_model: 'gpt-5.4',
+        selected_codex_model: 'gpt-5.5',
         selected_opencode_model: 'opencode/gpt-5.3-codex',
         claude_update_command: null,
         codex_update_command: null,
         opencode_launch_command: null,
         default_codex_reasoning_effort: 'high',
+        codex_goal_execution_mode: 'build',
         codex_multi_agent_enabled: false,
         codex_max_agent_threads: 3,
         restore_last_session: true,
@@ -705,6 +725,8 @@ describe('preferences service', () => {
         custom_cli_profiles: [],
         default_provider: null,
         default_project_id: null,
+        favorite_models: [],
+        fast_mode_models: [],
 
         auto_save_context: true,
         auto_pull_base_branch: true,
@@ -712,12 +734,13 @@ describe('preferences service', () => {
         confirm_session_close: true,
         default_execution_mode: 'plan',
         default_backend: 'claude',
-        selected_codex_model: 'gpt-5.4',
+        selected_codex_model: 'gpt-5.5',
         selected_opencode_model: 'opencode/gpt-5.3-codex',
         claude_update_command: null,
         codex_update_command: null,
         opencode_launch_command: null,
         default_codex_reasoning_effort: 'high',
+        codex_goal_execution_mode: 'build',
         codex_multi_agent_enabled: false,
         codex_max_agent_threads: 3,
         restore_last_session: true,
@@ -814,6 +837,8 @@ describe('preferences service', () => {
         custom_cli_profiles: [],
         default_provider: null,
         default_project_id: null,
+        favorite_models: [],
+        fast_mode_models: [],
 
         auto_save_context: true,
         auto_pull_base_branch: true,
@@ -821,12 +846,13 @@ describe('preferences service', () => {
         confirm_session_close: true,
         default_execution_mode: 'plan',
         default_backend: 'claude',
-        selected_codex_model: 'gpt-5.4',
+        selected_codex_model: 'gpt-5.5',
         selected_opencode_model: 'opencode/gpt-5.3-codex',
         claude_update_command: null,
         codex_update_command: null,
         opencode_launch_command: null,
         default_codex_reasoning_effort: 'high',
+        codex_goal_execution_mode: 'build',
         codex_multi_agent_enabled: false,
         codex_max_agent_threads: 3,
         restore_last_session: true,
@@ -921,6 +947,8 @@ describe('preferences service', () => {
         custom_cli_profiles: [],
         default_provider: null,
         default_project_id: null,
+        favorite_models: [],
+        fast_mode_models: [],
 
         auto_save_context: true,
         auto_pull_base_branch: true,
@@ -928,12 +956,13 @@ describe('preferences service', () => {
         confirm_session_close: true,
         default_execution_mode: 'plan',
         default_backend: 'claude',
-        selected_codex_model: 'gpt-5.4',
+        selected_codex_model: 'gpt-5.5',
         selected_opencode_model: 'opencode/gpt-5.3-codex',
         claude_update_command: null,
         codex_update_command: null,
         opencode_launch_command: null,
         default_codex_reasoning_effort: 'high',
+        codex_goal_execution_mode: 'build',
         codex_multi_agent_enabled: false,
         codex_max_agent_threads: 3,
         restore_last_session: true,

@@ -16,6 +16,7 @@ import type {
   ReviewFinding,
 } from '@/types/chat'
 import { MessageItem } from './MessageItem'
+import { getAssistantDurationMs } from './time-utils'
 
 /** Number of messages to render initially (from the end) */
 const INITIAL_VISIBLE_COUNT = 10
@@ -311,24 +312,11 @@ export const VirtualizedMessageList = memo(
             const hasFollowUpMessage =
               message.role === 'assistant' &&
               (hasFollowUpMap.get(globalIndex) ?? false)
-
-            // Show completed duration on the last assistant message (from store),
-            // or fall back to timestamp-based computation for persisted messages (after reload)
-            let durationMs: number | null = null
-            if (
-              message.role === 'assistant' &&
-              globalIndex === messages.length - 1 &&
+            const durationMs = getAssistantDurationMs(
+              messages,
+              globalIndex,
               completedDurationMs
-            ) {
-              durationMs = completedDurationMs
-            } else if (message.role === 'assistant' && globalIndex > 0) {
-              const prevMessage = messages[globalIndex - 1]
-              if (prevMessage?.role === 'user') {
-                const deltaSecs = message.timestamp - prevMessage.timestamp
-                if (deltaSecs > 0 && deltaSecs < 3600)
-                  durationMs = deltaSecs * 1000
-              }
-            }
+            )
 
             return (
               <div

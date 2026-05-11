@@ -12,7 +12,7 @@ use super::run_log;
 use super::storage::{
     cleanup_combined_context_files, delete_session_data, get_base_index_path, get_data_dir,
     get_index_path, get_session_dir, load_metadata, load_sessions, save_metadata,
-    with_existing_metadata_mut, with_sessions_mut,
+    with_existing_metadata_mut, with_metadata_mut, with_sessions_mut,
 };
 use super::types::{
     AllSessionsEntry, AllSessionsResponse, Backend, ChatMessage, ClaudeContext, EffortLevel,
@@ -3326,7 +3326,7 @@ pub fn codex_goal_set(
         super::codex_server::ensure_running(&app)?;
         super::codex_server::send_request(
             "thread/goal/set",
-            serde_json::json!({ "threadId": thread_id, "goal": trimmed }),
+            codex_goal_set_params(&thread_id, trimmed),
         )?;
     }
 
@@ -3355,10 +3355,7 @@ pub fn codex_goal_get(
             "thread/goal/get",
             serde_json::json!({ "threadId": thread_id }),
         )?;
-        response
-            .get("goal")
-            .and_then(|value| value.as_str())
-            .map(ToString::to_string)
+        extract_codex_goal_objective(&response)
     } else {
         with_sessions_mut(&app, &worktree_path, &worktree_id, |sessions| {
             Ok(sessions
@@ -3404,7 +3401,7 @@ fn codex_thread_id_for_session(
     worktree_path: &str,
     session_id: &str,
 ) -> Result<Option<String>, String> {
-    with_sessions_mut(app, worktree_path, worktree_id, |sessions| {
+    let session_thread_id = with_sessions_mut(app, worktree_path, worktree_id, |sessions| {
         let session = sessions
             .find_session(session_id)
             .ok_or_else(|| format!("Session not found: {session_id}"))?;
@@ -3412,7 +3409,14 @@ fn codex_thread_id_for_session(
             return Err("/goal is only available on codex sessions".to_string());
         }
         Ok(session.codex_thread_id.clone())
-    })
+    })?;
+
+    Ok(session_thread_id.or_else(|| {
+        load_metadata(app, session_id)
+            .ok()
+            .flatten()
+            .and_then(|metadata| metadata.codex_thread_id)
+    }))
 }
 
 /// Push a buffered session goal into the Codex app-server once we have a thread id.
@@ -3426,10 +3430,34 @@ pub fn flush_pending_codex_goal(app: &AppHandle, session_id: &str, thread_id: &s
 
     if let Err(error) = super::codex_server::send_request(
         "thread/goal/set",
-        serde_json::json!({ "threadId": thread_id, "goal": objective }),
+        codex_goal_set_params(thread_id, &objective),
     ) {
         log::warn!("Failed to flush buffered Codex goal: {error}");
     }
+}
+
+fn codex_goal_set_params(thread_id: &str, objective: &str) -> serde_json::Value {
+    serde_json::json!({
+        "threadId": thread_id,
+        "objective": objective,
+        "status": "active",
+    })
+}
+
+pub(crate) fn extract_codex_goal_objective(response: &serde_json::Value) -> Option<String> {
+    response
+        .get("goal")
+        .and_then(|goal| {
+            goal.get("objective")
+                .and_then(|objective| objective.as_str())
+                .or_else(|| goal.as_str())
+        })
+        .or_else(|| {
+            response
+                .get("objective")
+                .and_then(|objective| objective.as_str())
+        })
+        .map(ToString::to_string)
 }
 
 pub(crate) fn persist_codex_goal(
@@ -3446,6 +3474,33 @@ pub(crate) fn persist_codex_goal(
         session.codex_goal = goal.clone();
         Ok(())
     })?;
+
+    if !worktree_path.is_empty() {
+        let session = load_sessions(app, worktree_path, worktree_id)?
+            .find_session(session_id)
+            .cloned()
+            .ok_or_else(|| format!("Session not found: {session_id}"))?;
+        with_metadata_mut(
+            app,
+            session_id,
+            worktree_id,
+            &session.name,
+            session.order,
+            |metadata| {
+                metadata.backend = session.backend.clone();
+                metadata.codex_goal = goal.clone();
+                Ok(())
+            },
+        )?;
+    } else if let Err(error) = with_existing_metadata_mut(app, session_id, |metadata| {
+        metadata.codex_goal = goal.clone()
+    }) {
+        log::trace!(
+            "Skipping Codex goal metadata sync for session {}: {}",
+            session_id,
+            error
+        );
+    }
 
     emit_sessions_cache_invalidation(app);
     let _ = app.emit_all(
@@ -5153,11 +5208,19 @@ pub async fn resume_session(
         }
     };
 
-    // Find resumable runs
+    let codex_thread_id = (metadata.backend == Backend::Codex)
+        .then(|| metadata.codex_thread_id.clone())
+        .flatten();
+
+    // Find resumable runs — include both PID-based (Claude) and Codex (thread-based).
     let resumable_runs: Vec<_> = metadata
         .runs
         .iter()
-        .filter(|r| r.status == RunStatus::Resumable && r.pid.is_some())
+        .filter(|run| {
+            run.status == RunStatus::Resumable
+                && (run.pid.is_some()
+                    || (metadata.backend == Backend::Codex && codex_thread_id.is_some()))
+        })
         .cloned()
         .collect();
 
@@ -5181,19 +5244,96 @@ pub async fn resume_session(
     // Process each resumable run
     for run in resumable_runs {
         let run_id = run.run_id.clone();
-        let pid = run.pid.unwrap(); // Safe because we filtered for Some above
         let output_file = session_dir.join(format!("{run_id}.jsonl"));
-
-        log::trace!(
-            "Resuming run: {run_id}, PID: {pid}, output: {:?}",
-            output_file
-        );
 
         // Mark the run as Running again (from Resumable)
         if let Some(metadata_run) = metadata.find_run_mut(&run_id) {
             metadata_run.status = RunStatus::Running;
         }
         save_metadata(&app, &metadata)?;
+
+        if metadata.backend == Backend::Codex {
+            let Some(thread_id) = codex_thread_id.clone() else {
+                log::warn!(
+                    "Skipping Codex resume for session {} run {}: missing thread id",
+                    session_id,
+                    run_id
+                );
+                continue;
+            };
+
+            log::trace!(
+                "Resuming Codex run: {run_id}, thread={thread_id}, output: {:?}",
+                output_file
+            );
+
+            let app_clone = app.clone();
+            let session_id_clone = session_id.clone();
+            let worktree_id_clone = worktree_id.clone();
+            let run_id_clone = run_id.clone();
+
+            std::thread::spawn(move || {
+                let emit_done = |app: &tauri::AppHandle, sid: &str, wid: &str| {
+                    let _ = app.emit_all(
+                        "chat:done",
+                        &serde_json::json!({
+                            "session_id": sid,
+                            "worktree_id": wid,
+                            "waiting_for_plan": false
+                        }),
+                    );
+                };
+
+                match super::codex::resume_codex_after_crash(
+                    &app_clone,
+                    &session_id_clone,
+                    &worktree_id_clone,
+                    &run_id_clone,
+                    &thread_id,
+                ) {
+                    Ok(true) => {
+                        log::info!(
+                            "Codex crash recovery succeeded for session {session_id_clone}, run {run_id_clone}"
+                        );
+                    }
+                    Ok(false) => {
+                        log::warn!(
+                            "Codex crash recovery: thread expired for session {session_id_clone}, marking crashed"
+                        );
+                        if let Ok(mut writer) =
+                            RunLogWriter::resume(&app_clone, &session_id_clone, &run_id_clone)
+                        {
+                            if let Err(error) = writer.crash() {
+                                log::error!("Failed to mark run as crashed: {error}");
+                            }
+                        }
+                        emit_done(&app_clone, &session_id_clone, &worktree_id_clone);
+                    }
+                    Err(error) => {
+                        log::error!(
+                            "Codex crash recovery failed for session {session_id_clone}: {error}"
+                        );
+                        if let Ok(mut writer) =
+                            RunLogWriter::resume(&app_clone, &session_id_clone, &run_id_clone)
+                        {
+                            if let Err(mark_error) = writer.crash() {
+                                log::error!("Failed to mark run as crashed: {mark_error}");
+                            }
+                        }
+                        emit_done(&app_clone, &session_id_clone, &worktree_id_clone);
+                    }
+                }
+            });
+
+            continue;
+        }
+
+        let pid = run.pid.unwrap(); // Safe because we filtered for Some above
+
+        log::trace!(
+            "Resuming run: {run_id}, PID: {pid}, output: {:?}",
+            output_file
+        );
 
         // Register the PID in the in-memory process registry so cancel works
         // Returns false if a pending cancel was queued (process killed immediately)
@@ -6515,6 +6655,45 @@ mod tests {
             supervisor_created_turn_count: 0,
             last_handled_run_id: None,
         }
+    }
+
+    #[test]
+    fn codex_goal_set_params_use_goal_object_schema() {
+        let params = codex_goal_set_params("thread-123", "Ship the goal UI");
+
+        assert_eq!(
+            params,
+            serde_json::json!({
+                "threadId": "thread-123",
+                "objective": "Ship the goal UI",
+                "status": "active",
+            })
+        );
+        assert!(params.get("goal").is_none());
+    }
+
+    #[test]
+    fn extract_codex_goal_objective_reads_new_and_legacy_shapes() {
+        let new_shape = serde_json::json!({
+            "goal": {
+                "threadId": "thread-123",
+                "objective": "Ship the goal UI",
+                "status": "active",
+            }
+        });
+        let legacy_shape = serde_json::json!({
+            "goal": "Legacy goal"
+        });
+
+        assert_eq!(
+            extract_codex_goal_objective(&new_shape).as_deref(),
+            Some("Ship the goal UI")
+        );
+        assert_eq!(
+            extract_codex_goal_objective(&legacy_shape).as_deref(),
+            Some("Legacy goal")
+        );
+        assert_eq!(extract_codex_goal_objective(&serde_json::json!({})), None);
     }
 
     #[test]

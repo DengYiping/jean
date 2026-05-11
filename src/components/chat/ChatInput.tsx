@@ -31,7 +31,12 @@ import {
   type SlashPopoverHandle,
   type SlashPopoverMode,
 } from './SlashPopover'
-import { stripLeadingInjectedSkillTokens } from '@/lib/skill-prompt'
+import { getActiveSkillsFromText } from '@/lib/skill-prompt'
+import {
+  decodePromptAttachmentMetadata,
+  parsePlainTextPromptMetadata,
+  type PromptAttachmentMetadata,
+} from './message-content-utils'
 
 import { MAX_IMAGE_SIZE, ALLOWED_IMAGE_TYPES } from './image-constants'
 
@@ -40,6 +45,24 @@ const MAX_TEXT_SIZE = 10 * 1024 * 1024
 
 /** Threshold for saving pasted text as file (2000 chars) */
 const TEXT_PASTE_THRESHOLD = 2000
+
+function restoreCopiedPromptText(
+  text: string,
+  skills: PromptAttachmentMetadata['skills']
+): string {
+  const activeSkillNames = new Set(
+    getActiveSkillsFromText(text, skills).map(skill => skill.name)
+  )
+  const missingSkillTokens = skills
+    .filter(skill => !activeSkillNames.has(skill.name))
+    .map(skill => `$${skill.name}`)
+
+  if (missingSkillTokens.length === 0) {
+    return text
+  }
+
+  return `${missingSkillTokens.join(' ')} ${text}`.trim()
+}
 
 interface ChatInputProps {
   activeSessionId: string | undefined
@@ -498,98 +521,93 @@ export const ChatInput = memo(function ChatInput({
 
       // Check for jean-prompt clipboard format (copied from a sent message)
       const html = e.clipboardData?.getData('text/html')
+      const plainText = e.clipboardData?.getData('text/plain') ?? ''
+      let copiedPromptMetadata: PromptAttachmentMetadata | null = null
+      let copiedPromptText = plainText
+
       if (html) {
         const match = html.match(/data-jean-prompt="([^"]+)"/)
         if (match?.[1]) {
-          // Read text synchronously before preventDefault - clipboardData
-          // is only available during the event handler, not after await
-          const text = e.clipboardData?.getData('text/plain') ?? ''
-          e.preventDefault()
-          try {
-            const metadata = JSON.parse(decodeURIComponent(match[1])) as {
-              images?: string[]
-              textFiles?: string[]
-              files?: string[]
-              skills?: { name: string; path: string }[]
-            }
-
-            // Insert the plain text into the textarea first
-            if (text && inputRef.current) {
-              const restoredText = stripLeadingInjectedSkillTokens(
-                text,
-                metadata.skills ?? []
-              )
-              const textarea = inputRef.current
-              const start = textarea.selectionStart
-              const end = textarea.selectionEnd
-              const current = textarea.value
-              textarea.value =
-                current.slice(0, start) + restoredText + current.slice(end)
-              valueRef.current = textarea.value
-              textarea.selectionStart = textarea.selectionEnd =
-                start + restoredText.length
-              // Save draft
-              useChatStore
-                .getState()
-                .setInputDraft(activeSessionId, textarea.value)
-              onHasValueChangeRef.current?.(Boolean(textarea.value.trim()))
-              resizeTextarea()
-            }
-
-            const {
-              addPendingImage,
-              addPendingFile,
-              setDraftSkillBindings,
-              syncDraftSkillBindings,
-              addPendingTextFile,
-            } = useChatStore.getState()
-
-            // Restore images (they already exist on disk)
-            for (const path of metadata.images ?? []) {
-              addPendingImage(activeSessionId, {
-                id: generateId(),
-                path,
-                filename: getFilename(path),
-              })
-            }
-
-            // Restore text files (read content from disk)
-            for (const path of metadata.textFiles ?? []) {
-              try {
-                const response = await invoke<ReadTextResponse>(
-                  'read_pasted_text',
-                  { path }
-                )
-                addPendingTextFile(activeSessionId, {
-                  id: generateId(),
-                  path,
-                  filename: getFilename(path),
-                  size: response.size,
-                  content: response.content,
-                })
-              } catch {
-                // File may no longer exist, skip
-              }
-            }
-
-            // Restore file mentions
-            for (const path of metadata.files ?? []) {
-              addPendingFile(activeSessionId, {
-                id: generateId(),
-                relativePath: path,
-                extension: getExtension(path),
-                isDirectory: false,
-              })
-            }
-
-            // Restore inline skill bindings
-            setDraftSkillBindings(activeSessionId, metadata.skills ?? [])
-            syncDraftSkillBindings(activeSessionId, valueRef.current)
-          } catch {
-            // Invalid JSON, fall through to normal paste
-          }
-          return
+          copiedPromptMetadata = decodePromptAttachmentMetadata(match[1])
         }
+      }
+      if (!copiedPromptMetadata && plainText) {
+        const parsed = parsePlainTextPromptMetadata(plainText)
+        copiedPromptMetadata = parsed.metadata
+        copiedPromptText = parsed.text
+      }
+      if (copiedPromptMetadata) {
+        e.preventDefault()
+
+        // Restore visible draft text first, including any missing inline skill tokens
+        // so the fork's draft-skill-binding flow can derive active skills normally.
+        if (inputRef.current) {
+          const restoredText = restoreCopiedPromptText(
+            copiedPromptText,
+            copiedPromptMetadata.skills
+          )
+          const textarea = inputRef.current
+          const start = textarea.selectionStart
+          const end = textarea.selectionEnd
+          const current = textarea.value
+          textarea.value =
+            current.slice(0, start) + restoredText + current.slice(end)
+          valueRef.current = textarea.value
+          textarea.selectionStart = textarea.selectionEnd =
+            start + restoredText.length
+          useChatStore.getState().setInputDraft(activeSessionId, textarea.value)
+          onHasValueChangeRef.current?.(Boolean(textarea.value.trim()))
+          resizeTextarea()
+        }
+
+        const {
+          addPendingImage,
+          addPendingFile,
+          setDraftSkillBindings,
+          syncDraftSkillBindings,
+          addPendingTextFile,
+        } = useChatStore.getState()
+
+        for (const path of copiedPromptMetadata.images) {
+          addPendingImage(activeSessionId, {
+            id: generateId(),
+            path,
+            filename: getFilename(path),
+          })
+        }
+
+        for (const path of copiedPromptMetadata.textFiles) {
+          try {
+            const response = await invoke<ReadTextResponse>(
+              'read_pasted_text',
+              {
+                path,
+              }
+            )
+            addPendingTextFile(activeSessionId, {
+              id: generateId(),
+              path,
+              filename: getFilename(path),
+              size: response.size,
+              content: response.content,
+            })
+          } catch {
+            // File may no longer exist, skip
+          }
+        }
+
+        for (const file of copiedPromptMetadata.files) {
+          addPendingFile(activeSessionId, {
+            id: generateId(),
+            relativePath: file.path,
+            extension: getExtension(file.path),
+            isDirectory: file.isDirectory,
+          })
+        }
+
+        setDraftSkillBindings(activeSessionId, copiedPromptMetadata.skills)
+        syncDraftSkillBindings(activeSessionId, valueRef.current)
+        return
       }
 
       const items = e.clipboardData?.items
@@ -704,7 +722,7 @@ export const ChatInput = memo(function ChatInput({
       if (hasImage) return
 
       // Native clipboard fallback (Linux/WebKitGTK doesn't expose image items via Web API)
-      const clipboardText = e.clipboardData?.getData('text/plain')
+      const clipboardText = plainText
       const clipboardHtml = e.clipboardData?.getData('text/html')
       if (!clipboardText && !clipboardHtml) {
         e.preventDefault()

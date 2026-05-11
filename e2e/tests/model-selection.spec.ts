@@ -19,8 +19,12 @@ test.describe('Model Selection', () => {
     await modelButton.click()
     await mockPage.waitForTimeout(200)
 
-    // Select "Opus 4.7"
-    await mockPage.getByRole('menuitemradio', { name: /^Opus 4\.7$/ }).click()
+    // Select "Opus 4.7". The model row now includes extra favorite/fast controls,
+    // so target the row by its visible label instead of the full accessible name.
+    await mockPage
+      .getByRole('menuitemradio')
+      .filter({ hasText: /^Opus 4\.7$/ })
+      .click()
     await mockPage.waitForTimeout(500)
 
     await expect(

@@ -36,6 +36,10 @@ function createProps(
     displayStatus: undefined,
     checkStatus: undefined,
     activeWorktreePath: '/tmp/worktree',
+    availableMcpServers: [],
+    enabledMcpServers: [],
+    activeMcpCount: 0,
+    onToggleMcpServer: vi.fn(),
     onSaveContext: vi.fn(),
     onLoadContext: vi.fn(),
     onCommit: vi.fn(),
@@ -67,6 +71,31 @@ describe('MobileToolbarMenu', () => {
     vi.clearAllMocks()
   })
 
+  it('hides the model chevron when there is only one model choice', async () => {
+    const user = userEvent.setup()
+    render(<MobileToolbarMenu {...createProps()} />)
+
+    await user.click(screen.getByRole('button', { name: 'More actions' }))
+    const modelItem = (await screen.findByText('Model')).closest(
+      '[role="menuitem"]'
+    )
+    expect(modelItem).toBeInTheDocument()
+    expect(modelItem?.querySelector('svg.lucide-chevron-right')).toBeNull()
+  })
+
+  it('shows MCP as a disabled row when no servers can be toggled', async () => {
+    const user = userEvent.setup()
+    render(<MobileToolbarMenu {...createProps()} />)
+
+    await user.click(screen.getByRole('button', { name: 'More actions' }))
+    const mcpItem = (await screen.findByText('MCP')).closest(
+      '[role="menuitem"]'
+    )
+    expect(mcpItem).toHaveAttribute('aria-disabled', 'true')
+    expect(mcpItem?.querySelector('svg.lucide-chevron-right')).toBeNull()
+    expect(screen.getByText('None')).toBeInTheDocument()
+  })
+
   it('opens a touch-friendly mode sheet and switches execution mode', async () => {
     const user = userEvent.setup()
     const onSetExecutionMode = vi.fn()
@@ -96,5 +125,44 @@ describe('MobileToolbarMenu', () => {
         screen.queryByRole('heading', { name: 'Select Mode' })
       ).not.toBeInTheDocument()
     })
+  })
+
+  it('opens a touch-friendly MCP sheet and toggles a server', async () => {
+    const user = userEvent.setup()
+    const onToggleMcpServer = vi.fn()
+    render(
+      <MobileToolbarMenu
+        {...createProps({
+          availableMcpServers: [
+            {
+              name: 'filesystem',
+              config: {},
+              scope: 'project',
+              disabled: false,
+              backend: 'codex',
+            },
+          ],
+          enabledMcpServers: ['filesystem'],
+          activeMcpCount: 1,
+          onToggleMcpServer,
+        })}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: 'More actions' }))
+    const mcpItem = (await screen.findByText('MCP')).closest(
+      '[role="menuitem"]'
+    )
+    expect(mcpItem).toBeInTheDocument()
+    if (!mcpItem) throw new Error('MCP menu item not found')
+    await user.click(mcpItem)
+
+    expect(
+      await screen.findByRole('heading', { name: 'MCP Servers' })
+    ).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /filesystem/i }))
+
+    expect(onToggleMcpServer).toHaveBeenCalledWith('filesystem')
   })
 })

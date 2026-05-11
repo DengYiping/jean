@@ -54,7 +54,7 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { hideGitHubIssuesAndPRs } from '@/types/projects'
-import { editorOptions } from '@/types/preferences'
+import { getEditorOptions } from '@/types/preferences'
 
 const SettingsSection: React.FC<{
   title: string
@@ -105,6 +105,7 @@ export function GeneralPane({
   const profiles = preferences?.custom_cli_profiles ?? []
 
   const updateSettings = useUpdateProjectSettings()
+  const editorSelectOptions = getEditorOptions(preferences?.custom_editors)
   const { data: worktreeSlots = [] } = useWorktreeSlots(projectId)
   const resetWorktreeSlot = useResetWorktreeSlot()
   const resetIdleWorktreeSlots = useResetIdleWorktreeSlots()
@@ -587,7 +588,7 @@ export function GeneralPane({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="global-default">Use global default</SelectItem>
-              {editorOptions.map(option => (
+              {editorSelectOptions.map(option => (
                 <SelectItem key={option.value} value={option.value}>
                   {option.label}
                 </SelectItem>

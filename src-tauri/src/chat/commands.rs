@@ -4112,6 +4112,7 @@ pub async fn open_file_in_default_app(
     editor: Option<String>,
     line_number: Option<u32>,
 ) -> Result<(), String> {
+    let preferences = crate::load_preferences_sync(&app).ok();
     let editor_app = crate::projects::storage::load_projects_data(&app)
         .ok()
         .map(|data| {
@@ -4119,22 +4120,24 @@ pub async fn open_file_in_default_app(
                 &data,
                 &path,
                 editor.as_deref(),
-                crate::load_preferences_sync(&app)
-                    .ok()
-                    .map(|prefs| prefs.editor)
-                    .as_deref(),
+                preferences.as_ref().map(|prefs| prefs.editor.as_str()),
             )
         })
         .unwrap_or_else(|| {
             editor.unwrap_or_else(|| {
-                crate::load_preferences_sync(&app)
-                    .map(|prefs| prefs.editor)
-                    .unwrap_or_else(|_| "zed".to_string())
+                preferences
+                    .as_ref()
+                    .map(|prefs| prefs.editor.clone())
+                    .unwrap_or_else(|| "zed".to_string())
             })
         });
+    let custom_editors = preferences
+        .as_ref()
+        .map(|prefs| prefs.custom_editors.as_slice())
+        .unwrap_or(&[]);
     log::trace!("Opening file in {editor_app}: {path} line={line_number:?}");
 
-    crate::platform::open_file_path_in_editor(&path, &editor_app, line_number)?;
+    crate::platform::open_file_path_in_editor(&path, &editor_app, line_number, custom_editors)?;
 
     Ok(())
 }

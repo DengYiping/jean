@@ -935,7 +935,8 @@ export interface AppPreferences {
   thinking_level: ThinkingLevel // Thinking level: 'off' | 'think' | 'megathink' | 'ultrathink'
   default_effort_level: EffortLevel // Effort level for Opus adaptive thinking: 'low' | 'medium' | 'high' | 'max'
   terminal: TerminalApp // Terminal app: 'terminal' | 'warp' | 'ghostty' | 'iterm2' | 'powershell' | 'windows-terminal'
-  editor: EditorApp // Editor app: 'zed' | 'vscode' | 'cursor' | 'xcode'
+  editor: EditorApp // Editor app id: built-in or custom editor id
+  custom_editors?: CustomEditorConfig[] // Custom editor launch configs
   open_in: OpenInDefault // Default Open In action: 'editor' | 'terminal' | 'finder' | 'github'
   auto_branch_naming: boolean // Automatically generate branch names from first message
   branch_naming_model: ClaudeModel // Model for generating branch names
@@ -1026,6 +1027,15 @@ export interface CustomCliProfile {
   settings_json: string // JSON string matching Claude CLI settings format (with env block)
   file_path?: string // Path to settings file on disk (e.g. ~/.claude/settings.jean.openrouter.json)
   supports_thinking?: boolean // Whether this provider supports thinking/effort levels (default: true)
+}
+
+export interface CustomEditorConfig {
+  id: string
+  name: string
+  command: string
+  args: string[]
+  supports_line_number: boolean
+  line_number_args?: string[]
 }
 
 export const PREDEFINED_CLI_PROFILES: CustomCliProfile[] = [
@@ -1325,38 +1335,99 @@ const allTerminalOptions: {
 export const terminalOptions: { value: TerminalApp; label: string }[] =
   allTerminalOptions.filter(opt => opt.platforms.includes(getCurrentPlatform()))
 
-export type EditorApp = 'zed' | 'vscode' | 'cursor' | 'xcode' | 'intellij'
+export type BuiltinEditorId = 'zed' | 'vscode' | 'cursor' | 'xcode' | 'intellij'
 
-const allEditorOptions: {
+export type EditorApp = BuiltinEditorId | (string & {})
+
+export interface EditorConfigOption {
   value: EditorApp
   label: string
   platforms: Platform[]
-}[] = [
-  { value: 'zed', label: 'Zed', platforms: ['mac', 'windows', 'linux'] },
+  command: string
+  args: string[]
+  supports_line_number: boolean
+  line_number_args?: string[]
+  builtin: boolean
+}
+
+export const builtinEditorConfigs: EditorConfigOption[] = [
+  {
+    value: 'zed',
+    label: 'Zed',
+    platforms: ['mac', 'windows', 'linux'],
+    command: 'zed',
+    args: ['{path}'],
+    supports_line_number: true,
+    line_number_args: ['{path}:{line}'],
+    builtin: true,
+  },
   {
     value: 'vscode',
     label: 'VS Code',
     platforms: ['mac', 'windows', 'linux'],
+    command: 'code',
+    args: ['--disable-workspace-trust', '{path}'],
+    supports_line_number: true,
+    line_number_args: ['--disable-workspace-trust', '-g', '{path}:{line}'],
+    builtin: true,
   },
   {
     value: 'cursor',
     label: 'Cursor',
     platforms: ['mac', 'windows', 'linux'],
+    command: 'cursor',
+    args: ['--disable-workspace-trust', '{path}'],
+    supports_line_number: true,
+    line_number_args: ['--disable-workspace-trust', '-g', '{path}:{line}'],
+    builtin: true,
   },
-  { value: 'xcode', label: 'Xcode', platforms: ['mac'] },
+  {
+    value: 'xcode',
+    label: 'Xcode',
+    platforms: ['mac'],
+    command: 'xed',
+    args: ['{path}'],
+    supports_line_number: true,
+    line_number_args: ['--line', '{line}', '{path}'],
+    builtin: true,
+  },
   {
     value: 'intellij',
     label: 'IntelliJ IDEA',
     platforms: ['mac', 'windows', 'linux'],
+    command: 'idea',
+    args: ['{path}'],
+    supports_line_number: true,
+    line_number_args: ['--line', '{line}', '{path}'],
+    builtin: true,
   },
 ]
 
+const allEditorOptions = builtinEditorConfigs
+
 export const editorOptions: { value: EditorApp; label: string }[] =
-  allEditorOptions.filter(opt => opt.platforms.includes(getCurrentPlatform()))
+  builtinEditorConfigs
+    .filter(opt => opt.platforms.includes(getCurrentPlatform()))
+    .map(({ value, label }) => ({ value, label }))
 
 const supportedEditorIds = new Set<EditorApp>(
   allEditorOptions.map(option => option.value)
 )
+
+export function getEditorOptions(
+  customEditors: readonly CustomEditorConfig[] | undefined
+): { value: EditorApp; label: string }[] {
+  const options = editorOptions.map(option => ({ ...option }))
+  const seen = new Set(options.map(option => option.value))
+
+  for (const editor of customEditors ?? []) {
+    if (!editor.id || !editor.name || seen.has(editor.id)) continue
+    seen.add(editor.id)
+    options.push({ value: editor.id, label: editor.name })
+  }
+
+  return options
+}
 
 export interface DetectedEditorOption {
   value: EditorApp
@@ -1364,23 +1435,30 @@ export interface DetectedEditorOption {
   isDefault: boolean
 }
 
-export function isEditorApp(value: string): value is EditorApp {
-  return supportedEditorIds.has(value as EditorApp)
+export function isEditorApp(
+  value: string,
+  customEditors?: readonly CustomEditorConfig[]
+): value is EditorApp {
+  return (
+    supportedEditorIds.has(value as EditorApp) ||
+    (customEditors ?? []).some(editor => editor.id === value)
+  )
 }
 
 export function getDetectedEditorOptions(
   preferredEditor: EditorApp | undefined,
-  detectedEditors: readonly string[] | undefined
+  detectedEditors: readonly string[] | undefined,
+  customEditors?: readonly CustomEditorConfig[]
 ): DetectedEditorOption[] {
   const orderedEditors = allEditorOptions.map(option => option.value)
   const seen = new Set<EditorApp>()
   const options: DetectedEditorOption[] = []
 
-  if (preferredEditor && isEditorApp(preferredEditor)) {
+  if (preferredEditor && isEditorApp(preferredEditor, customEditors)) {
     seen.add(preferredEditor)
     options.push({
       value: preferredEditor,
-      label: getEditorLabel(preferredEditor),
+      label: getEditorLabel(preferredEditor, customEditors),
       isDefault: true,
     })
   }
@@ -1391,7 +1469,17 @@ export function getDetectedEditorOptions(
     seen.add(editor)
     options.push({
       value: editor,
-      label: getEditorLabel(editor),
+      label: getEditorLabel(editor, customEditors),
+      isDefault: false,
+    })
+  }
+
+  for (const editor of customEditors ?? []) {
+    if (!editor.id || !editor.name || seen.has(editor.id)) continue
+    seen.add(editor.id)
+    options.push({
+      value: editor.id,
+      label: editor.name,
       isDefault: false,
     })
   }
@@ -1411,11 +1499,12 @@ export const openInDefaultOptions: { value: OpenInDefault; label: string }[] = [
 export function getOpenInDefaultLabel(
   openIn: OpenInDefault | undefined,
   editor: EditorApp | undefined,
-  terminal: TerminalApp | undefined
+  terminal: TerminalApp | undefined,
+  customEditors?: readonly CustomEditorConfig[]
 ): string {
   switch (openIn) {
     case 'editor':
-      return getEditorLabel(editor)
+      return getEditorLabel(editor, customEditors)
     case 'terminal':
       return getTerminalLabel(terminal)
     case 'finder':
@@ -1423,7 +1512,7 @@ export function getOpenInDefaultLabel(
     case 'github':
       return 'GitHub'
     default:
-      return getEditorLabel(editor)
+      return getEditorLabel(editor, customEditors)
   }
 }
 
@@ -1608,7 +1697,15 @@ export function getEffectiveEditor(
   return projectEditor ?? globalEditor
 }
 
-export function getEditorLabel(editor: EditorApp | undefined): string {
+export function getEditorLabel(
+  editor: EditorApp | undefined,
+  customEditors?: readonly CustomEditorConfig[]
+): string {
+  const customEditor = (customEditors ?? []).find(
+    option => option.id === editor
+  )
+  if (customEditor) return customEditor.name
+
   // Search all options (not just platform-filtered) so saved cross-platform values resolve
   const option = allEditorOptions.find(opt => opt.value === editor)
   return option?.label ?? 'Editor'
@@ -1621,6 +1718,7 @@ export const defaultPreferences: AppPreferences = {
   default_effort_level: 'high',
   terminal: isWindows ? 'powershell' : 'terminal',
   editor: 'zed',
+  custom_editors: [],
   open_in: 'editor',
   auto_branch_naming: true,
   branch_naming_model: 'sonnet',

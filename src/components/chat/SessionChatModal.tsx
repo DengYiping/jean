@@ -990,7 +990,8 @@ export function SessionChatModal({
                           {getOpenInDefaultLabel(
                             'editor',
                             effectiveEditor,
-                            preferences?.terminal
+                            preferences?.terminal,
+                            preferences?.custom_editors
                           )}
                         </DropdownMenuItem>
                         <DropdownMenuItem
@@ -1005,7 +1006,8 @@ export function SessionChatModal({
                           {getOpenInDefaultLabel(
                             'terminal',
                             effectiveEditor,
-                            preferences?.terminal
+                            preferences?.terminal,
+                            preferences?.custom_editors
                           )}
                         </DropdownMenuItem>
                         <DropdownMenuItem

@@ -50,6 +50,7 @@ export function OpenInButton({
     preferredEditor,
     preferences?.editor
   )
+  const customEditors = preferences?.custom_editors
 
   const openEditor = useCallback(
     (editor?: EditorApp) => {
@@ -94,13 +95,15 @@ export function OpenInButton({
 
   const editorOptions = getDetectedEditorOptions(
     effectiveEditor,
-    availableEditors
+    availableEditors,
+    customEditors
   )
 
   const defaultLabel = getOpenInDefaultLabel(
     preferences?.open_in ?? 'editor',
     effectiveEditor,
-    preferences?.terminal
+    preferences?.terminal,
+    customEditors
   )
 
   if (!isNativeApp()) return null
@@ -138,7 +141,8 @@ export function OpenInButton({
             {getOpenInDefaultLabel(
               'editor',
               effectiveEditor,
-              preferences?.terminal
+              preferences?.terminal,
+              customEditors
             )}
           </DropdownMenuItem>
           {editorOptions
@@ -157,7 +161,8 @@ export function OpenInButton({
             {getOpenInDefaultLabel(
               'terminal',
               effectiveEditor,
-              preferences?.terminal
+              preferences?.terminal,
+              customEditors
             )}
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => openAction('finder')}>

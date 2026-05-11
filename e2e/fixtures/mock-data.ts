@@ -59,6 +59,7 @@ export const mockPreferences = {
   default_effort_level: 'high',
   terminal: 'terminal',
   editor: 'cursor',
+  custom_editors: [],
   open_in: 'editor',
   auto_branch_naming: true,
   auto_session_naming: true,

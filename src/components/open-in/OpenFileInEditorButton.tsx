@@ -44,6 +44,7 @@ export function OpenFileInEditorButton({
     preferredEditor,
     preferences?.editor
   )
+  const customEditors = preferences?.custom_editors
 
   const openEditor = useCallback(
     (editor?: EditorApp) => {
@@ -58,9 +59,10 @@ export function OpenFileInEditorButton({
 
   const editorOptions = getDetectedEditorOptions(
     effectiveEditor,
-    availableEditors
+    availableEditors,
+    customEditors
   )
-  const defaultLabel = getEditorLabel(effectiveEditor)
+  const defaultLabel = getEditorLabel(effectiveEditor, customEditors)
 
   if (!isNativeApp()) return null
 

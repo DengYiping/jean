@@ -1,10 +1,25 @@
 import { useMemo } from 'react'
-import type { ClaudeModel, CustomCliProfile } from '@/types/preferences'
+import {
+  getModelFastInfo,
+  getModelPreferenceKey,
+  type ClaudeModel,
+  type CustomCliProfile,
+} from '@/types/preferences'
 import {
   CODEX_MODEL_OPTIONS,
   MODEL_OPTIONS,
   OPENCODE_MODEL_OPTIONS,
 } from '@/components/chat/toolbar/toolbar-options'
+
+export interface DesktopModelPickerOption {
+  value: string
+  label: string
+  favoriteKey: string
+  isFavorite: boolean
+  supportsFast: boolean
+  isFastEnabled: boolean
+  searchText: string
+}
 
 interface UseToolbarDerivedStateArgs {
   selectedBackend: 'claude' | 'codex' | 'opencode'
@@ -12,6 +27,8 @@ interface UseToolbarDerivedStateArgs {
   selectedModel: string
   opencodeModelOptions?: { value: string; label: string }[]
   customCliProfiles: CustomCliProfile[]
+  favoriteModels: string[]
+  fastModeModels: string[]
   availableMcpServers: { name: string; disabled?: boolean }[]
   enabledMcpServers: string[]
 }
@@ -22,11 +39,17 @@ export function useToolbarDerivedState({
   selectedModel,
   opencodeModelOptions,
   customCliProfiles,
+  favoriteModels,
+  fastModeModels,
   availableMcpServers,
   enabledMcpServers,
 }: UseToolbarDerivedStateArgs) {
   const isCodex = selectedBackend === 'codex'
   const isOpencode = selectedBackend === 'opencode'
+  const fastModelSelectionEnabled =
+    selectedBackend === 'codex' ||
+    (selectedBackend === 'claude' &&
+      (!selectedProvider || selectedProvider === '__anthropic__'))
 
   const activeMcpCount = useMemo(() => {
     const availableNames = new Set(
@@ -76,15 +99,79 @@ export function useToolbarDerivedState({
     opencodeModelOptions,
   ])
 
+  const selectedFastInfo = useMemo(
+    () =>
+      fastModelSelectionEnabled
+        ? getModelFastInfo(selectedBackend, selectedModel)
+        : {
+            supportsFast: false,
+            isFast: false,
+            baseModel: selectedModel,
+          },
+    [fastModelSelectionEnabled, selectedBackend, selectedModel]
+  )
+
+  const desktopModelOptions = useMemo<DesktopModelPickerOption[]>(() => {
+    const favoriteModelKeys = new Set(favoriteModels)
+    const rememberedFastModelKeys = new Set(fastModeModels)
+    const seenModels = new Set<string>()
+
+    return filteredModelOptions.flatMap(option => {
+      const fastInfo = fastModelSelectionEnabled
+        ? getModelFastInfo(selectedBackend, option.value)
+        : {
+            supportsFast: false,
+            isFast: false,
+            baseModel: option.value,
+          }
+      const value = fastInfo.baseModel
+      if (seenModels.has(value)) return []
+
+      seenModels.add(value)
+
+      const favoriteKey = getModelPreferenceKey(selectedBackend, option.value)
+      const isSelectedFastModel =
+        selectedFastInfo.isFast && selectedFastInfo.baseModel === value
+
+      return [
+        {
+          value,
+          label: option.label,
+          favoriteKey,
+          isFavorite: favoriteModelKeys.has(favoriteKey),
+          supportsFast: fastInfo.supportsFast,
+          isFastEnabled:
+            fastInfo.supportsFast &&
+            (rememberedFastModelKeys.has(favoriteKey) || isSelectedFastModel),
+          searchText: `${option.label} ${option.value}${
+            fastInfo.supportsFast ? ' fast' : ''
+          }`.toLowerCase(),
+        },
+      ]
+    })
+  }, [
+    favoriteModels,
+    fastModeModels,
+    filteredModelOptions,
+    fastModelSelectionEnabled,
+    selectedBackend,
+    selectedFastInfo.baseModel,
+    selectedFastInfo.isFast,
+  ])
+
+  const selectedBaseModel = selectedFastInfo.baseModel
   const selectedModelLabel =
-    filteredModelOptions.find(o => o.value === selectedModel)?.label ??
-    selectedModel
+    desktopModelOptions.find(option => option.value === selectedBaseModel)
+      ?.label ?? selectedBaseModel
 
   return {
     isCodex,
     isOpencode,
     activeMcpCount,
     filteredModelOptions,
+    desktopModelOptions,
+    selectedBaseModel,
+    selectedModelIsFast: selectedFastInfo.isFast,
     selectedModelLabel,
   }
 }

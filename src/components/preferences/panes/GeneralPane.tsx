@@ -90,6 +90,7 @@ import {
   thinkingLevelOptions,
   effortLevelOptions,
   codexModelOptions,
+  codexGoalExecutionModeOptions,
   codexReasoningOptions,
   backendOptions,
   terminalOptions,
@@ -101,6 +102,7 @@ import {
   type RemovalBehavior,
   type ClaudeModel,
   type CodexModel,
+  type CodexGoalExecutionMode,
   type CodexReasoningEffort,
   type CliBackend,
   type TerminalApp,
@@ -673,6 +675,10 @@ export const GeneralPane: React.FC = () => {
     const first = backendOptions.find(o => installed[o.value])
     return first?.value ?? stored
   }, [stored, claudeInstalled, codexInstalled, opencodeInstalled])
+  const effectiveBuildBackend = (preferences?.build_backend ??
+    effectiveBackend) as CliBackend
+  const effectiveYoloBackend = (preferences?.yolo_backend ??
+    effectiveBackend) as CliBackend
   const repoProjects = useMemo(
     () => projects.filter(project => !project.is_folder),
     [projects]
@@ -688,6 +694,16 @@ export const GeneralPane: React.FC = () => {
     if (preferences) {
       patchPreferences.mutate({
         default_codex_reasoning_effort: value,
+      })
+    }
+  }
+
+  const handleCodexGoalExecutionModeChange = (
+    value: CodexGoalExecutionMode
+  ) => {
+    if (preferences) {
+      patchPreferences.mutate({
+        codex_goal_execution_mode: value,
       })
     }
   }
@@ -1578,7 +1594,7 @@ export const GeneralPane: React.FC = () => {
                 </Select>
               </div>
               <div>
-                {preferences?.build_backend === 'opencode' ? (
+                {effectiveBuildBackend === 'opencode' ? (
                   <Popover
                     open={buildModelPopoverOpen}
                     onOpenChange={setBuildModelPopoverOpen}
@@ -1662,7 +1678,7 @@ export const GeneralPane: React.FC = () => {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="default">Default model</SelectItem>
-                      {(preferences?.build_backend === 'codex'
+                      {(effectiveBuildBackend === 'codex'
                         ? codexModelOptions
                         : modelOptions
                       ).map(option => (
@@ -1737,7 +1753,7 @@ export const GeneralPane: React.FC = () => {
                 </Select>
               </div>
               <div>
-                {preferences?.yolo_backend === 'opencode' ? (
+                {effectiveYoloBackend === 'opencode' ? (
                   <Popover
                     open={yoloModelPopoverOpen}
                     onOpenChange={setYoloModelPopoverOpen}
@@ -1821,7 +1837,7 @@ export const GeneralPane: React.FC = () => {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="default">Default model</SelectItem>
-                      {(preferences?.yolo_backend === 'codex'
+                      {(effectiveYoloBackend === 'codex'
                         ? codexModelOptions
                         : modelOptions
                       ).map(option => (
@@ -1970,7 +1986,7 @@ export const GeneralPane: React.FC = () => {
             description="Codex model for AI assistance"
           >
             <Select
-              value={preferences?.selected_codex_model ?? 'gpt-5.4'}
+              value={preferences?.selected_codex_model ?? 'gpt-5.5'}
               onValueChange={handleCodexModelChange}
             >
               <SelectTrigger>
@@ -1978,6 +1994,27 @@ export const GeneralPane: React.FC = () => {
               </SelectTrigger>
               <SelectContent>
                 {codexModelOptions.map(option => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </InlineField>
+
+          <InlineField
+            label="Goal execution mode"
+            description="Execution mode used when /goal starts work immediately"
+          >
+            <Select
+              value={preferences?.codex_goal_execution_mode ?? 'build'}
+              onValueChange={handleCodexGoalExecutionModeChange}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {codexGoalExecutionModeOptions.map(option => (
                   <SelectItem key={option.value} value={option.value}>
                     {option.label}
                   </SelectItem>

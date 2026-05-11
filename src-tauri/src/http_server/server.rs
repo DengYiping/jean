@@ -1,6 +1,7 @@
 use axum::{
+    body::Body,
     extract::{ws::WebSocketUpgrade, Path as AxumPath, Query, State},
-    http::StatusCode,
+    http::{header, StatusCode, Uri},
     response::{IntoResponse, Response},
     routing::get,
     Json, Router,
@@ -15,7 +16,6 @@ use tauri::{AppHandle, Manager};
 use tokio::sync::Mutex;
 use tower_http::compression::CompressionLayer;
 use tower_http::cors::{Any, CorsLayer};
-use tower_http::services::{ServeDir, ServeFile};
 
 use super::auth;
 use super::websocket::handle_ws_connection;
@@ -28,6 +28,7 @@ struct AppState {
     app: AppHandle,
     token: String,
     token_required: bool,
+    dist_path: std::path::PathBuf,
 }
 
 /// Server handle for shutdown coordination.
@@ -69,6 +70,42 @@ struct WsAuth {
 pub struct BindHostOption {
     pub host: String,
     pub label: String,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct WebBuildInfo {
+    web_build_id: String,
+    app_version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    git_sha: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    built_at: Option<String>,
+}
+
+impl Default for WebBuildInfo {
+    fn default() -> Self {
+        Self {
+            web_build_id: env!("CARGO_PKG_VERSION").to_string(),
+            app_version: env!("CARGO_PKG_VERSION").to_string(),
+            git_sha: None,
+            built_at: None,
+        }
+    }
+}
+
+async fn read_web_build_info(dist_path: &std::path::Path) -> WebBuildInfo {
+    let path = dist_path.join("jean-build.json");
+    match tokio::fs::read_to_string(&path).await {
+        Ok(contents) => serde_json::from_str::<WebBuildInfo>(&contents).unwrap_or_else(|e| {
+            log::warn!("Failed to parse {}: {e}", path.display());
+            WebBuildInfo::default()
+        }),
+        Err(e) => {
+            log::debug!("No web build info at {}: {e}", path.display());
+            WebBuildInfo::default()
+        }
+    }
 }
 
 /// Resolve the dist directory path at runtime.
@@ -140,10 +177,12 @@ pub async fn start_server(
 ) -> Result<HttpServerHandle, String> {
     let bind_ip = parse_bind_ip(&bind_host)?;
     let localhost_only = bind_ip.is_loopback();
+    let dist_path = resolve_dist_path(&app);
     let state = AppState {
         app: app.clone(),
         token: token.clone(),
         token_required,
+        dist_path: dist_path.clone(),
     };
 
     let cors = CorsLayer::new()
@@ -151,20 +190,13 @@ pub async fn start_server(
         .allow_methods(Any)
         .allow_headers(Any);
 
-    // Resolve the dist directory at runtime for static file serving
-    let dist_path = resolve_dist_path(&app);
-    let index_path = dist_path.join("index.html");
-
-    let serve_dir = ServeDir::new(&dist_path)
-        .append_index_html_on_directories(true)
-        .fallback(ServeFile::new(&index_path));
-
     let router = Router::new()
         .route("/ws", get(ws_handler))
         .route("/api/auth", get(auth_handler))
         .route("/api/init", get(init_handler))
+        .route("/api/version", get(version_handler))
         .route("/api/files/{*filepath}", get(file_handler))
-        .fallback_service(serve_dir)
+        .fallback(get(static_handler))
         .layer(CompressionLayer::new().br(true).gzip(true))
         .layer(cors)
         .with_state(state);
@@ -238,14 +270,27 @@ async fn ws_handler(
 /// Token validation endpoint. Returns 200 with { ok: true } on success,
 /// or 401 with { ok: false, error: "..." } on failure.
 async fn auth_handler(Query(params): Query<WsAuth>, State(state): State<AppState>) -> Response {
+    let build_info = read_web_build_info(&state.dist_path).await;
+
     // If token not required, always return success
     if !state.token_required {
-        return Json(serde_json::json!({ "ok": true, "token_required": false })).into_response();
+        return Json(serde_json::json!({
+            "ok": true,
+            "token_required": false,
+            "webBuildId": build_info.web_build_id,
+            "appVersion": build_info.app_version,
+        }))
+        .into_response();
     }
 
     let provided = params.token.unwrap_or_default();
     if auth::validate_token(&provided, &state.token) {
-        Json(serde_json::json!({ "ok": true })).into_response()
+        Json(serde_json::json!({
+            "ok": true,
+            "webBuildId": build_info.web_build_id,
+            "appVersion": build_info.app_version,
+        }))
+        .into_response()
     } else {
         (
             StatusCode::UNAUTHORIZED,
@@ -253,6 +298,17 @@ async fn auth_handler(Query(params): Query<WsAuth>, State(state): State<AppState
         )
             .into_response()
     }
+}
+
+async fn version_handler(Query(params): Query<WsAuth>, State(state): State<AppState>) -> Response {
+    if state.token_required {
+        let provided = params.token.unwrap_or_default();
+        if !auth::validate_token(&provided, &state.token) {
+            return (StatusCode::UNAUTHORIZED, "Invalid token").into_response();
+        }
+    }
+
+    Json(read_web_build_info(&state.dist_path).await).into_response()
 }
 
 /// Maximum number of buffered WebSocket events replayed per focused running
@@ -282,6 +338,9 @@ async fn init_handler(Query(params): Query<WsAuth>, State(state): State<AppState
     );
 
     let mut response = serde_json::json!({});
+    let build_info = read_web_build_info(&state.dist_path).await;
+    response["webBuildId"] = Value::String(build_info.web_build_id.clone());
+    response["appVersion"] = Value::String(build_info.app_version.clone());
 
     let projects = match projects_result {
         Ok(projects) => projects,
@@ -744,6 +803,77 @@ async fn file_handler(
     }
 }
 
+fn static_mime_from_extension(path: &std::path::Path) -> &'static str {
+    match path.extension().and_then(|e| e.to_str()) {
+        Some("html") => "text/html; charset=utf-8",
+        Some("js" | "mjs") => "text/javascript; charset=utf-8",
+        Some("css") => "text/css; charset=utf-8",
+        Some("json" | "map") => "application/json; charset=utf-8",
+        Some("svg") => "image/svg+xml",
+        Some("png") => "image/png",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        Some("webp") => "image/webp",
+        Some("ico") => "image/x-icon",
+        Some("woff") => "font/woff",
+        Some("woff2") => "font/woff2",
+        _ => "application/octet-stream",
+    }
+}
+
+async fn static_handler(uri: Uri, State(state): State<AppState>) -> Response {
+    let raw_path = uri.path().trim_start_matches('/');
+    if raw_path.split('/').any(|part| part == "..") {
+        return (StatusCode::FORBIDDEN, "Access denied").into_response();
+    }
+
+    let index_path = state.dist_path.join("index.html");
+    let requested_path = if raw_path.is_empty() {
+        index_path.clone()
+    } else {
+        state.dist_path.join(raw_path)
+    };
+
+    let path = match tokio::fs::metadata(&requested_path).await {
+        Ok(metadata) if metadata.is_file() => requested_path,
+        Ok(metadata) if metadata.is_dir() => requested_path.join("index.html"),
+        _ => index_path.clone(),
+    };
+
+    let canonical_base = match tokio::fs::canonicalize(&state.dist_path).await {
+        Ok(path) => path,
+        Err(_) => return (StatusCode::NOT_FOUND, "Frontend dist not found").into_response(),
+    };
+    let canonical_path = match tokio::fs::canonicalize(&path).await {
+        Ok(path) => path,
+        Err(_) => return (StatusCode::NOT_FOUND, "File not found").into_response(),
+    };
+    if !canonical_path.starts_with(canonical_base) {
+        return (StatusCode::FORBIDDEN, "Access denied").into_response();
+    }
+
+    let bytes = match tokio::fs::read(&canonical_path).await {
+        Ok(bytes) => bytes,
+        Err(_) => return (StatusCode::NOT_FOUND, "Cannot read file").into_response(),
+    };
+
+    let canonical_index = index_path.canonicalize().unwrap_or(index_path);
+    let is_index = canonical_path == canonical_index;
+    let cache_control = if is_index || canonical_path.ends_with("jean-build.json") {
+        "no-store"
+    } else {
+        "public, max-age=31536000, immutable"
+    };
+
+    Response::builder()
+        .header(
+            header::CONTENT_TYPE,
+            static_mime_from_extension(&canonical_path),
+        )
+        .header(header::CACHE_CONTROL, cache_control)
+        .body(Body::from(bytes))
+        .unwrap()
+}
+
 fn parse_bind_ip(host: &str) -> Result<IpAddr, String> {
     let trimmed = host.trim();
     if trimmed.is_empty() {
@@ -946,9 +1076,19 @@ mod tests {
     use super::{
         bind_host_option_label, bind_host_option_rank, display_host_for_bind_ip,
         display_ip_for_bind_ip_with_candidates, format_http_url, is_tailscale_ipv4, parse_bind_ip,
-        validate_bind_host,
+        read_web_build_info, static_mime_from_extension, validate_bind_host,
     };
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_test_dir(prefix: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("jean-{prefix}-{unique}"))
+    }
 
     #[test]
     fn parse_bind_ip_accepts_localhost_and_ip_literals() {
@@ -1109,5 +1249,70 @@ mod tests {
         let options = super::list_bind_host_options();
         assert!(options.iter().any(|option| option.host == "127.0.0.1"));
         assert!(options.iter().any(|option| option.host == "0.0.0.0"));
+    }
+
+    #[tokio::test]
+    async fn read_web_build_info_reads_bundled_metadata() {
+        let dist_path = temp_test_dir("build-info");
+        tokio::fs::create_dir_all(&dist_path).await.unwrap();
+        tokio::fs::write(
+            dist_path.join("jean-build.json"),
+            r#"{
+  "webBuildId": "web-build-123",
+  "appVersion": "0.2.0",
+  "gitSha": "abc123",
+  "builtAt": "2026-05-11T08:30:00.000Z"
+}
+"#,
+        )
+        .await
+        .unwrap();
+
+        let build_info = read_web_build_info(&dist_path).await;
+
+        assert_eq!(build_info.web_build_id, "web-build-123");
+        assert_eq!(build_info.app_version, "0.2.0");
+        assert_eq!(build_info.git_sha.as_deref(), Some("abc123"));
+        assert_eq!(
+            build_info.built_at.as_deref(),
+            Some("2026-05-11T08:30:00.000Z")
+        );
+
+        let _ = tokio::fs::remove_dir_all(&dist_path).await;
+    }
+
+    #[tokio::test]
+    async fn read_web_build_info_falls_back_when_metadata_missing() {
+        let dist_path = temp_test_dir("build-info-missing");
+        tokio::fs::create_dir_all(&dist_path).await.unwrap();
+
+        let build_info = read_web_build_info(&dist_path).await;
+
+        assert_eq!(build_info.web_build_id, env!("CARGO_PKG_VERSION"));
+        assert_eq!(build_info.app_version, env!("CARGO_PKG_VERSION"));
+        assert_eq!(build_info.git_sha, None);
+        assert_eq!(build_info.built_at, None);
+
+        let _ = tokio::fs::remove_dir_all(&dist_path).await;
+    }
+
+    #[test]
+    fn static_mime_from_extension_maps_web_assets() {
+        assert_eq!(
+            static_mime_from_extension(std::path::Path::new("index.html")),
+            "text/html; charset=utf-8"
+        );
+        assert_eq!(
+            static_mime_from_extension(std::path::Path::new("app.js")),
+            "text/javascript; charset=utf-8"
+        );
+        assert_eq!(
+            static_mime_from_extension(std::path::Path::new("style.css")),
+            "text/css; charset=utf-8"
+        );
+        assert_eq!(
+            static_mime_from_extension(std::path::Path::new("font.woff2")),
+            "font/woff2"
+        );
     }
 }

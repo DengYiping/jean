@@ -113,7 +113,7 @@ export function useToolbarHandlers({
       if (activeSessionId && activeWorktreeId && activeWorktreePath) {
         const model =
           backend === 'codex'
-            ? (preferences?.selected_codex_model ?? 'gpt-5.4')
+            ? (preferences?.selected_codex_model ?? 'gpt-5.5')
             : backend === 'opencode'
               ? (preferences?.selected_opencode_model ??
                 'opencode/gpt-5.3-codex')

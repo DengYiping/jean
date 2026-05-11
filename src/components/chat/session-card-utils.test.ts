@@ -56,7 +56,7 @@ describe('computeSessionCardData', () => {
     expect(data.isWaiting).toBe(false)
   })
 
-  it('keeps waiting status when the local store still says waiting', () => {
+  it('does not keep waiting status for stale local question waits', () => {
     const session = createSession({
       waiting_for_input: true,
       waiting_for_input_type: 'question',
@@ -69,8 +69,8 @@ describe('computeSessionCardData', () => {
 
     const data = computeSessionCardData(session, storeState)
 
-    expect(data.status).toBe('waiting')
-    expect(data.isWaiting).toBe(true)
+    expect(data.status).toBe('review')
+    expect(data.isWaiting).toBe(false)
   })
 
   it('drops stale pending plan metadata once the session is no longer waiting', () => {
@@ -154,6 +154,24 @@ describe('computeSessionCardData', () => {
 
     expect(card.isWaiting).toBe(false)
     expect(card.status).not.toBe('waiting')
+  })
+
+  it('ignores stale local waiting state on completed non-plan runs', () => {
+    const session: Session = {
+      ...createBaseSession(),
+      waiting_for_input: false,
+      waiting_for_input_type: null,
+      last_run_status: 'completed',
+      last_run_execution_mode: 'yolo',
+    }
+    const storeState = createBaseStoreState({
+      waitingForInputSessionIds: { 'session-1': true },
+    })
+
+    const card = computeSessionCardData(session, storeState)
+
+    expect(card.isWaiting).toBe(false)
+    expect(card.status).toBe('idle')
   })
 
   it('honors persisted waiting_for_input when run paused for plan approval', () => {

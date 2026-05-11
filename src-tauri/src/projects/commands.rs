@@ -6308,7 +6308,7 @@ fn generate_pr_content(
         &diff,
     );
 
-    let model_str = model.unwrap_or("haiku");
+    let model_str = model.unwrap_or("sonnet");
 
     // Per-operation backend > project/global default_backend
     let backend = crate::chat::resolve_magic_prompt_backend(app, magic_backend, worktree_id);
@@ -7839,15 +7839,20 @@ fn execute_codex_review(
     std::fs::write(&schema_file, REVIEW_SCHEMA)
         .map_err(|e| format!("Failed to write schema file: {e}"))?;
 
+    let (actual_model, is_fast) = crate::chat::codex::split_fast_model(model);
+
     let mut cmd = crate::platform::silent_command(&cli_path);
     cmd.args([
         "exec",
         "--json",
         "--model",
-        model,
+        actual_model,
         "--full-auto",
         "--output-schema",
     ]);
+    if is_fast {
+        cmd.args(["-c", "service_tier=\"fast\""]);
+    }
     cmd.arg(&schema_file);
     if let Some(dir) = working_dir {
         cmd.arg("--cd");
@@ -7929,7 +7934,7 @@ fn generate_review(
     magic_backend: Option<&str>,
     reasoning_effort: Option<&str>,
 ) -> Result<ReviewResponse, String> {
-    let model_str = model.unwrap_or("haiku");
+    let model_str = model.unwrap_or("sonnet");
 
     // Per-operation backend > project/global default_backend
     let backend = crate::chat::resolve_magic_prompt_backend(app, magic_backend, worktree_id);
@@ -8549,7 +8554,7 @@ fn generate_release_notes_content(
         .replace("{previous_release_name}", release_name)
         .replace("{commits}", &commits);
 
-    let model_str = model.unwrap_or("haiku");
+    let model_str = model.unwrap_or("sonnet");
 
     // Per-operation backend > global default_backend (no worktree for release notes)
     let backend = crate::chat::resolve_magic_prompt_backend(app, magic_backend, None);

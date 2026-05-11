@@ -17,7 +17,7 @@ describe('createProjectCanvasSessionsQuery', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     Object.defineProperty(window, '__TAURI_INTERNALS__', {
-      value: {},
+      value: { invoke: vi.fn() },
       configurable: true,
     })
   })

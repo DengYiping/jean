@@ -12,7 +12,12 @@ import {
 import { useChatStore } from '@/store/chat-store'
 import { useRemotePicker } from '@/hooks/useRemotePicker'
 import { useAllBackendsMcpHealth } from '@/services/mcp'
-import type { ClaudeModel } from '@/types/preferences'
+import {
+  getModelFastInfo,
+  getModelPreferenceKey,
+  resolveRememberedFastModel,
+  type ClaudeModel,
+} from '@/types/preferences'
 import type { EffortLevel, ThinkingLevel } from '@/types/chat'
 import type { ChatToolbarProps } from '@/components/chat/toolbar/types'
 import { MobileToolbarMenu } from '@/components/chat/toolbar/MobileToolbarMenu'
@@ -41,7 +46,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { usePreferences } from '@/services/preferences'
+import { usePatchPreferences, usePreferences } from '@/services/preferences'
 
 // eslint-disable-next-line react-refresh/only-export-components
 export {
@@ -124,6 +129,7 @@ export const ChatToolbar = memo(function ChatToolbar({
   onOpenProjectSettings,
 }: ChatToolbarProps) {
   const { data: preferences } = usePreferences()
+  const patchPreferences = usePatchPreferences()
   const {
     statuses: mcpStatuses,
     isFetching: isHealthChecking,
@@ -175,16 +181,25 @@ export const ChatToolbar = memo(function ChatToolbar({
       label: formatOpencodeModelLabel(model),
     })) ?? OPENCODE_MODEL_OPTIONS
 
-  const { isCodex, activeMcpCount, filteredModelOptions, selectedModelLabel } =
-    useToolbarDerivedState({
-      selectedBackend,
-      selectedProvider,
-      selectedModel,
-      opencodeModelOptions,
-      customCliProfiles,
-      availableMcpServers,
-      enabledMcpServers,
-    })
+  const {
+    isCodex,
+    activeMcpCount,
+    filteredModelOptions,
+    desktopModelOptions,
+    selectedBaseModel,
+    selectedModelIsFast,
+    selectedModelLabel,
+  } = useToolbarDerivedState({
+    selectedBackend,
+    selectedProvider,
+    selectedModel,
+    opencodeModelOptions,
+    customCliProfiles,
+    favoriteModels: preferences?.favorite_models ?? [],
+    fastModeModels: preferences?.fast_mode_models ?? [],
+    availableMcpServers,
+    enabledMcpServers,
+  })
 
   const {
     viewingContext,
@@ -204,9 +219,78 @@ export const ChatToolbar = memo(function ChatToolbar({
 
   const handleModelChange = useCallback(
     (value: string) => {
-      onModelChange(value as ClaudeModel)
+      const selectedFastInfo = getModelFastInfo(selectedBackend, selectedModel)
+      const fastModelSelectionEnabled =
+        selectedBackend === 'codex' ||
+        (selectedBackend === 'claude' &&
+          (!selectedProvider || selectedProvider === '__anthropic__'))
+      const resolvedModel =
+        selectedFastInfo.isFast && selectedFastInfo.baseModel === value
+          ? selectedModel
+          : fastModelSelectionEnabled
+            ? resolveRememberedFastModel(
+                selectedBackend,
+                value,
+                preferences?.fast_mode_models ?? []
+              )
+            : value
+
+      onModelChange(resolvedModel as ClaudeModel)
     },
-    [onModelChange]
+    [
+      onModelChange,
+      preferences?.fast_mode_models,
+      selectedBackend,
+      selectedModel,
+      selectedProvider,
+    ]
+  )
+
+  const handleToggleFavoriteModel = useCallback(
+    (value: string) => {
+      if (!preferences) return
+
+      const favoriteKey = getModelPreferenceKey(selectedBackend, value)
+      const favoriteModels = preferences.favorite_models ?? []
+      const nextFavoriteModels = favoriteModels.includes(favoriteKey)
+        ? favoriteModels.filter(key => key !== favoriteKey)
+        : [...favoriteModels, favoriteKey]
+
+      patchPreferences.mutate({ favorite_models: nextFavoriteModels })
+    },
+    [patchPreferences, preferences, selectedBackend]
+  )
+
+  const handleFastModeChange = useCallback(
+    (value: string, enabled: boolean) => {
+      if (!preferences) return
+
+      const fastInfo = getModelFastInfo(selectedBackend, value)
+      if (!fastInfo.supportsFast) return
+
+      const modelKey = getModelPreferenceKey(selectedBackend, value)
+      const fastModeModels = preferences.fast_mode_models ?? []
+      const nextFastModeModels = enabled
+        ? [...new Set([...fastModeModels, modelKey])]
+        : fastModeModels.filter(key => key !== modelKey)
+
+      patchPreferences.mutate({ fast_mode_models: nextFastModeModels })
+
+      const currentFastInfo = getModelFastInfo(selectedBackend, selectedModel)
+      if (currentFastInfo.baseModel !== fastInfo.baseModel) return
+
+      const nextModel = enabled
+        ? (fastInfo.fastModel ?? fastInfo.baseModel)
+        : fastInfo.baseModel
+      onModelChange(nextModel as ClaudeModel)
+    },
+    [
+      onModelChange,
+      patchPreferences,
+      preferences,
+      selectedBackend,
+      selectedModel,
+    ]
   )
 
   const handleProviderChange = useCallback(
@@ -392,7 +476,7 @@ export const ChatToolbar = memo(function ChatToolbar({
         <DesktopToolbarControls
           hasPendingQuestions={hasPendingQuestions}
           selectedBackend={selectedBackend}
-          selectedModel={selectedModel}
+          selectedModelValue={selectedBaseModel}
           selectedProvider={selectedProvider}
           selectedThinkingLevel={selectedThinkingLevel}
           selectedEffortLevel={selectedEffortLevel}
@@ -402,8 +486,9 @@ export const ChatToolbar = memo(function ChatToolbar({
           sessionHasMessages={sessionHasMessages}
           providerLocked={providerLocked}
           customCliProfiles={customCliProfiles}
-          filteredModelOptions={filteredModelOptions}
+          desktopModelOptions={desktopModelOptions}
           selectedModelLabel={selectedModelLabel}
+          selectedModelIsFast={selectedModelIsFast}
           isCodex={isCodex}
           prUrl={prUrl}
           prNumber={prNumber}
@@ -440,6 +525,8 @@ export const ChatToolbar = memo(function ChatToolbar({
           onSetExecutionMode={onSetExecutionMode}
           onToggleMcpServer={onToggleMcpServer}
           handleModelChange={handleModelChange}
+          handleToggleFavoriteModel={handleToggleFavoriteModel}
+          handleFastModeChange={handleFastModeChange}
           handleProviderChange={handleProviderChange}
           handleThinkingLevelChange={handleThinkingLevelChange}
           handleEffortLevelChange={handleEffortLevelChange}

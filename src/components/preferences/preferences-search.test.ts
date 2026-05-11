@@ -18,7 +18,7 @@ const setTauriInternals = (enabled: boolean) => {
   if (enabled) {
     Object.defineProperty(window, '__TAURI_INTERNALS__', {
       configurable: true,
-      value: {},
+      value: { invoke: () => undefined },
     })
   } else {
     delete (window as Window & { __TAURI_INTERNALS__?: unknown })

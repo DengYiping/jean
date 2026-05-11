@@ -12,6 +12,7 @@ import {
   MessageSquare,
   Plug,
   Sparkles,
+  Star,
   Wand2,
   Zap,
 } from 'lucide-react'
@@ -73,11 +74,12 @@ import {
   getProviderDisplayName,
 } from '@/components/chat/toolbar/toolbar-utils'
 import { DockBurgerButton } from '@/components/chat/toolbar/DockBurgerButton'
+import type { DesktopModelPickerOption } from '@/components/chat/toolbar/useToolbarDerivedState'
 
 interface DesktopToolbarControlsProps {
   hasPendingQuestions: boolean
   selectedBackend: 'claude' | 'codex' | 'opencode'
-  selectedModel: string
+  selectedModelValue: string
   selectedProvider: string | null
   selectedThinkingLevel: ThinkingLevel
   selectedEffortLevel: EffortLevel
@@ -87,8 +89,9 @@ interface DesktopToolbarControlsProps {
   sessionHasMessages?: boolean
   providerLocked?: boolean
   customCliProfiles: CustomCliProfile[]
-  filteredModelOptions: { value: string; label: string }[]
+  desktopModelOptions: DesktopModelPickerOption[]
   selectedModelLabel: string
+  selectedModelIsFast: boolean
   isCodex: boolean
 
   prUrl: string | undefined
@@ -131,6 +134,8 @@ interface DesktopToolbarControlsProps {
   onToggleMcpServer: (name: string) => void
 
   handleModelChange: (value: string) => void
+  handleToggleFavoriteModel: (value: string) => void
+  handleFastModeChange: (value: string, enabled: boolean) => void
   handleProviderChange: (value: string) => void
   handleThinkingLevelChange: (value: string) => void
   handleEffortLevelChange: (value: string) => void
@@ -145,7 +150,7 @@ interface DesktopToolbarControlsProps {
 export function DesktopToolbarControls({
   hasPendingQuestions,
   selectedBackend,
-  selectedModel,
+  selectedModelValue,
   selectedProvider,
   selectedThinkingLevel,
   selectedEffortLevel,
@@ -155,8 +160,9 @@ export function DesktopToolbarControls({
   sessionHasMessages,
   providerLocked,
   customCliProfiles,
-  filteredModelOptions,
+  desktopModelOptions,
   selectedModelLabel,
+  selectedModelIsFast,
   isCodex,
   prUrl,
   prNumber,
@@ -191,6 +197,8 @@ export function DesktopToolbarControls({
   onSetExecutionMode,
   onToggleMcpServer,
   handleModelChange,
+  handleToggleFavoriteModel,
+  handleFastModeChange,
   handleProviderChange,
   handleThinkingLevelChange,
   handleEffortLevelChange,
@@ -217,13 +225,19 @@ export function DesktopToolbarControls({
   const modelSearchInputRef = useRef<HTMLInputElement>(null)
   const visibleModelOptions = useMemo(() => {
     const query = modelSearchQuery.trim().toLowerCase()
-    if (!query) return filteredModelOptions
-    return filteredModelOptions.filter(
-      option =>
-        option.label.toLowerCase().includes(query) ||
-        option.value.toLowerCase().includes(query)
+    if (!query) return desktopModelOptions
+    return desktopModelOptions.filter(option =>
+      option.searchText.includes(query)
     )
-  }, [filteredModelOptions, modelSearchQuery])
+  }, [desktopModelOptions, modelSearchQuery])
+  const favoriteModelOptions = useMemo(
+    () => visibleModelOptions.filter(option => option.isFavorite),
+    [visibleModelOptions]
+  )
+  const regularModelOptions = useMemo(
+    () => visibleModelOptions.filter(option => !option.isFavorite),
+    [visibleModelOptions]
+  )
 
   useEffect(() => {
     if (!modelDropdownOpen) return
@@ -232,6 +246,97 @@ export function DesktopToolbarControls({
       modelSearchInputRef.current?.select()
     })
   }, [modelDropdownOpen])
+
+  const renderModelOption = useCallback(
+    (option: DesktopModelPickerOption) => (
+      <DropdownMenuRadioItem key={option.value} value={option.value}>
+        <span className="min-w-0 flex-1 truncate">{option.label}</span>
+        <div className="ml-auto flex items-center gap-1 pl-2">
+          {option.supportsFast && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={
+                    option.isFastEnabled
+                      ? `Disable fast tier for ${option.label}`
+                      : `Remember fast tier for ${option.label}`
+                  }
+                  title={
+                    option.isFastEnabled
+                      ? 'Disable fast tier'
+                      : 'Remember fast tier'
+                  }
+                  className={cn(
+                    'pointer-events-auto flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground',
+                    option.isFastEnabled && 'text-yellow-500'
+                  )}
+                  onPointerDown={event => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                  }}
+                  onClick={event => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    handleFastModeChange(option.value, !option.isFastEnabled)
+                  }}
+                >
+                  <Zap
+                    className={cn(
+                      'h-3.5 w-3.5',
+                      option.isFastEnabled && 'fill-current'
+                    )}
+                  />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {option.isFastEnabled
+                  ? 'Fast tier remembered'
+                  : 'Remember fast tier'}
+              </TooltipContent>
+            </Tooltip>
+          )}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label={
+                  option.isFavorite
+                    ? `Remove ${option.label} from favorites`
+                    : `Add ${option.label} to favorites`
+                }
+                title={option.isFavorite ? 'Remove favorite' : 'Add favorite'}
+                className={cn(
+                  'pointer-events-auto flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground',
+                  option.isFavorite && 'text-amber-500'
+                )}
+                onPointerDown={event => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                }}
+                onClick={event => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  handleToggleFavoriteModel(option.value)
+                }}
+              >
+                <Star
+                  className={cn(
+                    'h-3.5 w-3.5',
+                    option.isFavorite && 'fill-current'
+                  )}
+                />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {option.isFavorite ? 'Remove favorite' : 'Add favorite'}
+            </TooltipContent>
+          </Tooltip>
+        </div>
+      </DropdownMenuRadioItem>
+    ),
+    [handleFastModeChange, handleToggleFavoriteModel]
+  )
 
   return (
     <>
@@ -729,6 +834,9 @@ export function DesktopToolbarControls({
               >
                 <Sparkles className="h-3.5 w-3.5 shrink-0" />
                 <span className="max-w-48 truncate">{selectedModelLabel}</span>
+                {selectedModelIsFast && (
+                  <Zap className="h-3 w-3 shrink-0 fill-current text-yellow-500" />
+                )}
                 <ChevronDown className="h-3 w-3 shrink-0 opacity-50" />
               </button>
             </DropdownMenuTrigger>
@@ -785,15 +893,33 @@ export function DesktopToolbarControls({
           <DropdownMenuSeparator />
           <DropdownMenuRadioGroup
             className="max-h-[19rem] overflow-y-auto"
-            value={selectedModel}
+            value={selectedModelValue}
             onValueChange={handleModelChange}
           >
             {visibleModelOptions.length > 0 ? (
-              visibleModelOptions.map(option => (
-                <DropdownMenuRadioItem key={option.value} value={option.value}>
-                  {option.label}
-                </DropdownMenuRadioItem>
-              ))
+              <>
+                {favoriteModelOptions.length > 0 && (
+                  <>
+                    <DropdownMenuLabel className="px-2 py-1 text-[11px] text-muted-foreground">
+                      Favorites
+                    </DropdownMenuLabel>
+                    {favoriteModelOptions.map(renderModelOption)}
+                    {regularModelOptions.length > 0 && (
+                      <DropdownMenuSeparator />
+                    )}
+                  </>
+                )}
+                {regularModelOptions.length > 0 && (
+                  <>
+                    {favoriteModelOptions.length > 0 && (
+                      <DropdownMenuLabel className="px-2 py-1 text-[11px] text-muted-foreground">
+                        All models
+                      </DropdownMenuLabel>
+                    )}
+                    {regularModelOptions.map(renderModelOption)}
+                  </>
+                )}
+              </>
             ) : (
               <DropdownMenuItem disabled>No models found</DropdownMenuItem>
             )}

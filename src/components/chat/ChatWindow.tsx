@@ -81,6 +81,8 @@ import {
   stripLeadingInjectedSkillTokens,
 } from '@/lib/skill-prompt'
 import { resolveParallelExecutionPromptForSession } from '@/lib/parallel-execution-prompt'
+import { copyToClipboard } from '@/lib/clipboard'
+import { buildMessageWithAttachmentRefs } from '@/lib/queued-message'
 import { cn } from '@/lib/utils'
 import { PermissionApproval } from './PermissionApproval'
 import { CodexMcpElicitation } from './CodexMcpElicitation'
@@ -117,10 +119,9 @@ import {
 } from './VirtualizedMessageList'
 import { CompactMessageList } from './CompactMessageList'
 import {
-  extractImagePaths,
-  extractTextFilePaths,
-  extractFileMentionPaths,
-  extractSkillPaths,
+  appendPromptMetadataToPlainText,
+  buildPromptAttachmentMetadata,
+  encodePromptAttachmentMetadata,
   stripAllMarkers,
 } from './message-content-utils'
 import { useUIStore } from '@/store/ui-store'
@@ -188,10 +189,7 @@ import { resolveApprovedPlanContinuation } from './hooks/approved-plan-continuat
 import { sendApprovedPlanContinuation } from './hooks/send-approved-plan-continuation'
 import { dedupeInFlightAssistantMessage } from './in-flight-message-dedupe'
 import { shouldShowPermissionApproval } from './permission-approval-utils'
-import {
-  buildMessageWithPendingRefs,
-  type PendingInputSnapshot,
-} from './pending-input'
+import type { PendingInputSnapshot } from './pending-input'
 
 // PERFORMANCE: Stable empty array references to prevent infinite render loops
 // When Zustand selectors return [], a new reference is created each time
@@ -615,7 +613,7 @@ export function ChatWindow({
 
   // Per-session model selection, falls back to preferences default (backend-aware)
   const defaultModel: string = isCodexBackend
-    ? (preferences?.selected_codex_model ?? 'gpt-5.4')
+    ? (preferences?.selected_codex_model ?? 'gpt-5.5')
     : isOpencodeBackend
       ? (preferences?.selected_opencode_model ?? 'opencode/gpt-5.3-codex')
       : ((preferences?.selected_model as ClaudeModel) ?? DEFAULT_MODEL)
@@ -1681,7 +1679,7 @@ export function ChatWindow({
       const model =
         modeModelOverride ??
         (modeBackendOverride === 'codex'
-          ? (preferences?.selected_codex_model ?? 'gpt-5.4')
+          ? (preferences?.selected_codex_model ?? 'gpt-5.5')
           : modeBackendOverride === 'opencode'
             ? (preferences?.selected_opencode_model ?? 'opencode/gpt-5.3-codex')
             : selectedModelRef.current)
@@ -1773,7 +1771,13 @@ export function ChatWindow({
         toast.info(`${modeLabel}: ${overrideStr}`)
       }
 
-      const message = buildMessageWithPendingRefs(snapshot)
+      const message = buildMessageWithAttachmentRefs({
+        message: snapshot.message,
+        pendingFiles: snapshot.files,
+        pendingImages: snapshot.images,
+        pendingTextFiles: snapshot.textFiles,
+        skills: snapshot.skills,
+      })
       clearPendingInputSnapshot(snapshot)
 
       store.setExecutionMode(targetSessionId, mode)
@@ -1874,7 +1878,6 @@ export function ChatWindow({
     },
     [
       resolveShortcutExecutionConfig,
-      buildMessageWithPendingRefs,
       clearPendingInputSnapshot,
       queryClient,
       preferences?.ai_language,
@@ -2344,47 +2347,40 @@ export function ChatWindow({
   // Copy a sent user message to the clipboard with attachment metadata
   // When pasted back, ChatInput detects the custom format and restores attachments
   const handleCopyToInput = useCallback(async (message: ChatMessage) => {
-    const skillPaths = extractSkillPaths(message.content)
-
-    // Build metadata for skill names
-    const skills = skillPaths.map(path => {
-      return { name: getSkillName(path), path }
-    })
+    const metadata = buildPromptAttachmentMetadata(
+      message.content,
+      getSkillName
+    )
     const cleanText = stripLeadingInjectedSkillTokens(
       stripAllMarkers(message.content),
-      skills
+      metadata.skills
     )
 
-    // Extract attachment paths from the raw message content
-    const imagePaths = extractImagePaths(message.content)
-    const textFilePaths = extractTextFilePaths(message.content)
-    const fileMentionPaths = extractFileMentionPaths(message.content)
+    const encodedMetadata = encodePromptAttachmentMetadata(metadata)
+    const fallbackText = appendPromptMetadataToPlainText(cleanText, metadata)
+    const escapedCleanText = cleanText
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+    const htmlContent = `<span data-jean-prompt="${encodedMetadata}">${escapedCleanText}</span>`
 
-    // Build JSON metadata for attachments
-    const metadata = JSON.stringify({
-      images: imagePaths,
-      textFiles: textFilePaths,
-      files: fileMentionPaths,
-      skills,
-    })
-
-    // Write to clipboard: plain text + HTML with embedded metadata
-    // The HTML contains a hidden span with JSON so ChatInput can detect it on paste
-    const htmlContent = `<span data-jean-prompt="${encodeURIComponent(metadata)}">${cleanText.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span>`
-
-    try {
-      await navigator.clipboard.write([
-        new ClipboardItem({
-          'text/plain': new Blob([cleanText], { type: 'text/plain' }),
-          'text/html': new Blob([htmlContent], { type: 'text/html' }),
-        }),
-      ])
-      toast.success('Prompt copied')
-    } catch {
-      // Fallback to plain text
-      await navigator.clipboard.writeText(cleanText)
-      toast.success('Text copied (without attachments)')
+    if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
+      try {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            'text/plain': new Blob([cleanText], { type: 'text/plain' }),
+            'text/html': new Blob([htmlContent], { type: 'text/html' }),
+          }),
+        ])
+        toast.success('Prompt copied')
+        return
+      } catch {
+        // Fall through to plain-text metadata fallback.
+      }
     }
+
+    await copyToClipboard(fallbackText)
+    toast.success('Prompt copied')
   }, [])
 
   // Window event listeners (focus, plan, recap, git-diff, cancel, create-session, plan approval, etc.)

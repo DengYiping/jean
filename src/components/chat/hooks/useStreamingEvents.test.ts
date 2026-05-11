@@ -117,6 +117,16 @@ function createWrapper(queryClient: QueryClient) {
   return Wrapper
 }
 
+function createDeferredPromise<T = void>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
 function resetStores() {
   useChatStore.setState({
     activeWorktreeId: null,
@@ -279,6 +289,13 @@ async function setupHook() {
       handlers.delete(event)
     })
   })
+  const invokeImpl = mockInvoke.getMockImplementation()
+  mockInvoke.mockImplementation((cmd: string, ...args: unknown[]) => {
+    if (cmd === 'list_pending_wakeups') {
+      return Promise.resolve([])
+    }
+    return invokeImpl ? invokeImpl(cmd, ...args) : Promise.resolve(undefined)
+  })
 
   const queryClient = createTestQueryClient()
   seedSessionCaches(queryClient)
@@ -316,6 +333,12 @@ describe('shouldPlayPermissionApprovalSound', () => {
 describe('useStreamingEvents question notifications', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === 'list_pending_wakeups') {
+        return Promise.resolve([])
+      }
+      return Promise.resolve(undefined)
+    })
     resetStores()
   })
 
@@ -490,8 +513,41 @@ describe('useStreamingEvents question notifications', () => {
     unmount()
   })
 
-  it('marks board-managed sessions running when a resumed send starts', async () => {
+  it('marks board-managed sessions running and clears stale waiting state when a resumed send starts', async () => {
+    useChatStore.setState({
+      waitingForInputSessionIds: { 'session-1': true },
+      reviewingSessions: { 'session-1': true },
+      pendingPlanMessageIds: { 'session-1': 'plan-msg-1' },
+    })
+
     const { handlers, queryClient, unmount } = await setupHook()
+    queryClient.setQueryData(chatQueryKeys.session('session-1'), old =>
+      old
+        ? {
+            ...old,
+            waiting_for_input: true,
+            waiting_for_input_type: 'plan',
+            pending_plan_message_id: 'plan-msg-1',
+            is_reviewing: true,
+            last_run_status: 'completed',
+            session_derived_state: {
+              status: 'waiting',
+              effective_execution_mode: 'plan',
+              is_waiting: true,
+              waiting_type: 'plan',
+              has_question: false,
+              has_exit_plan: true,
+              pending_plan_message_id: 'plan-msg-1',
+              plan_file_path: null,
+              plan_content: null,
+              permission_denial_count: 0,
+              has_recap: false,
+              latest_activity_at: 1,
+              is_unread: false,
+            },
+          }
+        : old
+    )
 
     await act(async () => {
       handlers.get('chat:sending')?.({
@@ -506,6 +562,41 @@ describe('useStreamingEvents question notifications', () => {
     expect(queryClient.getQueryData(agentBoardQueryKeys.all)).toMatchObject([
       { active_run_status: 'running' },
     ])
+    expect(
+      useChatStore.getState().waitingForInputSessionIds['session-1']
+    ).toBeUndefined()
+    expect(
+      useChatStore.getState().reviewingSessions['session-1']
+    ).toBeUndefined()
+    expect(
+      useChatStore.getState().pendingPlanMessageIds['session-1']
+    ).toBeUndefined()
+    const resumedSession = queryClient.getQueryData<{
+      waiting_for_input?: boolean
+      waiting_for_input_type?: string | null
+      pending_plan_message_id?: string | null
+      is_reviewing?: boolean
+      last_run_status?: string
+      session_derived_state?: {
+        is_waiting: boolean
+        waiting_type?: string | null
+        has_question: boolean
+        has_exit_plan: boolean
+        pending_plan_message_id?: string | null
+      }
+    }>(chatQueryKeys.session('session-1'))
+    expect(resumedSession?.waiting_for_input).toBe(false)
+    expect(resumedSession?.waiting_for_input_type).toBeNull()
+    expect(resumedSession?.pending_plan_message_id).toBeUndefined()
+    expect(resumedSession?.is_reviewing).toBe(false)
+    expect(resumedSession?.last_run_status).toBe('running')
+    expect(resumedSession?.session_derived_state).toMatchObject({
+      is_waiting: false,
+      waiting_type: null,
+      has_question: false,
+      has_exit_plan: false,
+      pending_plan_message_id: null,
+    })
     unmount()
   })
 
@@ -1216,6 +1307,75 @@ describe('useStreamingEvents question notifications', () => {
       queryClient.getQueryData(chatQueryKeys.session('session-1'))
     ).toMatchObject({
       last_run_status: 'cancelled',
+    })
+    unmount()
+  })
+
+  it('waits for cancelled-message persistence before invalidating session lists', async () => {
+    const saveCancelledMessage = createDeferredPromise()
+    const persistCancelState = createDeferredPromise()
+
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === 'save_cancelled_message') {
+        return saveCancelledMessage.promise
+      }
+      if (cmd === 'update_session_state') {
+        return persistCancelState.promise
+      }
+      return Promise.resolve(undefined)
+    })
+
+    useChatStore.setState({
+      sessionWorktreeMap: { 'session-1': 'worktree-1' },
+      worktreePaths: { 'worktree-1': '/tmp/worktree-1' },
+      sendStartedAt: { 'session-1': 1 },
+      streamingContents: { 'session-1': 'partial output' },
+      lastSentMessages: { 'session-1': 'please run this' },
+    })
+
+    const { handlers, queryClient, unmount } = await setupHook()
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+
+    await act(async () => {
+      handlers.get('chat:cancelled')?.({
+        payload: {
+          session_id: 'session-1',
+          worktree_id: 'worktree-1',
+          undo_send: false,
+          emitted_at_ms: Date.now(),
+        },
+      })
+      await Promise.resolve()
+    })
+
+    expect(mockInvoke).toHaveBeenCalledWith(
+      'save_cancelled_message',
+      expect.objectContaining({
+        sessionId: 'session-1',
+        worktreeId: 'worktree-1',
+      })
+    )
+    expect(invalidateSpy).not.toHaveBeenCalledWith({
+      queryKey: chatQueryKeys.sessions('worktree-1'),
+    })
+
+    saveCancelledMessage.resolve()
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(invalidateSpy).not.toHaveBeenCalledWith({
+      queryKey: chatQueryKeys.sessions('worktree-1'),
+    })
+
+    persistCancelState.resolve()
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: chatQueryKeys.sessions('worktree-1'),
     })
     unmount()
   })

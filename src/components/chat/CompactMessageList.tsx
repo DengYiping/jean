@@ -29,6 +29,7 @@ import { MessageItem } from './MessageItem'
 import { AskUserQuestion } from './AskUserQuestion'
 import { buildTimeline } from './tool-call-utils'
 import type { VirtualizedMessageListHandle } from './VirtualizedMessageList'
+import { getAssistantDurationMs } from './time-utils'
 
 const SCROLL_THRESHOLD = 300
 
@@ -506,17 +507,11 @@ export const CompactMessageList = memo(
       const durationFor = useCallback(
         (globalIndex: number, message: ChatMessage): number | null => {
           if (message.role !== 'assistant') return null
-          if (globalIndex === lastIndex && completedDurationMs) {
-            return completedDurationMs
-          }
-          if (globalIndex > 0) {
-            const prev = messages[globalIndex - 1]
-            if (prev?.role === 'user') {
-              const deltaSecs = message.timestamp - prev.timestamp
-              if (deltaSecs > 0 && deltaSecs < 3600) return deltaSecs * 1000
-            }
-          }
-          return null
+          return getAssistantDurationMs(
+            messages,
+            globalIndex,
+            globalIndex === lastIndex ? completedDurationMs : null
+          )
         },
         [messages, lastIndex, completedDurationMs]
       )

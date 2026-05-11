@@ -203,6 +203,10 @@ pub struct AppPreferences {
     pub default_provider: Option<String>, // Default provider profile name (None = Anthropic direct)
     #[serde(default)]
     pub default_project_id: Option<String>, // Default repo/project used by desktop CLI yolo requests
+    #[serde(default)]
+    pub favorite_models: Vec<String>, // Favourited model keys ("backend:model") shown at the top of the desktop picker
+    #[serde(default)]
+    pub fast_mode_models: Vec<String>, // Model keys ("backend:baseModel") with remembered fast-tier selection
     #[serde(default = "default_canvas_layout")]
     pub canvas_layout: String, // Canvas display mode: grid or list
     #[serde(default = "default_confirm_session_close")]
@@ -223,6 +227,8 @@ pub struct AppPreferences {
     pub opencode_launch_command: Option<String>, // Optional OpenCode launcher command, e.g. "dvx opencode"
     #[serde(default = "default_codex_reasoning_effort")]
     pub default_codex_reasoning_effort: String, // Codex reasoning effort: low, medium, high, xhigh
+    #[serde(default = "default_codex_goal_execution_mode")]
+    pub codex_goal_execution_mode: String, // Codex /goal execution mode: build or yolo
     #[serde(default)]
     pub codex_multi_agent_enabled: bool, // Enable multi-agent collaboration (experimental)
     #[serde(default = "default_codex_max_agent_threads")]
@@ -462,7 +468,7 @@ fn default_gh_cli_source() -> String {
 }
 
 fn default_codex_model() -> String {
-    "gpt-5.4".to_string()
+    "gpt-5.5".to_string()
 }
 
 fn default_opencode_model() -> String {
@@ -471,6 +477,10 @@ fn default_opencode_model() -> String {
 
 fn default_codex_reasoning_effort() -> String {
     "high".to_string()
+}
+
+fn default_codex_goal_execution_mode() -> String {
+    "build".to_string()
 }
 
 fn default_codex_max_agent_threads() -> u32 {
@@ -705,6 +715,10 @@ mod tests {
         let prefs = AppPreferences::default();
 
         assert_eq!(prefs.selected_model, "claude-opus-4-7");
+        assert_eq!(prefs.selected_codex_model, "gpt-5.5");
+        assert_eq!(prefs.codex_goal_execution_mode, "build");
+        assert!(prefs.favorite_models.is_empty());
+        assert!(prefs.fast_mode_models.is_empty());
         assert_eq!(prefs.branch_naming_model, "sonnet");
         assert_eq!(prefs.session_naming_model, "sonnet");
         assert_eq!(prefs.magic_prompt_models.pr_content_model, "sonnet");
@@ -1687,6 +1701,8 @@ impl Default for AppPreferences {
             custom_cli_profiles: Vec::new(),
             default_provider: None,
             default_project_id: None,
+            favorite_models: Vec::new(),
+            fast_mode_models: Vec::new(),
             canvas_layout: default_canvas_layout(),
             confirm_session_close: default_confirm_session_close(),
             default_execution_mode: default_execution_mode(),
@@ -1697,6 +1713,7 @@ impl Default for AppPreferences {
             codex_update_command: None,
             opencode_launch_command: None,
             default_codex_reasoning_effort: default_codex_reasoning_effort(),
+            codex_goal_execution_mode: default_codex_goal_execution_mode(),
             codex_multi_agent_enabled: false,
             codex_max_agent_threads: default_codex_max_agent_threads(),
             restore_last_session: true,

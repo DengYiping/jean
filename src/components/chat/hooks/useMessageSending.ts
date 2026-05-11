@@ -44,6 +44,7 @@ interface UseMessageSendingParams {
         magic_prompts?: { parallel_execution?: string | null }
         chrome_enabled?: boolean
         ai_language?: string
+        codex_goal_execution_mode?: 'build' | 'yolo'
       }
     | undefined
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -280,7 +281,7 @@ export function useMessageSending({
 
   // Form submit handler
   const handleSubmit = useCallback(
-    (e: React.FormEvent) => {
+    async (e: React.FormEvent) => {
       e.preventDefault()
 
       const {
@@ -296,6 +297,7 @@ export function useMessageSending({
         enqueueMessage,
         isSending: checkIsSendingNow,
         setSessionReviewing,
+        setExecutionMode,
       } = useChatStore.getState()
       const liveInputValue = inputRef.current?.value
       const textMessage = (
@@ -331,7 +333,6 @@ export function useMessageSending({
       }
 
       let message = textMessage
-      let pendingGoalSet: Promise<void> | null = null
       if (
         selectedBackendRef.current === 'codex' &&
         /^\/goal(\s|$)/.test(textMessage)
@@ -369,20 +370,23 @@ export function useMessageSending({
           return
         }
 
-        pendingGoalSet = (async () => {
-          try {
-            await invoke('codex_goal_set', {
-              worktreeId,
-              worktreePath,
-              sessionId,
-              objective: arg,
-            })
-            toast.success('Goal set')
-          } catch (error) {
-            toast.error(`/goal failed: ${error}`)
-          }
-        })()
-        message = arg
+        try {
+          await invoke('codex_goal_set', {
+            worktreeId,
+            worktreePath,
+            sessionId,
+            objective: arg,
+          })
+        } catch (error) {
+          toast.error(`/goal failed: ${error}`)
+          return
+        }
+
+        const goalMode: ExecutionMode =
+          preferences?.codex_goal_execution_mode === 'yolo' ? 'yolo' : 'build'
+        setExecutionMode(sessionId, goalMode)
+        executionModeRef.current = goalMode
+        message = `Work toward the active goal:\n\n${arg}`
       }
 
       if (
@@ -457,11 +461,7 @@ export function useMessageSending({
         return
       }
 
-      if (pendingGoalSet) {
-        void pendingGoalSet.then(() => sendMessageNow(queuedMessage))
-      } else {
-        sendMessageNow(queuedMessage)
-      }
+      sendMessageNow(queuedMessage)
     },
     [
       activeSessionId,
@@ -470,6 +470,7 @@ export function useMessageSending({
       clearInputDraft,
       clearChatInputState,
       markAtBottom,
+      preferences?.codex_goal_execution_mode,
       sendMessageNow,
       sessionsData,
     ]

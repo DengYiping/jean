@@ -1116,6 +1116,86 @@ pub fn mark_running_run_cancelled(app: &tauri::AppHandle, session_id: &str) -> R
     Ok(())
 }
 
+#[derive(Debug, Default)]
+struct PartialCancelledRunState {
+    existing_tool_use_ids: std::collections::HashSet<String>,
+    existing_tool_result_ids: std::collections::HashSet<String>,
+    has_text: bool,
+}
+
+fn inspect_partial_cancelled_run_lines(existing_lines: &[String]) -> PartialCancelledRunState {
+    let mut state = PartialCancelledRunState::default();
+
+    for line in existing_lines {
+        let msg: serde_json::Value = match serde_json::from_str(line) {
+            Ok(message) => message,
+            Err(_) => continue,
+        };
+        let msg_type = msg
+            .get("type")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
+        let blocks = msg
+            .get("message")
+            .and_then(|message| message.get("content"))
+            .and_then(|content| content.as_array());
+        let Some(blocks) = blocks else {
+            continue;
+        };
+
+        for block in blocks {
+            let block_type = block
+                .get("type")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            match (msg_type, block_type) {
+                ("assistant", "tool_use") => {
+                    if let Some(id) = block.get("id").and_then(|value| value.as_str()) {
+                        state.existing_tool_use_ids.insert(id.to_string());
+                    }
+                }
+                ("assistant", "text") => {
+                    let text = block
+                        .get("text")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or("");
+                    if !text.trim().is_empty() {
+                        state.has_text = true;
+                    }
+                }
+                ("user", "tool_result") => {
+                    if let Some(id) = block.get("tool_use_id").and_then(|value| value.as_str()) {
+                        state.existing_tool_result_ids.insert(id.to_string());
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    state
+}
+
+fn reconcile_partial_cancelled_payload<'a>(
+    existing: &PartialCancelledRunState,
+    content: &str,
+    tool_calls: &'a [ToolCall],
+) -> (Vec<&'a ToolCall>, Vec<&'a ToolCall>, bool) {
+    let missing_tool_calls = tool_calls
+        .iter()
+        .filter(|tool_call| !existing.existing_tool_use_ids.contains(&tool_call.id))
+        .collect();
+    let missing_tool_results = tool_calls
+        .iter()
+        .filter(|tool_call| {
+            tool_call.output.is_some() && !existing.existing_tool_result_ids.contains(&tool_call.id)
+        })
+        .collect();
+    let needs_text = !existing.has_text && !content.trim().is_empty();
+
+    (missing_tool_calls, missing_tool_results, needs_text)
+}
+
 /// Persist partial assistant content to the latest cancelled run's JSONL file.
 /// Called by the frontend when a stream is cancelled but partial content was visible.
 /// This ensures the content survives app reload (the command handler may not have
@@ -1142,15 +1222,16 @@ pub fn persist_partial_cancelled_content(
 
     let path = get_run_log_path(app, session_id, &run.run_id)?;
 
-    // Only write if the file doesn't already have content (avoid double-write
-    // if the command handler already wrote the synthetic line)
+    // Reconcile the frontend's authoritative streaming payload with whatever the
+    // backend already flushed before cancellation.
     let existing_lines = read_run_log(app, session_id, &run.run_id).unwrap_or_default();
-    let has_assistant_content = existing_lines.iter().any(|line| {
-        line.contains("\"type\":\"assistant\"") || line.contains("\"type\": \"assistant\"")
-    });
-    if has_assistant_content {
+    let existing_state = inspect_partial_cancelled_run_lines(&existing_lines);
+    let (missing_tool_calls, missing_tool_results, needs_text) =
+        reconcile_partial_cancelled_payload(&existing_state, content, tool_calls);
+
+    if missing_tool_calls.is_empty() && missing_tool_results.is_empty() && !needs_text {
         log::trace!(
-            "JSONL already has assistant content, skipping persist for session {session_id}"
+            "JSONL already in sync with frontend payload for session {session_id}, skipping persist"
         );
         return Ok(());
     }
@@ -1162,80 +1243,100 @@ pub fn persist_partial_cancelled_content(
         .open(&path)
         .map_err(|e| format!("Failed to open run log for partial content: {e}"))?;
 
-    // Build assistant message with structured content blocks if available,
-    // matching the format parse_run_to_message() expects
-    if !content_blocks.is_empty() {
-        let blocks: Vec<serde_json::Value> = content_blocks
-            .iter()
-            .map(|cb| match cb {
-                ContentBlock::Text { text } => {
-                    serde_json::json!({"type": "text", "text": text})
-                }
-                ContentBlock::ToolUse { tool_call_id } => {
-                    if let Some(tc) = tool_calls.iter().find(|t| t.id == *tool_call_id) {
-                        serde_json::json!({
-                            "type": "tool_use",
-                            "id": tc.id,
-                            "name": tc.name,
-                            "input": tc.input
-                        })
-                    } else {
-                        serde_json::json!({
-                            "type": "tool_use",
-                            "id": tool_call_id,
-                            "name": "",
-                            "input": null
-                        })
-                    }
-                }
-                ContentBlock::Thinking { thinking } => {
-                    serde_json::json!({"type": "thinking", "thinking": thinking})
-                }
-            })
-            .collect();
+    let mut blocks: Vec<serde_json::Value> = Vec::new();
+    let mut wrote_text = !needs_text;
 
+    for content_block in content_blocks {
+        match content_block {
+            ContentBlock::Text { text } => {
+                if !wrote_text && !text.trim().is_empty() {
+                    blocks.push(serde_json::json!({ "type": "text", "text": text }));
+                    wrote_text = true;
+                }
+            }
+            ContentBlock::ToolUse { tool_call_id } => {
+                if existing_state.existing_tool_use_ids.contains(tool_call_id) {
+                    continue;
+                }
+                if let Some(tool_call) = tool_calls.iter().find(|call| call.id == *tool_call_id) {
+                    blocks.push(serde_json::json!({
+                        "type": "tool_use",
+                        "id": tool_call.id,
+                        "name": tool_call.name,
+                        "input": tool_call.input
+                    }));
+                } else {
+                    blocks.push(serde_json::json!({
+                        "type": "tool_use",
+                        "id": tool_call_id,
+                        "name": "",
+                        "input": null
+                    }));
+                }
+            }
+            ContentBlock::Thinking { thinking } => {
+                blocks.push(serde_json::json!({ "type": "thinking", "thinking": thinking }));
+            }
+        }
+    }
+
+    for tool_call in &missing_tool_calls {
+        let already_in_blocks = blocks.iter().any(|block| {
+            block.get("type").and_then(|value| value.as_str()) == Some("tool_use")
+                && block.get("id").and_then(|value| value.as_str()) == Some(tool_call.id.as_str())
+        });
+        if already_in_blocks {
+            continue;
+        }
+        blocks.push(serde_json::json!({
+            "type": "tool_use",
+            "id": tool_call.id,
+            "name": tool_call.name,
+            "input": tool_call.input
+        }));
+    }
+
+    if blocks.is_empty() && !wrote_text && !content.trim().is_empty() {
+        blocks.push(serde_json::json!({
+            "type": "text",
+            "text": content
+        }));
+        wrote_text = true;
+    }
+
+    if !blocks.is_empty() {
         let synthetic = serde_json::json!({
             "type": "assistant",
             "message": { "content": blocks }
         });
         writeln!(file, "{synthetic}")
             .map_err(|e| format!("Failed to write partial content: {e}"))?;
+    }
 
-        // Write tool results as user messages so parse_run_to_message() can
-        // associate outputs with tool calls
-        for tc in tool_calls {
-            if let Some(output) = &tc.output {
-                let tool_result = serde_json::json!({
-                    "type": "user",
-                    "message": {
-                        "content": [{
-                            "type": "tool_result",
-                            "tool_use_id": tc.id,
-                            "content": output
-                        }]
-                    }
-                });
-                writeln!(file, "{tool_result}")
-                    .map_err(|e| format!("Failed to write tool result: {e}"))?;
-            }
-        }
-    } else {
-        // Fallback: text-only (no structured blocks available)
-        let synthetic = serde_json::json!({
-            "type": "assistant",
+    for tool_call in &missing_tool_results {
+        let output = tool_call.output.as_deref().unwrap_or("");
+        let tool_result = serde_json::json!({
+            "type": "user",
             "message": {
-                "content": [{"type": "text", "text": content}]
+                "content": [{
+                    "type": "tool_result",
+                    "tool_use_id": tool_call.id,
+                    "content": output
+                }]
             }
         });
-        writeln!(file, "{synthetic}")
-            .map_err(|e| format!("Failed to write partial content: {e}"))?;
+        writeln!(file, "{tool_result}").map_err(|e| format!("Failed to write tool result: {e}"))?;
     }
 
     file.flush()
         .map_err(|e| format!("Failed to flush partial content: {e}"))?;
 
     log::trace!(
-        "Persisted partial cancelled content ({} chars, {} blocks, {} tool calls) for session {session_id}",
+        "Reconciled partial cancelled content for session {session_id} \
+         (added {} tool_uses, {} tool_results, text_added={}; total payload: {} chars, {} blocks, {} tool calls)",
+        missing_tool_calls.len(),
+        missing_tool_results.len(),
+        wrote_text && needs_text,
         content.len(),
         content_blocks.len(),
         tool_calls.len(),
@@ -1285,6 +1386,8 @@ pub fn recover_incomplete_runs(app: &tauri::AppHandle) -> Result<Vec<RecoveredRu
             Some(m) => m,
             None => continue,
         };
+        let is_codex_session = metadata.backend == Backend::Codex;
+        let codex_thread_id = metadata.codex_thread_id.clone();
 
         let mut modified = false;
 
@@ -1313,6 +1416,30 @@ pub fn recover_incomplete_runs(app: &tauri::AppHandle) -> Result<Vec<RecoveredRu
                         run.run_id,
                         session_id,
                         run.pid
+                    );
+                } else if is_codex_session && codex_thread_id.is_some() {
+                    // Codex sessions can be resumed via thread/resume even after
+                    // Jean crashes. Always route these through resume_session so
+                    // recovered completion state is reconstructed from the thread
+                    // snapshot / JSONL history rather than guessed here.
+                    run.status = RunStatus::Resumable;
+                    modified = true;
+
+                    recovered.push(RecoveredRun {
+                        session_id: session_id.clone(),
+                        worktree_id: metadata.worktree_id.clone(),
+                        run_id: run.run_id.clone(),
+                        user_message: run.user_message.clone(),
+                        resumable: true,
+                        execution_mode: run.execution_mode.clone(),
+                        started_at: run.started_at,
+                    });
+
+                    log::trace!(
+                        "Found resumable Codex run: {} in session {} (thread_id: {:?})",
+                        run.run_id,
+                        session_id,
+                        codex_thread_id
                     );
                 } else {
                     // Process is dead - check if it completed successfully
@@ -1538,7 +1665,11 @@ fn now_timestamp() -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_run_window;
+    use super::{
+        inspect_partial_cancelled_run_lines, reconcile_partial_cancelled_payload,
+        resolve_run_window,
+    };
+    use crate::chat::types::ToolCall;
 
     #[test]
     fn resolve_run_window_defaults_to_full_history() {
@@ -1558,5 +1689,64 @@ mod tests {
     #[test]
     fn resolve_run_window_clamps_before_index() {
         assert_eq!(resolve_run_window(4, Some(2), Some(9)), (2, 4));
+    }
+
+    #[test]
+    fn inspect_partial_cancelled_run_lines_tracks_text_and_tool_ids() {
+        let lines = vec![
+            serde_json::json!({
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        { "type": "text", "text": "partial answer" },
+                        { "type": "tool_use", "id": "tool-1", "name": "Bash", "input": { "command": "pwd" } }
+                    ]
+                }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "user",
+                "message": {
+                    "content": [
+                        { "type": "tool_result", "tool_use_id": "tool-1", "content": "/tmp" }
+                    ]
+                }
+            })
+            .to_string(),
+        ];
+
+        let state = inspect_partial_cancelled_run_lines(&lines);
+
+        assert!(state.has_text);
+        assert!(state.existing_tool_use_ids.contains("tool-1"));
+        assert!(state.existing_tool_result_ids.contains("tool-1"));
+    }
+
+    #[test]
+    fn reconcile_partial_cancelled_payload_keeps_missing_tool_ids_when_text_already_exists() {
+        let existing = inspect_partial_cancelled_run_lines(&[serde_json::json!({
+            "type": "assistant",
+            "message": {
+                "content": [{ "type": "text", "text": "partial answer" }]
+            }
+        })
+        .to_string()]);
+
+        let tool_calls = vec![ToolCall {
+            id: "tool-2".to_string(),
+            name: "Bash".to_string(),
+            input: serde_json::json!({ "command": "git status" }),
+            output: Some("clean".to_string()),
+            parent_tool_use_id: None,
+        }];
+
+        let (missing_tool_calls, missing_tool_results, needs_text) =
+            reconcile_partial_cancelled_payload(&existing, "partial answer", &tool_calls);
+
+        assert!(!needs_text);
+        assert_eq!(missing_tool_calls.len(), 1);
+        assert_eq!(missing_tool_results.len(), 1);
+        assert_eq!(missing_tool_calls[0].id, "tool-2");
+        assert_eq!(missing_tool_results[0].id, "tool-2");
     }
 }

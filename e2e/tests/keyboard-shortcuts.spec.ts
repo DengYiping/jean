@@ -46,25 +46,24 @@ test.describe('Keyboard shortcuts', () => {
       timeout: 5000,
     })
 
-    // Toggle sidebar on (may start hidden or visible depending on default)
-    await mockPage.keyboard.press('Meta+b')
-    await mockPage.waitForTimeout(300)
-
-    // Check if PROJECTS header appeared (sidebar panel open)
     const projectsHeader = mockPage.getByText('PROJECTS')
-    const sidebarVisible = await projectsHeader.isVisible().catch(() => false)
+    const initialSidebarVisible = await projectsHeader
+      .isVisible()
+      .catch(() => false)
 
-    if (sidebarVisible) {
-      // Sidebar opened — toggle it closed
-      await mockPage.keyboard.press('Meta+b')
-      await mockPage.waitForTimeout(300)
-      await expect(projectsHeader).not.toBeVisible({ timeout: 2000 })
-    } else {
-      // Sidebar was already open and we closed it — toggle it back open
-      await mockPage.keyboard.press('Meta+b')
-      await mockPage.waitForTimeout(300)
-      await expect(projectsHeader).toBeVisible({ timeout: 2000 })
-    }
+    await mockPage.keyboard.press('Meta+b')
+    await expect
+      .poll(async () => projectsHeader.isVisible().catch(() => false), {
+        timeout: 3000,
+      })
+      .toBe(!initialSidebarVisible)
+
+    await mockPage.keyboard.press('Meta+b')
+    await expect
+      .poll(async () => projectsHeader.isVisible().catch(() => false), {
+        timeout: 3000,
+      })
+      .toBe(initialSidebarVisible)
   })
 
   test('Escape closes command palette', async ({ mockPage }) => {

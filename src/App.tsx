@@ -67,6 +67,7 @@ import {
   endSessionStateHydration,
 } from './lib/session-state-hydration'
 import { scheduleIdleWork } from './lib/idle'
+import { checkWebClientVersion } from './lib/web-client-version'
 import type {
   CliImportedProjectResult,
   CliYoloSessionResult,
@@ -224,6 +225,10 @@ function App() {
   const seedCache = useCallback(
     (data: InitialData) => {
       const runningSessionIds = new Set(data.runningSessions ?? [])
+      const runningSnapshotMessages: {
+        sessionId: string
+        message: Session['messages'][number]
+      }[] = []
 
       // Seed projects into TanStack Query cache
       if (data.projects) {
@@ -302,10 +307,23 @@ function App() {
             ...worktreePaths,
           }
         }
+        if (runningSessionIds.size > 0) {
+          storeUpdates.reviewingSessions = Object.fromEntries(
+            Object.entries(reviewingUpdates).filter(
+              ([sessionId]) => !runningSessionIds.has(sessionId)
+            )
+          )
+          storeUpdates.waitingForInputSessionIds = Object.fromEntries(
+            Object.entries(waitingUpdates).filter(
+              ([sessionId]) => !runningSessionIds.has(sessionId)
+            )
+          )
+        } else {
+          storeUpdates.reviewingSessions = reviewingUpdates
+          storeUpdates.waitingForInputSessionIds = waitingUpdates
+        }
         // Replace (not merge) reviewing/waiting state — server is source of truth.
         // Merging would keep stale entries from sessions that changed while disconnected.
-        storeUpdates.reviewingSessions = reviewingUpdates
-        storeUpdates.waitingForInputSessionIds = waitingUpdates
         if (Object.keys(parallelExecutionPromptUpdates).length > 0) {
           storeUpdates.parallelExecutionPromptEnabledBySession = {
             ...currentState.parallelExecutionPromptEnabledBySession,
@@ -356,19 +374,10 @@ function App() {
             const runningMessage = getRunningAssistantMessage(sessionSnapshot)
 
             if (runningMessage) {
-              hydrateRunningSnapshot(sessionId, runningMessage)
-              queryClient.setQueryData<Session>(
-                chatQueryKeys.session(sessionId),
-                old =>
-                  old
-                    ? {
-                        ...old,
-                        messages: old.messages.filter(
-                          message => message.id !== runningMessage.id
-                        ),
-                      }
-                    : old
-              )
+              runningSnapshotMessages.push({
+                sessionId,
+                message: runningMessage,
+              })
             }
           }
 
@@ -406,6 +415,23 @@ function App() {
         }
         return { sendingSessionIds: runningSendingIds }
       })
+      for (const { sessionId, message } of runningSnapshotMessages) {
+        hydrateRunningSnapshot(sessionId, message, {
+          allowWhileSending: true,
+        })
+        queryClient.setQueryData<Session>(
+          chatQueryKeys.session(sessionId),
+          old =>
+            old
+              ? {
+                  ...old,
+                  messages: old.messages.filter(
+                    existingMessage => existingMessage.id !== message.id
+                  ),
+                }
+              : old
+        )
+      }
       // Note: Git status is included in worktree cached_* fields, no separate cache needed
       // Seed preferences into cache
       if (data.preferences) {
@@ -435,6 +461,7 @@ function App() {
           logger.info('Preloaded initial data via HTTP', {
             projects: Array.isArray(data.projects) ? data.projects.length : 0,
           })
+          checkWebClientVersion(data)
           seedCache(data)
           setWsDataReady(true)
         }
@@ -570,6 +597,7 @@ function App() {
       dataPromise
         .then(data => {
           if (data) {
+            checkWebClientVersion(data)
             seedCache(data)
             logger.info('Reconnect: re-seeded cache from HTTP')
             setWsDataReady(true)
@@ -1133,7 +1161,9 @@ function App() {
 
             const runningMessage = getRunningAssistantMessage(sessionSnapshot)
             if (runningMessage) {
-              hydrateRunningSnapshot(session.session_id, runningMessage)
+              hydrateRunningSnapshot(session.session_id, runningMessage, {
+                allowWhileSending: true,
+              })
               queryClient.setQueryData<Session>(
                 chatQueryKeys.session(session.session_id),
                 old =>

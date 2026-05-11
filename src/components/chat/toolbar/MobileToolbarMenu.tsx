@@ -17,6 +17,7 @@ import {
   Hammer,
   MessageSquare,
   Pencil,
+  Plug,
   Sparkles,
   Wand2,
   Zap,
@@ -159,6 +160,10 @@ export function MobileToolbarMenu({
   displayStatus,
   checkStatus,
   activeWorktreePath,
+  availableMcpServers,
+  enabledMcpServers,
+  activeMcpCount,
+  onToggleMcpServer,
   onSaveContext,
   onLoadContext,
   onCommit,
@@ -185,6 +190,7 @@ export function MobileToolbarMenu({
   const isMobile = useIsMobile()
   const [menuOpen, setMenuOpen] = useState(false)
   const [modelSheetOpen, setModelSheetOpen] = useState(false)
+  const [mcpSheetOpen, setMcpSheetOpen] = useState(false)
   const [modeSheetOpen, setModeSheetOpen] = useState(false)
   const [modelSearchQuery, setModelSearchQuery] = useState('')
   const providerDisplayName = getProviderDisplayName(selectedProvider)
@@ -201,6 +207,10 @@ export function MobileToolbarMenu({
     setMenuOpen(false)
     requestAnimationFrame(() => setModeSheetOpen(true))
   }
+  const openMcpSheet = () => {
+    setMenuOpen(false)
+    requestAnimationFrame(() => setMcpSheetOpen(true))
+  }
   const normalizedModelQuery = modelSearchQuery.trim().toLowerCase()
   const visibleModelOptions = normalizedModelQuery
     ? filteredModelOptions.filter(option => {
@@ -212,6 +222,7 @@ export function MobileToolbarMenu({
         )
       })
     : filteredModelOptions
+  const hasMultipleModelChoices = filteredModelOptions.length > 1
   const modeOptions = [
     {
       value: 'plan' as const,
@@ -237,6 +248,10 @@ export function MobileToolbarMenu({
       icon: ClipboardList,
     } satisfies (typeof modeOptions)[number])
   const SelectedModeIcon = selectedModeOption.icon
+  const hasToggleableMcpServers =
+    !!onToggleMcpServer &&
+    (availableMcpServers ?? []).some(server => !server.disabled)
+  const enabledMcpSet = new Set(enabledMcpServers ?? [])
 
   return (
     <>
@@ -564,7 +579,9 @@ export function MobileToolbarMenu({
               <span className="ml-auto w-16 text-right text-xs text-muted-foreground">
                 {selectedModelLabel}
               </span>
-              <ChevronRight className="ml-2 h-4 w-4 shrink-0" />
+              {hasMultipleModelChoices && (
+                <ChevronRight className="ml-2 h-4 w-4 shrink-0" />
+              )}
             </DropdownMenuItem>
           ) : (
             <DropdownMenuSub>
@@ -599,6 +616,27 @@ export function MobileToolbarMenu({
                 </DropdownMenuRadioGroup>
               </DropdownMenuSubContent>
             </DropdownMenuSub>
+          )}
+
+          {hasToggleableMcpServers ? (
+            <DropdownMenuItem onSelect={openMcpSheet}>
+              <Plug className="h-4 w-4" />
+              <span>MCP</span>
+              <span className="ml-auto w-16 text-right text-xs text-muted-foreground">
+                {activeMcpCount && activeMcpCount > 0
+                  ? `${activeMcpCount}`
+                  : 'Off'}
+              </span>
+              <ChevronRight className="ml-2 h-4 w-4 shrink-0" />
+            </DropdownMenuItem>
+          ) : (
+            <DropdownMenuItem disabled>
+              <Plug className="h-4 w-4 text-muted-foreground" />
+              <span>MCP</span>
+              <span className="ml-auto text-xs text-muted-foreground">
+                None
+              </span>
+            </DropdownMenuItem>
           )}
 
           {hideThinkingLevel ? null : useAdaptiveThinking || isCodex ? (
@@ -758,6 +796,44 @@ export function MobileToolbarMenu({
                 No models match your search.
               </div>
             )}
+          </div>
+        </SheetContent>
+      </Sheet>
+      <Sheet open={mcpSheetOpen} onOpenChange={setMcpSheetOpen}>
+        <SheetContent
+          side="bottom"
+          className="max-h-[75svh] rounded-t-xl p-0"
+          showCloseButton={false}
+        >
+          <SheetHeader className="border-b px-4 py-3">
+            <SheetTitle className="text-base">MCP Servers</SheetTitle>
+            <SheetDescription className="sr-only">
+              Enable or disable MCP servers for this session.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="overflow-y-auto p-2">
+            {(availableMcpServers ?? []).map(server => {
+              const selected =
+                !server.disabled && enabledMcpSet.has(server.name)
+              return (
+                <button
+                  key={server.name}
+                  type="button"
+                  disabled={server.disabled}
+                  className={cn(
+                    'flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50',
+                    selected && 'bg-accent text-accent-foreground'
+                  )}
+                  onClick={() => onToggleMcpServer?.(server.name)}
+                >
+                  <span className="flex-1">{server.name}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {server.disabled ? 'disabled' : server.scope}
+                  </span>
+                  {selected && <Check className="h-4 w-4" />}
+                </button>
+              )
+            })}
           </div>
         </SheetContent>
       </Sheet>

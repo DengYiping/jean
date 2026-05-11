@@ -8,6 +8,7 @@ import { useUIStore } from '@/store/ui-store'
 
 vi.mock('@/services/preferences', () => ({
   usePreferences: () => ({ data: {} }),
+  usePatchPreferences: () => ({ mutate: vi.fn() }),
 }))
 
 vi.mock('@/services/mcp', () => ({
@@ -51,6 +52,9 @@ vi.mock('@/components/chat/toolbar/useToolbarDerivedState', () => ({
     isCodex: true,
     activeMcpCount: 0,
     filteredModelOptions: [],
+    desktopModelOptions: [],
+    selectedBaseModel: 'gpt-5.4',
+    selectedModelIsFast: false,
     selectedModelLabel: 'gpt-5.4',
   }),
 }))

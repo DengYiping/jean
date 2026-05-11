@@ -19,7 +19,7 @@ use std::time::Duration;
 use tauri::{AppHandle, Manager};
 
 use crate::codex_cli::resolve_cli_binary;
-use crate::platform::silent_command;
+use crate::platform::{is_process_alive, silent_command};
 
 // =============================================================================
 // Types
@@ -90,10 +90,14 @@ static NEXT_SESSION_REGISTRATION_ID: AtomicU64 = AtomicU64::new(1);
 // PID file for crash-recovery
 // =============================================================================
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct ServerPidRecord {
     jean_pid: u32,
     server_pid: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    proxy_pid: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    socket_path: Option<PathBuf>,
 }
 
 fn pid_file_path() -> Option<PathBuf> {
@@ -103,12 +107,8 @@ fn pid_file_path() -> Option<PathBuf> {
         .map(|d| d.join("codex-app-server.pid"))
 }
 
-fn write_pid_file(server_pid: u32) {
+fn write_pid_file(record: &ServerPidRecord) {
     let Some(path) = pid_file_path() else { return };
-    let record = ServerPidRecord {
-        jean_pid: std::process::id(),
-        server_pid,
-    };
     if let Ok(json) = serde_json::to_string(&record) {
         let _ = std::fs::write(&path, json);
     }
@@ -118,6 +118,41 @@ fn remove_pid_file() {
     if let Some(path) = pid_file_path() {
         let _ = std::fs::remove_file(path);
     }
+}
+
+fn remove_socket_file(path: Option<&PathBuf>) {
+    if let Some(path) = path {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
+fn has_incomplete_codex_runs(app: &AppHandle) -> bool {
+    let Ok(session_ids) = super::storage::list_all_session_ids(app) else {
+        return false;
+    };
+
+    session_ids.into_iter().any(|session_id| {
+        let Ok(Some(metadata)) = super::storage::load_metadata(app, &session_id) else {
+            return false;
+        };
+
+        metadata.backend == super::types::Backend::Codex
+            && metadata.runs.iter().any(|run| {
+                matches!(
+                    run.status,
+                    super::types::RunStatus::Running | super::types::RunStatus::Resumable
+                )
+            })
+    })
+}
+
+fn should_preserve_orphaned_server(
+    current_jean_pid: u32,
+    owner_jean_pid: u32,
+    owner_alive: bool,
+    incomplete_codex_runs_exist: bool,
+) -> bool {
+    owner_jean_pid != current_jean_pid && (owner_alive || incomplete_codex_runs_exist)
 }
 
 // =============================================================================
@@ -138,17 +173,44 @@ pub fn cleanup_orphaned_server(app: &AppHandle) {
         return;
     };
 
-    // Only kill if the PID file was written by a different Jean process
+    // Only clean up if the PID file was written by a different Jean process.
     if record.jean_pid != std::process::id() {
+        if should_preserve_orphaned_server(
+            std::process::id(),
+            record.jean_pid,
+            is_process_alive(record.jean_pid),
+            has_incomplete_codex_runs(app),
+        ) {
+            if is_process_alive(record.jean_pid) {
+                log::info!(
+                    "Preserving codex app-server (pid={}) owned by live Jean pid={}",
+                    record.server_pid,
+                    record.jean_pid
+                );
+            } else {
+                log::warn!(
+                    "Preserving orphaned codex app-server (pid={}, from jean pid={}) because Codex runs are still incomplete",
+                    record.server_pid,
+                    record.jean_pid
+                );
+            }
+            return;
+        }
+
         log::info!(
             "Cleaning up orphaned codex app-server (pid={}, from jean pid={})",
             record.server_pid,
             record.jean_pid
         );
         use crate::platform::{kill_process, kill_process_tree};
+        if let Some(proxy_pid) = record.proxy_pid {
+            let _ = kill_process_tree(proxy_pid);
+            let _ = kill_process(proxy_pid);
+        }
         let _ = kill_process_tree(record.server_pid);
         let _ = kill_process(record.server_pid);
     }
+    remove_socket_file(record.socket_path.as_ref());
     let _ = std::fs::remove_file(&path);
 }
 
@@ -222,7 +284,12 @@ fn ensure_running_inner(app: &AppHandle) -> Result<(), String> {
         .map_err(|e| format!("Failed to spawn codex app-server: {e}"))?;
 
     let pid = child.id();
-    write_pid_file(pid);
+    write_pid_file(&ServerPidRecord {
+        jean_pid: std::process::id(),
+        server_pid: pid,
+        proxy_pid: None,
+        socket_path: None,
+    });
     SERVER_GENERATION.fetch_add(1, Ordering::SeqCst);
     log::info!("Codex app-server spawned with PID: {pid}");
 
@@ -575,6 +642,14 @@ mod tests {
         let removed_current = remove_session_if_current(&mut active_sessions, "thread-1", 2);
         assert!(removed_current);
         assert!(!active_sessions.contains_key("thread-1"));
+    }
+
+    #[test]
+    fn preserve_orphaned_server_for_live_owner_or_incomplete_runs() {
+        assert!(should_preserve_orphaned_server(100, 200, true, false));
+        assert!(should_preserve_orphaned_server(100, 200, false, true));
+        assert!(!should_preserve_orphaned_server(100, 200, false, false));
+        assert!(!should_preserve_orphaned_server(100, 100, true, true));
     }
 }
 

@@ -58,7 +58,7 @@ export interface ApprovedPlanContinuation {
 }
 
 const DEFAULT_CLAUDE_MODEL = 'claude-opus-4-7'
-const DEFAULT_CODEX_MODEL = 'gpt-5.4'
+const DEFAULT_CODEX_MODEL = 'gpt-5.5'
 const DEFAULT_OPENCODE_MODEL = 'opencode/gpt-5.3-codex'
 
 const THINKING_LEVEL_VALUES = new Set<ThinkingLevel>([

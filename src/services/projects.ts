@@ -1561,6 +1561,70 @@ export function useRenameWorktree() {
   })
 }
 
+export interface SwitchWorktreeBaseBranchResponse {
+  worktree: Worktree
+  rebase_output?: string | null
+}
+
+export function useSwitchWorktreeBaseBranch() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({
+      worktreeId,
+      baseBranch,
+      rebase,
+    }: {
+      worktreeId: string
+      projectId: string
+      baseBranch: string
+      rebase: boolean
+    }): Promise<SwitchWorktreeBaseBranchResponse> => {
+      if (!isTauri()) {
+        throw new Error('Not in Tauri context')
+      }
+
+      return invoke<SwitchWorktreeBaseBranchResponse>(
+        'switch_worktree_base_branch',
+        {
+          worktreeId,
+          baseBranch,
+          rebase,
+        }
+      )
+    },
+    onSuccess: async ({ worktree }, { projectId, rebase }) => {
+      queryClient.setQueryData<Worktree>(
+        [...projectsQueryKeys.all, 'worktree', worktree.id],
+        worktree
+      )
+      queryClient.invalidateQueries({
+        queryKey: projectsQueryKeys.worktrees(projectId),
+      })
+      queryClient.invalidateQueries({
+        queryKey: [...projectsQueryKeys.all, 'worktree', worktree.id],
+      })
+      await Promise.allSettled([
+        invoke('trigger_immediate_git_poll'),
+        invoke('fetch_worktrees_status', { projectId }),
+      ])
+      toast.success(
+        rebase ? 'Base branch switched and rebased' : 'Base branch switched'
+      )
+    },
+    onError: error => {
+      const message =
+        typeof error === 'string'
+          ? error
+          : error instanceof Error
+            ? error.message
+            : 'Unknown error occurred'
+      logger.error('Failed to switch worktree base branch', { error })
+      toast.error('Failed to switch base branch', { description: message })
+    },
+  })
+}
+
 /**
  * Hook to delete a worktree (background deletion with events)
  *

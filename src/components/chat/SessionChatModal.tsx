@@ -82,6 +82,7 @@ import type { DiffRequest } from '@/types/git-diff'
 import { ChatWindow } from './ChatWindow'
 import { ModalTerminalDrawer } from './ModalTerminalDrawer'
 import { ModalBrowserDrawer } from '@/components/browser/ModalBrowserDrawer'
+import { SwitchBaseBranchDialog } from '@/components/worktree/SwitchBaseBranchDialog'
 import { OpenInButton } from '@/components/open-in/OpenInButton'
 import {
   DropdownMenu,
@@ -338,6 +339,9 @@ export function SessionChatModal({
       : undefined
   const isBase = worktree ? isBaseSession(worktree) : false
   const { data: gitStatus } = useGitStatus(worktreeId)
+  const defaultBranch = project?.default_branch ?? 'main'
+  const effectiveBaseBranch = worktree?.base_branch ?? defaultBranch
+  const [switchBaseOpen, setSwitchBaseOpen] = useState(false)
   const behindCount =
     gitStatus?.behind_count ?? worktree?.cached_behind_count ?? 0
   const unpushedCount =
@@ -350,8 +354,6 @@ export function SessionChatModal({
     gitStatus?.branch_diff_added ?? worktree?.cached_branch_diff_added ?? 0
   const branchDiffRemoved =
     gitStatus?.branch_diff_removed ?? worktree?.cached_branch_diff_removed ?? 0
-  const defaultBranch = project?.default_branch ?? 'main'
-
   // Open-in actions for mobile overflow menu
   const openInEditor = useOpenWorktreeInEditor()
   const openInTerminal = useOpenWorktreeInTerminal()
@@ -635,11 +637,11 @@ export function SessionChatModal({
       await performGitPull({
         worktreeId,
         worktreePath,
-        baseBranch: defaultBranch,
+        baseBranch: effectiveBaseBranch,
         projectId: project?.id,
       })
     },
-    [worktreeId, worktreePath, defaultBranch, project?.id]
+    [worktreeId, worktreePath, effectiveBaseBranch, project?.id]
   )
 
   const handlePush = useCallback(
@@ -669,17 +671,17 @@ export function SessionChatModal({
     setDiffRequest({
       type: 'uncommitted',
       worktreePath,
-      baseBranch: defaultBranch,
+      baseBranch: effectiveBaseBranch,
     })
-  }, [setDiffRequest, worktreePath, defaultBranch])
+  }, [setDiffRequest, worktreePath, effectiveBaseBranch])
 
   const handleBranchDiffClick = useCallback(() => {
     setDiffRequest({
       type: 'branch',
       worktreePath,
-      baseBranch: defaultBranch,
+      baseBranch: effectiveBaseBranch,
     })
-  }, [setDiffRequest, worktreePath, defaultBranch])
+  }, [setDiffRequest, worktreePath, effectiveBaseBranch])
 
   const handleGitDiffAddToPrompt = useCallback(
     (reference: string) => {
@@ -800,7 +802,11 @@ export function SessionChatModal({
                 </h2>
                 {worktree?.base_branch &&
                   worktree.base_branch !== project?.default_branch && (
-                    <span className="inline-flex shrink min-w-0 items-center gap-1 rounded border border-border/50 px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
+                    <button
+                      type="button"
+                      className="inline-flex shrink min-w-0 items-center gap-1 rounded border border-border/50 px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground hover:bg-muted"
+                      onClick={() => setSwitchBaseOpen(true)}
+                    >
                       <GitBranchPlus className="h-2.5 w-2.5" />
                       <span className="max-w-16 sm:max-w-40 truncate">
                         {worktree.base_branch}
@@ -812,7 +818,7 @@ export function SessionChatModal({
                           {stackedOnPR.number}
                         </>
                       )}
-                    </span>
+                    </button>
                   )}
                 <GitStatusBadges
                   behindCount={behindCount}
@@ -1504,6 +1510,17 @@ export function SessionChatModal({
         branchName={worktree?.branch}
         mode="session"
       />
+      {project &&
+        worktree?.base_branch &&
+        worktree.base_branch !== defaultBranch && (
+          <SwitchBaseBranchDialog
+            open={switchBaseOpen}
+            onOpenChange={setSwitchBaseOpen}
+            worktree={worktree}
+            projectId={project.id}
+            defaultBranch={defaultBranch}
+          />
+        )}
     </>
   )
 }

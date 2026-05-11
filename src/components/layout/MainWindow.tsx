@@ -329,7 +329,7 @@ export function MainWindow() {
     return {
       worktreeId: worktree.id,
       worktreePath: worktree.path,
-      baseBranch: project.default_branch ?? 'main',
+      baseBranch: worktree.base_branch ?? project.default_branch ?? 'main',
       prNumber: worktree.pr_number,
       prUrl: worktree.pr_url,
     }

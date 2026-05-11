@@ -698,6 +698,28 @@ export const test = base.extend<TauriMockFixtures>({
             const worktree = worktreeStore.find(w => w.id === args?.worktreeId)
             return worktree ? structuredClone(worktree) : null
           },
+          switch_worktree_base_branch: args => {
+            const worktree = worktreeStore.find(w => w.id === args?.worktreeId)
+            if (!worktree) {
+              throw new Error(`Worktree not found: ${String(args?.worktreeId)}`)
+            }
+            worktree.base_branch = args?.baseBranch as string
+            worktree.cached_behind_count = undefined
+            worktree.cached_ahead_count = undefined
+            worktree.cached_status_at = undefined
+            worktree.cached_branch_diff_added = undefined
+            worktree.cached_branch_diff_removed = undefined
+            worktree.cached_base_branch_ahead_count = undefined
+            worktree.cached_base_branch_behind_count = undefined
+            worktree.cached_worktree_ahead_count = undefined
+            worktree.cached_unpushed_count = undefined
+            return {
+              worktree: structuredClone(worktree),
+              rebase_output: args?.rebase
+                ? 'Rebase completed successfully'
+                : null,
+            }
+          },
           create_worktree: args => {
             const projectId = (args?.projectId as string) ?? 'project-1'
             const index = worktreeStore.length + 1

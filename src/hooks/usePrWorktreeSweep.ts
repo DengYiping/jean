@@ -52,8 +52,6 @@ export function usePrWorktreeSweep(projects: Project[] | undefined) {
         )
         if (!worktrees) continue
 
-        const baseBranch = project.default_branch ?? 'main'
-
         for (const w of worktrees) {
           if (w.archived_at) continue
 
@@ -61,7 +59,7 @@ export function usePrWorktreeSweep(projects: Project[] | undefined) {
           allWorktrees.push({
             worktreeId: w.id,
             worktreePath: w.path,
-            baseBranch,
+            baseBranch: w.base_branch ?? project.default_branch ?? 'main',
           })
 
           // PR worktrees for PR status sweep
@@ -69,7 +67,7 @@ export function usePrWorktreeSweep(projects: Project[] | undefined) {
             prWorktrees.push({
               worktreeId: w.id,
               worktreePath: w.path,
-              baseBranch,
+              baseBranch: w.base_branch ?? project.default_branch ?? 'main',
               prNumber: w.pr_number,
               prUrl: w.pr_url,
             })

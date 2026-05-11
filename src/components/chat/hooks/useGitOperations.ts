@@ -266,7 +266,7 @@ export function useGitOperations({
       await performGitPull({
         worktreeId: activeWorktreeId,
         worktreePath: activeWorktreePath,
-        baseBranch: project?.default_branch ?? 'main',
+        baseBranch: worktree?.base_branch ?? project?.default_branch ?? 'main',
         branchLabel: worktree?.branch,
         remote,
         onMergeConflict: () => {
@@ -281,6 +281,7 @@ export function useGitOperations({
     [
       activeWorktreeId,
       activeWorktreePath,
+      worktree?.base_branch,
       worktree?.branch,
       project?.default_branch,
     ]
@@ -845,7 +846,8 @@ ${resolveInstructions}`
         ? `\n\nHere is the diff showing the conflict details:\n\n\`\`\`diff\n${result.conflict_diff}\n\`\`\``
         : ''
 
-      const baseBranch = project?.default_branch || 'main'
+      const baseBranch =
+        worktree?.base_branch || project?.default_branch || 'main'
       const resolveInstructions =
         preferences?.magic_prompts?.resolve_conflicts ??
         DEFAULT_RESOLVE_CONFLICTS_PROMPT
@@ -985,8 +987,8 @@ ${resolveInstructions}`
             ? `\n\nHere is the diff showing the conflict details:\n\n\`\`\`diff\n${result.conflict_diff}\n\`\`\``
             : ''
 
-          // Get base branch name from the project
-          const baseBranch = project?.default_branch || 'main'
+          const baseBranch =
+            worktreeData.base_branch || project?.default_branch || 'main'
 
           const resolveInstructions =
             preferences?.magic_prompts?.resolve_conflicts ??

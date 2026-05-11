@@ -285,6 +285,20 @@ pub async fn dispatch_command(
                 crate::projects::rename_worktree(app.clone(), worktree_id, new_name).await?;
             to_value(result)
         }
+        "switch_worktree_base_branch" => {
+            let worktree_id: String = field(&args, "worktreeId", "worktree_id")?;
+            let base_branch: String = field(&args, "baseBranch", "base_branch")?;
+            let rebase: bool = field(&args, "rebase", "rebase")?;
+            let result = crate::projects::switch_worktree_base_branch(
+                app.clone(),
+                worktree_id,
+                base_branch,
+                rebase,
+            )
+            .await?;
+            emit_cache_invalidation(app, &["projects"]);
+            to_value(result)
+        }
         "update_worktree_label" => {
             let worktree_id: String = field(&args, "worktreeId", "worktree_id")?;
             let label: Option<crate::chat::types::LabelData> = field_opt(&args, "label", "label")?;

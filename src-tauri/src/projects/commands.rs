@@ -4686,6 +4686,97 @@ pub async fn rename_worktree(
     Ok(updated_worktree)
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct SwitchWorktreeBaseBranchResponse {
+    pub worktree: Worktree,
+    pub rebase_output: Option<String>,
+}
+
+fn clear_worktree_git_status_cache(worktree: &mut Worktree) {
+    worktree.cached_behind_count = None;
+    worktree.cached_ahead_count = None;
+    worktree.cached_status_at = None;
+    worktree.cached_uncommitted_added = None;
+    worktree.cached_uncommitted_removed = None;
+    worktree.cached_branch_diff_added = None;
+    worktree.cached_branch_diff_removed = None;
+    worktree.cached_base_branch_ahead_count = None;
+    worktree.cached_base_branch_behind_count = None;
+    worktree.cached_worktree_ahead_count = None;
+    worktree.cached_unpushed_count = None;
+}
+
+/// Switch the base branch used for a worktree's comparisons and PR target.
+#[tauri::command]
+pub async fn switch_worktree_base_branch(
+    app: AppHandle,
+    worktree_id: String,
+    base_branch: String,
+    rebase: bool,
+) -> Result<SwitchWorktreeBaseBranchResponse, String> {
+    log::trace!("Switching base branch for worktree {worktree_id} to {base_branch}");
+
+    let base_branch = base_branch.trim().to_string();
+    if base_branch.is_empty() {
+        return Err("Base branch cannot be empty".to_string());
+    }
+
+    let mut data = load_projects_data(&app)?;
+    let worktree = data
+        .find_worktree(&worktree_id)
+        .ok_or_else(|| format!("Worktree not found: {worktree_id}"))?
+        .clone();
+
+    if worktree.session_type == SessionType::Base {
+        return Err("Cannot switch the base branch for a base session".to_string());
+    }
+
+    let project = data
+        .find_project(&worktree.project_id)
+        .ok_or_else(|| format!("Project not found: {}", worktree.project_id))?
+        .clone();
+
+    let current_branch =
+        git::get_current_branch(&worktree.path).unwrap_or_else(|_| worktree.branch.clone());
+    if current_branch == base_branch {
+        return Err(format!(
+            "Cannot use current branch '{base_branch}' as its own base branch"
+        ));
+    }
+
+    if !git::branch_exists(&project.path, &base_branch)
+        && !git::remote_branch_exists(&project.path, &base_branch)
+    {
+        return Err(format!("Branch '{base_branch}' was not found"));
+    }
+
+    let updated_worktree = {
+        let worktree = data
+            .find_worktree_mut(&worktree_id)
+            .ok_or_else(|| format!("Worktree not found: {worktree_id}"))?;
+        worktree.base_branch = Some(base_branch.clone());
+        clear_worktree_git_status_cache(worktree);
+        worktree.clone()
+    };
+
+    save_projects_data(&app, &data)?;
+
+    let rebase_output = if rebase {
+        Some(git::rebase_onto_base(
+            &updated_worktree.path,
+            &base_branch,
+            None,
+        )?)
+    } else {
+        None
+    };
+
+    Ok(SwitchWorktreeBaseBranchResponse {
+        worktree: updated_worktree,
+        rebase_output,
+    })
+}
+
 /// Update the label on a worktree
 #[tauri::command]
 pub async fn update_worktree_label(
@@ -5169,11 +5260,8 @@ pub async fn rebase_worktree(
         .find_project(&worktree.project_id)
         .ok_or_else(|| format!("Project not found: {}", worktree.project_id))?;
 
-    let result = git::rebase_onto_base(
-        &worktree.path,
-        &project.default_branch,
-        commit_message.as_deref(),
-    )?;
+    let base_branch = resolve_pr_target_branch(worktree, project);
+    let result = git::rebase_onto_base(&worktree.path, base_branch, commit_message.as_deref())?;
 
     log::trace!("Successfully rebased worktree: {}", worktree.name);
     Ok(result)
@@ -5216,7 +5304,7 @@ pub async fn get_pr_prompt(app: AppHandle, worktree_path: String) -> Result<Stri
         .find_project(&worktree.project_id)
         .ok_or_else(|| format!("Project not found: {}", worktree.project_id))?;
 
-    let target_branch = &project.default_branch;
+    let target_branch = resolve_pr_target_branch(worktree, project);
     let context = git::generate_pr_context(&worktree_path, target_branch)?;
 
     let mut prompt = format!(
@@ -5308,7 +5396,7 @@ pub async fn get_review_prompt(
         .find_project(&worktree.project_id)
         .ok_or_else(|| format!("Project not found: {}", worktree.project_id))?;
 
-    let target_branch = &project.default_branch;
+    let target_branch = resolve_pr_target_branch(worktree, project);
     let current_branch = git::get_current_branch(&worktree_path)?;
 
     // Get the full git diff (origin/target...HEAD)
@@ -8087,7 +8175,7 @@ pub async fn run_review_with_ai(
         .find_project(&worktree.project_id)
         .ok_or_else(|| format!("Project not found: {}", worktree.project_id))?;
 
-    let target_branch = &project.default_branch;
+    let target_branch = resolve_pr_target_branch(worktree, project);
     let current_branch = git::get_current_branch(&worktree_path)?;
 
     // Get branch diff (non-fatal — may fail if origin ref doesn't exist)
@@ -8835,11 +8923,12 @@ pub async fn merge_worktree_to_base(
     }
 
     // Perform the merge in main repo
+    let target_branch = resolve_pr_target_branch(&worktree, &project).to_string();
     let merge_result = git::merge_branch_to_base(
         &project.path,
         &worktree.path,
         &worktree.branch,
-        &project.default_branch,
+        &target_branch,
         merge_type,
     );
 
@@ -9021,7 +9110,7 @@ pub async fn fetch_and_merge_base(
         .find_project(&worktree.project_id)
         .ok_or_else(|| format!("Project not found: {}", worktree.project_id))?;
 
-    let base_branch = &project.default_branch;
+    let base_branch = resolve_pr_target_branch(worktree, project);
     let worktree_path = &worktree.path;
 
     // Fetch the latest base branch from origin
@@ -9770,11 +9859,15 @@ pub async fn fetch_worktrees_status(app: AppHandle, project_id: String) -> Resul
 
     // Spawn threads to fetch status for each worktree in parallel
     // Using std::thread since get_branch_status is synchronous (uses Command)
-    let base_branch = project.default_branch.clone();
-
     for worktree in worktrees {
         let app_clone = app.clone();
-        let base_branch_clone = base_branch.clone();
+        let base_branch_clone = worktree
+            .base_branch
+            .as_deref()
+            .map(str::trim)
+            .filter(|branch| !branch.is_empty())
+            .unwrap_or(&project.default_branch)
+            .to_string();
 
         thread::spawn(move || {
             let info = ActiveWorktreeInfo {
@@ -10680,6 +10773,32 @@ mod tests {
         let project = test_project("project-1", "main");
 
         assert_eq!(resolve_pr_target_branch(&worktree, &project), "main");
+    }
+
+    #[test]
+    fn clear_worktree_git_status_cache_clears_base_dependent_fields() {
+        let mut worktree = test_worktree("wt-1", "project-1", "feature");
+        worktree.cached_behind_count = Some(1);
+        worktree.cached_ahead_count = Some(2);
+        worktree.cached_status_at = Some(3);
+        worktree.cached_branch_diff_added = Some(4);
+        worktree.cached_branch_diff_removed = Some(5);
+        worktree.cached_base_branch_ahead_count = Some(6);
+        worktree.cached_base_branch_behind_count = Some(7);
+        worktree.cached_worktree_ahead_count = Some(8);
+        worktree.cached_unpushed_count = Some(9);
+
+        clear_worktree_git_status_cache(&mut worktree);
+
+        assert_eq!(worktree.cached_behind_count, None);
+        assert_eq!(worktree.cached_ahead_count, None);
+        assert_eq!(worktree.cached_status_at, None);
+        assert_eq!(worktree.cached_branch_diff_added, None);
+        assert_eq!(worktree.cached_branch_diff_removed, None);
+        assert_eq!(worktree.cached_base_branch_ahead_count, None);
+        assert_eq!(worktree.cached_base_branch_behind_count, None);
+        assert_eq!(worktree.cached_worktree_ahead_count, None);
+        assert_eq!(worktree.cached_unpushed_count, None);
     }
 
     #[test]

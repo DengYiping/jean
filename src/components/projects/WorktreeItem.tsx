@@ -73,6 +73,7 @@ export function WorktreeItem({
   // Note: useGitStatus reads from TanStack Query cache, no network requests
   // Data is populated via git:status-update events from the backend
   const { data: gitStatus } = useGitStatus(worktree.id)
+  const effectiveBaseBranch = worktree.base_branch ?? defaultBranch
   const behindCount =
     gitStatus?.behind_count ?? worktree.cached_behind_count ?? 0
   const unpushedCount =
@@ -456,7 +457,7 @@ export function WorktreeItem({
       await performGitPull({
         worktreeId: worktree.id,
         worktreePath: worktree.path,
-        baseBranch: defaultBranch,
+        baseBranch: effectiveBaseBranch,
         projectId,
         onMergeConflict: () => {
           useProjectsStore.getState().selectWorktree(worktree.id)
@@ -470,7 +471,7 @@ export function WorktreeItem({
         },
       })
     },
-    [worktree.id, worktree.path, defaultBranch, projectId]
+    [worktree.id, worktree.path, effectiveBaseBranch, projectId]
   )
 
   const handlePush = useCallback(
@@ -502,6 +503,7 @@ export function WorktreeItem({
         worktree={worktree}
         projectId={projectId}
         projectPath={projectPath}
+        defaultBranch={defaultBranch}
       >
         <div
           className={cn(

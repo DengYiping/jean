@@ -205,6 +205,10 @@ export const defaultResponses: Record<string, unknown> = {
   },
   save_worktree_pr: null,
   update_worktree_cached_status: null,
+  switch_worktree_base_branch: {
+    worktree: null,
+    rebase_output: null,
+  },
   mark_pr_ready_for_review: null,
 
   // MCP

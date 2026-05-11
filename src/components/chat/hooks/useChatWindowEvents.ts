@@ -37,6 +37,7 @@ interface UseChatWindowEventsParams {
   setIsGeneratingRecap: (g: boolean) => void
   // Git diff
   gitStatus: { base_branch?: string } | null | undefined
+  worktreeBaseBranch?: string | null
   setDiffRequest: (
     req:
       | {
@@ -130,6 +131,7 @@ export function useChatWindowEvents({
   setIsRecapDialogOpen,
   setIsGeneratingRecap,
   gitStatus,
+  worktreeBaseBranch,
   setDiffRequest,
   isAtBottom,
   scrollToBottom,
@@ -361,7 +363,7 @@ export function useChatWindowEvents({
   useEffect(() => {
     const handler = (e: Event) => {
       if (!activeWorktreePath) return
-      const baseBranch = gitStatus?.base_branch ?? 'main'
+      const baseBranch = gitStatus?.base_branch ?? worktreeBaseBranch ?? 'main'
       const requestedType = (e as CustomEvent).detail?.type as
         | 'uncommitted'
         | 'branch'
@@ -392,7 +394,12 @@ export function useChatWindowEvents({
     }
     window.addEventListener('open-git-diff', handler)
     return () => window.removeEventListener('open-git-diff', handler)
-  }, [activeWorktreePath, gitStatus?.base_branch, setDiffRequest])
+  }, [
+    activeWorktreePath,
+    gitStatus?.base_branch,
+    worktreeBaseBranch,
+    setDiffRequest,
+  ])
 
   // ESC: Cancel prompt
   const cancelContextRef = useRef({ activeWorktreeId, activeSessionId })

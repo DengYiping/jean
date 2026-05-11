@@ -13,7 +13,7 @@ import type { CommandContext } from '@/lib/commands/types'
 import type { AppPreferences, ClaudeModel } from '@/types/preferences'
 import { resolveMagicPromptProvider } from '@/types/preferences'
 import type { ThinkingLevel, ExecutionMode } from '@/types/chat'
-import type { Project, ReviewResponse } from '@/types/projects'
+import type { Project, ReviewResponse, Worktree } from '@/types/projects'
 import { useQueryClient } from '@tanstack/react-query'
 import { useInstalledBackends } from '@/hooks/useInstalledBackends'
 import { chatQueryKeys } from '@/services/chat'
@@ -516,7 +516,6 @@ export function useCommandContext(
       return
     }
 
-    // Get base branch from project's default_branch
     const { selectedWorktreeId, selectedProjectId } =
       useProjectsStore.getState()
     const projects = queryClient.getQueryData<Project[]>(
@@ -526,15 +525,22 @@ export function useCommandContext(
     let baseBranch = 'main' // Default fallback
 
     if (selectedWorktreeId) {
-      // Get worktree to find project_id
-      const worktree = queryClient.getQueryData<{
-        project_id: string
-      }>([...projectsQueryKeys.all, 'worktree', selectedWorktreeId])
+      const worktree =
+        queryClient.getQueryData<Worktree>([
+          ...projectsQueryKeys.all,
+          'worktree',
+          selectedWorktreeId,
+        ]) ??
+        queryClient
+          .getQueriesData<Worktree[]>({
+            queryKey: [...projectsQueryKeys.all, 'worktrees'],
+          })
+          .flatMap(([, worktrees]) => worktrees ?? [])
+          .find(w => w.id === selectedWorktreeId)
       if (worktree) {
         const project = projects?.find(p => p.id === worktree.project_id)
-        if (project?.default_branch) {
-          baseBranch = project.default_branch
-        }
+        baseBranch =
+          worktree.base_branch ?? project?.default_branch ?? baseBranch
       }
     } else if (selectedProjectId) {
       const project = projects?.find(p => p.id === selectedProjectId)

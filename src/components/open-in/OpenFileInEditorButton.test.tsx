@@ -8,6 +8,15 @@ vi.mock('@/services/preferences', () => ({
   usePreferences: () => ({
     data: {
       editor: 'cursor',
+      custom_editors: [
+        {
+          id: 'custom:helix',
+          name: 'Helix',
+          command: 'hx',
+          args: ['{path}'],
+          supports_line_number: false,
+        },
+      ],
     },
   }),
   useAvailableEditors: () => ({
@@ -93,5 +102,16 @@ describe('OpenFileInEditorButton', () => {
     )
 
     expect(screen.getByRole('button', { name: /Open in Zed/i })).toBeDisabled()
+  })
+
+  it('uses a custom project editor as the default label', () => {
+    render(
+      <OpenFileInEditorButton
+        filePath="/tmp/worktree/src/example.ts"
+        preferredEditor="custom:helix"
+      />
+    )
+
+    expect(screen.getByRole('button', { name: /Open in Helix/i })).toBeVisible()
   })
 })

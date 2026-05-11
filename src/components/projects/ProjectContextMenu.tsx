@@ -149,7 +149,7 @@ export function ProjectContextMenu({
 
         <ContextMenuItem onClick={handleOpenInEditor}>
           <Code className="mr-2 h-4 w-4" />
-          Open in {getEditorLabel(effectiveEditor)}
+          Open in {getEditorLabel(effectiveEditor, preferences?.custom_editors)}
         </ContextMenuItem>
 
         <ContextMenuItem onClick={handleOpenInFinder}>

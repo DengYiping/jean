@@ -93,10 +93,16 @@ export function OpenInModal() {
     selectedProject?.default_editor,
     preferences?.editor
   )
+  const customEditors = preferences?.custom_editors
 
   const editorOptions = useMemo(
-    () => getDetectedEditorOptions(effectiveEditor, availableEditors),
-    [availableEditors, effectiveEditor]
+    () =>
+      getDetectedEditorOptions(
+        effectiveEditor,
+        availableEditors,
+        customEditors
+      ),
+    [availableEditors, customEditors, effectiveEditor]
   )
 
   const isNative = isNativeApp()
@@ -121,7 +127,7 @@ export function OpenInModal() {
     const allOptions: ModalOption[] = [
       {
         id: 'editor',
-        label: getEditorLabel(effectiveEditor),
+        label: getEditorLabel(effectiveEditor, customEditors),
         icon: Code,
         key: 'E',
       },
@@ -168,6 +174,7 @@ export function OpenInModal() {
   }, [
     editorOptions,
     effectiveEditor,
+    customEditors,
     preferences?.terminal,
     isNative,
     worktree?.pr_url,

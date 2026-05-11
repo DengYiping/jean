@@ -91,6 +91,8 @@ pub struct AppPreferences {
     pub terminal: String, // Terminal app: terminal, warp, ghostty, iterm2, powershell, windows-terminal
     #[serde(default = "default_editor")]
     pub editor: String, // Editor app: zed, vscode, cursor, xcode, intellij
+    #[serde(default)]
+    pub custom_editors: Vec<CustomEditorConfig>, // Custom editor launch configs
     #[serde(default = "default_open_in")]
     pub open_in: String, // Default Open In action: editor, terminal, finder, github
     #[serde(default = "default_auto_branch_naming")]
@@ -276,6 +278,19 @@ pub struct CustomCliProfile {
     pub file_path: String,
     #[serde(default = "default_true")]
     pub supports_thinking: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomEditorConfig {
+    pub id: String,
+    pub name: String,
+    pub command: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub supports_line_number: bool,
+    #[serde(default)]
+    pub line_number_args: Option<Vec<String>>,
 }
 
 fn slugify_profile_name(name: &str) -> String {
@@ -1615,6 +1630,7 @@ impl Default for AppPreferences {
             thinking_level: default_thinking_level(),
             terminal: default_terminal(),
             editor: default_editor(),
+            custom_editors: Vec::new(),
             open_in: default_open_in(),
             auto_branch_naming: default_auto_branch_naming(),
             branch_naming_model: default_branch_naming_model(),
@@ -1721,6 +1737,7 @@ fn normalize_preferences(preferences: &mut AppPreferences) {
     normalize_optional_path(&mut preferences.codex_update_command);
     normalize_optional_path(&mut preferences.opencode_launch_command);
     normalize_optional_path(&mut preferences.default_project_id);
+    crate::platform::normalize_custom_editors(&mut preferences.custom_editors);
 }
 
 fn migrate_loaded_preferences(preferences: &mut AppPreferences) -> bool {
@@ -2042,6 +2059,7 @@ async fn save_preferences(app: AppHandle, mut preferences: AppPreferences) -> Re
     // Validate theme value
     validate_theme(&preferences.theme)?;
     normalize_preferences(&mut preferences);
+    crate::platform::validate_custom_editors(&preferences.custom_editors)?;
     let git_cli_override = preferences.git_cli_path.clone();
 
     log::trace!("Saving preferences to disk");

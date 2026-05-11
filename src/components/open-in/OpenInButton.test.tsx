@@ -8,6 +8,15 @@ vi.mock('@/services/preferences', () => ({
   usePreferences: () => ({
     data: {
       editor: 'cursor',
+      custom_editors: [
+        {
+          id: 'custom:helix',
+          name: 'Helix',
+          command: 'hx',
+          args: ['{path}'],
+          supports_line_number: false,
+        },
+      ],
       terminal: 'terminal',
       open_in: 'editor',
     },
@@ -74,5 +83,16 @@ describe('OpenInButton', () => {
       worktreePath: '/tmp/worktree',
       editor: undefined,
     })
+  })
+
+  it('uses a custom project editor as the default label', () => {
+    render(
+      <OpenInButton
+        worktreePath="/tmp/worktree"
+        preferredEditor="custom:helix"
+      />
+    )
+
+    expect(screen.getByRole('button', { name: /Open in Helix/i })).toBeVisible()
   })
 })

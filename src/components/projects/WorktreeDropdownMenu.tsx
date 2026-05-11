@@ -318,7 +318,8 @@ export function WorktreeDropdownMenu({
           {isNativeApp() && (
             <DropdownMenuItem onClick={handleOpenInEditor}>
               <Code className="mr-2 h-4 w-4" />
-              Open in {getEditorLabel(effectiveEditor)}
+              Open in{' '}
+              {getEditorLabel(effectiveEditor, preferences?.custom_editors)}
             </DropdownMenuItem>
           )}
 

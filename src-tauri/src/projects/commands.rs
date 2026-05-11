@@ -4472,6 +4472,7 @@ pub async fn open_worktree_in_editor(
     worktree_path: String,
     editor: Option<String>,
 ) -> Result<(), String> {
+    let preferences = crate::load_preferences_sync(&app).ok();
     let editor_app = load_projects_data(&app)
         .ok()
         .map(|data| {
@@ -4479,19 +4480,21 @@ pub async fn open_worktree_in_editor(
                 &data,
                 &worktree_path,
                 editor.as_deref(),
-                crate::load_preferences_sync(&app)
-                    .ok()
-                    .map(|prefs| prefs.editor)
-                    .as_deref(),
+                preferences.as_ref().map(|prefs| prefs.editor.as_str()),
             )
         })
         .unwrap_or_else(|| {
             editor.unwrap_or_else(|| {
-                crate::load_preferences_sync(&app)
-                    .map(|prefs| prefs.editor)
-                    .unwrap_or_else(|_| "zed".to_string())
+                preferences
+                    .as_ref()
+                    .map(|prefs| prefs.editor.clone())
+                    .unwrap_or_else(|| "zed".to_string())
             })
         });
+    let custom_editors = preferences
+        .as_ref()
+        .map(|prefs| prefs.custom_editors.as_slice())
+        .unwrap_or(&[]);
     log::trace!("Opening worktree in {editor_app}: {worktree_path}");
 
     // If opening jean.json and it doesn't exist, create template
@@ -4511,7 +4514,7 @@ pub async fn open_worktree_in_editor(
         }
     }
 
-    crate::platform::open_project_path_in_editor(&worktree_path, &editor_app)?;
+    crate::platform::open_project_path_in_editor(&worktree_path, &editor_app, custom_editors)?;
 
     Ok(())
 }

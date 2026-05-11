@@ -8,12 +8,22 @@ import React, {
 import { invoke } from '@/lib/transport'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Loader2, ChevronDown, Check, ChevronsUpDown, Play } from 'lucide-react'
+import {
+  Loader2,
+  ChevronDown,
+  Check,
+  ChevronsUpDown,
+  Play,
+  Pencil,
+  Plus,
+  Trash2,
+} from 'lucide-react'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Command,
   CommandEmpty,
@@ -83,7 +93,7 @@ import {
   codexReasoningOptions,
   backendOptions,
   terminalOptions,
-  editorOptions,
+  getEditorOptions,
   gitPollIntervalOptions,
   remotePollIntervalOptions,
   archiveRetentionOptions,
@@ -95,6 +105,7 @@ import {
   type CliBackend,
   type TerminalApp,
   type EditorApp,
+  type CustomEditorConfig,
   type NotificationSound,
   openInDefaultOptions,
   type OpenInDefault,
@@ -158,6 +169,244 @@ const InlineField: React.FC<{
   </div>
 )
 
+function splitArgsText(value: string): string[] {
+  return value
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+}
+
+function slugifyEditorName(name: string): string {
+  const slug = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return slug || 'editor'
+}
+
+function createCustomEditorId(
+  name: string,
+  editors: readonly CustomEditorConfig[]
+): string {
+  const base = `custom:${slugifyEditorName(name)}`
+  const existingIds = new Set(editors.map(editor => editor.id))
+  if (!existingIds.has(base)) return base
+
+  let suffix = 2
+  while (existingIds.has(`${base}-${suffix}`)) suffix += 1
+  return `${base}-${suffix}`
+}
+
+const CUSTOM_EDITOR_LINE_PLACEHOLDER = '{path}:{line}'
+
+const CustomEditorsEditor: React.FC<{
+  editors: CustomEditorConfig[]
+  onSave: (editors: CustomEditorConfig[]) => void
+}> = ({ editors, onSave }) => {
+  const [isAdding, setIsAdding] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editCommand, setEditCommand] = useState('')
+  const [editArgs, setEditArgs] = useState('{path}')
+  const [editSupportsLine, setEditSupportsLine] = useState(true)
+  const [editLineArgs, setEditLineArgs] = useState(
+    CUSTOM_EDITOR_LINE_PLACEHOLDER
+  )
+  const [error, setError] = useState<string | null>(null)
+
+  const reset = () => {
+    setIsAdding(false)
+    setEditingId(null)
+    setEditName('')
+    setEditCommand('')
+    setEditArgs('{path}')
+    setEditSupportsLine(true)
+    setEditLineArgs(CUSTOM_EDITOR_LINE_PLACEHOLDER)
+    setError(null)
+  }
+
+  const startAdd = () => {
+    reset()
+    setIsAdding(true)
+  }
+
+  const startEdit = (editor: CustomEditorConfig) => {
+    setIsAdding(false)
+    setEditingId(editor.id)
+    setEditName(editor.name)
+    setEditCommand(editor.command)
+    setEditArgs(editor.args.join('\n') || '{path}')
+    setEditSupportsLine(editor.supports_line_number)
+    setEditLineArgs(
+      editor.line_number_args?.join('\n') || CUSTOM_EDITOR_LINE_PLACEHOLDER
+    )
+    setError(null)
+  }
+
+  const deleteEditor = (id: string) => {
+    onSave(editors.filter(editor => editor.id !== id))
+    if (editingId === id) reset()
+  }
+
+  const validateAndSave = () => {
+    const name = editName.trim()
+    const command = editCommand.trim()
+    const args = splitArgsText(editArgs)
+    const lineArgs = splitArgsText(editLineArgs)
+
+    if (!name) {
+      setError('Name is required.')
+      return
+    }
+    if (!command) {
+      setError('Command is required.')
+      return
+    }
+    if (!args.some(arg => arg.includes('{path}'))) {
+      setError('Arguments must include {path}.')
+      return
+    }
+    if (
+      editSupportsLine &&
+      (!lineArgs.some(arg => arg.includes('{path}')) ||
+        !lineArgs.some(arg => arg.includes('{line}')))
+    ) {
+      setError('Line-number arguments must include {path} and {line}.')
+      return
+    }
+
+    const id = editingId ?? createCustomEditorId(name, editors)
+    const editor: CustomEditorConfig = {
+      id,
+      name,
+      command,
+      args,
+      supports_line_number: editSupportsLine,
+      line_number_args: editSupportsLine ? lineArgs : undefined,
+    }
+
+    if (editingId) {
+      onSave(editors.map(item => (item.id === editingId ? editor : item)))
+    } else {
+      onSave([...editors, editor])
+    }
+    reset()
+  }
+
+  const isEditing = isAdding || editingId !== null
+
+  return (
+    <div className="space-y-3 rounded-md border border-border/70 p-3">
+      {editors.length > 0 && (
+        <div className="space-y-2">
+          {editors.map(editor => (
+            <div
+              key={editor.id}
+              className="flex items-center gap-2 rounded-md border border-border/60 px-3 py-2"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-medium">
+                  {editor.name}
+                </div>
+                <div className="truncate text-xs text-muted-foreground">
+                  {editor.command} {editor.args.join(' ')}
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => startEdit(editor)}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-destructive hover:text-destructive"
+                onClick={() => deleteEditor(editor.id)}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {isEditing && (
+        <div className="space-y-2 rounded-md border border-border p-3">
+          <Input
+            placeholder="Editor name"
+            value={editName}
+            onChange={event => {
+              setEditName(event.target.value)
+              setError(null)
+            }}
+            className="h-8"
+          />
+          <Input
+            placeholder="Command, e.g. code"
+            value={editCommand}
+            onChange={event => {
+              setEditCommand(event.target.value)
+              setError(null)
+            }}
+            className="h-8 font-mono text-xs"
+          />
+          <Textarea
+            placeholder="{path}"
+            value={editArgs}
+            onChange={event => {
+              setEditArgs(event.target.value)
+              setError(null)
+            }}
+            className="min-h-16 font-mono text-xs"
+          />
+          <div className="flex items-center gap-2">
+            <Switch
+              checked={editSupportsLine}
+              onCheckedChange={setEditSupportsLine}
+            />
+            <p className="text-sm text-muted-foreground">
+              Supports opening files at a line number
+            </p>
+          </div>
+          {editSupportsLine && (
+            <Textarea
+              placeholder={CUSTOM_EDITOR_LINE_PLACEHOLDER}
+              value={editLineArgs}
+              onChange={event => {
+                setEditLineArgs(event.target.value)
+                setError(null)
+              }}
+              className="min-h-16 font-mono text-xs"
+            />
+          )}
+          {error && <p className="text-xs text-destructive">{error}</p>}
+          <div className="flex gap-2">
+            <Button type="button" size="sm" onClick={validateAndSave}>
+              Save
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={reset}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {!isEditing && (
+        <Button type="button" variant="outline" size="sm" onClick={startAdd}>
+          <Plus className="mr-2 h-3.5 w-3.5" />
+          Add editor
+        </Button>
+      )}
+    </div>
+  )
+}
+
 export const GeneralPane: React.FC = () => {
   const queryClient = useQueryClient()
   const { data: preferences } = usePreferences()
@@ -171,6 +420,11 @@ export const GeneralPane: React.FC = () => {
   const [deleteCliTarget, setDeleteCliTarget] =
     useState<LegacyCliTarget | null>(null)
   const [isDeletingCli, setIsDeletingCli] = useState(false)
+  const customEditors = preferences?.custom_editors ?? []
+  const editorSelectOptions = useMemo(
+    () => getEditorOptions(customEditors),
+    [customEditors]
+  )
 
   // CLI status hooks
   const { data: cliStatus, isLoading: isCliLoading } = useClaudeCliStatus()
@@ -491,6 +745,19 @@ export const GeneralPane: React.FC = () => {
     if (preferences) {
       patchPreferences.mutate({ editor: value })
     }
+  }
+
+  const handleCustomEditorsSave = (updatedEditors: CustomEditorConfig[]) => {
+    if (!preferences) return
+
+    const patch: Partial<AppPreferences> = { custom_editors: updatedEditors }
+    const editorStillAvailable = getEditorOptions(updatedEditors).some(
+      option => option.value === preferences.editor
+    )
+    if (!editorStillAvailable) {
+      patch.editor = 'zed'
+    }
+    patchPreferences.mutate(patch)
   }
 
   const handleOpenInChange = (value: OpenInDefault) => {
@@ -1888,13 +2155,25 @@ export const GeneralPane: React.FC = () => {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {editorOptions.map(option => (
+                  {editorSelectOptions.map(option => (
                     <SelectItem key={option.value} value={option.value}>
                       {option.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+            </InlineField>
+          )}
+
+          {isNativeApp() && (
+            <InlineField
+              label="Custom Editors"
+              description="One argument per line. Use {path} and {line} placeholders."
+            >
+              <CustomEditorsEditor
+                editors={customEditors}
+                onSave={handleCustomEditorsSave}
+              />
             </InlineField>
           )}
 

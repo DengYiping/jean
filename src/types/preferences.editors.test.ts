@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   getDetectedEditorOptions,
+  getEditorOptions,
   type EditorApp,
   getEditorLabel,
 } from './preferences'
@@ -42,5 +43,33 @@ describe('getDetectedEditorOptions', () => {
     ])
 
     expect(options.map(option => option.value)).toEqual(['cursor', 'vscode'])
+  })
+
+  it('appends custom editors and resolves their labels', () => {
+    const customEditors = [
+      {
+        id: 'custom:helix',
+        name: 'Helix',
+        command: 'hx',
+        args: ['{path}'],
+        supports_line_number: false,
+      },
+    ]
+
+    const options = getDetectedEditorOptions(
+      'custom:helix',
+      ['cursor'],
+      customEditors
+    )
+
+    expect(options).toEqual([
+      { value: 'custom:helix', label: 'Helix', isDefault: true },
+      { value: 'cursor', label: getEditorLabel('cursor'), isDefault: false },
+    ])
+    expect(getEditorLabel('custom:helix', customEditors)).toBe('Helix')
+    expect(getEditorOptions(customEditors).at(-1)).toEqual({
+      value: 'custom:helix',
+      label: 'Helix',
+    })
   })
 })

@@ -2402,6 +2402,7 @@ export function ChatWindow({
     setIsRecapDialogOpen,
     setIsGeneratingRecap,
     gitStatus,
+    worktreeBaseBranch: worktree?.base_branch,
     setDiffRequest,
     isAtBottom,
     scrollToBottom,
@@ -3142,7 +3143,11 @@ export function ChatWindow({
                             selectedEffortLevel={selectedEffortLevel}
                             useAdaptiveThinking={useAdaptiveThinkingFlag}
                             hideThinkingLevel={hideThinkingLevel}
-                            baseBranch={gitStatus?.base_branch ?? 'main'}
+                            baseBranch={
+                              gitStatus?.base_branch ??
+                              worktree?.base_branch ??
+                              'main'
+                            }
                             uncommittedAdded={uncommittedAdded}
                             uncommittedRemoved={uncommittedRemoved}
                             branchDiffAdded={branchDiffAdded}

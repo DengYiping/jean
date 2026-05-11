@@ -4,10 +4,12 @@ import { act, renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   projectsQueryKeys,
+  useSwitchWorktreeBaseBranch,
   useUpdateProjectSettings,
   useWorktree,
 } from './projects'
 import type { Project, Worktree } from '@/types/projects'
+import { toast } from 'sonner'
 
 const mockInvoke = vi.hoisted(() => vi.fn())
 
@@ -122,5 +124,48 @@ describe('projects service', () => {
       hideGithubIssuesAndPrs: undefined,
       linkedProjectIds: ['project-2', 'project-3'],
     })
+  })
+
+  it('switches a worktree base branch and refreshes project state', async () => {
+    const queryClient = createTestQueryClient()
+    const updatedWorktree = {
+      ...worktree,
+      base_branch: 'parent-feature',
+    }
+    mockInvoke.mockResolvedValue({
+      worktree: updatedWorktree,
+      rebase_output: null,
+    })
+
+    const { result } = renderHook(() => useSwitchWorktreeBaseBranch(), {
+      wrapper: createWrapper(queryClient),
+    })
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        worktreeId: 'worktree-1',
+        projectId: 'project-1',
+        baseBranch: 'parent-feature',
+        rebase: false,
+      })
+    })
+
+    expect(mockInvoke).toHaveBeenCalledWith('switch_worktree_base_branch', {
+      worktreeId: 'worktree-1',
+      baseBranch: 'parent-feature',
+      rebase: false,
+    })
+    expect(mockInvoke).toHaveBeenCalledWith('trigger_immediate_git_poll')
+    expect(mockInvoke).toHaveBeenCalledWith('fetch_worktrees_status', {
+      projectId: 'project-1',
+    })
+    expect(
+      queryClient.getQueryData([
+        ...projectsQueryKeys.all,
+        'worktree',
+        'worktree-1',
+      ])
+    ).toEqual(updatedWorktree)
+    expect(toast.success).toHaveBeenCalledWith('Base branch switched')
   })
 })

@@ -3541,6 +3541,7 @@ pub fn run() {
             projects::cleanup_combined_contexts,
             projects::delete_all_archives,
             projects::rename_worktree,
+            projects::switch_worktree_base_branch,
             projects::update_worktree_label,
             projects::reset_worktree_slot,
             projects::reset_idle_worktree_slots,

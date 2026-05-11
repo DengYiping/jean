@@ -3,6 +3,7 @@ import {
   Code,
   FileJson,
   FolderOpen,
+  GitBranchPlus,
   GitFork,
   Hammer,
   Play,
@@ -11,6 +12,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -37,18 +39,21 @@ import { isNativeApp } from '@/lib/environment'
 import { getFileManagerName } from '@/lib/platform'
 import { useWorktreeMenuActions } from './useWorktreeMenuActions'
 import { useForkWorktree } from '@/services/projects'
+import { SwitchBaseBranchDialog } from '@/components/worktree/SwitchBaseBranchDialog'
 
 interface WorktreeContextMenuProps {
   worktree: Worktree
   projectId: string
   projectPath: string
-  children: React.ReactNode
+  defaultBranch: string
+  children: ReactNode
 }
 
 export function WorktreeContextMenu({
   worktree,
   projectId,
   projectPath,
+  defaultBranch,
   children,
 }: WorktreeContextMenuProps) {
   const {
@@ -73,146 +78,174 @@ export function WorktreeContextMenu({
   } = useWorktreeMenuActions({ worktree, projectId })
   const forkWorktree = useForkWorktree()
   const canForkWorktree = !worktree.status || worktree.status === 'ready'
+  const [switchBaseOpen, setSwitchBaseOpen] = useState(false)
+  const canSwitchBase =
+    !isBase &&
+    canForkWorktree &&
+    !!worktree.base_branch &&
+    worktree.base_branch !== defaultBranch
 
   // Suppress unused variable warning
   void projectPath
 
   return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
-      <ContextMenuContent className="w-48">
-        <ContextMenuItem
-          disabled={!canForkWorktree || forkWorktree.isPending}
-          onClick={() => forkWorktree.mutate({ sourceWorktreeId: worktree.id })}
-        >
-          <GitFork className="mr-2 h-4 w-4" />
-          Fork Worktree
-        </ContextMenuItem>
-
-        {isNativeApp() && runScripts.length === 1 && (
-          <ContextMenuItem onClick={handleRun}>
-            <Play className="mr-2 h-4 w-4" />
-            Run
+    <>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
+        <ContextMenuContent className="w-52">
+          <ContextMenuItem
+            disabled={!canForkWorktree || forkWorktree.isPending}
+            onClick={() =>
+              forkWorktree.mutate({ sourceWorktreeId: worktree.id })
+            }
+          >
+            <GitFork className="mr-2 h-4 w-4" />
+            Fork Worktree
           </ContextMenuItem>
-        )}
-        {isNativeApp() && runScripts.length > 1 && (
-          <ContextMenuSub>
-            <ContextMenuSubTrigger>
+
+          {canSwitchBase && (
+            <ContextMenuItem onClick={() => setSwitchBaseOpen(true)}>
+              <GitBranchPlus className="mr-2 h-4 w-4" />
+              Switch Base Branch...
+            </ContextMenuItem>
+          )}
+
+          {isNativeApp() && runScripts.length === 1 && (
+            <ContextMenuItem onClick={handleRun}>
               <Play className="mr-2 h-4 w-4" />
               Run
-            </ContextMenuSubTrigger>
-            <ContextMenuSubContent>
-              {runScripts.map((cmd, i) => (
-                <ContextMenuItem
-                  key={i}
-                  onSelect={() => handleRunCommand(cmd)}
-                  className="font-mono text-xs"
-                >
-                  {cmd}
-                </ContextMenuItem>
-              ))}
-            </ContextMenuSubContent>
-          </ContextMenuSub>
-        )}
-
-        {isNativeApp() && buildScript && (
-          <ContextMenuItem onClick={handleBuild}>
-            <Hammer className="mr-2 h-4 w-4" />
-            Build
-          </ContextMenuItem>
-        )}
-
-        <ContextMenuItem onClick={handleOpenJeanConfig}>
-          <FileJson className="mr-2 h-4 w-4" />
-          Edit jean.json
-        </ContextMenuItem>
-
-        {hasMessages && (
-          <ContextMenuItem onClick={handleGenerateRecap}>
-            <Sparkles className="mr-2 h-4 w-4" />
-            Generate Recap
-          </ContextMenuItem>
-        )}
-
-        {isNativeApp() && <ContextMenuSeparator />}
-
-        {isNativeApp() && (
-          <ContextMenuItem onClick={handleOpenInEditor}>
-            <Code className="mr-2 h-4 w-4" />
-            Open in{' '}
-            {getEditorLabel(effectiveEditor, preferences?.custom_editors)}
-          </ContextMenuItem>
-        )}
-
-        {isNativeApp() && (
-          <ContextMenuItem onClick={handleOpenInFinder}>
-            <FolderOpen className="mr-2 h-4 w-4" />
-            Open in {getFileManagerName()}
-          </ContextMenuItem>
-        )}
-
-        {isNativeApp() && (
-          <ContextMenuItem onClick={handleOpenInTerminal}>
-            <Terminal className="mr-2 h-4 w-4" />
-            Open in {getTerminalLabel(preferences?.terminal)}
-          </ContextMenuItem>
-        )}
-
-        <ContextMenuSeparator />
-
-        <ContextMenuItem onClick={handleArchiveOrClose}>
-          {isBase ? (
-            <>
-              <X className="mr-2 h-4 w-4" />
-              Close Session
-            </>
-          ) : (
-            <>
-              <Archive className="mr-2 h-4 w-4" />
-              Archive Worktree
-            </>
+            </ContextMenuItem>
           )}
-        </ContextMenuItem>
+          {isNativeApp() && runScripts.length > 1 && (
+            <ContextMenuSub>
+              <ContextMenuSubTrigger>
+                <Play className="mr-2 h-4 w-4" />
+                Run
+              </ContextMenuSubTrigger>
+              <ContextMenuSubContent>
+                {runScripts.map((cmd, i) => (
+                  <ContextMenuItem
+                    key={i}
+                    onSelect={() => handleRunCommand(cmd)}
+                    className="font-mono text-xs"
+                  >
+                    {cmd}
+                  </ContextMenuItem>
+                ))}
+              </ContextMenuSubContent>
+            </ContextMenuSub>
+          )}
 
-        {!isBase && (
-          <ContextMenuItem onClick={() => setShowDeleteConfirm(true)}>
-            <Trash2 className="mr-2 h-4 w-4 text-destructive" />
-            Delete Worktree
+          {isNativeApp() && buildScript && (
+            <ContextMenuItem onClick={handleBuild}>
+              <Hammer className="mr-2 h-4 w-4" />
+              Build
+            </ContextMenuItem>
+          )}
+
+          <ContextMenuItem onClick={handleOpenJeanConfig}>
+            <FileJson className="mr-2 h-4 w-4" />
+            Edit jean.json
           </ContextMenuItem>
-        )}
-      </ContextMenuContent>
 
-      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
-        <AlertDialogContent
-          onKeyDown={e => {
-            if (e.key === 'Enter') {
-              e.preventDefault()
-              e.stopPropagation()
-              handleDelete()
-              setShowDeleteConfirm(false)
-            }
-          }}
+          {hasMessages && (
+            <ContextMenuItem onClick={handleGenerateRecap}>
+              <Sparkles className="mr-2 h-4 w-4" />
+              Generate Recap
+            </ContextMenuItem>
+          )}
+
+          {isNativeApp() && <ContextMenuSeparator />}
+
+          {isNativeApp() && (
+            <ContextMenuItem onClick={handleOpenInEditor}>
+              <Code className="mr-2 h-4 w-4" />
+              Open in{' '}
+              {getEditorLabel(effectiveEditor, preferences?.custom_editors)}
+            </ContextMenuItem>
+          )}
+
+          {isNativeApp() && (
+            <ContextMenuItem onClick={handleOpenInFinder}>
+              <FolderOpen className="mr-2 h-4 w-4" />
+              Open in {getFileManagerName()}
+            </ContextMenuItem>
+          )}
+
+          {isNativeApp() && (
+            <ContextMenuItem onClick={handleOpenInTerminal}>
+              <Terminal className="mr-2 h-4 w-4" />
+              Open in {getTerminalLabel(preferences?.terminal)}
+            </ContextMenuItem>
+          )}
+
+          <ContextMenuSeparator />
+
+          <ContextMenuItem onClick={handleArchiveOrClose}>
+            {isBase ? (
+              <>
+                <X className="mr-2 h-4 w-4" />
+                Close Session
+              </>
+            ) : (
+              <>
+                <Archive className="mr-2 h-4 w-4" />
+                Archive Worktree
+              </>
+            )}
+          </ContextMenuItem>
+
+          {!isBase && (
+            <ContextMenuItem onClick={() => setShowDeleteConfirm(true)}>
+              <Trash2 className="mr-2 h-4 w-4 text-destructive" />
+              Delete Worktree
+            </ContextMenuItem>
+          )}
+        </ContextMenuContent>
+
+        <AlertDialog
+          open={showDeleteConfirm}
+          onOpenChange={setShowDeleteConfirm}
         >
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Worktree</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently delete the worktree, its branch, and all
-              associated sessions. This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              autoFocus
-              onClick={handleDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Delete
-              <kbd className="ml-1.5 text-xs opacity-70">↵</kbd>
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </ContextMenu>
+          <AlertDialogContent
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                e.stopPropagation()
+                handleDelete()
+                setShowDeleteConfirm(false)
+              }
+            }}
+          >
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Worktree</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will permanently delete the worktree, its branch, and all
+                associated sessions. This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                autoFocus
+                onClick={handleDelete}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                Delete
+                <kbd className="ml-1.5 text-xs opacity-70">↵</kbd>
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </ContextMenu>
+
+      <SwitchBaseBranchDialog
+        open={switchBaseOpen}
+        onOpenChange={setSwitchBaseOpen}
+        worktree={worktree}
+        projectId={projectId}
+        defaultBranch={defaultBranch}
+      />
+    </>
   )
 }

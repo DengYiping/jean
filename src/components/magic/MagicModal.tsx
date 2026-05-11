@@ -623,7 +623,8 @@ export function MagicModal() {
             await performGitPull({
               worktreeId: selectedWorktreeId,
               worktreePath: worktree.path,
-              baseBranch: project?.default_branch ?? 'main',
+              baseBranch:
+                worktree.base_branch ?? project?.default_branch ?? 'main',
               branchLabel: worktree.branch,
               projectId: worktree.project_id ?? undefined,
               remote,

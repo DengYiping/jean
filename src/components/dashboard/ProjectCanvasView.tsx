@@ -81,6 +81,7 @@ import { SecurityAlertsBadge } from '@/components/shared/SecurityAlertsBadge'
 import { PlanDialog } from '@/components/chat/PlanDialog'
 import { RecapDialog } from '@/components/chat/RecapDialog'
 import { SessionChatModal } from '@/components/chat/SessionChatModal'
+import { SwitchBaseBranchDialog } from '@/components/worktree/SwitchBaseBranchDialog'
 
 import { LabelModal } from '@/components/chat/LabelModal'
 import { getLabelTextColor } from '@/lib/label-colors'
@@ -281,6 +282,8 @@ function WorktreeSectionHeader({
       ? openPRs?.find(pr => pr.headRefName === worktree.base_branch)
       : undefined
   const isBase = isBaseSession(worktree)
+  const effectiveBaseBranch = worktree.base_branch ?? defaultBranch
+  const [switchBaseOpen, setSwitchBaseOpen] = useState(false)
   const { data: gitStatus } = useGitStatus(worktree.id)
 
   const hasRunningTerminal = useTerminalStore(state => {
@@ -320,11 +323,11 @@ function WorktreeSectionHeader({
       await performGitPull({
         worktreeId: worktree.id,
         worktreePath: worktree.path,
-        baseBranch: defaultBranch,
+        baseBranch: effectiveBaseBranch,
         projectId,
       })
     },
-    [worktree.id, worktree.path, defaultBranch, projectId]
+    [worktree.id, worktree.path, effectiveBaseBranch, projectId]
   )
 
   const handlePush = useCallback(
@@ -359,10 +362,10 @@ function WorktreeSectionHeader({
   const handleDiffClick = useCallback(() => {
     onDiffClick?.(
       worktree.path,
-      defaultBranch,
+      effectiveBaseBranch,
       isBase ? 'uncommitted' : 'branch'
     )
-  }, [onDiffClick, isBase, worktree.path, defaultBranch])
+  }, [onDiffClick, isBase, worktree.path, effectiveBaseBranch])
 
   const sessionMetrics = useMemo(
     () => (cards && cards.length > 0 ? getSessionMetrics(cards) : null),
@@ -457,16 +460,25 @@ function WorktreeSectionHeader({
                       worktree.base_branch !== defaultBranch && (
                         <>
                           <span className="text-border">·</span>
-                          <GitBranchPlus className="h-2.5 w-2.5" />
-                          <span className="max-w-32 truncate">
-                            {worktree.base_branch}
-                          </span>
-                          {stackedOnPR && (
-                            <>
-                              <GitPullRequestArrow className="h-2.5 w-2.5" />#
-                              {stackedOnPR.number}
-                            </>
-                          )}
+                          <button
+                            type="button"
+                            className="inline-flex min-w-0 items-center gap-1 rounded px-1 py-0.5 hover:bg-muted"
+                            onClick={e => {
+                              e.stopPropagation()
+                              setSwitchBaseOpen(true)
+                            }}
+                          >
+                            <GitBranchPlus className="h-2.5 w-2.5" />
+                            <span className="max-w-32 truncate">
+                              {worktree.base_branch}
+                            </span>
+                            {stackedOnPR && (
+                              <>
+                                <GitPullRequestArrow className="h-2.5 w-2.5" />#
+                                {stackedOnPR.number}
+                              </>
+                            )}
+                          </button>
                         </>
                       )}
                     {worktree.pr_number && (
@@ -524,16 +536,25 @@ function WorktreeSectionHeader({
                     worktree.base_branch !== defaultBranch && (
                       <>
                         <span className="text-border">·</span>
-                        <GitBranchPlus className="h-2.5 w-2.5 shrink-0" />
-                        <span className="max-w-32 truncate">
-                          {worktree.base_branch}
-                        </span>
-                        {stackedOnPR && (
-                          <>
-                            <GitPullRequestArrow className="h-2.5 w-2.5 shrink-0" />
-                            #{stackedOnPR.number}
-                          </>
-                        )}
+                        <button
+                          type="button"
+                          className="inline-flex min-w-0 items-center gap-1 rounded px-1 py-0.5 hover:bg-muted"
+                          onClick={e => {
+                            e.stopPropagation()
+                            setSwitchBaseOpen(true)
+                          }}
+                        >
+                          <GitBranchPlus className="h-2.5 w-2.5 shrink-0" />
+                          <span className="max-w-32 truncate">
+                            {worktree.base_branch}
+                          </span>
+                          {stackedOnPR && (
+                            <>
+                              <GitPullRequestArrow className="h-2.5 w-2.5 shrink-0" />
+                              #{stackedOnPR.number}
+                            </>
+                          )}
+                        </button>
                       </>
                     )}
                   {worktree.pr_number && (
@@ -618,6 +639,15 @@ function WorktreeSectionHeader({
           )}
         </div>
       </div>
+      {worktree.base_branch && worktree.base_branch !== defaultBranch && (
+        <SwitchBaseBranchDialog
+          open={switchBaseOpen}
+          onOpenChange={setSwitchBaseOpen}
+          worktree={worktree}
+          projectId={projectId}
+          defaultBranch={defaultBranch}
+        />
+      )}
     </>
   )
 }
@@ -1605,7 +1635,8 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
       if (!section) return
 
       const isBase = isBaseSession(section.worktree)
-      const baseBranch = project?.default_branch ?? 'main'
+      const baseBranch =
+        section.worktree.base_branch ?? project?.default_branch ?? 'main'
 
       setCanvasDiffRequest(prev => {
         if (requestedType) {

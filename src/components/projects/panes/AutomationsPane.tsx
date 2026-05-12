@@ -51,6 +51,7 @@ import {
   defaultScheduleFields,
   formatHourLabel,
   getRunWindowPayload,
+  MINUTE_INTERVAL_OPTIONS,
   parseSchedule,
   WEEKDAYS,
   type Frequency,
@@ -171,7 +172,10 @@ function formatTimestamp(timestamp?: number | null): string {
 }
 
 function formatRunWindowSummary(form: AutomationFormState): string | null {
-  if (form.frequency !== 'hourly' || !form.runWindowEnabled) {
+  if (
+    (form.frequency !== 'hourly' && form.frequency !== 'minutely') ||
+    !form.runWindowEnabled
+  ) {
     return null
   }
 
@@ -706,18 +710,35 @@ export function AutomationsPane({
                   <Select
                     value={form.frequency}
                     onValueChange={value =>
-                      setForm(current => ({
-                        ...current,
-                        frequency: value as Frequency,
-                        runWindowEnabled:
-                          value === 'hourly' ? current.runWindowEnabled : false,
-                      }))
+                      setForm(current => {
+                        const frequency = value as Frequency
+                        const supportsRunWindow =
+                          frequency === 'hourly' || frequency === 'minutely'
+                        return {
+                          ...current,
+                          frequency,
+                          interval:
+                            frequency === 'minutely'
+                              ? MINUTE_INTERVAL_OPTIONS.includes(
+                                  current.interval as (typeof MINUTE_INTERVAL_OPTIONS)[number]
+                                )
+                                ? current.interval
+                                : MINUTE_INTERVAL_OPTIONS[0]
+                              : current.frequency === 'minutely'
+                                ? 1
+                                : current.interval,
+                          runWindowEnabled: supportsRunWindow
+                            ? current.runWindowEnabled
+                            : false,
+                        }
+                      })
                     }
                   >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="minutely">Minutes</SelectItem>
                       <SelectItem value="hourly">Hourly</SelectItem>
                       <SelectItem value="daily">Daily</SelectItem>
                       <SelectItem value="weekly">Weekly</SelectItem>
@@ -725,40 +746,71 @@ export function AutomationsPane({
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="automation-interval">Interval</Label>
-                  <Input
-                    id="automation-interval"
-                    type="number"
-                    min={1}
-                    value={form.interval}
-                    onChange={event =>
-                      setForm(current => ({
-                        ...current,
-                        interval: Math.max(1, Number(event.target.value) || 1),
-                      }))
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="automation-time">
-                    {form.frequency === 'hourly' ? 'Minute Marker' : 'Time'}
+                  <Label htmlFor="automation-interval">
+                    {form.frequency === 'minutely' ? 'Every' : 'Interval'}
                   </Label>
-                  <Input
-                    id="automation-time"
-                    type="time"
-                    step={60}
-                    value={form.time}
-                    onChange={event =>
-                      setForm(current => ({
-                        ...current,
-                        time: event.target.value,
-                      }))
-                    }
-                  />
+                  {form.frequency === 'minutely' ? (
+                    <Select
+                      value={String(form.interval)}
+                      onValueChange={value =>
+                        setForm(current => ({
+                          ...current,
+                          interval: Number(value),
+                        }))
+                      }
+                    >
+                      <SelectTrigger id="automation-interval">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {MINUTE_INTERVAL_OPTIONS.map(interval => (
+                          <SelectItem key={interval} value={String(interval)}>
+                            {interval} minutes
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input
+                      id="automation-interval"
+                      type="number"
+                      min={1}
+                      value={form.interval}
+                      onChange={event =>
+                        setForm(current => ({
+                          ...current,
+                          interval: Math.max(
+                            1,
+                            Number(event.target.value) || 1
+                          ),
+                        }))
+                      }
+                    />
+                  )}
                 </div>
+                {form.frequency !== 'minutely' && (
+                  <div className="space-y-2">
+                    <Label htmlFor="automation-time">
+                      {form.frequency === 'hourly' ? 'Minute Marker' : 'Time'}
+                    </Label>
+                    <Input
+                      id="automation-time"
+                      type="time"
+                      step={60}
+                      value={form.time}
+                      onChange={event =>
+                        setForm(current => ({
+                          ...current,
+                          time: event.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                )}
               </div>
 
-              {form.frequency === 'hourly' && (
+              {(form.frequency === 'hourly' ||
+                form.frequency === 'minutely') && (
                 <div className="space-y-3 rounded-md border p-3">
                   <label className="flex items-center gap-3 text-sm">
                     <Checkbox

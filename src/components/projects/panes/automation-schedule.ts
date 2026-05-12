@@ -1,4 +1,4 @@
-export type Frequency = 'hourly' | 'daily' | 'weekly'
+export type Frequency = 'minutely' | 'hourly' | 'daily' | 'weekly'
 export type WeekdayCode = 'MO' | 'TU' | 'WE' | 'TH' | 'FR' | 'SA' | 'SU'
 
 export interface AutomationScheduleFields {
@@ -20,6 +20,8 @@ export const WEEKDAYS: { code: WeekdayCode; label: string }[] = [
   { code: 'SA', label: 'Sat' },
   { code: 'SU', label: 'Sun' },
 ]
+
+export const MINUTE_INTERVAL_OPTIONS = [10, 20, 30] as const
 
 export function defaultScheduleFields(): AutomationScheduleFields {
   return {
@@ -50,6 +52,7 @@ export function parseSchedule(
 
   const rawFrequency = parts.get('FREQ')?.toLowerCase()
   const frequency: Frequency =
+    rawFrequency === 'minutely' ||
     rawFrequency === 'hourly' ||
     rawFrequency === 'daily' ||
     rawFrequency === 'weekly'
@@ -57,7 +60,8 @@ export function parseSchedule(
       : defaults.frequency
   const interval = Math.max(1, Number(parts.get('INTERVAL') ?? '1') || 1)
   const hour = Number(
-    parts.get('BYHOUR') ?? (frequency === 'hourly' ? '0' : '9')
+    parts.get('BYHOUR') ??
+      (frequency === 'hourly' || frequency === 'minutely' ? '0' : '9')
   )
   const minute = Number(parts.get('BYMINUTE') ?? '0')
   const weekdays = (parts.get('BYDAY') ?? 'MO')
@@ -73,7 +77,7 @@ export function parseSchedule(
     time: `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`,
     weekdays: weekdays.length > 0 ? weekdays : defaults.weekdays,
     runWindowEnabled:
-      frequency === 'hourly' &&
+      (frequency === 'hourly' || frequency === 'minutely') &&
       runWindowStartHour != null &&
       runWindowEndHour != null,
     runWindowStartHour: runWindowStartHour ?? defaults.runWindowStartHour,
@@ -84,6 +88,9 @@ export function parseSchedule(
 export function buildScheduleRRule(schedule: AutomationScheduleFields): string {
   const [hour, minute] = schedule.time.split(':').map(Number)
 
+  if (schedule.frequency === 'minutely') {
+    return `FREQ=MINUTELY;INTERVAL=${schedule.interval}`
+  }
   if (schedule.frequency === 'hourly') {
     return `FREQ=HOURLY;INTERVAL=${schedule.interval};BYMINUTE=${minute || 0}`
   }
@@ -99,7 +106,10 @@ export function getRunWindowPayload(schedule: AutomationScheduleFields): {
   run_window_start_hour: number | null
   run_window_end_hour: number | null
 } {
-  if (schedule.frequency !== 'hourly' || !schedule.runWindowEnabled) {
+  if (
+    (schedule.frequency !== 'hourly' && schedule.frequency !== 'minutely') ||
+    !schedule.runWindowEnabled
+  ) {
     return {
       run_window_start_hour: null,
       run_window_end_hour: null,

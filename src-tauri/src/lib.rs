@@ -15,6 +15,7 @@ mod browser;
 mod chat;
 mod claude_cli;
 mod cli_update;
+mod coderabbit_cli;
 mod codex_cli;
 mod gh_cli;
 pub mod http_server;
@@ -263,6 +264,8 @@ pub struct AppPreferences {
     pub opencode_cli_source: String, // OpenCode CLI source: "jean" (managed) or "path" (system PATH)
     #[serde(default = "default_gh_cli_source")]
     pub gh_cli_source: String, // Legacy GitHub CLI source field; gh always resolves from system PATH
+    #[serde(default = "default_cli_source")]
+    pub coderabbit_cli_source: String, // CodeRabbit CLI source: "jean" (managed) or "path" (system PATH)
     #[serde(default)]
     pub expand_tool_calls_by_default: bool, // Expand all tool call collapsibles by default (default: false)
 }
@@ -1812,9 +1815,28 @@ impl Default for AppPreferences {
             codex_cli_source: default_cli_source(),
             opencode_cli_source: default_cli_source(),
             gh_cli_source: default_gh_cli_source(),
+            coderabbit_cli_source: default_cli_source(),
             expand_tool_calls_by_default: false,
         }
     }
+}
+
+fn maybe_auto_select_system_coderabbit(
+    app: &AppHandle,
+    preferences: &mut AppPreferences,
+    raw_preferences: Option<&Value>,
+) -> bool {
+    let coderabbit_source_missing = raw_preferences
+        .and_then(Value::as_object)
+        .map(|object| !object.contains_key("coderabbit_cli_source"))
+        .unwrap_or(true);
+
+    if coderabbit_source_missing && coderabbit_cli::should_auto_use_system_coderabbit(app) {
+        preferences.coderabbit_cli_source = "path".to_string();
+        return true;
+    }
+
+    false
 }
 
 fn normalize_optional_path(path: &mut Option<String>) {
@@ -2062,14 +2084,18 @@ pub fn load_preferences_sync(app: &AppHandle) -> Result<AppPreferences, String> 
     let prefs_path = get_preferences_path(app)?;
     if !prefs_path.exists() {
         crate::platform::set_git_binary_override(None);
-        return Ok(AppPreferences::default());
+        let mut preferences = AppPreferences::default();
+        maybe_auto_select_system_coderabbit(app, &mut preferences, None);
+        return Ok(preferences);
     }
     let contents = std::fs::read_to_string(&prefs_path)
         .map_err(|e| format!("Failed to read preferences file: {e}"))?;
+    let raw_preferences = serde_json::from_str::<Value>(&contents).ok();
     let mut preferences: AppPreferences =
         serde_json::from_str(&contents).map_err(|e| format!("Failed to parse preferences: {e}"))?;
     normalize_preferences(&mut preferences);
     migrate_loaded_preferences(&mut preferences);
+    maybe_auto_select_system_coderabbit(app, &mut preferences, raw_preferences.as_ref());
     crate::platform::set_git_binary_override(preferences.git_cli_path.as_deref());
     Ok(preferences)
 }
@@ -2082,7 +2108,14 @@ async fn load_preferences(app: AppHandle) -> Result<AppPreferences, String> {
     if !prefs_path.exists() {
         log::trace!("Preferences file not found, using defaults");
         crate::platform::set_git_binary_override(None);
-        return Ok(AppPreferences::default());
+        let mut preferences = AppPreferences::default();
+        if maybe_auto_select_system_coderabbit(&app, &mut preferences, None) {
+            if let Ok(json) = serde_json::to_string_pretty(&preferences) {
+                let _ = std::fs::write(&prefs_path, json);
+                log::trace!("Saved preferences after CodeRabbit PATH auto-detection");
+            }
+        }
+        return Ok(preferences);
     }
 
     let contents = std::fs::read_to_string(&prefs_path).map_err(|e| {
@@ -2090,6 +2123,7 @@ async fn load_preferences(app: AppHandle) -> Result<AppPreferences, String> {
         format!("Failed to read preferences file: {e}")
     })?;
 
+    let raw_preferences = serde_json::from_str::<Value>(&contents).ok();
     let mut preferences: AppPreferences = serde_json::from_str(&contents).map_err(|e| {
         log::error!("Failed to parse preferences JSON: {e}");
         format!("Failed to parse preferences: {e}")
@@ -2097,6 +2131,8 @@ async fn load_preferences(app: AppHandle) -> Result<AppPreferences, String> {
 
     normalize_preferences(&mut preferences);
     let mut needs_resave = migrate_loaded_preferences(&mut preferences);
+    needs_resave |=
+        maybe_auto_select_system_coderabbit(&app, &mut preferences, raw_preferences.as_ref());
 
     // Migrate CLI profiles: move settings_json from preferences.json to standalone files
     for profile in &mut preferences.custom_cli_profiles {
@@ -3701,6 +3737,8 @@ pub fn run() {
             projects::create_commit_with_ai,
             projects::revert_last_local_commit,
             projects::run_review_with_ai,
+            projects::run_coderabbit_review,
+            projects::trigger_coderabbit_pr_review,
             projects::cancel_review_with_ai,
             projects::list_github_releases,
             projects::generate_release_notes,
@@ -3947,6 +3985,13 @@ pub fn run() {
             codex_cli::get_available_codex_versions,
             codex_cli::install_codex_cli,
             codex_cli::uninstall_codex_cli,
+            // CodeRabbit CLI management commands
+            coderabbit_cli::check_coderabbit_cli_installed,
+            coderabbit_cli::detect_coderabbit_in_path,
+            coderabbit_cli::check_coderabbit_cli_auth,
+            coderabbit_cli::install_coderabbit_cli,
+            coderabbit_cli::uninstall_coderabbit_cli,
+            coderabbit_cli::update_coderabbit_cli,
             // OpenCode CLI management commands
             opencode_cli::check_opencode_cli_installed,
             opencode_cli::detect_opencode_in_path,

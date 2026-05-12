@@ -2080,6 +2080,30 @@ fn apply_review_thread_statuses(
     threads
 }
 
+fn filter_outdated_review_comments(
+    raw_comments: Vec<RawReviewComment>,
+    review_threads: &[GraphqlReviewThreadStatus],
+) -> Vec<RawReviewComment> {
+    let status_by_root_comment_id = review_threads
+        .iter()
+        .filter_map(|thread| {
+            let root_comment_id = thread.comments.nodes.first()?.database_id?;
+            Some((root_comment_id, thread.is_outdated))
+        })
+        .collect::<HashMap<_, _>>();
+
+    raw_comments
+        .into_iter()
+        .filter(|comment| {
+            let root_comment_id = comment.in_reply_to_id.unwrap_or(comment.id);
+            !status_by_root_comment_id
+                .get(&root_comment_id)
+                .copied()
+                .unwrap_or(false)
+        })
+        .collect()
+}
+
 fn run_github_graphql(
     app: &AppHandle,
     project_path: &str,
@@ -2321,13 +2345,38 @@ pub async fn get_pr_review_comments(
 ) -> Result<Vec<GitHubReviewComment>, String> {
     log::trace!("Getting review comments for PR #{pr_number} in {project_path}");
     let raw_comments = fetch_pr_review_comments_raw(&app, &project_path, pr_number)?;
+    let repo_id = get_repo_identifier(&project_path)?;
+    let review_threads_response = run_github_graphql(
+        &app,
+        &project_path,
+        GET_PULL_REQUEST_REVIEW_THREADS_QUERY,
+        &[
+            ("owner", repo_id.owner),
+            ("repo", repo_id.repo),
+            ("prNumber", pr_number.to_string()),
+        ],
+        "gh api graphql",
+    )?;
+    let review_threads_data: PullRequestReviewThreadsResponse =
+        parse_graphql_response(&review_threads_response)?;
+    let review_threads = review_threads_data
+        .repository
+        .and_then(|repository| repository.pull_request)
+        .map(|pull_request| pull_request.review_threads.nodes)
+        .unwrap_or_default();
 
-    let comments: Vec<GitHubReviewComment> = raw_comments
-        .into_iter()
-        .map(GitHubReviewComment::from)
-        .collect();
+    let total_comments = raw_comments.len();
+    let comments: Vec<GitHubReviewComment> =
+        filter_outdated_review_comments(raw_comments, &review_threads)
+            .into_iter()
+            .map(GitHubReviewComment::from)
+            .collect();
 
-    log::trace!("Got {} review comments for PR #{pr_number}", comments.len());
+    log::trace!(
+        "Got {} current review comments for PR #{pr_number} ({} total, outdated threads hidden)",
+        comments.len(),
+        total_comments
+    );
     Ok(comments)
 }
 
@@ -3930,9 +3979,62 @@ pub async fn get_advisory_context_content(
 mod tests {
     use super::*;
 
+    fn raw_review_comment(id: u64, in_reply_to_id: Option<u64>, body: &str) -> RawReviewComment {
+        RawReviewComment {
+            id,
+            user: Some(RawReviewCommentUser {
+                login: Some("reviewer".to_string()),
+                avatar_url: None,
+            }),
+            body: Some(body.to_string()),
+            created_at: Some("2026-05-11T12:00:00Z".to_string()),
+            updated_at: None,
+            diff_hunk: Some("@@ -1 +1 @@".to_string()),
+            path: Some("src/main.rs".to_string()),
+            html_url: None,
+            in_reply_to_id,
+            side: None,
+            start_side: None,
+            start_line: Some(10),
+            line: Some(12),
+            original_line: None,
+            original_start_line: None,
+        }
+    }
+
+    fn review_thread_status(root_comment_id: u64, is_outdated: bool) -> GraphqlReviewThreadStatus {
+        GraphqlReviewThreadStatus {
+            is_resolved: false,
+            is_outdated,
+            comments: GraphqlReviewThreadCommentConnection {
+                nodes: vec![GraphqlReviewThreadCommentNode {
+                    database_id: Some(root_comment_id),
+                }],
+            },
+        }
+    }
+
     #[test]
     fn test_github_graphql_connection_limit_matches_api_maximum() {
         assert_eq!(GITHUB_GRAPHQL_CONNECTION_LIMIT, "100");
+    }
+
+    #[test]
+    fn test_outdated_review_threads_are_filtered() {
+        let comments = filter_outdated_review_comments(
+            vec![
+                raw_review_comment(1, None, "current"),
+                raw_review_comment(2, None, "outdated root"),
+                raw_review_comment(3, Some(2), "outdated reply"),
+            ],
+            &[
+                review_thread_status(1, false),
+                review_thread_status(2, true),
+            ],
+        );
+
+        assert_eq!(comments.len(), 1);
+        assert_eq!(comments[0].body.as_deref(), Some("current"));
     }
 
     #[test]

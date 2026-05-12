@@ -113,6 +113,7 @@ export const mockPreferences = {
   experimental_features: {},
   claude_update_command: null,
   codex_update_command: null,
+  coderabbit_cli_source: 'jean',
 }
 
 export const mockUIState = {

@@ -9,6 +9,9 @@ describe('UIStore', () => {
       rightSidebarVisible: false,
       commandPaletteOpen: false,
       preferencesOpen: false,
+      sessionPrimarySurface: {},
+      sessionTerminalIds: {},
+      newSessionModeTarget: null,
     })
   })
 
@@ -58,5 +61,50 @@ describe('UIStore', () => {
 
     toggleCommandPalette()
     expect(useUIStore.getState().commandPaletteOpen).toBe(false)
+  })
+
+  it('tracks and clears terminal-first session surface state', () => {
+    const {
+      setSessionPrimarySurface,
+      setSessionTerminalId,
+      clearSessionTerminalSurface,
+    } = useUIStore.getState()
+
+    setSessionPrimarySurface('session-1', 'terminal')
+    setSessionTerminalId('session-1', 'terminal-1')
+
+    expect(useUIStore.getState().sessionPrimarySurface['session-1']).toBe(
+      'terminal'
+    )
+    expect(useUIStore.getState().sessionTerminalIds['session-1']).toBe(
+      'terminal-1'
+    )
+    expect(clearSessionTerminalSurface('session-1')).toBe('terminal-1')
+    expect(useUIStore.getState().sessionPrimarySurface['session-1']).toBe(
+      undefined
+    )
+    expect(useUIStore.getState().sessionTerminalIds['session-1']).toBe(
+      undefined
+    )
+  })
+
+  it('opens and closes the new session mode target', () => {
+    const { openNewSessionModeModal, closeNewSessionModeModal } =
+      useUIStore.getState()
+
+    openNewSessionModeModal({
+      worktreeId: 'worktree-1',
+      worktreePath: '/repo/worktree',
+      origin: 'canvas',
+    })
+
+    expect(useUIStore.getState().newSessionModeTarget).toEqual({
+      worktreeId: 'worktree-1',
+      worktreePath: '/repo/worktree',
+      origin: 'canvas',
+    })
+
+    closeNewSessionModeModal()
+    expect(useUIStore.getState().newSessionModeTarget).toBeNull()
   })
 })

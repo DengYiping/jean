@@ -50,11 +50,7 @@ import { useChatStore } from '@/store/chat-store'
 import { useTerminalStore } from '@/store/terminal-store'
 import { useBrowserStore } from '@/store/browser-store'
 import { useUIStore } from '@/store/ui-store'
-import {
-  useSessions,
-  useCreateSession,
-  useRenameSession,
-} from '@/services/chat'
+import { useSessions, useRenameSession } from '@/services/chat'
 import { usePreferences } from '@/services/preferences'
 import {
   useBuildScript,
@@ -80,6 +76,7 @@ const GitDiffModal = lazy(() =>
 )
 import type { DiffRequest } from '@/types/git-diff'
 import { ChatWindow } from './ChatWindow'
+import { FullScreenTerminalSurface } from './FullScreenTerminalSurface'
 import { ModalTerminalDrawer } from './ModalTerminalDrawer'
 import { ModalBrowserDrawer } from '@/components/browser/ModalBrowserDrawer'
 import { SwitchBaseBranchDialog } from '@/components/worktree/SwitchBaseBranchDialog'
@@ -210,7 +207,6 @@ export function SessionChatModal({
   )
   const browserModalDockMode = useBrowserStore(state => state.modalDockMode)
   const hasBottomDock = isBrowserModalOpen && browserModalDockMode === 'bottom'
-  const createSession = useCreateSession()
 
   // Horizontal scroll on session tabs
   const modalTabScrollRef = useRef<HTMLDivElement>(null)
@@ -235,6 +231,14 @@ export function SessionChatModal({
   )
   const currentSessionId = activeSessionId ?? sessions[0]?.id ?? null
   const currentSession = sessions.find(s => s.id === currentSessionId) ?? null
+  const primarySurface = useUIStore(state =>
+    currentSessionId
+      ? (state.sessionPrimarySurface[currentSessionId] ?? 'chat')
+      : 'chat'
+  )
+  const currentTerminalId = useUIStore(state =>
+    currentSessionId ? state.sessionTerminalIds[currentSessionId] : undefined
+  )
 
   // Store state for tab status indicators
   const sendingSessionIds = useChatStore(state => state.sendingSessionIds)
@@ -534,16 +538,25 @@ export function SessionChatModal({
   )
 
   const handleCreateSession = useCallback(() => {
-    createSession.mutate(
-      { worktreeId, worktreePath },
-      {
-        onSuccess: newSession => {
-          const { setActiveSession } = useChatStore.getState()
-          setActiveSession(worktreeId, newSession.id)
-        },
-      }
-    )
-  }, [worktreeId, worktreePath, createSession])
+    useUIStore.getState().openNewSessionModeModal({
+      worktreeId,
+      worktreePath,
+      origin: 'modal',
+    })
+  }, [worktreeId, worktreePath])
+
+  useEffect(() => {
+    if (!isOpen) return
+    const handler = (e: Event) => {
+      e.stopImmediatePropagation()
+      handleCreateSession()
+    }
+    window.addEventListener('create-new-session', handler, { capture: true })
+    return () =>
+      window.removeEventListener('create-new-session', handler, {
+        capture: true,
+      })
+  }, [handleCreateSession, isOpen])
 
   // Sorted sessions for tab order (waiting → review → idle)
   const sortedSessions = useMemo(() => {
@@ -729,6 +742,9 @@ export function SessionChatModal({
         const portalAncestor = target?.closest?.(
           '[data-slot="dialog-portal"], [data-slot="alert-dialog-portal"], [data-slot="sheet-portal"]'
         )
+        const terminalAncestor = target?.closest?.(
+          '[data-terminal-root="true"]'
+        )
         const { planDialogOpen, gitDiffModalOpen, contextViewerOpen } =
           useUIStore.getState()
 
@@ -742,6 +758,8 @@ export function SessionChatModal({
         if (closeConfirmOpen) return
         // Don't close if ESC originated inside a child dialog/sheet portal
         if (portalAncestor) return
+        // Don't close if ESC originated inside the terminal-first surface
+        if (terminalAncestor) return
 
         handleClose()
       }
@@ -1455,15 +1473,31 @@ export function SessionChatModal({
             </Tooltip>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-hidden">
-            {currentSessionId && (
-              <ChatWindow
-                key={worktreeId}
-                isModal
-                worktreeId={worktreeId}
-                worktreePath={worktreePath}
-              />
-            )}
+          <div className="relative min-h-0 flex-1 overflow-hidden">
+            {primarySurface === 'terminal' &&
+            currentSessionId &&
+            currentTerminalId ? (
+              <div className="absolute inset-0 z-10 min-h-0 min-w-0">
+                <FullScreenTerminalSurface
+                  worktreeId={worktreeId}
+                  worktreePath={worktreePath}
+                  sessionId={currentSessionId}
+                  terminalId={currentTerminalId}
+                  showHeader
+                />
+              </div>
+            ) : null}
+
+            {primarySurface !== 'terminal' && currentSessionId ? (
+              <div className="absolute inset-0 z-20 min-h-0 min-w-0">
+                <ChatWindow
+                  key={currentSessionId}
+                  isModal
+                  worktreeId={worktreeId}
+                  worktreePath={worktreePath}
+                />
+              </div>
+            ) : null}
           </div>
         </div>
 

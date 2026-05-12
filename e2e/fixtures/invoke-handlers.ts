@@ -139,6 +139,21 @@ export const defaultResponses: Record<string, unknown> = {
   check_codex_cli_installed: { installed: true, version: '1.0.0' },
   check_codex_cli_auth: { authenticated: true },
   uninstall_codex_cli: null,
+  check_coderabbit_cli_installed: {
+    installed: true,
+    version: '1.0.0',
+    path: '/usr/local/bin/coderabbit',
+  },
+  detect_coderabbit_in_path: {
+    found: true,
+    path: '/usr/local/bin/coderabbit',
+    version: '1.0.0',
+    package_manager: null,
+  },
+  check_coderabbit_cli_auth: { authenticated: true, error: null },
+  install_coderabbit_cli: null,
+  uninstall_coderabbit_cli: null,
+  update_coderabbit_cli: null,
   check_opencode_cli_installed: { installed: true, version: '1.0.0' },
   check_opencode_cli_auth: { authenticated: true },
   uninstall_opencode_cli: null,
@@ -210,6 +225,22 @@ export const defaultResponses: Record<string, unknown> = {
     rebase_output: null,
   },
   mark_pr_ready_for_review: null,
+  run_review_with_ai: {
+    summary: 'Review completed with no findings.',
+    findings: [],
+    approval_status: 'approved',
+  },
+  cancel_review_with_ai: false,
+  run_coderabbit_review: {
+    summary: 'CodeRabbit review completed with no findings.',
+    findings: [],
+    approval_status: 'approved',
+  },
+  trigger_coderabbit_pr_review: {
+    pr_number: 123,
+    pr_url: 'https://github.com/test/repo/pull/123',
+    comment_body: '@coderabbitai review',
+  },
 
   // MCP
   get_mcp_servers: [],

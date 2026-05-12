@@ -250,6 +250,7 @@ mod tests {
             parent_id: None,
             is_folder: false,
             avatar_path: None,
+            default_avatar_path: None,
             enabled_mcp_servers: None,
             known_mcp_servers: Vec::new(),
             custom_system_prompt: None,

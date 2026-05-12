@@ -291,6 +291,12 @@ pub fn cancel_process(
         registry.remove(session_id)
     };
     if let Some((thread_id, turn_id)) = codex_turn {
+        super::codex_goal_monitor::clear_goal_after_autonomous_cancel(
+            app,
+            session_id,
+            worktree_id,
+            &thread_id,
+        );
         // Codex app-server session: send turn/interrupt
         // Must run on a separate thread because interrupt_turn uses blocking_recv,
         // which panics if called from within a tokio async runtime.
@@ -422,6 +428,12 @@ pub fn cancel_process_if_running(
         registry.remove(session_id)
     };
     if let Some((thread_id, turn_id)) = codex_turn {
+        super::codex_goal_monitor::clear_goal_after_autonomous_cancel(
+            app,
+            session_id,
+            worktree_id,
+            &thread_id,
+        );
         // Codex app-server session actively running — interrupt turn
         // Must run on a separate thread because interrupt_turn uses blocking_recv,
         // which panics if called from within a tokio async runtime.
@@ -493,6 +505,7 @@ pub fn cancel_processes_for_worktree(app: &AppHandle, worktree_id: &str) {
         Ok(sessions) => {
             let mut cancelled_count = 0;
             for session in &sessions.sessions {
+                super::codex_goal_monitor::stop_session(&session.id);
                 if let Ok(true) = cancel_process(app, &session.id, worktree_id) {
                     cancelled_count += 1;
                 }

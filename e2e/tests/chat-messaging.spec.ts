@@ -99,4 +99,123 @@ test.describe('Chat Messaging', () => {
       worktree_id: 'e2e',
     })
   })
+
+  test('autonomous Codex goal turn renders like a normal stream', async ({
+    mockPage,
+    emitEvent,
+  }) => {
+    await activateWorktree(mockPage, 'fuzzy-tiger')
+
+    const sessionId = await mockPage
+      .locator('[data-session-id]')
+      .first()
+      .getAttribute('data-session-id')
+
+    await emitEvent('chat:sending', {
+      session_id: sessionId,
+      worktree_id: 'e2e',
+      user_message: 'Continue working toward the active goal',
+    })
+
+    await emitEvent('chat:tool_use', {
+      session_id: sessionId,
+      worktree_id: 'e2e',
+      id: 'todo-1',
+      name: 'CodexTodoList',
+      input: {
+        items: [
+          {
+            text: 'Inspect goal monitor state',
+            activeForm: 'Inspecting goal monitor state',
+            status: 'in_progress',
+          },
+        ],
+      },
+    })
+
+    await emitEvent('chat:chunk', {
+      session_id: sessionId,
+      worktree_id: 'e2e',
+      content: 'Continuing the active goal now.',
+    })
+
+    await expect(
+      mockPage.getByText('Continue working toward the active goal')
+    ).toBeVisible({ timeout: 3000 })
+    const tasksButton = mockPage.getByRole('button', { name: /Tasks 0\/1/ })
+    await expect(tasksButton).toBeVisible({ timeout: 3000 })
+    await tasksButton.click()
+    await expect(
+      mockPage.getByText('Inspecting goal monitor state')
+    ).toBeVisible({ timeout: 3000 })
+    await expect(
+      mockPage.getByText('Continuing the active goal now.')
+    ).toBeVisible({ timeout: 3000 })
+
+    await emitEvent('chat:done', {
+      session_id: sessionId,
+      worktree_id: 'e2e',
+    })
+  })
+
+  test('clearing a Codex goal removes the banner', async ({ mockPage }) => {
+    await activateWorktree(mockPage, 'fuzzy-tiger')
+
+    const sessionId = await mockPage
+      .locator('[data-session-id]')
+      .first()
+      .getAttribute('data-session-id')
+
+    const worktreeId = await mockPage.evaluate(() => {
+      const mock = (window as any).__JEAN_E2E_MOCK__
+      const worktree = mock?.invokeHandlers
+        ?.list_worktrees?.()
+        ?.find((item: Record<string, unknown>) => item.name === 'fuzzy-tiger')
+      return String(worktree?.id ?? 'e2e')
+    })
+
+    await mockPage.evaluate(
+      ({ sessionId, worktreeId }) => {
+        const mock = (window as any).__JEAN_E2E_MOCK__
+        const worktree = mock?.invokeHandlers
+          ?.list_worktrees?.()
+          ?.find((item: Record<string, unknown>) => item.id === worktreeId) as
+          | Record<string, unknown>
+          | undefined
+        const worktreePath = String(worktree?.path ?? '')
+
+        mock?.invokeHandlers?.set_session_backend?.({
+          worktreeId,
+          worktreePath,
+          sessionId,
+          backend: 'codex',
+        })
+        mock?.eventEmitter?.dispatchEvent(
+          new CustomEvent('cache:invalidate', {
+            detail: { keys: ['sessions'] },
+          })
+        )
+        mock?.eventEmitter?.dispatchEvent(
+          new CustomEvent('chat:codex_goal', {
+            detail: {
+              session_id: sessionId,
+              worktree_id: worktreeId,
+              goal: 'Ship autonomous progress',
+            },
+          })
+        )
+      },
+      { sessionId, worktreeId }
+    )
+
+    await expect(mockPage.getByText('Ship autonomous progress')).toBeVisible({
+      timeout: 3000,
+    })
+
+    await mockPage.getByRole('button', { name: 'Clear goal' }).click()
+
+    await expect(mockPage.getByText('Ship autonomous progress')).toBeHidden({
+      timeout: 3000,
+    })
+  })
 })

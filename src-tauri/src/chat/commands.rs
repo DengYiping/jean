@@ -803,6 +803,7 @@ pub async fn close_session(
 
     // Cancel only if a process is actively running — avoids spurious chat:cancelled events
     // for idle sessions (e.g. those waiting for plan approval during clear-context flows).
+    super::codex_goal_monitor::stop_session(&session_id);
     let _ = cancel_process_if_running(&app, &session_id, &worktree_id);
 
     // Collect pasted file paths for cleanup (outside lock - read-only NDJSON access)
@@ -904,6 +905,7 @@ pub async fn archive_session(
 
     // Cancel only if a process is actively running — avoids spurious chat:cancelled events
     // for idle sessions (e.g. those waiting for plan approval during clear-context flows).
+    super::codex_goal_monitor::stop_session(&session_id);
     let _ = cancel_process_if_running(&app, &session_id, &worktree_id);
 
     // Load messages from NDJSON to check if session has content (outside lock - read-only)
@@ -3050,6 +3052,11 @@ pub async fn send_chat_message(
 
     // Emit cache invalidation so all clients (native + web) refetch authoritative state
     emit_sessions_cache_invalidation(&app);
+    if response_backend == Backend::Codex && !was_cancelled {
+        if let Err(error) = super::codex_goal_monitor::start_for_completed_turn(&app, &session_id) {
+            log::warn!("Failed to start Codex goal monitor after turn completion: {error}");
+        }
+    }
     spawn_supervisor_action_after_terminal_run(
         app.clone(),
         session_id.clone(),
@@ -3322,12 +3329,15 @@ pub fn codex_goal_set(
 
     let thread_id = codex_thread_id_for_session(&app, &worktree_id, &worktree_path, &session_id)?;
 
+    let monitor_thread_id = thread_id.clone();
     if let Some(thread_id) = thread_id {
         super::codex_server::ensure_running(&app)?;
-        super::codex_server::send_request(
+        let result = super::codex_server::send_request(
             "thread/goal/set",
             codex_goal_set_params(&thread_id, trimmed),
-        )?;
+        );
+        super::codex_server::decrement_usage_count();
+        result?;
     }
 
     persist_codex_goal(
@@ -3337,6 +3347,14 @@ pub fn codex_goal_set(
         &session_id,
         Some(trimmed.to_string()),
     )?;
+    if let Some(thread_id) = monitor_thread_id {
+        let _ = super::codex_goal_monitor::start_for_session(
+            &app,
+            &session_id,
+            &worktree_id,
+            &thread_id,
+        );
+    }
     Ok(())
 }
 
@@ -3354,7 +3372,9 @@ pub fn codex_goal_get(
         let response = super::codex_server::send_request(
             "thread/goal/get",
             serde_json::json!({ "threadId": thread_id }),
-        )?;
+        );
+        super::codex_server::decrement_usage_count();
+        let response = response?;
         extract_codex_goal_objective(&response)
     } else {
         with_sessions_mut(&app, &worktree_path, &worktree_id, |sessions| {
@@ -3383,15 +3403,19 @@ pub fn codex_goal_clear(
 ) -> Result<(), String> {
     let thread_id = codex_thread_id_for_session(&app, &worktree_id, &worktree_path, &session_id)?;
 
-    if let Some(thread_id) = thread_id {
+    if let Some(thread_id) = thread_id.as_deref() {
         super::codex_server::ensure_running(&app)?;
-        super::codex_server::send_request(
+        let result = super::codex_server::send_request(
             "thread/goal/clear",
             serde_json::json!({ "threadId": thread_id }),
-        )?;
+        );
+        super::codex_server::decrement_usage_count();
+        result?;
+        super::codex_goal_monitor::stop_monitor(&session_id, thread_id);
     }
 
     persist_codex_goal(&app, &worktree_id, &worktree_path, &session_id, None)?;
+    let _ = cancel_process_if_running(&app, &session_id, &worktree_id);
     Ok(())
 }
 
@@ -5295,6 +5319,14 @@ pub async fn resume_session(
                         log::info!(
                             "Codex crash recovery succeeded for session {session_id_clone}, run {run_id_clone}"
                         );
+                        if let Err(error) = super::codex_goal_monitor::start_for_completed_turn(
+                            &app_clone,
+                            &session_id_clone,
+                        ) {
+                            log::warn!(
+                                "Failed to restart Codex goal monitor after crash recovery: {error}"
+                            );
+                        }
                     }
                     Ok(false) => {
                         log::warn!(
@@ -5475,6 +5507,16 @@ pub async fn check_resumable_sessions(
     let recovered = super::run_log::recover_incomplete_runs(&app)?;
 
     let mut resumable: Vec<_> = recovered.into_iter().filter(|r| r.resumable).collect();
+
+    match super::codex_goal_monitor::start_for_active_goal_sessions(&app) {
+        Ok(started) if started > 0 => {
+            log::info!("Started {started} Codex goal monitor(s) during recovery check");
+        }
+        Ok(_) => {}
+        Err(error) => {
+            log::warn!("Failed to start Codex goal monitors during recovery check: {error}");
+        }
+    }
 
     // Also report sessions that are actively managed (being tailed right now).
     // The web client needs these to mark sessions as "sending" and show streaming UI.

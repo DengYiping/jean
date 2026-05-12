@@ -619,6 +619,7 @@ pub fn execute_codex_via_server(
         None,
         None,
         true,
+        None,
     );
     super::decrement_tailer_count();
 
@@ -690,6 +691,7 @@ pub fn execute_codex_compact_via_server(
         None,
         None,
         true,
+        None,
     );
     super::decrement_tailer_count();
 
@@ -1171,6 +1173,7 @@ pub fn resume_codex_after_crash(
                     Some(std::time::Duration::from_secs(15)),
                     recovery_turn_id.as_deref(),
                     false,
+                    None,
                 );
                 super::decrement_tailer_count();
 
@@ -1388,7 +1391,7 @@ fn codex_turn_idle_timeout(
 
 /// Process turn events from the app-server, emitting Tauri events.
 #[allow(clippy::too_many_arguments)]
-fn process_turn_events(
+pub(crate) fn process_turn_events(
     app: &tauri::AppHandle,
     session_id: &str,
     worktree_id: &str,
@@ -1402,6 +1405,7 @@ fn process_turn_events(
     status_poll_interval: Option<std::time::Duration>,
     recovery_turn_id: Option<&str>,
     emit_cancelled_on_server_interrupt: bool,
+    initial_event: Option<super::codex_server::ServerEvent>,
 ) -> CodexResponse {
     use super::codex_server::ServerEvent;
     use std::io::Write;
@@ -1424,6 +1428,7 @@ fn process_turn_events(
     let mut last_status_poll = Instant::now();
     let mut received_completed_agent_message = false;
     let mut awaiting_server_response = false;
+    let mut initial_event = initial_event;
 
     // Open output file for history
     let mut output_writer = std::fs::OpenOptions::new()
@@ -1475,101 +1480,108 @@ fn process_turn_events(
             _ => {}
         }
 
-        let event = match event_rx.recv_timeout(Duration::from_millis(200)) {
-            Ok(e) => e,
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                if let Some(interval) = status_poll_interval {
-                    if last_status_poll.elapsed() >= interval {
-                        last_status_poll = Instant::now();
-                        match super::codex_server::send_request(
-                            "thread/read",
-                            serde_json::json!({
-                                "threadId": thread_id,
-                                "includeTurns": true,
-                            }),
-                        ) {
-                            Ok(snapshot) => {
-                                let disposition =
-                                    classify_codex_resume(&snapshot, recovery_turn_id, true);
-                                if disposition == CodexResumeDisposition::Active {
-                                    last_activity = Instant::now();
-                                    continue;
-                                }
+        let event = if let Some(event) = initial_event.take() {
+            event
+        } else {
+            match event_rx.recv_timeout(Duration::from_millis(200)) {
+                Ok(e) => e,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    if let Some(interval) = status_poll_interval {
+                        if last_status_poll.elapsed() >= interval {
+                            last_status_poll = Instant::now();
+                            match super::codex_server::send_request(
+                                "thread/read",
+                                serde_json::json!({
+                                    "threadId": thread_id,
+                                    "includeTurns": true,
+                                }),
+                            ) {
+                                Ok(snapshot) => {
+                                    let disposition =
+                                        classify_codex_resume(&snapshot, recovery_turn_id, true);
+                                    if disposition == CodexResumeDisposition::Active {
+                                        last_activity = Instant::now();
+                                        continue;
+                                    }
 
-                                if let Some(ref mut writer) = output_writer {
-                                    let _ = writer.flush();
-                                }
-                                if let Err(error) = append_codex_thread_snapshot_to_history_file(
-                                    output_file,
-                                    &snapshot,
-                                    recovery_turn_id,
-                                    false,
-                                ) {
-                                    log::warn!(
+                                    if let Some(ref mut writer) = output_writer {
+                                        let _ = writer.flush();
+                                    }
+                                    if let Err(error) = append_codex_thread_snapshot_to_history_file(
+                                        output_file,
+                                        &snapshot,
+                                        recovery_turn_id,
+                                        false,
+                                    ) {
+                                        log::warn!(
                                         "Failed to append Codex recovery snapshot after idle poll: {error}"
                                     );
-                                }
+                                    }
 
-                                match disposition {
-                                    CodexResumeDisposition::Failed => {
-                                        if let Some(turn) =
-                                            select_codex_recovery_turn(&snapshot, recovery_turn_id)
-                                        {
-                                            let raw_error = codex_turn_error_message(turn)
-                                                .unwrap_or_else(|| {
-                                                    "Unknown Codex error".to_string()
-                                                });
-                                            let _ = app.emit_all(
-                                                "chat:error",
-                                                &ErrorEvent {
-                                                    session_id: session_id.to_string(),
-                                                    worktree_id: worktree_id.to_string(),
-                                                    error: format_codex_user_error(&raw_error),
-                                                },
-                                            );
+                                    match disposition {
+                                        CodexResumeDisposition::Failed => {
+                                            if let Some(turn) = select_codex_recovery_turn(
+                                                &snapshot,
+                                                recovery_turn_id,
+                                            ) {
+                                                let raw_error = codex_turn_error_message(turn)
+                                                    .unwrap_or_else(|| {
+                                                        "Unknown Codex error".to_string()
+                                                    });
+                                                let _ = app.emit_all(
+                                                    "chat:error",
+                                                    &ErrorEvent {
+                                                        session_id: session_id.to_string(),
+                                                        worktree_id: worktree_id.to_string(),
+                                                        error: format_codex_user_error(&raw_error),
+                                                    },
+                                                );
+                                            }
+                                            error_emitted = true;
+                                            break;
                                         }
-                                        error_emitted = true;
-                                        break;
+                                        CodexResumeDisposition::Interrupted => {
+                                            cancelled = true;
+                                            server_interrupted = true;
+                                            break;
+                                        }
+                                        CodexResumeDisposition::Idle => {
+                                            break;
+                                        }
+                                        CodexResumeDisposition::Active => unreachable!(),
                                     }
-                                    CodexResumeDisposition::Interrupted => {
-                                        cancelled = true;
-                                        server_interrupted = true;
-                                        break;
-                                    }
-                                    CodexResumeDisposition::Idle => {
-                                        break;
-                                    }
-                                    CodexResumeDisposition::Active => unreachable!(),
                                 }
-                            }
-                            Err(error) => {
-                                log::warn!("Codex recovery status poll failed: {error}");
+                                Err(error) => {
+                                    log::warn!("Codex recovery status poll failed: {error}");
+                                }
                             }
                         }
                     }
-                }
 
-                let idle_timeout =
-                    codex_turn_idle_timeout(!pending_tool_ids.is_empty(), awaiting_server_response);
-                if last_activity.elapsed() >= idle_timeout {
-                    log::warn!("Turn event timeout for session {session_id}");
-                    let _ = app.emit_all(
-                        "chat:error",
-                        &ErrorEvent {
-                            session_id: session_id.to_string(),
-                            worktree_id: worktree_id.to_string(),
-                            error: "Codex response timed out".to_string(),
-                        },
+                    let idle_timeout = codex_turn_idle_timeout(
+                        !pending_tool_ids.is_empty(),
+                        awaiting_server_response,
                     );
-                    error_emitted = true;
+                    if last_activity.elapsed() >= idle_timeout {
+                        log::warn!("Turn event timeout for session {session_id}");
+                        let _ = app.emit_all(
+                            "chat:error",
+                            &ErrorEvent {
+                                session_id: session_id.to_string(),
+                                worktree_id: worktree_id.to_string(),
+                                error: "Codex response timed out".to_string(),
+                            },
+                        );
+                        error_emitted = true;
+                        break;
+                    }
+                    continue;
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    log::warn!("Event channel disconnected for session {session_id}");
+                    cancelled = true;
                     break;
                 }
-                continue;
-            }
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                log::warn!("Event channel disconnected for session {session_id}");
-                cancelled = true;
-                break;
             }
         };
         last_activity = Instant::now();

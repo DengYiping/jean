@@ -21,7 +21,7 @@ interface MagicCommandHandlers {
   handlePull: () => void
   handlePullUpstream: () => void
   handlePush: () => void
-  handleOpenPr: () => void
+  handleOpenPr: (draft?: boolean) => void
   handleReview: () => void
   handleMerge: () => void
   handleMergePr: () => void
@@ -156,6 +156,9 @@ export function useMagicCommands({
         case 'open-pr':
           handlers.handleOpenPr()
           break
+        case 'draft-pr':
+          handlers.handleOpenPr(true)
+          break
         case 'review':
           handlers.handleReview()
           break
@@ -212,6 +215,9 @@ export function useMagicCommands({
     switch (pendingMagicCommand.command) {
       case 'open-pr':
         handlers.handleOpenPr()
+        break
+      case 'draft-pr':
+        handlers.handleOpenPr(true)
         break
       case 'merge':
         handlers.handleMerge()

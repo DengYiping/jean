@@ -63,6 +63,11 @@ const SortableQueuedMessageItem = memo(function SortableQueuedMessageItem({
     onSteer(sessionId, message.id)
   }, [message.id, onSteer, sessionId])
 
+  const isMagicCommand = message.kind === 'magic_command'
+  const displayMessage = isMagicCommand
+    ? `Magic: ${message.magicCommandLabel ?? message.message}`
+    : message.message
+
   return (
     <div ref={setNodeRef} style={style}>
       <div
@@ -85,9 +90,9 @@ const SortableQueuedMessageItem = memo(function SortableQueuedMessageItem({
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <span className="truncate text-sm">
-                {message.message.length > 120
-                  ? `${message.message.slice(0, 120)}...`
-                  : message.message}
+                {displayMessage.length > 120
+                  ? `${displayMessage.slice(0, 120)}...`
+                  : displayMessage}
               </span>
 
               {message.pendingImages.length > 0 && (
@@ -108,28 +113,32 @@ const SortableQueuedMessageItem = memo(function SortableQueuedMessageItem({
               )}
             </div>
 
-            <div className="mt-1">
-              <MessageSettingsBadges
-                model={message.model}
-                executionMode={message.executionMode}
-                thinkingLevel={message.thinkingLevel}
-                effortLevel={message.effortLevel}
-                isCursor={message.model.startsWith('cursor/')}
-              />
-            </div>
+            {!isMagicCommand && (
+              <div className="mt-1">
+                <MessageSettingsBadges
+                  model={message.model}
+                  executionMode={message.executionMode}
+                  thinkingLevel={message.thinkingLevel}
+                  effortLevel={message.effortLevel}
+                  isCursor={message.model.startsWith('cursor/')}
+                />
+              </div>
+            )}
           </div>
 
           <div className="flex shrink-0 items-center gap-1.5">
-            <button
-              type="button"
-              onClick={handleSteer}
-              className="rounded-full bg-primary px-2.5 py-1 text-[11px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-            >
-              <span className="inline-flex items-center gap-1">
-                <WandSparkles className="h-3 w-3" />
-                <span>Steer</span>
-              </span>
-            </button>
+            {!isMagicCommand && (
+              <button
+                type="button"
+                onClick={handleSteer}
+                className="rounded-full bg-primary px-2.5 py-1 text-[11px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                <span className="inline-flex items-center gap-1">
+                  <WandSparkles className="h-3 w-3" />
+                  <span>Steer</span>
+                </span>
+              </button>
+            )}
 
             <button
               type="button"

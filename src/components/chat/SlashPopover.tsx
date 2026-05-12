@@ -38,7 +38,34 @@ const BUILTIN_COMMANDS: ClaudeCommand[] = [
     description: 'Set, view, or clear the current Codex goal',
     source: 'builtin',
   },
+  {
+    name: 'commit',
+    path: '',
+    description: 'Create an AI-generated git commit',
+    source: 'builtin',
+  },
+  {
+    name: 'commit-and-push',
+    path: '',
+    description: 'Create an AI-generated commit and push it',
+    source: 'builtin',
+  },
+  {
+    name: 'create-pr',
+    path: '',
+    description: 'Create a pull request with AI-generated content',
+    source: 'builtin',
+  },
+  {
+    name: 'create-draft-pr',
+    path: '',
+    description: 'Create a draft pull request with AI-generated content',
+    source: 'builtin',
+  },
 ]
+
+const COMPACT_COMMAND = BUILTIN_COMMANDS[0]
+const MAGIC_COMMANDS = BUILTIN_COMMANDS.slice(2)
 
 export interface SlashPopoverHandle {
   moveUp: () => void
@@ -94,16 +121,17 @@ export function SlashPopover({
   const { data: commands = [] } = useClaudeCommands(worktreePath)
   const listRef = useRef<HTMLDivElement>(null)
   const [selectedIndex, setSelectedIndex] = useState(0)
-  const compactCommand = BUILTIN_COMMANDS[0]
   const availableCommands = useMemo(() => {
     if (backend === 'claude') {
-      return compactCommand ? [compactCommand, ...commands] : commands
+      return COMPACT_COMMAND
+        ? [COMPACT_COMMAND, ...MAGIC_COMMANDS, ...commands]
+        : [...MAGIC_COMMANDS, ...commands]
     }
     if (backend === 'codex') {
       return BUILTIN_COMMANDS
     }
     return []
-  }, [backend, commands, compactCommand])
+  }, [backend, commands])
 
   // Filter and combine items based on search query and context (fuzzy match)
   const filteredItems = useMemo(() => {

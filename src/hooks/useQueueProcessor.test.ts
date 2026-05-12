@@ -5,10 +5,13 @@ import type * as TransportModule from '@/lib/transport'
 import type { QueuedMessage } from '@/types/chat'
 import { useQueueProcessor } from './useQueueProcessor'
 
-const { mockMutate, mockPersistDequeue } = vi.hoisted(() => ({
-  mockMutate: vi.fn(),
-  mockPersistDequeue: vi.fn(),
-}))
+const { mockInvoke, mockMutate, mockPersistDequeue, mockToastLoading } =
+  vi.hoisted(() => ({
+    mockInvoke: vi.fn(),
+    mockMutate: vi.fn(),
+    mockPersistDequeue: vi.fn(),
+    mockToastLoading: vi.fn(),
+  }))
 
 vi.mock('@/services/chat', () => ({
   useSendMessage: () => ({ mutate: mockMutate }),
@@ -23,10 +26,23 @@ vi.mock('@/services/projects', () => ({
   isTauri: () => true,
 }))
 
+vi.mock('@/services/git-status', () => ({
+  triggerImmediateGitPoll: vi.fn(),
+}))
+
+vi.mock('sonner', () => ({
+  toast: {
+    loading: mockToastLoading,
+    success: vi.fn(),
+    error: vi.fn(),
+  },
+}))
+
 vi.mock('@/lib/transport', async importOriginal => {
   const actual = (await importOriginal()) as typeof TransportModule
   return {
     ...actual,
+    invoke: mockInvoke,
     useWsConnectionStatus: () => true,
   }
 })
@@ -49,8 +65,10 @@ function createQueuedMessage(id: string, message: string): QueuedMessage {
 
 describe('useQueueProcessor', () => {
   beforeEach(() => {
+    mockInvoke.mockReset()
     mockMutate.mockReset()
     mockPersistDequeue.mockReset()
+    mockToastLoading.mockReturnValue('toast-1')
 
     useChatStore.setState({
       messageQueues: {},
@@ -147,5 +165,80 @@ describe('useQueueProcessor', () => {
 
     expect(mockMutate.mock.calls[0]?.[0]).toMatchObject({ message: 'second' })
     expect(mockMutate.mock.calls[1]?.[0]).toMatchObject({ message: 'first' })
+  })
+
+  it('executes a queued magic commit without sending a chat message', async () => {
+    const sessionId = 'session-1'
+    const worktreeId = 'worktree-1'
+    const worktreePath = '/tmp/worktree-1'
+    const magic = {
+      ...createQueuedMessage('magic-1', '/commit'),
+      kind: 'magic_command' as const,
+      magicCommand: 'commit' as const,
+      magicCommandLabel: 'Commit',
+    }
+
+    useChatStore.setState({
+      messageQueues: { [sessionId]: [magic] },
+      sessionWorktreeMap: { [sessionId]: worktreeId },
+      worktreePaths: { [worktreeId]: worktreePath },
+    })
+
+    mockPersistDequeue.mockResolvedValueOnce(magic)
+    mockInvoke.mockResolvedValue({ message: 'test commit', commit_hash: 'abc' })
+
+    renderHook(() => useQueueProcessor())
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith(
+        'create_commit_with_ai',
+        expect.objectContaining({
+          worktreePath,
+          push: false,
+        })
+      )
+    })
+    expect(mockMutate).not.toHaveBeenCalled()
+  })
+
+  it('executes a queued draft PR with draft enabled', async () => {
+    const sessionId = 'session-1'
+    const worktreeId = 'worktree-1'
+    const worktreePath = '/tmp/worktree-1'
+    const magic = {
+      ...createQueuedMessage('magic-1', '/create draft pr'),
+      kind: 'magic_command' as const,
+      magicCommand: 'draft-pr' as const,
+      magicCommandLabel: 'Create draft PR',
+    }
+
+    useChatStore.setState({
+      messageQueues: { [sessionId]: [magic] },
+      sessionWorktreeMap: { [sessionId]: worktreeId },
+      worktreePaths: { [worktreeId]: worktreePath },
+    })
+
+    mockPersistDequeue.mockResolvedValueOnce(magic)
+    mockInvoke.mockResolvedValue({
+      title: 'Test PR',
+      pr_number: 12,
+      pr_url: 'https://example.com/pr/12',
+      existing: false,
+      is_draft: true,
+    })
+
+    renderHook(() => useQueueProcessor())
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith(
+        'create_pr_with_ai_content',
+        expect.objectContaining({
+          worktreePath,
+          sessionId,
+          draft: true,
+        })
+      )
+    })
+    expect(mockMutate).not.toHaveBeenCalled()
   })
 })

@@ -3,6 +3,7 @@ import { invoke } from '@/lib/transport'
 import { generateId } from '@/lib/uuid'
 import { toast } from 'sonner'
 import { useChatStore } from '@/store/chat-store'
+import { useUIStore } from '@/store/ui-store'
 import {
   chatQueryKeys,
   cancelChatMessage,
@@ -21,6 +22,7 @@ import type {
 } from '@/types/chat'
 import type { QueryClient } from '@tanstack/react-query'
 import { GIT_ALLOWED_TOOLS } from './useMessageHandlers'
+import { parseSlashMagicCommand } from '@/lib/magic-command-aliases'
 
 interface UseMessageSendingParams {
   activeSessionId: string | null | undefined
@@ -328,6 +330,77 @@ export function useMessageSending({
       ) {
         toast.error(
           'Session not found. Please refresh or create a new session.'
+        )
+        return
+      }
+
+      const slashMagicCommand = parseSlashMagicCommand(textMessage)
+      const hasAttachments =
+        images.length > 0 ||
+        files.length > 0 ||
+        textFiles.length > 0 ||
+        skills.length > 0
+
+      if (slashMagicCommand && !hasAttachments) {
+        const { gitDiffSelectedFiles } = useUIStore.getState()
+        const specificFiles =
+          gitDiffSelectedFiles.size > 0
+            ? Array.from(gitDiffSelectedFiles)
+            : null
+
+        const clearSubmittedInput = () => {
+          clearInputDraft(activeSessionId)
+          clearPendingImages(activeSessionId)
+          clearPendingFiles(activeSessionId)
+          clearDraftSkillBindings(activeSessionId)
+          clearPendingTextFiles(activeSessionId)
+          clearChatInputState()
+        }
+
+        if (checkIsSendingNow(activeSessionId)) {
+          const queuedMessage: QueuedMessage = {
+            kind: 'magic_command',
+            magicCommand: slashMagicCommand.command,
+            magicCommandLabel: slashMagicCommand.label,
+            specificFiles,
+            id: generateId(),
+            message: textMessage,
+            pendingImages: [],
+            pendingFiles: [],
+            skills: [],
+            pendingTextFiles: [],
+            model: selectedModelRef.current,
+            provider: selectedProviderRef.current,
+            executionMode: executionModeRef.current,
+            thinkingLevel: selectedThinkingLevelRef.current,
+            effortLevel:
+              useAdaptiveThinkingRef.current || isCodexBackendRef.current
+                ? selectedEffortLevelRef.current
+                : undefined,
+            backend:
+              selectedBackendRef.current !== 'claude'
+                ? selectedBackendRef.current
+                : undefined,
+            queuedAt: Date.now(),
+          }
+
+          enqueueMessage(activeSessionId, queuedMessage)
+          persistEnqueue(
+            activeWorktreeId,
+            activeWorktreePath,
+            activeSessionId,
+            queuedMessage
+          )
+          clearSubmittedInput()
+          toast.info(`Queued: ${slashMagicCommand.label}`)
+          return
+        }
+
+        clearSubmittedInput()
+        window.dispatchEvent(
+          new CustomEvent('magic-command', {
+            detail: { command: slashMagicCommand.command },
+          })
         )
         return
       }

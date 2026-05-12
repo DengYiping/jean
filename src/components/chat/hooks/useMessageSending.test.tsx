@@ -4,14 +4,21 @@ import type { FormEvent } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useMessageSending } from './useMessageSending'
 import { useChatStore } from '@/store/chat-store'
+import type * as ChatService from '@/services/chat'
 
-const { mockInvoke, mockToastInfo, mockToastSuccess, mockToastError } =
-  vi.hoisted(() => ({
-    mockInvoke: vi.fn(),
-    mockToastInfo: vi.fn(),
-    mockToastSuccess: vi.fn(),
-    mockToastError: vi.fn(),
-  }))
+const {
+  mockInvoke,
+  mockPersistEnqueue,
+  mockToastInfo,
+  mockToastSuccess,
+  mockToastError,
+} = vi.hoisted(() => ({
+  mockInvoke: vi.fn(),
+  mockPersistEnqueue: vi.fn(),
+  mockToastInfo: vi.fn(),
+  mockToastSuccess: vi.fn(),
+  mockToastError: vi.fn(),
+}))
 
 vi.mock('@/lib/transport', () => ({
   invoke: mockInvoke,
@@ -25,9 +32,18 @@ vi.mock('sonner', () => ({
   },
 }))
 
+vi.mock('@/services/chat', async importOriginal => {
+  const actual = await importOriginal<typeof ChatService>()
+  return {
+    ...actual,
+    persistEnqueue: mockPersistEnqueue,
+  }
+})
+
 describe('useMessageSending', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockPersistEnqueue.mockReturnValue(undefined)
     useChatStore.setState({
       inputDrafts: {},
       pendingImages: {},
@@ -37,6 +53,7 @@ describe('useMessageSending', () => {
       waitingForInputSessionIds: {},
       sendingSessionIds: {},
       executionModes: {},
+      messageQueues: {},
     })
   })
 
@@ -163,5 +180,101 @@ describe('useMessageSending', () => {
     expect(sendMessage.mutate).not.toHaveBeenCalled()
     expect(clearInputDraft).toHaveBeenCalledWith('session-1')
     expect(clearChatInputState).toHaveBeenCalled()
+  })
+
+  it('executes a slash magic alias immediately when the session is idle', async () => {
+    const dispatchSpy = vi.spyOn(window, 'dispatchEvent')
+    const { result, sendMessage, clearInputDraft, clearChatInputState } =
+      renderUseMessageSending('/create pr')
+
+    await act(async () => {
+      await result.current.handleSubmit({
+        preventDefault: vi.fn(),
+      } as unknown as FormEvent)
+    })
+
+    expect(sendMessage.mutate).not.toHaveBeenCalled()
+    expect(mockPersistEnqueue).not.toHaveBeenCalled()
+    expect(dispatchSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'magic-command',
+        detail: { command: 'open-pr' },
+      })
+    )
+    expect(clearInputDraft).toHaveBeenCalledWith('session-1')
+    expect(clearChatInputState).toHaveBeenCalled()
+
+    dispatchSpy.mockRestore()
+  })
+
+  it('queues a slash magic alias when the session is running', async () => {
+    useChatStore.setState({ sendingSessionIds: { 'session-1': true } })
+    const dispatchSpy = vi.spyOn(window, 'dispatchEvent')
+    const { result, sendMessage, clearInputDraft, clearChatInputState } =
+      renderUseMessageSending('/create draft pr')
+
+    await act(async () => {
+      await result.current.handleSubmit({
+        preventDefault: vi.fn(),
+      } as unknown as FormEvent)
+    })
+
+    expect(sendMessage.mutate).not.toHaveBeenCalled()
+    expect(dispatchSpy).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'magic-command' })
+    )
+    expect(
+      useChatStore.getState().messageQueues['session-1']?.[0]
+    ).toMatchObject({
+      kind: 'magic_command',
+      magicCommand: 'draft-pr',
+      magicCommandLabel: 'Create draft PR',
+      message: '/create draft pr',
+    })
+    expect(mockPersistEnqueue).toHaveBeenCalledWith(
+      'worktree-1',
+      '/tmp/worktree-1',
+      'session-1',
+      expect.objectContaining({
+        kind: 'magic_command',
+        magicCommand: 'draft-pr',
+      })
+    )
+    expect(mockToastInfo).toHaveBeenCalledWith('Queued: Create draft PR')
+    expect(clearInputDraft).toHaveBeenCalledWith('session-1')
+    expect(clearChatInputState).toHaveBeenCalled()
+
+    dispatchSpy.mockRestore()
+  })
+
+  it('sends slash-like text normally when attachments are present', async () => {
+    useChatStore.setState({
+      pendingTextFiles: {
+        'session-1': [
+          {
+            id: 'text-1',
+            path: '/tmp/notes.txt',
+            filename: 'notes.txt',
+            size: 12,
+            content: 'notes',
+          },
+        ],
+      },
+    })
+    const { result, sendMessage } = renderUseMessageSending('/commit')
+
+    await act(async () => {
+      await result.current.handleSubmit({
+        preventDefault: vi.fn(),
+      } as unknown as FormEvent)
+    })
+
+    expect(sendMessage.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining('/commit'),
+      }),
+      expect.any(Object)
+    )
+    expect(mockPersistEnqueue).not.toHaveBeenCalled()
   })
 })

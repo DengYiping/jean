@@ -8,12 +8,14 @@ const {
   mockInvoke,
   mockPersistEnqueue,
   mockToastLoading,
+  mockToastInfo,
   mockToastDismiss,
   mockToastError,
 } = vi.hoisted(() => ({
   mockInvoke: vi.fn(),
   mockPersistEnqueue: vi.fn(),
   mockToastLoading: vi.fn(() => 'toast-id'),
+  mockToastInfo: vi.fn(),
   mockToastDismiss: vi.fn(),
   mockToastError: vi.fn(),
 }))
@@ -29,6 +31,7 @@ vi.mock('@/services/chat', () => ({
 vi.mock('sonner', () => ({
   toast: {
     loading: mockToastLoading,
+    info: mockToastInfo,
     dismiss: mockToastDismiss,
     error: mockToastError,
   },
@@ -39,6 +42,7 @@ describe('usePendingAttachments', () => {
     mockInvoke.mockReset()
     mockPersistEnqueue.mockReset()
     mockToastLoading.mockClear()
+    mockToastInfo.mockClear()
     mockToastDismiss.mockClear()
     mockToastError.mockClear()
 
@@ -136,5 +140,58 @@ describe('usePendingAttachments', () => {
       message: 'resolved command body',
       commandAllowedTools: ['Read'],
     })
+  })
+
+  it('queues selected magic slash aliases when the session is running', async () => {
+    const sendMessageNow = vi.fn()
+    useChatStore.setState({ sendingSessionIds: { 'session-1': true } })
+
+    const { result } = renderHook(() =>
+      usePendingAttachments({
+        activeSessionId: 'session-1',
+        activeWorktreeId: 'worktree-1',
+        activeWorktreePath: '/tmp/worktree-1',
+        selectedModelRef: { current: 'gpt-5.4' },
+        selectedProviderRef: { current: null },
+        executionModeRef: { current: 'build' },
+        selectedThinkingLevelRef: { current: 'off' },
+        selectedEffortLevelRef: { current: 'high' },
+        useAdaptiveThinkingRef: { current: false },
+        isCodexBackendRef: { current: true },
+        mcpServersDataRef: { current: [] },
+        enabledMcpServersRef: { current: [] },
+        selectedBackendRef: { current: 'codex' },
+        inputRef: createRef<HTMLTextAreaElement>(),
+        setInputDraft: vi.fn(),
+        sendMessageNow,
+      })
+    )
+
+    await act(async () => {
+      result.current.handleCommandExecute({
+        name: 'create-draft-pr',
+        path: '',
+        source: 'builtin',
+      })
+    })
+
+    expect(sendMessageNow).not.toHaveBeenCalled()
+    expect(mockPersistEnqueue).toHaveBeenCalledWith(
+      'worktree-1',
+      '/tmp/worktree-1',
+      'session-1',
+      expect.objectContaining({
+        kind: 'magic_command',
+        magicCommand: 'draft-pr',
+        magicCommandLabel: 'Create draft PR',
+      })
+    )
+    expect(
+      useChatStore.getState().messageQueues['session-1']?.[0]
+    ).toMatchObject({
+      kind: 'magic_command',
+      magicCommand: 'draft-pr',
+    })
+    expect(mockToastInfo).toHaveBeenCalledWith('Queued: Create draft PR')
   })
 })

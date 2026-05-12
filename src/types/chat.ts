@@ -263,6 +263,12 @@ export interface ScheduledWakeup {
 
 export type SupervisorMagicAction = 'commit' | 'commit_and_push'
 
+export type QueueableMagicCommand =
+  | 'commit'
+  | 'commit-and-push'
+  | 'open-pr'
+  | 'draft-pr'
+
 /**
  * Per-session supervisor action configuration.
  * Serialized with snake_case because it is stored in session metadata.
@@ -1082,6 +1088,14 @@ export interface ReviewFinding {
  * Captures all settings at the time of queueing so they're preserved
  */
 export interface QueuedMessage {
+  /** Queue item kind. Missing means regular chat for backward compatibility. */
+  kind?: 'chat' | 'magic_command'
+  /** Magic command to execute instead of sending a chat turn. */
+  magicCommand?: QueueableMagicCommand
+  /** Human-readable magic command label for queue display/toasts. */
+  magicCommandLabel?: string
+  /** Commit file selection captured when the magic command was queued. */
+  specificFiles?: string[] | null
   /** Unique ID for this queued message (for reordering/removal) */
   id: string
   /** The message text (already formatted with file/image references) */

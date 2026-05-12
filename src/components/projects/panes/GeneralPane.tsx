@@ -10,7 +10,7 @@ import {
   RotateCcw,
   X,
 } from 'lucide-react'
-import { convertFileSrc } from '@/lib/transport'
+import { convertFileSrc, convertProjectFileSrc } from '@/lib/transport'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -145,13 +145,16 @@ export function GeneralPane({
   }, [projectId, queryClient])
 
   // Track image load errors
+  const avatarKey = project?.avatar_path ?? project?.default_avatar_path ?? null
   const [imgErrorKey, setImgErrorKey] = useState<string | null>(null)
-  const imgError = imgErrorKey === project?.avatar_path
+  const imgError = imgErrorKey === avatarKey
 
   const avatarUrl =
     project?.avatar_path && appDataDir && !imgError
       ? convertFileSrc(`${appDataDir}/${project.avatar_path}`)
-      : null
+      : project?.default_avatar_path && !imgError
+        ? convertProjectFileSrc(project.default_avatar_path)
+        : null
 
   const displayedName = localName ?? project?.name ?? ''
   const nameChanged = localName !== null && localName !== (project?.name ?? '')
@@ -402,7 +405,7 @@ export function GeneralPane({
                   src={avatarUrl}
                   alt={project?.name ?? 'Project avatar'}
                   className="size-full object-cover"
-                  onError={() => setImgErrorKey(project?.avatar_path ?? null)}
+                  onError={() => setImgErrorKey(avatarKey)}
                 />
               ) : (
                 <span className="text-lg font-medium uppercase text-muted-foreground">
@@ -422,7 +425,9 @@ export function GeneralPane({
                 ) : (
                   <ImageIcon className="h-4 w-4" />
                 )}
-                {project?.avatar_path ? 'Change' : 'Add Image'}
+                {project?.avatar_path || project?.default_avatar_path
+                  ? 'Change'
+                  : 'Add Image'}
               </Button>
               {project?.avatar_path && (
                 <Button

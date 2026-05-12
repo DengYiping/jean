@@ -13,6 +13,7 @@ test.describe('Session Management', () => {
 
     // Click new session button
     await mockPage.getByRole('button', { name: 'New session' }).click()
+    await mockPage.getByRole('button', { name: /Jean Chat/ }).click()
     await mockPage.waitForTimeout(500)
 
     // The session modal should now show two session tabs
@@ -31,6 +32,7 @@ test.describe('Session Management', () => {
 
     // Create a second session inside the modal
     await mockPage.getByRole('button', { name: 'New session' }).click()
+    await mockPage.getByRole('button', { name: /Jean Chat/ }).click()
     await mockPage.waitForTimeout(500)
 
     // Should have 2 session tabs

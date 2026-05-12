@@ -65,6 +65,7 @@ import { agentBoardQueryKeys } from '@/services/agent-board'
 import { prStatusQueryKeys } from '@/services/pr-status'
 import { projectsQueryKeys } from '@/services/projects'
 import { useQueryClient } from '@tanstack/react-query'
+import { ReviewMethodModal } from '@/components/chat/ReviewMethodModal'
 
 type MagicOption =
   | 'save-context'
@@ -89,6 +90,14 @@ type MagicOption =
   | 'merge-pr'
   | 'review-comments'
   | 'revert-last-commit'
+
+type ReviewSource = 'ai' | 'coderabbit-cli' | 'coderabbit-pr'
+
+interface TriggerCodeRabbitPrReviewResponse {
+  pr_number: number
+  pr_url: string
+  comment_body: string
+}
 
 /** Options that work on canvas without an open session (git-only operations) */
 const CANVAS_ALLOWED_OPTIONS = new Set<MagicOption>([
@@ -330,6 +339,7 @@ export function MagicModal() {
   const hasInitializedRef = useRef(false)
   const [selectedOption, setSelectedOption] =
     useState<MagicOption>('save-context')
+  const [reviewMethodDialogOpen, setReviewMethodDialogOpen] = useState(false)
 
   const hasOpenPr = Boolean(worktree?.pr_url)
   const prDisplayStatus = worktree?.cached_pr_status as
@@ -456,7 +466,7 @@ export function MagicModal() {
 
   // Direct git execution for when ChatWindow isn't rendered (project canvas)
   const executeGitDirectly = useCallback(
-    async (option: MagicOption) => {
+    async (option: MagicOption, reviewSource: ReviewSource = 'ai') => {
       if (!selectedWorktreeId || !worktree?.path) return
 
       const { setWorktreeLoading, clearWorktreeLoading } =
@@ -851,37 +861,98 @@ ${resolveInstructions}`
           const projectName = project?.name ?? 'project'
           const worktreeName = worktree.name ?? worktree.branch ?? ''
           const reviewTarget = `${projectName}/${worktreeName}`
+          if (reviewSource === 'coderabbit-pr') {
+            const toastId = toast.loading(
+              `Triggering CodeRabbit review for ${reviewTarget}...`
+            )
+
+            try {
+              if (!worktree.pr_number) {
+                throw new Error('Open or link a PR in Jean first')
+              }
+
+              const result = await invoke<TriggerCodeRabbitPrReviewResponse>(
+                'trigger_coderabbit_pr_review',
+                {
+                  worktreeId: selectedWorktreeId,
+                  worktreePath: worktree.path,
+                  prNumber: worktree.pr_number,
+                }
+              )
+
+              if (worktree.project_id) {
+                queryClient.invalidateQueries({
+                  queryKey: projectsQueryKeys.worktrees(worktree.project_id),
+                })
+                queryClient.invalidateQueries({
+                  queryKey: [
+                    ...projectsQueryKeys.all,
+                    'worktree',
+                    selectedWorktreeId,
+                  ],
+                })
+              }
+
+              toast.success(
+                `CodeRabbit review triggered on PR #${result.pr_number}`,
+                {
+                  id: toastId,
+                  action: result.pr_url
+                    ? {
+                        label: 'Open',
+                        onClick: () => openExternal(result.pr_url),
+                      }
+                    : undefined,
+                }
+              )
+            } catch (error) {
+              toast.error(`Failed to trigger CodeRabbit review: ${error}`, {
+                id: toastId,
+              })
+            } finally {
+              clearWorktreeLoading(selectedWorktreeId)
+            }
+            break
+          }
+
           const reviewRunId = generateId()
           let cancelRequested = false
-          const toastId = toast.loading(`Reviewing ${reviewTarget}...`, {
-            cancel: {
-              label: 'Cancel',
-              onClick: () => {
-                cancelRequested = true
-                toast.loading(`Cancelling review for ${reviewTarget}...`, {
-                  id: toastId,
-                })
-                invoke<boolean>('cancel_review_with_ai', { reviewRunId })
-                  .then(cancelled => {
-                    if (cancelled) {
-                      toast.info(`Review cancelled for ${reviewTarget}`, {
+          const reviewLabel =
+            reviewSource === 'coderabbit-cli'
+              ? 'CodeRabbit CLI review'
+              : 'Review'
+          const toastId = toast.loading(
+            `${reviewLabel} for ${reviewTarget}...`,
+            {
+              cancel: {
+                label: 'Cancel',
+                onClick: () => {
+                  cancelRequested = true
+                  toast.loading(`Cancelling review for ${reviewTarget}...`, {
+                    id: toastId,
+                  })
+                  invoke<boolean>('cancel_review_with_ai', { reviewRunId })
+                    .then(cancelled => {
+                      if (cancelled) {
+                        toast.info(`Review cancelled for ${reviewTarget}`, {
+                          id: toastId,
+                        })
+                      } else {
+                        toast.info(
+                          `No active review to cancel for ${reviewTarget}`,
+                          { id: toastId }
+                        )
+                      }
+                    })
+                    .catch(error => {
+                      toast.error(`Failed to cancel review: ${error}`, {
                         id: toastId,
                       })
-                    } else {
-                      toast.info(
-                        `No active review to cancel for ${reviewTarget}`,
-                        { id: toastId }
-                      )
-                    }
-                  })
-                  .catch(error => {
-                    toast.error(`Failed to cancel review: ${error}`, {
-                      id: toastId,
                     })
-                  })
+                },
               },
-            },
-          })
+            }
+          )
 
           // Fire-and-forget: detect and link PR if not already linked
           if (!worktree.pr_number) {
@@ -909,19 +980,31 @@ ${resolveInstructions}`
           }
 
           try {
-            const result = await invoke<ReviewResponse>('run_review_with_ai', {
-              worktreePath: worktree.path,
-              customPrompt: preferences?.magic_prompts?.code_review,
-              model: preferences?.magic_prompt_models?.code_review_model,
-              customProfileName: resolveMagicPromptProvider(
-                preferences?.magic_prompt_providers,
-                'code_review_provider',
-                preferences?.default_provider
-              ),
-              reasoningEffort:
-                preferences?.magic_prompt_efforts?.code_review_effort ?? null,
-              reviewRunId,
-            })
+            const result = await invoke<ReviewResponse>(
+              reviewSource === 'coderabbit-cli'
+                ? 'run_coderabbit_review'
+                : 'run_review_with_ai',
+              reviewSource === 'coderabbit-cli'
+                ? {
+                    worktreePath: worktree.path,
+                    reviewRunId,
+                    reviewType: 'all',
+                  }
+                : {
+                    worktreePath: worktree.path,
+                    customPrompt: preferences?.magic_prompts?.code_review,
+                    model: preferences?.magic_prompt_models?.code_review_model,
+                    customProfileName: resolveMagicPromptProvider(
+                      preferences?.magic_prompt_providers,
+                      'code_review_provider',
+                      preferences?.default_provider
+                    ),
+                    reasoningEffort:
+                      preferences?.magic_prompt_efforts?.code_review_effort ??
+                      null,
+                    reviewRunId,
+                  }
+            )
 
             const newSession = await invoke<Session>('create_session', {
               worktreeId: selectedWorktreeId,
@@ -966,7 +1049,7 @@ ${resolveInstructions}`
 
             const findingCount = result.findings.length
             toast.success(
-              `Review done on ${reviewTarget} (${findingCount} findings)`,
+              `${reviewSource === 'coderabbit-cli' ? 'CodeRabbit CLI review' : 'Review'} done on ${reviewTarget} (${findingCount} findings)`,
               {
                 id: toastId,
                 action: {
@@ -1031,6 +1114,17 @@ ${resolveInstructions}`
     async (option: MagicOption) => {
       // Block disabled options on canvas
       if (isOnCanvas && !CANVAS_ALLOWED_OPTIONS.has(option)) {
+        return
+      }
+
+      if (option === 'review') {
+        if (!selectedWorktreeId || !worktree?.path) {
+          notify('No worktree selected', undefined, { type: 'error' })
+          setMagicModalOpen(false)
+          return
+        }
+        setMagicModalOpen(false)
+        setReviewMethodDialogOpen(true)
         return
       }
 
@@ -1252,94 +1346,108 @@ ${resolveInstructions}`
   )
 
   return (
-    <Dialog open={magicModalOpen} onOpenChange={handleOpenChange}>
-      <DialogContent
-        ref={contentRef}
-        tabIndex={-1}
-        className="sm:max-w-[560px] p-0 outline-none"
-        onOpenAutoFocus={e => {
-          e.preventDefault()
-          contentRef.current?.focus()
-        }}
-        onKeyDown={handleKeyDown}
-      >
-        <DialogHeader className="px-4 pt-5 pb-2">
-          <DialogTitle className="flex items-center gap-2">
-            <Wand2 className="h-4 w-4" />
-            Magic
-          </DialogTitle>
-        </DialogHeader>
+    <>
+      <ReviewMethodModal
+        open={reviewMethodDialogOpen}
+        onOpenChange={setReviewMethodDialogOpen}
+        onAiReview={() => executeGitDirectly('review', 'ai')}
+        onCodeRabbitCliReview={() =>
+          executeGitDirectly('review', 'coderabbit-cli')
+        }
+        onCodeRabbitPrReview={() =>
+          executeGitDirectly('review', 'coderabbit-pr')
+        }
+        codeRabbitPrAvailable={Boolean(worktree?.pr_number)}
+      />
+      <Dialog open={magicModalOpen} onOpenChange={handleOpenChange}>
+        <DialogContent
+          ref={contentRef}
+          tabIndex={-1}
+          className="sm:max-w-[560px] p-0 outline-none"
+          onOpenAutoFocus={e => {
+            e.preventDefault()
+            contentRef.current?.focus()
+          }}
+          onKeyDown={handleKeyDown}
+        >
+          <DialogHeader className="px-4 pt-5 pb-2">
+            <DialogTitle className="flex items-center gap-2">
+              <Wand2 className="h-4 w-4" />
+              Magic
+            </DialogTitle>
+          </DialogHeader>
 
-        <div className="pb-2 grid grid-cols-2">
-          {[magicColumns.left, magicColumns.right].map(
-            (columnSections, colIndex) => (
-              <div
-                key={colIndex}
-                className={cn(colIndex === 0 && 'border-r border-border')}
-              >
-                {columnSections.map((section, sectionIndex) => (
-                  <div key={section.header}>
-                    {/* Section header */}
-                    <div className="px-4 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                      {section.header}
+          <div className="pb-2 grid grid-cols-2">
+            {[magicColumns.left, magicColumns.right].map(
+              (columnSections, colIndex) => (
+                <div
+                  key={colIndex}
+                  className={cn(colIndex === 0 && 'border-r border-border')}
+                >
+                  {columnSections.map((section, sectionIndex) => (
+                    <div key={section.header}>
+                      {/* Section header */}
+                      <div className="px-4 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                        {section.header}
+                      </div>
+
+                      {/* Section options */}
+                      {section.options.map(option => {
+                        const Icon = option.icon
+                        const isSelected = selectedOption === option.id
+                        const isDisabled =
+                          (isOnCanvas &&
+                            !CANVAS_ALLOWED_OPTIONS.has(option.id)) ||
+                          (option.id === 'create-recap' && !activeSessionId) ||
+                          (option.id === 'investigate-issue' &&
+                            !hasIssueContexts) ||
+                          (option.id === 'investigate-pr' && !hasPrContexts) ||
+                          (option.id === 'draft-pr' && hasOpenPr) ||
+                          (option.id === 'update-pr' && !hasOpenPr) ||
+                          (option.id === 'ready-for-review' && !hasDraftPr) ||
+                          (option.id === 'review-comments' && !hasOpenPr) ||
+                          (option.id === 'merge-pr' && !hasOpenPr)
+
+                        return (
+                          <button
+                            key={option.id}
+                            onClick={() =>
+                              !isDisabled && executeAction(option.id)
+                            }
+                            onMouseEnter={() => setSelectedOption(option.id)}
+                            className={cn(
+                              'w-full flex items-center justify-between px-4 py-2 text-sm transition-colors',
+                              'focus:outline-none',
+                              isDisabled
+                                ? 'opacity-40 cursor-not-allowed'
+                                : 'hover:bg-accent',
+                              isSelected && !isDisabled && 'bg-accent'
+                            )}
+                          >
+                            <div className="flex items-center gap-3">
+                              <Icon className="h-4 w-4 text-muted-foreground" />
+                              <span>{option.label}</span>
+                            </div>
+                            <kbd className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                              {option.key}
+                            </kbd>
+                          </button>
+                        )
+                      })}
+
+                      {/* Separator between sections within column (not after last) */}
+                      {sectionIndex < columnSections.length - 1 && (
+                        <div className="my-1 mx-4 border-t border-border" />
+                      )}
                     </div>
-
-                    {/* Section options */}
-                    {section.options.map(option => {
-                      const Icon = option.icon
-                      const isSelected = selectedOption === option.id
-                      const isDisabled =
-                        (isOnCanvas &&
-                          !CANVAS_ALLOWED_OPTIONS.has(option.id)) ||
-                        (option.id === 'create-recap' && !activeSessionId) ||
-                        (option.id === 'investigate-issue' &&
-                          !hasIssueContexts) ||
-                        (option.id === 'investigate-pr' && !hasPrContexts) ||
-                        (option.id === 'draft-pr' && hasOpenPr) ||
-                        (option.id === 'update-pr' && !hasOpenPr) ||
-                        (option.id === 'ready-for-review' && !hasDraftPr) ||
-                        (option.id === 'review-comments' && !hasOpenPr) ||
-                        (option.id === 'merge-pr' && !hasOpenPr)
-
-                      return (
-                        <button
-                          key={option.id}
-                          onClick={() =>
-                            !isDisabled && executeAction(option.id)
-                          }
-                          onMouseEnter={() => setSelectedOption(option.id)}
-                          className={cn(
-                            'w-full flex items-center justify-between px-4 py-2 text-sm transition-colors',
-                            'focus:outline-none',
-                            isDisabled
-                              ? 'opacity-40 cursor-not-allowed'
-                              : 'hover:bg-accent',
-                            isSelected && !isDisabled && 'bg-accent'
-                          )}
-                        >
-                          <div className="flex items-center gap-3">
-                            <Icon className="h-4 w-4 text-muted-foreground" />
-                            <span>{option.label}</span>
-                          </div>
-                          <kbd className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-                            {option.key}
-                          </kbd>
-                        </button>
-                      )
-                    })}
-
-                    {/* Separator between sections within column (not after last) */}
-                    {sectionIndex < columnSections.length - 1 && (
-                      <div className="my-1 mx-4 border-t border-border" />
-                    )}
-                  </div>
-                ))}
-              </div>
-            )
-          )}
-        </div>
-      </DialogContent>
-    </Dialog>
+                  ))}
+                </div>
+              )
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 

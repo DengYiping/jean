@@ -73,6 +73,22 @@ export function convertFileSrc(filePath: string, protocol = 'asset'): string {
   return filePath
 }
 
+/**
+ * Convert an absolute project/worktree file path to a browser-loadable URL.
+ * Native mode can use Tauri's asset protocol directly; browser mode uses the
+ * authenticated project-file endpoint, which validates the path against known
+ * project/worktree roots before serving it.
+ */
+export function convertProjectFileSrc(filePath: string): string {
+  if (isNativeApp()) {
+    return convertFileSrc(filePath)
+  }
+
+  const token = localStorage.getItem('jean-http-token') || ''
+  const params = token ? `?token=${encodeURIComponent(token)}` : ''
+  return `/api/project-files/${encodeURIComponent(filePath)}${params}`
+}
+
 /** Unlisten function type — compatible with Tauri's UnlistenFn. */
 export type UnlistenFn = () => void
 
@@ -629,6 +645,9 @@ class WsTransport {
     'install_codex_cli',
     'install_opencode_cli',
     'install_gh_cli',
+    'install_coderabbit_cli',
+    'run_coderabbit_review',
+    'trigger_coderabbit_pr_review',
   ])
   private static readonly LONG_TIMEOUT = 30 * 60_000
   private static readonly DEFAULT_TIMEOUT = 60_000

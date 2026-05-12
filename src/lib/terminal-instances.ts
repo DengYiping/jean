@@ -527,6 +527,24 @@ export function disposeAllWorktreeTerminals(worktreeId: string): void {
 }
 
 /**
+ * Dispose only panel/drawer terminals for a worktree.
+ * Terminal-first sessions own separate terminal instances and must survive
+ * closing the dock terminal.
+ */
+export function disposePanelWorktreeTerminals(worktreeId: string): void {
+  const terminalIds = useTerminalStore
+    .getState()
+    .closePanelTerminals(worktreeId)
+
+  for (const terminalId of terminalIds) {
+    invoke('stop_terminal', { terminalId }).catch(() => {
+      // Terminal may already be stopped
+    })
+    disposeTerminal(terminalId)
+  }
+}
+
+/**
  * Check if a terminal instance exists.
  */
 export function hasInstance(terminalId: string): boolean {

@@ -99,6 +99,7 @@ import { ChatInput } from './ChatInput'
 import { SessionDebugPanel } from './SessionDebugPanel'
 import { ChatToolbar } from './ChatToolbar'
 import { ReviewResultsPanel } from './ReviewResultsPanel'
+import { ReviewMethodModal } from './ReviewMethodModal'
 import { QueuedMessagesList } from './QueuedMessageItem'
 import { FloatingButtons } from './FloatingButtons'
 import { PlanDialog, type PlanDialogMode } from './PlanDialog'
@@ -163,6 +164,7 @@ import {
   type ImperativePanelHandle,
 } from '@/components/ui/resizable'
 import { TerminalPanel } from './TerminalPanel'
+import { FullScreenTerminalSurface } from './FullScreenTerminalSurface'
 import { useTerminalStore } from '@/store/terminal-store'
 
 // Extracted hooks (useStreamingEvents is now in App.tsx for global persistence)
@@ -302,6 +304,14 @@ export function ChatWindow({
     activeWorktreeId
       ? (state.terminalPanelOpen[activeWorktreeId] ?? false)
       : false
+  )
+  const primarySurface = useUIStore(state =>
+    activeSessionId
+      ? (state.sessionPrimarySurface[activeSessionId] ?? 'chat')
+      : 'chat'
+  )
+  const sessionTerminalId = useUIStore(state =>
+    activeSessionId ? state.sessionTerminalIds[activeSessionId] : undefined
   )
   const { setTerminalVisible } = useTerminalStore.getState()
 
@@ -2079,6 +2089,8 @@ export function ChatWindow({
     handlePush,
     handleOpenPr,
     handleReview,
+    handleCodeRabbitReview,
+    handleCodeRabbitPrReview,
     handleMerge,
     handleMergePr,
     handleResolveConflicts,
@@ -2115,6 +2127,8 @@ export function ChatWindow({
         : pickRemoteOrRun(remote => handleCommitAndPush(remote)),
     [worktree?.pr_number, pickRemoteOrRun, handleCommitAndPush]
   )
+
+  const [reviewMethodModalOpen, setReviewMethodModalOpen] = useState(false)
 
   const handlePullWithPicker = useCallback(
     () => pickRemoteOrRun(remote => handlePull(remote)),
@@ -2246,7 +2260,7 @@ export function ChatWindow({
     handlePullUpstream,
     handlePush: handlePushWithPicker,
     handleOpenPr,
-    handleReview,
+    handleReview: () => setReviewMethodModalOpen(true),
     handleMerge,
     handleMergePr,
     handleResolveConflicts,
@@ -2570,6 +2584,44 @@ export function ChatWindow({
     )
   }
 
+  if (primarySurface === 'terminal' && activeSessionId && sessionTerminalId) {
+    return (
+      <ErrorBoundary
+        resetKeys={[activeWorktreeId, activeSessionId, primarySurface]}
+        onError={(error, errorInfo) => {
+          logger.error('ChatWindow terminal surface crashed', {
+            error: error.message,
+            stack: error.stack,
+          })
+          saveCrashState(
+            { activeWorktreeId, activeSessionId },
+            {
+              error: error.message,
+              stack: error.stack ?? '',
+              componentStack: errorInfo.componentStack ?? undefined,
+            }
+          ).catch(() => {
+            /* noop */
+          })
+        }}
+        fallbackRender={({ error, resetErrorBoundary }) => (
+          <ChatErrorFallback
+            error={error}
+            resetErrorBoundary={resetErrorBoundary}
+            activeWorktreeId={activeWorktreeId}
+          />
+        )}
+      >
+        <FullScreenTerminalSurface
+          worktreeId={activeWorktreeId}
+          worktreePath={activeWorktreePath}
+          sessionId={activeSessionId}
+          terminalId={sessionTerminalId}
+        />
+      </ErrorBoundary>
+    )
+  }
+
   return (
     <ErrorBoundary
       resetKeys={[activeWorktreeId]}
@@ -2598,6 +2650,14 @@ export function ChatWindow({
       )}
     >
       <div className="flex h-full w-full min-w-0 flex-col overflow-hidden">
+        <ReviewMethodModal
+          open={reviewMethodModalOpen}
+          onOpenChange={setReviewMethodModalOpen}
+          onAiReview={handleReview}
+          onCodeRabbitCliReview={handleCodeRabbitReview}
+          onCodeRabbitPrReview={handleCodeRabbitPrReview}
+          codeRabbitPrAvailable={Boolean(worktree?.pr_number)}
+        />
         <ResizablePanelGroup direction="horizontal" className="flex-1">
           <ResizablePanel
             defaultSize={hasReviewResults && reviewSidebarVisible ? 50 : 100}
@@ -3174,7 +3234,7 @@ export function ChatWindow({
                             onOpenPullRequestReview={
                               handleOpenPullRequestReview
                             }
-                            onReview={() => handleReview()}
+                            onReview={() => setReviewMethodModalOpen(true)}
                             onMerge={handleMerge}
                             onMergePr={handleMergePr}
                             onResolvePrConflicts={handleResolvePrConflicts}

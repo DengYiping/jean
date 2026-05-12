@@ -483,6 +483,33 @@ pub async fn dispatch_command(
             emit_cache_invalidation(app, &["projects"]);
             to_value(result)
         }
+        "run_coderabbit_review" => {
+            let worktree_path: String = field(&args, "worktreePath", "worktree_path")?;
+            let review_run_id: Option<String> = field_opt(&args, "reviewRunId", "review_run_id")?;
+            let review_type: Option<String> = field_opt(&args, "reviewType", "review_type")?;
+            let result = crate::projects::run_coderabbit_review(
+                app.clone(),
+                worktree_path,
+                review_run_id,
+                review_type,
+            )
+            .await?;
+            to_value(result)
+        }
+        "trigger_coderabbit_pr_review" => {
+            let worktree_id: Option<String> = field_opt(&args, "worktreeId", "worktree_id")?;
+            let worktree_path: String = field(&args, "worktreePath", "worktree_path")?;
+            let pr_number: Option<u32> = field_opt(&args, "prNumber", "pr_number")?;
+            let result = crate::projects::trigger_coderabbit_pr_review(
+                app.clone(),
+                worktree_id,
+                worktree_path,
+                pr_number,
+            )
+            .await?;
+            emit_cache_invalidation(app, &["projects"]);
+            to_value(result)
+        }
         "run_review_with_ai" => {
             let worktree_path: String = field(&args, "worktreePath", "worktree_path")?;
             let magic_prompt: Option<String> = field_opt(&args, "magicPrompt", "magic_prompt")?;
@@ -981,8 +1008,9 @@ pub async fn dispatch_command(
             let worktree_id: String = field(&args, "worktreeId", "worktree_id")?;
             let worktree_path: String = field(&args, "worktreePath", "worktree_path")?;
             let name: Option<String> = from_field_opt(&args, "name")?;
+            let backend: Option<String> = from_field_opt(&args, "backend")?;
             let result =
-                crate::chat::create_session(app.clone(), worktree_id, worktree_path, name, None)
+                crate::chat::create_session(app.clone(), worktree_id, worktree_path, name, backend)
                     .await?;
             to_value(result)
         }
@@ -2184,6 +2212,30 @@ pub async fn dispatch_command(
         }
         "uninstall_gh_cli" => {
             crate::gh_cli::uninstall_gh_cli(app.clone()).await?;
+            Ok(Value::Null)
+        }
+        "check_coderabbit_cli_installed" => {
+            let result = crate::coderabbit_cli::check_coderabbit_cli_installed(app.clone()).await?;
+            to_value(result)
+        }
+        "detect_coderabbit_in_path" => {
+            let result = crate::coderabbit_cli::detect_coderabbit_in_path(app.clone()).await?;
+            to_value(result)
+        }
+        "check_coderabbit_cli_auth" => {
+            let result = crate::coderabbit_cli::check_coderabbit_cli_auth(app.clone()).await?;
+            to_value(result)
+        }
+        "install_coderabbit_cli" => {
+            crate::coderabbit_cli::install_coderabbit_cli(app.clone()).await?;
+            Ok(Value::Null)
+        }
+        "uninstall_coderabbit_cli" => {
+            crate::coderabbit_cli::uninstall_coderabbit_cli(app.clone()).await?;
+            Ok(Value::Null)
+        }
+        "update_coderabbit_cli" => {
+            crate::coderabbit_cli::update_coderabbit_cli(app.clone()).await?;
             Ok(Value::Null)
         }
         "run_cli_path_update" => {

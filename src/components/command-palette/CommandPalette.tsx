@@ -11,7 +11,7 @@ import {
 } from '@/services/projects'
 import { useChatStore } from '@/store/chat-store'
 import { useProjectsStore } from '@/store/projects-store'
-import { convertFileSrc, invoke } from '@/lib/transport'
+import { convertFileSrc, convertProjectFileSrc, invoke } from '@/lib/transport'
 import { getAllCommands, executeCommand } from '@/lib/commands'
 import { formatShortcutDisplay } from '@/types/keybindings'
 import type { Project, Worktree } from '@/types/projects'
@@ -155,7 +155,9 @@ export function CommandPalette() {
         avatarUrl:
           project.avatar_path && appDataDir
             ? convertFileSrc(`${appDataDir}/${project.avatar_path}`)
-            : null,
+            : project.default_avatar_path
+              ? convertProjectFileSrc(project.default_avatar_path)
+              : null,
         avatarFallback: project.name[0]?.toUpperCase() ?? '?',
         group: 'projects',
         keywords: ['project', 'switch', 'open', project.name.toLowerCase()],

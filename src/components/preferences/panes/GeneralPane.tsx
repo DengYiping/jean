@@ -51,6 +51,13 @@ import {
   resolveCodexUpdateCommand,
 } from '@/services/codex-cli'
 import {
+  useCodeRabbitCliStatus,
+  useCodeRabbitCliAuth,
+  useInstallCodeRabbitCli,
+  useUpdateCodeRabbitCli,
+  coderabbitCliQueryKeys,
+} from '@/services/coderabbit-cli'
+import {
   useOpenCodeCliStatus,
   useOpenCodeCliAuth,
   useAvailableOpencodeModels,
@@ -60,6 +67,7 @@ import { useUIStore } from '@/store/ui-store'
 import type { ClaudeAuthStatus } from '@/types/claude-cli'
 import type { GhAuthStatus } from '@/types/gh-cli'
 import type { CodexAuthStatus } from '@/types/codex-cli'
+import type { CodeRabbitAuthStatus } from '@/types/coderabbit-cli'
 import type { OpenCodeAuthStatus } from '@/types/opencode-cli'
 import {
   Select,
@@ -133,7 +141,7 @@ interface CleanupResult {
   deleted_sessions: number
 }
 
-type LegacyCliTarget = 'claude' | 'codex' | 'opencode' | 'gh'
+type LegacyCliTarget = 'claude' | 'codex' | 'opencode' | 'gh' | 'coderabbit'
 
 const SettingsSection: React.FC<{
   title: React.ReactNode
@@ -432,8 +440,12 @@ export const GeneralPane: React.FC = () => {
   const { data: cliStatus, isLoading: isCliLoading } = useClaudeCliStatus()
   const { data: ghStatus, isLoading: isGhLoading } = useGhCliStatus()
   const { data: codexStatus, isLoading: isCodexLoading } = useCodexCliStatus()
+  const { data: coderabbitStatus, isLoading: isCodeRabbitLoading } =
+    useCodeRabbitCliStatus()
   const { data: opencodeStatus, isLoading: isOpenCodeLoading } =
     useOpenCodeCliStatus()
+  const installCodeRabbitCli = useInstallCodeRabbitCli()
+  const updateCodeRabbitCli = useUpdateCodeRabbitCli()
 
   // Auth status queries - only enabled when CLI is installed
   const { data: claudeAuth, isLoading: isClaudeAuthLoading } = useClaudeCliAuth(
@@ -447,6 +459,10 @@ export const GeneralPane: React.FC = () => {
   const { data: codexAuth, isLoading: isCodexAuthLoading } = useCodexCliAuth({
     enabled: !!codexStatus?.installed,
   })
+  const { data: coderabbitAuth, isLoading: isCodeRabbitAuthLoading } =
+    useCodeRabbitCliAuth({
+      enabled: !!coderabbitStatus?.installed,
+    })
   const { data: opencodeAuth, isLoading: isOpenCodeAuthLoading } =
     useOpenCodeCliAuth({
       enabled: !!opencodeStatus?.installed,
@@ -459,6 +475,7 @@ export const GeneralPane: React.FC = () => {
   const [checkingClaudeAuth, setCheckingClaudeAuth] = useState(false)
   const [checkingGhAuth, setCheckingGhAuth] = useState(false)
   const [checkingCodexAuth, setCheckingCodexAuth] = useState(false)
+  const [checkingCodeRabbitAuth, setCheckingCodeRabbitAuth] = useState(false)
   const [checkingOpenCodeAuth, setCheckingOpenCodeAuth] = useState(false)
   const [openCodeModelPopoverOpen, setOpenCodeModelPopoverOpen] =
     useState(false)
@@ -529,6 +546,11 @@ export const GeneralPane: React.FC = () => {
         name: 'GitHub CLI',
         command: 'uninstall_gh_cli' as const,
         queryKey: ghCliQueryKeys.all,
+      },
+      coderabbit: {
+        name: 'CodeRabbit CLI',
+        command: 'uninstall_coderabbit_cli' as const,
+        queryKey: coderabbitCliQueryKeys.all,
       },
     }[target]
 
@@ -922,6 +944,29 @@ export const GeneralPane: React.FC = () => {
     openCliLoginModal('codex', codexStatus.path, ['login'])
   }, [codexStatus?.path, openCliLoginModal, queryClient])
 
+  const handleCodeRabbitLogin = useCallback(async () => {
+    if (!coderabbitStatus?.path) return
+
+    setCheckingCodeRabbitAuth(true)
+    try {
+      await queryClient.invalidateQueries({
+        queryKey: coderabbitCliQueryKeys.auth(),
+      })
+      const result = await queryClient.fetchQuery<CodeRabbitAuthStatus>({
+        queryKey: coderabbitCliQueryKeys.auth(),
+      })
+
+      if (result?.authenticated) {
+        toast.success('CodeRabbit CLI is already authenticated')
+        return
+      }
+    } finally {
+      setCheckingCodeRabbitAuth(false)
+    }
+
+    openCliLoginModal('coderabbit', coderabbitStatus.path, ['auth', 'login'])
+  }, [coderabbitStatus?.path, openCliLoginModal, queryClient])
+
   const handleOpenCodeLogin = useCallback(async () => {
     if (!opencodeStatus?.command) return
 
@@ -970,6 +1015,11 @@ export const GeneralPane: React.FC = () => {
     openCliLoginModal('codex', codexStatus.path, ['login'])
   }, [codexStatus?.path, openCliLoginModal])
 
+  const handleCodeRabbitRelogin = useCallback(() => {
+    if (!coderabbitStatus?.path) return
+    openCliLoginModal('coderabbit', coderabbitStatus.path, ['auth', 'login'])
+  }, [coderabbitStatus?.path, openCliLoginModal])
+
   const handleOpenCodeRelogin = useCallback(() => {
     if (!opencodeStatus?.command) return
     openCliLoginModal('opencode', opencodeStatus.command, [
@@ -986,6 +1036,10 @@ export const GeneralPane: React.FC = () => {
   const ghStatusDescription = ghStatus?.installed
     ? ghStatus.path
     : 'Install gh on your PATH for GitHub integration'
+
+  const coderabbitStatusDescription = coderabbitStatus?.installed
+    ? coderabbitStatus.path
+    : 'Optional secondary code reviews'
 
   const handleCopyPath = useCallback((path: string | null | undefined) => {
     if (!path) return
@@ -1034,6 +1088,13 @@ export const GeneralPane: React.FC = () => {
   const handleRefreshCodexStatus = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: codexCliQueryKeys.status() })
     queryClient.invalidateQueries({ queryKey: codexCliQueryKeys.auth() })
+  }, [queryClient])
+
+  const handleRefreshCodeRabbitStatus = useCallback(() => {
+    queryClient.invalidateQueries({
+      queryKey: coderabbitCliQueryKeys.status(),
+    })
+    queryClient.invalidateQueries({ queryKey: coderabbitCliQueryKeys.auth() })
   }, [queryClient])
 
   const handleCodexInstallOrUpdate = useCallback(async () => {
@@ -1271,6 +1332,121 @@ export const GeneralPane: React.FC = () => {
                 >
                   Set Up
                 </Button>
+              )}
+            </InlineField>
+          </div>
+        </SettingsSection>
+      )}
+
+      {isNativeApp() && (
+        <SettingsSection
+          title="CodeRabbit CLI"
+          anchorId="pref-general-section-coderabbit-cli"
+          actions={
+            coderabbitStatus?.installed ? (
+              checkingCodeRabbitAuth || isCodeRabbitAuthLoading ? (
+                <span className="text-sm text-muted-foreground flex items-center gap-2">
+                  <Loader2 className="size-3 animate-spin" />
+                  Checking...
+                </span>
+              ) : coderabbitAuth?.authenticated ? (
+                <span className="text-sm text-muted-foreground flex items-center gap-2">
+                  Logged in
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleCodeRabbitRelogin}
+                  >
+                    Relogin
+                  </Button>
+                </span>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleCodeRabbitLogin}
+                >
+                  Login
+                </Button>
+              )
+            ) : (
+              <span className="text-sm text-muted-foreground">
+                Not installed
+              </span>
+            )
+          }
+        >
+          <div className="space-y-4">
+            <InlineField
+              label={coderabbitStatus?.installed ? 'Version' : 'Status'}
+              description={
+                coderabbitStatus?.installed ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={() => handleCopyPath(coderabbitStatus.path)}
+                        className="text-left hover:underline cursor-pointer"
+                      >
+                        {coderabbitStatusDescription}
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>Click to copy path</TooltipContent>
+                  </Tooltip>
+                ) : (
+                  'Optional - enables secondary CodeRabbit code reviews'
+                )
+              }
+            >
+              {isCodeRabbitLoading || installCodeRabbitCli.isPending ? (
+                <Loader2 className="size-4 animate-spin text-muted-foreground" />
+              ) : coderabbitStatus?.installed ? (
+                <div className="flex items-center gap-2">
+                  <div className="w-40 rounded-md border border-input bg-background px-3 py-2 text-sm">
+                    {coderabbitStatus.version ?? 'Installed'}
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={updateCodeRabbitCli.isPending}
+                    onClick={() => updateCodeRabbitCli.mutate()}
+                  >
+                    {updateCodeRabbitCli.isPending ? 'Updating...' : 'Update'}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRefreshCodeRabbitStatus}
+                  >
+                    Refresh
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setDeleteCliTarget('coderabbit')}
+                    disabled={isDeletingCli}
+                  >
+                    Delete managed install
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <Button
+                    className="w-40"
+                    disabled={installCodeRabbitCli.isPending}
+                    onClick={() => installCodeRabbitCli.mutate()}
+                  >
+                    {installCodeRabbitCli.isPending
+                      ? 'Installing...'
+                      : 'Install'}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRefreshCodeRabbitStatus}
+                  >
+                    Refresh
+                  </Button>
+                </div>
               )}
             </InlineField>
           </div>
@@ -2675,7 +2851,9 @@ export const GeneralPane: React.FC = () => {
                   ? 'Codex CLI'
                   : deleteCliTarget === 'opencode'
                     ? 'OpenCode CLI'
-                    : 'GitHub CLI'}{' '}
+                    : deleteCliTarget === 'coderabbit'
+                      ? 'CodeRabbit CLI'
+                      : 'GitHub CLI'}{' '}
               files?
             </AlertDialogTitle>
             <AlertDialogDescription>

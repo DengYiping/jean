@@ -14,6 +14,7 @@ import { claudeCliQueryKeys } from '@/services/claude-cli'
 import { ghCliQueryKeys } from '@/services/gh-cli'
 import { codexCliQueryKeys } from '@/services/codex-cli'
 import { opencodeCliQueryKeys } from '@/services/opencode-cli'
+import { coderabbitCliQueryKeys } from '@/services/coderabbit-cli'
 import { githubQueryKeys } from '@/services/github'
 import {
   Dialog,
@@ -58,7 +59,7 @@ export function CliLoginModal() {
 }
 
 interface CliLoginModalContentProps {
-  cliType: 'claude' | 'gh' | 'codex' | 'opencode' | null
+  cliType: 'claude' | 'gh' | 'codex' | 'opencode' | 'coderabbit' | null
   command: string
   commandArgs: string[] | null
   action: 'login' | 'update'
@@ -89,7 +90,9 @@ function CliLoginModalContent({
         ? 'Codex CLI'
         : cliType === 'opencode'
           ? 'OpenCode CLI'
-          : 'GitHub CLI'
+          : cliType === 'coderabbit'
+            ? 'CodeRabbit CLI'
+            : 'GitHub CLI'
 
   // Generate unique terminal ID for this login session
   const terminalId = useMemo(() => {
@@ -208,6 +211,10 @@ function CliLoginModalContent({
           queryClient.invalidateQueries({ queryKey: codexCliQueryKeys.all })
         } else if (cliType === 'opencode') {
           queryClient.invalidateQueries({ queryKey: opencodeCliQueryKeys.all })
+        } else if (cliType === 'coderabbit') {
+          queryClient.invalidateQueries({
+            queryKey: coderabbitCliQueryKeys.all,
+          })
         }
 
         onClose()

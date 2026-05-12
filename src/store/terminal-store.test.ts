@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { useTerminalStore } from './terminal-store'
+import { isPanelTerminal, useTerminalStore } from './terminal-store'
 
 // Mock crypto.randomUUID
 vi.stubGlobal('crypto', {
@@ -101,6 +101,32 @@ describe('TerminalStore', () => {
       expect(terminals[0]?.label).toBe('Dev Server')
     })
 
+    it('adds a session terminal without activating or opening the terminal panel', () => {
+      const { addTerminal, getTerminals } = useTerminalStore.getState()
+
+      const id = addTerminal('worktree-1', 'codex', 'Codex', {
+        kind: 'session',
+        commandArgs: ['--dangerously-bypass-approvals-and-sandbox'],
+        activate: false,
+        openPanel: false,
+      })
+
+      const state = useTerminalStore.getState()
+      const terminals = getTerminals('worktree-1')
+      expect(terminals[0]).toMatchObject({
+        id,
+        command: 'codex',
+        commandArgs: ['--dangerously-bypass-approvals-and-sandbox'],
+        kind: 'session',
+      })
+      const terminal = terminals[0]
+      expect(terminal).toBeDefined()
+      expect(terminal ? isPanelTerminal(terminal) : true).toBe(false)
+      expect(state.activeTerminalIds['worktree-1']).toBeUndefined()
+      expect(state.terminalPanelOpen['worktree-1']).toBeUndefined()
+      expect(state.terminalVisible).toBe(false)
+    })
+
     it('removes a terminal', () => {
       const { addTerminal, removeTerminal, getTerminals } =
         useTerminalStore.getState()
@@ -142,6 +168,23 @@ describe('TerminalStore', () => {
       setActiveTerminal('worktree-1', id1)
       expect(useTerminalStore.getState().activeTerminalIds['worktree-1']).toBe(
         id1
+      )
+    })
+
+    it('does not make a session terminal active in the panel tab strip', () => {
+      const { addTerminal, setActiveTerminal } = useTerminalStore.getState()
+
+      const panelId = addTerminal('worktree-1')
+      const sessionId = addTerminal('worktree-1', 'claude', 'Claude', {
+        kind: 'session',
+        activate: false,
+        openPanel: false,
+      })
+
+      setActiveTerminal('worktree-1', sessionId)
+
+      expect(useTerminalStore.getState().activeTerminalIds['worktree-1']).toBe(
+        panelId
       )
     })
 
@@ -345,6 +388,41 @@ describe('TerminalStore', () => {
       const label = getTerminals('worktree-1')[0]?.label
       expect(label?.length).toBeLessThanOrEqual(20)
       expect(label?.endsWith('...')).toBe(true)
+    })
+  })
+
+  describe('closePanelTerminals', () => {
+    it('closes only panel terminals and leaves session terminals intact', () => {
+      const {
+        addTerminal,
+        closePanelTerminals,
+        getTerminals,
+        setTerminalRunning,
+      } = useTerminalStore.getState()
+
+      const panelId = addTerminal('worktree-1', 'bun test')
+      const sessionId = addTerminal('worktree-1', 'codex', 'Codex', {
+        kind: 'session',
+        activate: false,
+        openPanel: false,
+      })
+      setTerminalRunning(panelId, true)
+      setTerminalRunning(sessionId, true)
+
+      expect(closePanelTerminals('worktree-1')).toEqual([panelId])
+
+      const terminals = getTerminals('worktree-1')
+      expect(terminals).toHaveLength(1)
+      expect(terminals[0]?.id).toBe(sessionId)
+      expect(useTerminalStore.getState().runningTerminals.has(panelId)).toBe(
+        false
+      )
+      expect(useTerminalStore.getState().runningTerminals.has(sessionId)).toBe(
+        true
+      )
+      expect(useTerminalStore.getState().terminalPanelOpen['worktree-1']).toBe(
+        false
+      )
     })
   })
 })

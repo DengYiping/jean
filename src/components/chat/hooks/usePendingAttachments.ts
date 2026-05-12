@@ -4,8 +4,10 @@ import { generateId } from '@/lib/uuid'
 import { toast } from 'sonner'
 import { persistEnqueue } from '@/services/chat'
 import { useChatStore } from '@/store/chat-store'
+import { useUIStore } from '@/store/ui-store'
 import { buildMcpConfigJson } from '@/services/mcp'
 import { getFilename } from '@/lib/path-utils'
+import { parseSlashMagicCommand } from '@/lib/magic-command-aliases'
 import type {
   QueuedMessage,
   ClaudeCommand,
@@ -130,6 +132,63 @@ export function usePendingAttachments({
       if (!activeSessionId || !activeWorktreeId || !activeWorktreePath) return
 
       void (async () => {
+        const slashMagicCommand =
+          command.source === 'builtin'
+            ? parseSlashMagicCommand(`/${command.name}`)
+            : null
+        if (slashMagicCommand) {
+          const { gitDiffSelectedFiles } = useUIStore.getState()
+          const specificFiles =
+            gitDiffSelectedFiles.size > 0
+              ? Array.from(gitDiffSelectedFiles)
+              : null
+          const queuedMessage: QueuedMessage = {
+            kind: 'magic_command',
+            magicCommand: slashMagicCommand.command,
+            magicCommandLabel: slashMagicCommand.label,
+            specificFiles,
+            id: generateId(),
+            message: `/${command.name}`,
+            pendingImages: [],
+            pendingFiles: [],
+            skills: [],
+            pendingTextFiles: [],
+            model: selectedModelRef.current,
+            provider: selectedProviderRef.current,
+            executionMode: executionModeRef.current,
+            thinkingLevel: selectedThinkingLevelRef.current,
+            effortLevel:
+              useAdaptiveThinkingRef.current || isCodexBackendRef.current
+                ? selectedEffortLevelRef.current
+                : undefined,
+            backend:
+              selectedBackendRef.current !== 'claude'
+                ? selectedBackendRef.current
+                : undefined,
+            queuedAt: Date.now(),
+          }
+
+          const { isSending: checkIsSendingNow, enqueueMessage } =
+            useChatStore.getState()
+          if (checkIsSendingNow(activeSessionId)) {
+            enqueueMessage(activeSessionId, queuedMessage)
+            persistEnqueue(
+              activeWorktreeId,
+              activeWorktreePath,
+              activeSessionId,
+              queuedMessage
+            )
+            toast.info(`Queued: ${slashMagicCommand.label}`)
+          } else {
+            window.dispatchEvent(
+              new CustomEvent('magic-command', {
+                detail: { command: slashMagicCommand.command },
+              })
+            )
+          }
+          return
+        }
+
         const isBuiltinCompact =
           command.source === 'builtin' && command.name === 'compact'
         const toastId = isBuiltinCompact

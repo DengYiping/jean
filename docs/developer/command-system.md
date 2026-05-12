@@ -236,6 +236,38 @@ const handleBackgroundOperation = useCallback(async () => {
 - `handleCommit` - creates commit with AI-generated message
 - `handleReview` - runs AI code review
 
+### Slash Magic Command Aliases
+
+The chat input supports a small set of slash aliases for high-frequency magic
+prompt operations:
+
+- `/commit`
+- `/commit-and-push` and `/commit and push`
+- `/create-pr` and `/create pr`
+- `/create-draft-pr` and `/create draft pr`
+
+These aliases are intentionally slash-only. Plain text such as `commit` or
+`create pr` is normal chat input.
+
+Behavior:
+
+- If the active session is idle, the alias dispatches the same `magic-command`
+  event used by the magic menu.
+- If the active session is running, the alias is always added to the persisted
+  session queue as a `QueuedMessage` with `kind: 'magic_command'`.
+- Queued magic commands are processed by `useQueueProcessor`, which calls the
+  existing git/PR backend commands directly instead of sending a chat turn.
+- `Cmd+M` / Magic Menu actions keep their existing immediate behavior and do not
+  opt into this automatic queueing path.
+
+Relevant files:
+
+- `src/lib/magic-command-aliases.ts` - slash alias parser
+- `src/components/chat/hooks/useMessageSending.ts` - typed alias submission
+- `src/components/chat/hooks/usePendingAttachments.ts` - slash popover alias selection
+- `src/hooks/useQueueProcessor.ts` - persisted queued magic execution
+- `src/components/chat/QueuedMessageItem.tsx` - queued magic item display
+
 ## Integration Points
 
 ### Command Palette

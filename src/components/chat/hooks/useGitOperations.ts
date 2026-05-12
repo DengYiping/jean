@@ -72,7 +72,7 @@ interface UseGitOperationsReturn {
   /** Pushes commits to remote */
   handlePush: (remote?: string) => Promise<void>
   /** Creates PR with AI-generated title and description */
-  handleOpenPr: () => Promise<void>
+  handleOpenPr: (draft?: boolean) => Promise<void>
   /** Runs AI code review. If existingSessionId is provided, stores results on that session instead of creating a new one. */
   handleReview: (existingSessionId?: string) => Promise<void>
   /** Runs CodeRabbit CLI code review. */
@@ -374,75 +374,88 @@ export function useGitOperations({
   )
 
   // Handle Open PR - creates PR with AI-generated title and description in background
-  const handleOpenPr = useCallback(async () => {
-    if (!activeWorktreeId || !activeWorktreePath || !worktree) return
+  const handleOpenPr = useCallback(
+    async (draft = false) => {
+      if (!activeWorktreeId || !activeWorktreePath || !worktree) return
 
-    const { setWorktreeLoading, clearWorktreeLoading } = useChatStore.getState()
-    setWorktreeLoading(activeWorktreeId, 'pr')
-    const branch = worktree?.branch ?? ''
-    const toastId = toast.loading(`Creating PR for ${branch}...`)
-
-    try {
-      const result = await invoke<CreatePrResponse>(
-        'create_pr_with_ai_content',
-        {
-          worktreePath: activeWorktreePath,
-          sessionId: activeSessionId,
-          customPrompt: preferences?.magic_prompts?.pr_content,
-          model: preferences?.magic_prompt_models?.pr_content_model,
-          customProfileName: resolveMagicPromptProvider(
-            preferences?.magic_prompt_providers,
-            'pr_content_provider',
-            preferences?.default_provider
-          ),
-          reasoningEffort:
-            preferences?.magic_prompt_efforts?.pr_content_effort ?? null,
-        }
+      const { setWorktreeLoading, clearWorktreeLoading } =
+        useChatStore.getState()
+      setWorktreeLoading(activeWorktreeId, 'pr')
+      const branch = worktree?.branch ?? ''
+      const toastId = toast.loading(
+        `${draft ? 'Creating draft PR' : 'Creating PR'} for ${branch}...`
       )
 
-      if (!result.existing) {
-        // Save PR info to worktree (backend already saved for existing PRs)
-        await saveWorktreePr(activeWorktreeId, result.pr_number, result.pr_url)
-      }
+      try {
+        const result = await invoke<CreatePrResponse>(
+          'create_pr_with_ai_content',
+          {
+            worktreePath: activeWorktreePath,
+            sessionId: activeSessionId,
+            customPrompt: preferences?.magic_prompts?.pr_content,
+            model: preferences?.magic_prompt_models?.pr_content_model,
+            customProfileName: resolveMagicPromptProvider(
+              preferences?.magic_prompt_providers,
+              'pr_content_provider',
+              preferences?.default_provider
+            ),
+            reasoningEffort:
+              preferences?.magic_prompt_efforts?.pr_content_effort ?? null,
+            draft,
+          }
+        )
 
-      // Invalidate worktree queries to refresh PR status in toolbar
-      queryClient.invalidateQueries({
-        queryKey: projectsQueryKeys.worktrees(worktree.project_id),
-      })
-      queryClient.invalidateQueries({
-        queryKey: [...projectsQueryKeys.all, 'worktree', activeWorktreeId],
-      })
-      queryClient.invalidateQueries({ queryKey: agentBoardQueryKeys.all })
+        if (!result.existing) {
+          // Save PR info to worktree (backend already saved for existing PRs)
+          await saveWorktreePr(
+            activeWorktreeId,
+            result.pr_number,
+            result.pr_url
+          )
+        }
 
-      toast.success(
-        result.existing
-          ? `PR linked: ${result.title}`
-          : `PR created: ${result.title}`,
-        {
+        // Invalidate worktree queries to refresh PR status in toolbar
+        queryClient.invalidateQueries({
+          queryKey: projectsQueryKeys.worktrees(worktree.project_id),
+        })
+        queryClient.invalidateQueries({
+          queryKey: [...projectsQueryKeys.all, 'worktree', activeWorktreeId],
+        })
+        queryClient.invalidateQueries({ queryKey: agentBoardQueryKeys.all })
+
+        toast.success(
+          result.existing
+            ? `PR linked: ${result.title}`
+            : `${result.is_draft ? 'Draft PR' : 'PR'} created: ${result.title}`,
+          {
+            id: toastId,
+            action: {
+              label: 'Open',
+              onClick: () => openExternal(result.pr_url),
+            },
+          }
+        )
+      } catch (error) {
+        toast.error(`Failed to create ${draft ? 'draft ' : ''}PR: ${error}`, {
           id: toastId,
-          action: {
-            label: 'Open',
-            onClick: () => openExternal(result.pr_url),
-          },
-        }
-      )
-    } catch (error) {
-      toast.error(`Failed to create PR: ${error}`, { id: toastId })
-    } finally {
-      clearWorktreeLoading(activeWorktreeId)
-    }
-  }, [
-    activeWorktreeId,
-    activeSessionId,
-    activeWorktreePath,
-    worktree,
-    queryClient,
-    preferences?.magic_prompts?.pr_content,
-    preferences?.magic_prompt_models?.pr_content_model,
-    preferences?.magic_prompt_providers,
-    preferences?.default_provider,
-    preferences?.magic_prompt_efforts?.pr_content_effort,
-  ])
+        })
+      } finally {
+        clearWorktreeLoading(activeWorktreeId)
+      }
+    },
+    [
+      activeWorktreeId,
+      activeSessionId,
+      activeWorktreePath,
+      worktree,
+      queryClient,
+      preferences?.magic_prompts?.pr_content,
+      preferences?.magic_prompt_models?.pr_content_model,
+      preferences?.magic_prompt_providers,
+      preferences?.default_provider,
+      preferences?.magic_prompt_efforts?.pr_content_effort,
+    ]
+  )
 
   // Handle Review - runs a code review in background and stores results in a new session.
   const runReview = useCallback(

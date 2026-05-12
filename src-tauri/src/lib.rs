@@ -597,10 +597,77 @@ mod tests {
                 token: None,
                 no_token: false,
                 command: Some(CliCommand::Yolo {
+                    project_selector: None,
                     prompt: "tell me about Iceberg".to_string(),
                 }),
             }
         );
+    }
+
+    #[test]
+    fn parse_cli_args_supports_projects_list_subcommand() {
+        let args = vec![
+            "jean".to_string(),
+            "projects".to_string(),
+            "list".to_string(),
+        ];
+
+        let parsed = try_parse_cli_args(&args).unwrap();
+
+        assert_eq!(
+            parsed,
+            CliArgs {
+                headless: false,
+                host: None,
+                port: None,
+                token: None,
+                no_token: false,
+                command: Some(CliCommand::ListProjects),
+            }
+        );
+    }
+
+    #[test]
+    fn parse_cli_args_supports_yolo_project_flag() {
+        let args = vec![
+            "jean".to_string(),
+            "yolo".to_string(),
+            "--project".to_string(),
+            "project-1".to_string(),
+            "fix".to_string(),
+            "the".to_string(),
+            "bug".to_string(),
+        ];
+
+        let parsed = try_parse_cli_args(&args).unwrap();
+
+        assert_eq!(
+            parsed,
+            CliArgs {
+                headless: false,
+                host: None,
+                port: None,
+                token: None,
+                no_token: false,
+                command: Some(CliCommand::Yolo {
+                    project_selector: Some("project-1".to_string()),
+                    prompt: "fix the bug".to_string(),
+                }),
+            }
+        );
+    }
+
+    #[test]
+    fn parse_cli_args_rejects_yolo_project_flag_without_value() {
+        let args = vec![
+            "jean".to_string(),
+            "yolo".to_string(),
+            "--project".to_string(),
+        ];
+
+        let error = try_parse_cli_args(&args).unwrap_err();
+
+        assert!(error.contains("--project requires a project ID or name"));
     }
 
     #[test]
@@ -647,6 +714,20 @@ mod tests {
         let error = try_parse_cli_args(&args).unwrap_err();
 
         assert!(error.contains("mutually exclusive"));
+    }
+
+    #[test]
+    fn parse_cli_args_allows_headless_projects_list_combination() {
+        let args = vec![
+            "jean".to_string(),
+            "--headless".to_string(),
+            "projects".to_string(),
+            "list".to_string(),
+        ];
+
+        let parsed = try_parse_cli_args(&args).unwrap();
+
+        assert_eq!(parsed.command, Some(CliCommand::ListProjects));
     }
 
     #[test]
@@ -2855,8 +2936,14 @@ pub fn fix_macos_path() {
 /// Parsed CLI arguments for headless server mode.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum CliCommand {
-    Import { path: String },
-    Yolo { prompt: String },
+    Import {
+        path: String,
+    },
+    ListProjects,
+    Yolo {
+        project_selector: Option<String>,
+        prompt: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2884,7 +2971,9 @@ fn print_cli_help() {
     println!();
     println!("Usage: jean [OPTIONS]");
     println!("       jean import <path>");
+    println!("       jean projects list");
     println!("       jean yolo <prompt>");
+    println!("       jean yolo --project <id-or-name> <prompt>");
     println!();
     println!("Options:");
     println!("  --headless          Run without GUI (HTTP server only)");
@@ -2949,15 +3038,55 @@ fn try_parse_cli_args(args: &[String]) -> Result<CliArgs, String> {
                     .ok_or_else(|| "import requires a path argument".to_string())?;
                 command = Some(CliCommand::Import { path });
             }
+            "projects" => {
+                if command.is_some() {
+                    return Err("Only one CLI command can be used at a time".to_string());
+                }
+                let subcommand = iter
+                    .next()
+                    .cloned()
+                    .ok_or_else(|| "projects requires a subcommand".to_string())?;
+                match subcommand.as_str() {
+                    "list" => {
+                        command = Some(CliCommand::ListProjects);
+                    }
+                    _ => {
+                        return Err(format!(
+                            "Unknown projects subcommand '{subcommand}'. Usage: jean projects list"
+                        ));
+                    }
+                }
+            }
             "yolo" => {
                 if command.is_some() {
                     return Err("Only one CLI command can be used at a time".to_string());
                 }
-                let prompt = iter
-                    .next()
-                    .cloned()
-                    .ok_or_else(|| "yolo requires a prompt argument".to_string())?;
-                command = Some(CliCommand::Yolo { prompt });
+                let mut project_selector = None;
+                let mut prompt_parts = Vec::new();
+
+                while let Some(next) = iter.next() {
+                    if next == "--project" {
+                        let selector = iter
+                            .next()
+                            .cloned()
+                            .ok_or_else(|| "--project requires a project ID or name".to_string())?;
+                        if selector.trim().is_empty() {
+                            return Err("--project requires a project ID or name".to_string());
+                        }
+                        project_selector = Some(selector);
+                    } else {
+                        prompt_parts.push(next.clone());
+                    }
+                }
+
+                if prompt_parts.is_empty() {
+                    return Err("yolo requires a prompt argument".to_string());
+                }
+
+                command = Some(CliCommand::Yolo {
+                    project_selector,
+                    prompt: prompt_parts.join(" "),
+                });
             }
             _ => {} // ignore unknown flags (Tauri/OS may pass their own)
         }
@@ -2967,7 +3096,11 @@ fn try_parse_cli_args(args: &[String]) -> Result<CliArgs, String> {
         return Err("--token and --no-token are mutually exclusive".to_string());
     }
 
-    if command.is_some() && headless {
+    if matches!(
+        command,
+        Some(CliCommand::Import { .. } | CliCommand::Yolo { .. })
+    ) && headless
+    {
         return Err("headless mode and import are mutually exclusive".to_string());
     }
 
@@ -3052,8 +3185,15 @@ fn handle_cli_command(command: CliCommand) -> Result<(), String> {
             println!("Opening Jean to import {}", request.path);
             Ok(())
         }
-        CliCommand::Yolo { prompt } => {
-            crate::projects::enqueue_cli_yolo_request(&prompt)?;
+        CliCommand::ListProjects => {
+            println!("{}", crate::projects::list_cli_projects()?);
+            Ok(())
+        }
+        CliCommand::Yolo {
+            project_selector,
+            prompt,
+        } => {
+            crate::projects::enqueue_cli_yolo_request(&prompt, project_selector.as_deref())?;
             open_macos_app_bundle()?;
             println!("Opening Jean to start a yolo session");
             Ok(())

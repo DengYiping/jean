@@ -413,6 +413,7 @@ export interface CliImportedProjectResult {
 export interface PendingCliYoloRequest {
   id: string
   prompt: string
+  project_id?: string | null
   created_at: number
 }
 

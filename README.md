@@ -105,12 +105,16 @@ Desktop CLI subcommands can hand work off to the Jean app:
 
 ```bash
 jean import /path/to/repo
+jean projects list
 jean yolo "tell me about Iceberg"
+jean yolo --project <id-or-name> "fix the failing test"
 ```
 
 `jean yolo` opens Jean, creates a fresh yolo session in the configured default
 repo's base session, and sends the prompt there. Configure the target repo in
-Settings > General > Default repo for CLI yolo.
+Settings > General > Default repo for CLI yolo. Pass `--project` with a project
+ID or exact project name to target a specific repo; use `jean projects list` to
+find available project IDs.
 
 ## Roadmap
 

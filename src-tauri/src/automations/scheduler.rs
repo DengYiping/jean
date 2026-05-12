@@ -620,6 +620,7 @@ struct RunWindow {
 
 #[derive(Debug, Clone, Copy)]
 enum Frequency {
+    Minutely,
     Hourly,
     Daily,
     Weekly,
@@ -644,6 +645,7 @@ impl ParsedSchedule {
             match key.trim().to_ascii_uppercase().as_str() {
                 "FREQ" => {
                     frequency = Some(match value.trim().to_ascii_uppercase().as_str() {
+                        "MINUTELY" => Frequency::Minutely,
                         "HOURLY" => Frequency::Hourly,
                         "DAILY" => Frequency::Daily,
                         "WEEKLY" => Frequency::Weekly,
@@ -702,10 +704,37 @@ impl ParsedSchedule {
         };
 
         match self.frequency {
+            Frequency::Minutely => self.next_minutely(current),
             Frequency::Hourly => self.next_hourly(current),
             Frequency::Daily => self.next_daily(current),
             Frequency::Weekly => self.next_weekly(current),
         }
+    }
+
+    fn next_minutely(&self, current: chrono::DateTime<Local>) -> Result<u64, String> {
+        let current_block = current
+            .with_second(0)
+            .and_then(|value| value.with_nanosecond(0))
+            .ok_or_else(|| "Failed to normalize minutely schedule.".to_string())?;
+
+        for offset in 0..=(60 * 24 * 366 * 5) {
+            let candidate = current_block + Duration::minutes(offset.into());
+            let candidate_minute = candidate.timestamp().div_euclid(60);
+            if candidate_minute % self.interval as i64 != 0 {
+                continue;
+            }
+            if let Some(run_window) = self.run_window {
+                let hour = candidate.hour();
+                if hour < run_window.start_hour || hour >= run_window.end_hour {
+                    continue;
+                }
+            }
+            if candidate.timestamp() > current.timestamp() {
+                return Ok(candidate.timestamp() as u64);
+            }
+        }
+
+        Err("Could not compute next minutely schedule.".to_string())
     }
 
     fn next_hourly(&self, current: chrono::DateTime<Local>) -> Result<u64, String> {
@@ -818,8 +847,10 @@ fn parse_run_window(
             if start_hour > 23 || end_hour > 23 {
                 return Err("Run window hours must be between 0 and 23.".to_string());
             }
-            if !matches!(frequency, Frequency::Hourly) {
-                return Err("Run window is only supported for hourly schedules.".to_string());
+            if !matches!(frequency, Frequency::Hourly | Frequency::Minutely) {
+                return Err(
+                    "Run window is only supported for hourly or minutely schedules.".to_string(),
+                );
             }
             if start_hour >= end_hour {
                 return Err("Run window start hour must be earlier than the end hour.".to_string());
@@ -999,6 +1030,77 @@ mod tests {
             (current + Duration::days(1)).date_naive()
         );
         assert_eq!(next.hour(), 9);
+    }
+
+    #[test]
+    fn computes_next_minutely_run() {
+        let current = Local
+            .with_ymd_and_hms(2026, 4, 9, 9, 7, 15)
+            .single()
+            .expect("current");
+        let next = compute_next_run_at(
+            "FREQ=MINUTELY;INTERVAL=10",
+            None,
+            None,
+            current.timestamp() as u64,
+        )
+        .expect("schedule")
+        .expect("next");
+        let next = Local
+            .timestamp_opt(next as i64, 0)
+            .single()
+            .expect("next ts");
+        assert_eq!(next.hour(), 9);
+        assert_eq!(next.minute(), 10);
+        assert_eq!(next.second(), 0);
+    }
+
+    #[test]
+    fn computes_next_minutely_run_in_window() {
+        let current = Local
+            .with_ymd_and_hms(2026, 4, 9, 8, 58, 0)
+            .single()
+            .expect("current");
+        let next = compute_next_run_at(
+            "FREQ=MINUTELY;INTERVAL=20",
+            Some(9),
+            Some(17),
+            current.timestamp() as u64,
+        )
+        .expect("schedule")
+        .expect("next");
+        let next = Local
+            .timestamp_opt(next as i64, 0)
+            .single()
+            .expect("next ts");
+        assert_eq!(next.hour(), 9);
+        assert_eq!(next.minute(), 0);
+    }
+
+    #[test]
+    fn rolls_minutely_window_to_next_day_after_end() {
+        let current = Local
+            .with_ymd_and_hms(2026, 4, 9, 16, 55, 0)
+            .single()
+            .expect("current");
+        let next = compute_next_run_at(
+            "FREQ=MINUTELY;INTERVAL=30",
+            Some(9),
+            Some(17),
+            current.timestamp() as u64,
+        )
+        .expect("schedule")
+        .expect("next");
+        let next = Local
+            .timestamp_opt(next as i64, 0)
+            .single()
+            .expect("next ts");
+        assert_eq!(
+            next.date_naive(),
+            (current + Duration::days(1)).date_naive()
+        );
+        assert_eq!(next.hour(), 9);
+        assert_eq!(next.minute(), 0);
     }
 
     #[test]

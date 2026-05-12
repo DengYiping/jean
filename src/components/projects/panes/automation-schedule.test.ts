@@ -43,4 +43,24 @@ describe('automation schedule helpers', () => {
       run_window_end_hour: null,
     })
   })
+
+  it('parses minutely schedules with a run window', () => {
+    const schedule = parseSchedule('FREQ=MINUTELY;INTERVAL=10', 9, 17)
+
+    expect(schedule.frequency).toBe('minutely')
+    expect(schedule.interval).toBe(10)
+    expect(schedule.runWindowEnabled).toBe(true)
+    expect(schedule.runWindowStartHour).toBe(9)
+    expect(schedule.runWindowEndHour).toBe(17)
+  })
+
+  it('builds minutely schedules and keeps run window payload separate', () => {
+    const schedule = parseSchedule('FREQ=MINUTELY;INTERVAL=20', 9, 17)
+
+    expect(buildScheduleRRule(schedule)).toBe('FREQ=MINUTELY;INTERVAL=20')
+    expect(getRunWindowPayload(schedule)).toEqual({
+      run_window_start_hour: 9,
+      run_window_end_hour: 17,
+    })
+  })
 })

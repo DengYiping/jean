@@ -706,6 +706,7 @@ function App() {
             'prepare_cli_yolo_from_pending_request',
             {
               prompt: request.prompt,
+              projectId: request.project_id ?? null,
             }
           )
           if (cancelled) return

@@ -112,12 +112,18 @@ export const MCP_HEALTH_KEY = 'mcp-health'
  * Manual trigger only (enabled: false) — call refetch() to run.
  * Results are cached for 30s to avoid redundant health checks.
  */
-export function useMcpHealthCheck(backend: CliBackend = 'claude') {
+export function useMcpHealthCheck(
+  backend: CliBackend = 'claude',
+  worktreePath?: string | null
+) {
   return useQuery({
-    queryKey: [MCP_HEALTH_KEY, backend],
+    queryKey: [MCP_HEALTH_KEY, backend, worktreePath ?? ''],
     queryFn: async () => {
       if (!isTauri()) return { statuses: {} } as McpHealthResult
-      return invoke<McpHealthResult>('check_mcp_health', { backend })
+      return invoke<McpHealthResult>('check_mcp_health', {
+        backend,
+        worktreePath: worktreePath ?? null,
+      })
     },
     enabled: false,
     staleTime: 30_000,
@@ -129,23 +135,29 @@ export function useMcpHealthCheck(backend: CliBackend = 'claude') {
  * Check health across ALL installed backends, merging statuses.
  * Returns merged statuses and a combined refetch function.
  */
-export function useAllBackendsMcpHealth(installedBackends: CliBackend[]) {
-  const claude = useMcpHealthCheck('claude')
-  const codex = useMcpHealthCheck('codex')
-  const opencode = useMcpHealthCheck('opencode')
+export function useAllBackendsMcpHealth(
+  installedBackends: CliBackend[],
+  worktreePath?: string | null
+) {
+  const claude = useMcpHealthCheck('claude', worktreePath)
+  const codex = useMcpHealthCheck('codex', worktreePath)
+  const opencode = useMcpHealthCheck('opencode', worktreePath)
 
   const has = useMemo(() => new Set(installedBackends), [installedBackends])
 
   const statuses = useMemo(() => {
     const merged: Record<string, McpHealthStatus> = {}
-    if (has.has('claude') && claude.data?.statuses) {
-      Object.assign(merged, claude.data.statuses)
-    }
-    if (has.has('codex') && codex.data?.statuses) {
-      Object.assign(merged, codex.data.statuses)
-    }
-    if (has.has('opencode') && opencode.data?.statuses) {
-      Object.assign(merged, opencode.data.statuses)
+    const entries: [CliBackend, typeof claude][] = [
+      ['claude', claude],
+      ['codex', codex],
+      ['opencode', opencode],
+    ]
+    for (const [backend, query] of entries) {
+      if (has.has(backend) && query.data?.statuses) {
+        for (const [name, status] of Object.entries(query.data.statuses)) {
+          merged[mcpKey(backend, name)] = status
+        }
+      }
     }
     return merged
   }, [has, claude.data, codex.data, opencode.data])
@@ -185,10 +197,11 @@ export function getNewServersToAutoEnable(
   const enabledSet = new Set(currentEnabled)
   const knownSet = new Set(knownServers)
   return allServers
-    .filter(
-      s => !s.disabled && !enabledSet.has(s.name) && !knownSet.has(s.name)
-    )
-    .map(s => s.name)
+    .filter(s => {
+      const key = mcpKey(s.backend, s.name)
+      return !s.disabled && !enabledSet.has(key) && !knownSet.has(key)
+    })
+    .map(s => mcpKey(s.backend, s.name))
 }
 
 /**
@@ -207,15 +220,54 @@ export function buildMcpConfigJson(
   if (enabledNames.length === 0) return undefined
 
   const mcpServers: Record<string, unknown> = {}
-  for (const name of enabledNames) {
+  for (const key of enabledNames) {
+    const parsed = parseMcpKey(key)
+    const serverName = parsed.name
+    if (parsed.backend && backend && parsed.backend !== backend) continue
     const server = allServers.find(
-      s => s.name === name && (!backend || s.backend === backend)
+      s => s.name === serverName && (!backend || s.backend === backend)
     )
-    if (server) mcpServers[name] = server.config
+    if (server) mcpServers[serverName] = server.config
   }
 
   if (Object.keys(mcpServers).length === 0) return undefined
   return JSON.stringify({ mcpServers })
+}
+
+// MCP servers are identified by "backend:name" composite keys to avoid
+// collisions when different backends have servers with the same name.
+export function mcpKey(backend: string, name: string): string {
+  return `${backend}:${name}`
+}
+
+export function parseMcpKey(key: string): { backend: string; name: string } {
+  const idx = key.indexOf(':')
+  if (idx === -1) return { backend: '', name: key }
+  return { backend: key.slice(0, idx), name: key.slice(idx + 1) }
+}
+
+export function migrateLegacyMcpKeys(
+  keys: string[],
+  allServers: McpServerInfo[]
+): { migrated: string[]; changed: boolean } {
+  const result: string[] = []
+  let changed = false
+  for (const key of keys) {
+    if (key.includes(':')) {
+      result.push(key)
+      continue
+    }
+    const matches = allServers.filter(s => s.name === key)
+    if (matches.length > 0) {
+      for (const server of matches) {
+        result.push(mcpKey(server.backend, server.name))
+      }
+    } else {
+      result.push(mcpKey('claude', key))
+    }
+    changed = true
+  }
+  return { migrated: [...new Set(result)], changed }
 }
 
 /** Backend display labels */

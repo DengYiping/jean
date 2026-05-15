@@ -179,6 +179,16 @@ export interface Session {
   archived_at?: number
   /** Whether this session was archived by the base close operation (vs user action) */
   archived_by_base_close?: boolean
+  /** Unix timestamp when session was last opened/viewed by the user */
+  last_opened_at?: number
+  /** Primary surface for this session */
+  primary_surface?: 'chat' | 'terminal'
+  /** Command used by full-screen terminal sessions */
+  terminal_command?: string | null
+  /** Extra command args for full-screen terminal sessions */
+  terminal_command_args?: string[]
+  /** Display label for the terminal tab/session */
+  terminal_label?: string | null
 
   // ========================================================================
   // Session-specific UI state (moved from ui-state.json)
@@ -218,8 +228,6 @@ export interface Session {
   digest?: SessionDigest
   /** Per-table checklist state: tableKey -> checked row indices */
   table_checked_rows?: Record<string, number[]>
-  /** Unix timestamp when session was last opened/viewed by the user */
-  last_opened_at?: number
   /** Automation owner ID for automation-created sessions. */
   automation_id?: string
   /** Human-readable automation name for session badges. */
@@ -948,6 +956,12 @@ export interface PendingFile {
   extension: string
   /** Whether this is a directory mention */
   isDirectory: boolean
+  /** Root path for linked-project file mentions. Omitted for current worktree files. */
+  sourceRootPath?: string
+  /** Project ID for linked-project file mentions. */
+  sourceProjectId?: string
+  /** Project name for linked-project file mentions. */
+  sourceProjectName?: string
 }
 
 // ============================================================================

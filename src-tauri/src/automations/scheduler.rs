@@ -231,6 +231,7 @@ async fn run_fresh_target(
             automation_id: automation.id.clone(),
             automation_name: automation.name.clone(),
         }),
+        Some(false),
     )
     .await?;
 

@@ -989,6 +989,8 @@ function App() {
 
   // Kill all terminals on page refresh/close (backup for Rust-side cleanup)
   useEffect(() => {
+    if (!isNativeApp()) return
+
     const handleBeforeUnload = () => {
       // Best-effort sync cleanup for refresh scenarios
       // Note: async operations may not complete, but Rust-side RunEvent::Exit
@@ -1062,18 +1064,20 @@ function App() {
       // Preload notification sounds after the shell is interactive.
       preloadAllSounds()
 
-      // Kill any orphaned terminals from previous session/reload.
-      invoke<number>('kill_all_terminals')
-        .then(killed => {
-          if (killed > 0) {
-            logger.info(
-              `Cleaned up ${killed} orphaned terminal(s) from previous session`
-            )
-          }
-        })
-        .catch(error => {
-          logger.warn('Failed to cleanup orphaned terminals', { error })
-        })
+      if (isNativeApp()) {
+        // Kill any orphaned terminals from previous session/reload.
+        invoke<number>('kill_all_terminals')
+          .then(killed => {
+            if (killed > 0) {
+              logger.info(
+                `Cleaned up ${killed} orphaned terminal(s) from previous session`
+              )
+            }
+          })
+          .catch(error => {
+            logger.warn('Failed to cleanup orphaned terminals', { error })
+          })
+      }
 
       // Clean up old recovery files on startup.
       cleanupOldFiles().catch(error => {

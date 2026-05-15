@@ -3,8 +3,11 @@ pub(crate) mod codex;
 pub(crate) mod codex_goal_monitor;
 pub(crate) mod codex_server;
 mod commands;
+pub(crate) mod context_instructions;
 pub mod detached;
+pub mod jean_mcp;
 mod naming;
+mod native_history;
 pub(crate) mod opencode;
 pub(crate) mod permission_rules;
 pub mod registry;
@@ -15,6 +18,7 @@ pub mod types;
 pub mod wakeup;
 
 pub use commands::*;
+pub use native_history::*;
 pub use storage::{preserve_base_sessions, restore_base_sessions, with_sessions_mut};
 
 use std::sync::atomic::{AtomicUsize, Ordering};

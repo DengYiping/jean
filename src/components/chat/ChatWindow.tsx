@@ -49,6 +49,8 @@ import {
   useLoadedIssueContexts,
   useLoadedPRContexts,
   useAttachedSavedContexts,
+  useLoadedAdvisoryContexts,
+  useLoadedSecurityContexts,
 } from '@/services/github'
 import { useLoadedLinearIssueContexts } from '@/services/linear'
 import {
@@ -96,6 +98,7 @@ import { SkillBadge } from './SkillBadge'
 import { FileContentModal } from './FileContentModal'
 import { FilePreview } from './FilePreview'
 import { ChatInput } from './ChatInput'
+import { ContextPreview } from './ContextPreview'
 import { SessionDebugPanel } from './SessionDebugPanel'
 import { ChatToolbar } from './ChatToolbar'
 import { ReviewResultsPanel } from './ReviewResultsPanel'
@@ -537,6 +540,16 @@ export function ChatWindow({
     activeSessionId ?? null,
     activeWorktreeId ?? null,
     worktree?.project_id ?? null
+  )
+
+  const { data: loadedSecurityContexts } = useLoadedSecurityContexts(
+    activeSessionId ?? null,
+    activeWorktreeId
+  )
+
+  const { data: loadedAdvisoryContexts } = useLoadedAdvisoryContexts(
+    activeSessionId ?? null,
+    activeWorktreeId
   )
 
   // Attached saved contexts for indicator
@@ -3080,6 +3093,33 @@ export function ChatWindow({
                             />
                           )}
 
+                          {/* Loaded context preview (# mentions) */}
+                          <ContextPreview
+                            sessionId={activeSessionId}
+                            worktreeId={activeWorktreeId}
+                            worktreePath={activeWorktreePath}
+                            projectId={worktree?.project_id ?? null}
+                            disabled={isSending}
+                            excludeIssueNumber={worktree?.issue_number ?? null}
+                            excludePrNumber={
+                              worktree?.issue_number ||
+                              worktree?.security_alert_number ||
+                              worktree?.advisory_ghsa_id ||
+                              worktree?.linear_issue_identifier
+                                ? null
+                                : (worktree?.pr_number ?? null)
+                            }
+                            excludeSecurityAlertNumber={
+                              worktree?.security_alert_number ?? null
+                            }
+                            excludeAdvisoryGhsaId={
+                              worktree?.advisory_ghsa_id ?? null
+                            }
+                            excludeLinearIssueIdentifier={
+                              worktree?.linear_issue_identifier ?? null
+                            }
+                          />
+
                           {/* Pending file preview (@ mentions) */}
                           <FilePreview
                             files={currentPendingFiles}
@@ -3161,6 +3201,7 @@ export function ChatWindow({
                             <ChatInput
                               activeSessionId={activeSessionId}
                               activeWorktreePath={activeWorktreePath}
+                              activeProjectId={worktree?.project_id ?? null}
                               isSending={isSending}
                               executionMode={executionMode}
                               backend={selectedBackend}
@@ -3223,6 +3264,12 @@ export function ChatWindow({
                             projectId={worktree?.project_id}
                             loadedIssueContexts={loadedIssueContexts ?? []}
                             loadedPRContexts={loadedPRContexts ?? []}
+                            loadedSecurityContexts={
+                              loadedSecurityContexts ?? []
+                            }
+                            loadedAdvisoryContexts={
+                              loadedAdvisoryContexts ?? []
+                            }
                             loadedLinearContexts={loadedLinearContexts ?? []}
                             attachedSavedContexts={attachedSavedContexts ?? []}
                             onOpenMagicModal={handleOpenMagicModal}

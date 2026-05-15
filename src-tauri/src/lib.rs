@@ -19,6 +19,10 @@ mod coderabbit_cli;
 mod codex_cli;
 mod gh_cli;
 pub mod http_server;
+pub mod jean_mcp_config;
+pub mod jean_mcp_core;
+pub mod jean_mcp_socket;
+pub mod jean_mcp_stdio;
 mod opencode_cli;
 mod opencode_server;
 mod opinionated;
@@ -268,6 +272,26 @@ pub struct AppPreferences {
     pub coderabbit_cli_source: String, // CodeRabbit CLI source: "jean" (managed) or "path" (system PATH)
     #[serde(default)]
     pub expand_tool_calls_by_default: bool, // Expand all tool call collapsibles by default (default: false)
+    #[serde(default = "default_auto_update_ai_backends")]
+    pub auto_update_ai_backends: bool, // Automatically update AI backend CLIs when a new version is available
+    #[serde(default = "default_jean_mcp_enabled")]
+    pub jean_mcp_enabled: bool, // Expose Jean MCP server to spawned CLIs through explicit CLI config entries
+    #[serde(default = "default_jean_mcp_max_depth")]
+    pub jean_mcp_max_depth: u32, // Max recursive spawn depth via Jean MCP (default 3)
+    #[serde(default = "default_jean_mcp_rate_limit")]
+    pub jean_mcp_rate_limit_per_minute: u32, // Per-source rate limit for session-spawning tools (default 20)
+}
+
+fn default_jean_mcp_enabled() -> bool {
+    true
+}
+
+fn default_jean_mcp_max_depth() -> u32 {
+    3
+}
+
+fn default_jean_mcp_rate_limit() -> u32 {
+    20
 }
 
 fn default_true() -> Option<bool> {
@@ -446,6 +470,10 @@ fn default_chrome_enabled() -> bool {
     true // Enabled by default
 }
 
+fn default_auto_update_ai_backends() -> bool {
+    true // Enabled by default
+}
+
 fn default_canvas_layout() -> String {
     "list".to_string()
 }
@@ -539,6 +567,7 @@ mod tests {
         migrate_loaded_preferences, resolve_http_server_bind_host, try_parse_cli_args,
         AppPreferences, CliArgs, CliCommand, MagicPrompts,
     };
+    use serde_json::json;
 
     #[test]
     fn resolve_http_server_bind_host_prefers_explicit_host() {
@@ -579,6 +608,44 @@ mod tests {
                 }),
             }
         );
+    }
+
+    #[test]
+    fn app_preferences_default_jean_mcp_enabled_for_new_and_missing_prefs() {
+        assert!(AppPreferences::default().jean_mcp_enabled);
+
+        let mut prefs_json = serde_json::to_value(AppPreferences::default()).unwrap();
+        prefs_json
+            .as_object_mut()
+            .unwrap()
+            .remove("jean_mcp_enabled");
+
+        let prefs: AppPreferences = serde_json::from_value(prefs_json).unwrap();
+        assert!(prefs.jean_mcp_enabled);
+    }
+
+    #[test]
+    fn app_preferences_preserves_explicit_jean_mcp_enabled() {
+        let mut prefs_json = serde_json::to_value(AppPreferences::default()).unwrap();
+        prefs_json
+            .as_object_mut()
+            .unwrap()
+            .insert("jean_mcp_enabled".to_string(), json!(true));
+
+        let prefs: AppPreferences = serde_json::from_value(prefs_json).unwrap();
+        assert!(prefs.jean_mcp_enabled);
+    }
+
+    #[test]
+    fn app_preferences_preserves_explicit_jean_mcp_disabled() {
+        let mut prefs_json = serde_json::to_value(AppPreferences::default()).unwrap();
+        prefs_json
+            .as_object_mut()
+            .unwrap()
+            .insert("jean_mcp_enabled".to_string(), json!(false));
+
+        let prefs: AppPreferences = serde_json::from_value(prefs_json).unwrap();
+        assert!(!prefs.jean_mcp_enabled);
     }
 
     #[test]
@@ -931,7 +998,7 @@ pub struct MagicPrompts {
     pub plan_approval_codex: Option<String>,
 }
 
-fn default_investigate_issue_prompt() -> String {
+pub(crate) fn default_investigate_issue_prompt() -> String {
     r#"<task>
 
 Investigate the loaded GitHub {issueWord} ({issueRefs})
@@ -962,7 +1029,7 @@ Investigate the loaded GitHub {issueWord} ({issueRefs})
         .to_string()
 }
 
-fn default_investigate_pr_prompt() -> String {
+pub(crate) fn default_investigate_pr_prompt() -> String {
     r#"<task>
 
 Investigate the loaded GitHub {prWord} ({prRefs})
@@ -1817,6 +1884,10 @@ impl Default for AppPreferences {
             gh_cli_source: default_gh_cli_source(),
             coderabbit_cli_source: default_cli_source(),
             expand_tool_calls_by_default: false,
+            auto_update_ai_backends: default_auto_update_ai_backends(),
+            jean_mcp_enabled: default_jean_mcp_enabled(),
+            jean_mcp_max_depth: default_jean_mcp_max_depth(),
+            jean_mcp_rate_limit_per_minute: default_jean_mcp_rate_limit(),
         }
     }
 }
@@ -2220,6 +2291,15 @@ async fn save_preferences(app: AppHandle, mut preferences: AppPreferences) -> Re
         profile.file_path = String::new();
     }
 
+    if prefs_for_disk.jean_mcp_enabled
+        && prefs_for_disk
+            .http_server_token
+            .as_ref()
+            .is_none_or(|token| token.is_empty())
+    {
+        prefs_for_disk.http_server_token = Some(http_server::auth::generate_token());
+    }
+
     let json_content = serde_json::to_string_pretty(&prefs_for_disk).map_err(|e| {
         log::error!("Failed to serialize preferences: {e}");
         format!("Failed to serialize preferences: {e}")
@@ -2243,6 +2323,8 @@ async fn save_preferences(app: AppHandle, mut preferences: AppPreferences) -> Re
 
     crate::platform::set_git_binary_override(git_cli_override.as_deref());
     log::trace!("Successfully saved preferences to {prefs_path:?}");
+
+    schedule_jean_mcp_socket_sync(app.clone());
 
     // Sync native menu accelerators (macOS only)
     #[cfg(target_os = "macos")]
@@ -2793,6 +2875,150 @@ async fn regenerate_http_token(app: AppHandle) -> Result<String, String> {
     Ok(new_token)
 }
 
+async fn sync_jean_mcp_socket_from_preferences(
+    app: AppHandle,
+    prefs: &AppPreferences,
+) -> Result<(), String> {
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
+
+    let handle_state = app.try_state::<Arc<Mutex<Option<jean_mcp_socket::JeanMcpSocketHandle>>>>();
+    let Some(state) = handle_state else {
+        return Ok(());
+    };
+
+    if !prefs.jean_mcp_enabled {
+        let mut guard = state.lock().await;
+        if let Some(handle) = guard.take() {
+            let _ = handle.shutdown_tx.send(());
+            log::info!("Jean MCP proxy socket stopped");
+        }
+        emit_jean_mcp_socket_status(&app, false);
+        return Ok(());
+    }
+
+    let token = prefs
+        .http_server_token
+        .clone()
+        .filter(|token| !token.is_empty())
+        .unwrap_or_else(http_server::auth::generate_token);
+    let path = jean_mcp_socket::socket_path(&app)?;
+
+    {
+        let mut guard = state.lock().await;
+        if let Some(handle) = guard.as_ref() {
+            if handle.path == path && handle.token == token {
+                return Ok(());
+            }
+        }
+        if let Some(handle) = guard.take() {
+            let _ = handle.shutdown_tx.send(());
+            log::info!("Jean MCP proxy socket restarting due to preference changes");
+        }
+    }
+
+    let handle = jean_mcp_socket::start_socket_server(app.clone(), path, token).await?;
+    log::info!("Jean MCP proxy socket started: {}", handle.path.display());
+
+    let mut guard = state.lock().await;
+    *guard = Some(handle);
+    emit_jean_mcp_socket_status(&app, true);
+    Ok(())
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct JeanMcpSocketStatusEvent {
+    running: bool,
+}
+
+fn emit_jean_mcp_socket_status(app: &AppHandle, running: bool) {
+    if let Err(e) = app.emit(
+        "jean-mcp-socket-status",
+        JeanMcpSocketStatusEvent { running },
+    ) {
+        log::warn!("Failed to emit Jean MCP socket status: {e}");
+    }
+}
+
+fn schedule_jean_mcp_socket_sync(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let prefs = match load_preferences(app.clone()).await {
+            Ok(prefs) => prefs,
+            Err(e) => {
+                log::error!("Failed to load preferences for Jean MCP socket sync: {e}");
+                return;
+            }
+        };
+        if let Err(e) = sync_jean_mcp_socket_from_preferences(app, &prefs).await {
+            log::error!("Failed to sync Jean MCP proxy socket: {e}");
+        }
+    });
+}
+
+/// Snippet payloads users can paste into CLI config files to expose Jean's MCP
+/// server explicitly. One-click install writes the same entries.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JeanMcpSnippet {
+    pub enabled: bool,
+    pub server_running: bool,
+    pub mode: jean_mcp_config::JeanMcpInstallMode,
+    pub server_name: String,
+    pub url: Option<String>,
+    pub token: Option<String>,
+    pub claude: Option<String>,
+    pub cursor: Option<String>,
+    pub codex_toml: Option<String>,
+    pub opencode_json: Option<String>,
+}
+
+#[tauri::command]
+async fn get_jean_mcp_config_snippet(app: AppHandle) -> Result<JeanMcpSnippet, String> {
+    let prefs = load_preferences(app.clone()).await?;
+    let (running, socket_path, token) = jean_mcp_socket::get_socket_status(app.clone()).await;
+    let mode = jean_mcp_config::current_mode();
+    let server_name = mode.server_name().to_string();
+    let command = jean_mcp_config::get_stable_launcher_command();
+
+    let entry = match (&socket_path, &token) {
+        (Some(socket), Some(token)) if running => Some(jean_mcp_config::JeanMcpEntry {
+            mode,
+            server_name: server_name.clone(),
+            command,
+            socket: socket.clone(),
+            token: token.clone(),
+        }),
+        _ => None,
+    };
+    let claude = entry.as_ref().map(|entry| entry.claude_snippet());
+    let cursor = entry.as_ref().map(|entry| entry.cursor_snippet());
+    let codex_toml = entry.as_ref().map(|entry| entry.codex_snippet());
+    let opencode_json = entry.as_ref().map(|entry| entry.opencode_snippet());
+
+    Ok(JeanMcpSnippet {
+        enabled: prefs.jean_mcp_enabled,
+        server_running: running,
+        mode,
+        server_name,
+        url: socket_path,
+        token,
+        claude,
+        cursor,
+        codex_toml,
+        opencode_json,
+    })
+}
+
+#[tauri::command]
+async fn install_jean_mcp_config(
+    app: AppHandle,
+    backends: Option<Vec<String>>,
+    mode: Option<String>,
+) -> Result<Vec<jean_mcp_config::JeanMcpInstallResult>, String> {
+    jean_mcp_config::install_jean_mcp_config_impl(app, backends, mode).await
+}
+
 /// Convert a frontend shortcut string (e.g. "mod+shift+m") to Tauri accelerator format (e.g. "CmdOrCtrl+Shift+M")
 #[cfg(target_os = "macos")]
 fn shortcut_to_accelerator(shortcut: &str) -> String {
@@ -3239,6 +3465,14 @@ fn handle_cli_command(command: CliCommand) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    if std::env::args().any(|arg| arg == jean_mcp_core::JEAN_MCP_STDIO_ARG) {
+        if let Err(e) = jean_mcp_stdio::run_stdio_server() {
+            eprintln!("Jean MCP server failed: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
     let cli_args = parse_cli_args();
     if let Some(command) = cli_args.command.clone() {
         if let Err(error) = handle_cli_command(command) {
@@ -3591,6 +3825,9 @@ pub fn run() {
             app.manage(std::sync::Arc::new(tokio::sync::Mutex::new(
                 None::<http_server::server::HttpServerHandle>,
             )));
+            app.manage(std::sync::Arc::new(tokio::sync::Mutex::new(
+                None::<jean_mcp_socket::JeanMcpSocketHandle>,
+            )));
             log::trace!("HTTP server infrastructure initialized");
 
             // Start HTTP server (always in headless mode, or if auto-start configured)
@@ -3659,6 +3896,32 @@ pub fn run() {
                 }
             });
 
+            // Start Jean MCP's local stdio proxy socket when enabled. Spawned CLIs
+            // connect via stdio to a helper process, which forwards over this socket.
+            let app_handle_mcp = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                match load_preferences(app_handle_mcp.clone()).await {
+                    Ok(mut prefs) if prefs.jean_mcp_enabled => {
+                        if prefs
+                            .http_server_token
+                            .as_ref()
+                            .is_none_or(|token| token.is_empty())
+                        {
+                            prefs.http_server_token = Some(http_server::auth::generate_token());
+                            if let Err(e) = save_preferences(app_handle_mcp.clone(), prefs).await {
+                                log::error!("Failed to save/start Jean MCP socket: {e}");
+                            }
+                        } else if let Err(e) =
+                            sync_jean_mcp_socket_from_preferences(app_handle_mcp, &prefs).await
+                        {
+                            log::error!("Failed to start Jean MCP socket: {e}");
+                        }
+                    }
+                    Ok(_) => {}
+                    Err(e) => log::error!("Failed to load preferences for Jean MCP socket: {e}"),
+                }
+            });
+
             log::info!("Startup: setup() completed in {:?}", setup_start.elapsed());
             Ok(())
         })
@@ -3699,6 +3962,8 @@ pub fn run() {
             projects::list_worktrees,
             projects::list_worktree_slots,
             projects::get_worktree,
+            projects::get_worktree_changes,
+            projects::get_worktree_diff,
             projects::create_worktree,
             projects::fork_worktree,
             projects::create_worktree_from_existing_branch,
@@ -3854,6 +4119,7 @@ pub fn run() {
             projects::get_app_data_dir,
             // Terminal commands
             terminal::start_terminal,
+            terminal::prepare_backend_terminal_context,
             terminal::terminal_write,
             terminal::terminal_resize,
             terminal::stop_terminal,
@@ -3880,6 +4146,9 @@ pub fn run() {
             browser::has_active_browser_tab,
             // Chat commands - Session management
             chat::get_sessions,
+            chat::list_sessions_summary,
+            chat::get_session_status,
+            chat::list_native_cli_sessions,
             chat::list_all_sessions,
             chat::list_unread_sessions,
             chat::get_unread_count,
@@ -3919,6 +4188,7 @@ pub fn run() {
             chat::answer_codex_user_input,
             chat::steer_codex_turn,
             chat::claim_supervisor_action_trigger,
+            jean_mcp_core::start_background_investigation,
             chat::codex_goal_set,
             chat::codex_goal_get,
             chat::codex_goal_clear,
@@ -4037,6 +4307,8 @@ pub fn run() {
             list_http_bind_host_options,
             validate_http_bind_host,
             regenerate_http_token,
+            get_jean_mcp_config_snippet,
+            install_jean_mcp_config,
             // OpenCode server commands
             opencode_server::start_opencode_server,
             opencode_server::stop_opencode_server,

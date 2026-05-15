@@ -72,10 +72,34 @@ export const chatQueryKeys = {
     [...chatQueryKeys.all, 'session', sessionId] as const,
   unreadSessions: () => [...chatQueryKeys.all, 'unread-sessions'] as const,
   unreadCount: () => [...chatQueryKeys.all, 'unread-count'] as const,
+  nativeCliSessions: (
+    worktreePath: string,
+    backend: string,
+    searchQuery: string,
+    resultLimit: number
+  ) =>
+    [
+      ...chatQueryKeys.all,
+      'native-cli-sessions',
+      backend,
+      worktreePath,
+      searchQuery,
+      resultLimit,
+    ] as const,
 }
 
 export const SESSIONS_STALE_TIME_MS = 1000 * 60 * 5
 export const SESSIONS_GC_TIME_MS = 1000 * 60 * 5
+
+export interface NativeCliHistorySession {
+  backend: NonNullable<Session['backend']>
+  id: string
+  title: string
+  cwd: string
+  updatedAt: number
+  resumeArgs: string[]
+  sourcePath: string
+}
 
 // ============================================================================
 // Chat Queries
@@ -165,6 +189,49 @@ export function useSessions(
     staleTime: SESSIONS_STALE_TIME_MS, // 5 minutes - enables instant tab bar rendering from cache
     gcTime: SESSIONS_GC_TIME_MS,
     refetchOnMount: true, // Respects staleTime; status changes pushed via streaming/cache:invalidate events
+  })
+}
+
+export function useNativeCliSessions(
+  worktreePath: string | null,
+  backend: NonNullable<Session['backend']> | null,
+  options?: { enabled?: boolean; searchQuery?: string; resultLimit?: number }
+) {
+  const searchQuery = options?.searchQuery?.trim() ?? ''
+  const resultLimit = options?.resultLimit ?? (searchQuery ? 100 : 5)
+
+  return useQuery({
+    queryKey: chatQueryKeys.nativeCliSessions(
+      worktreePath ?? '',
+      backend ?? '',
+      searchQuery,
+      resultLimit
+    ),
+    queryFn: async (): Promise<NativeCliHistorySession[]> => {
+      if (!isTauri() || !worktreePath || !backend) return []
+      try {
+        return await invoke<NativeCliHistorySession[]>(
+          'list_native_cli_sessions',
+          {
+            worktreePath,
+            backend,
+            searchQuery,
+            resultLimit,
+          }
+        )
+      } catch (error) {
+        logger.warn('Failed to load native CLI sessions', {
+          backend,
+          worktreePath,
+          searchQuery,
+          error,
+        })
+        return []
+      }
+    },
+    enabled: (options?.enabled ?? true) && !!worktreePath && !!backend,
+    staleTime: 1000 * 30,
+    gcTime: SESSIONS_GC_TIME_MS,
   })
 }
 
@@ -466,11 +533,19 @@ export function useCreateSession() {
       worktreePath,
       name,
       backend,
+      primarySurface,
+      terminalCommand,
+      terminalCommandArgs,
+      terminalLabel,
     }: {
       worktreeId: string
       worktreePath: string
       name?: string
       backend?: NonNullable<Session['backend']>
+      primarySurface?: Session['primary_surface']
+      terminalCommand?: string | null
+      terminalCommandArgs?: string[]
+      terminalLabel?: string | null
     }): Promise<Session> => {
       if (!isTauri()) {
         throw new Error('Not in Tauri context')
@@ -482,6 +557,10 @@ export function useCreateSession() {
         worktreePath,
         name,
         backend,
+        primarySurface,
+        terminalCommand,
+        terminalCommandArgs,
+        terminalLabel,
       })
       logger.info('Session created', { sessionId: session.id })
       return session

@@ -326,28 +326,28 @@ pub fn cancel_process(
         log::warn!("OpenCode session {session_id}: setting cancel flag");
         flag.store(true, Ordering::SeqCst);
 
-        // Fire-and-forget: call the OpenCode interrupt endpoint to abort server-side processing.
+        // Fire-and-forget: call the OpenCode abort endpoint to abort server-side processing.
         // This makes the in-flight blocking POST return immediately.
         if let Some(oc_sid) = opencode_session_id {
             if let Some(base_url) = crate::opencode_server::get_current_url() {
-                let interrupt_url = format!("{base_url}/session/{oc_sid}/interrupt");
+                let abort_url = format!("{base_url}/session/{oc_sid}/abort");
                 std::thread::spawn(move || {
-                    log::info!("OpenCode: sending interrupt to {interrupt_url}");
+                    log::info!("OpenCode: sending abort to {abort_url}");
                     let client = reqwest::blocking::Client::builder()
                         .timeout(std::time::Duration::from_secs(5))
                         .build();
                     match client {
-                        Ok(c) => match c.post(&interrupt_url).send() {
+                        Ok(c) => match c.post(&abort_url).send() {
                             Ok(resp) => {
-                                log::info!("OpenCode interrupt response: status={}", resp.status())
+                                log::info!("OpenCode abort response: status={}", resp.status())
                             }
-                            Err(e) => log::warn!("OpenCode interrupt request failed: {e}"),
+                            Err(e) => log::warn!("OpenCode abort request failed: {e}"),
                         },
-                        Err(e) => log::warn!("OpenCode interrupt client build failed: {e}"),
+                        Err(e) => log::warn!("OpenCode abort client build failed: {e}"),
                     }
                 });
             } else {
-                log::warn!("OpenCode: no server URL available for interrupt");
+                log::warn!("OpenCode: no server URL available for abort");
             }
         }
 
@@ -465,17 +465,17 @@ pub fn cancel_process_if_running(
         log::trace!("OpenCode session {session_id} is running, setting cancel flag");
         flag.store(true, Ordering::SeqCst);
 
-        // Fire-and-forget interrupt
+        // Fire-and-forget abort
         if let Some(oc_sid) = opencode_session_id {
             if let Some(base_url) = crate::opencode_server::get_current_url() {
-                let interrupt_url = format!("{base_url}/session/{oc_sid}/interrupt");
+                let abort_url = format!("{base_url}/session/{oc_sid}/abort");
                 std::thread::spawn(move || {
-                    log::info!("OpenCode: sending interrupt to {interrupt_url}");
+                    log::info!("OpenCode: sending abort to {abort_url}");
                     let client = reqwest::blocking::Client::builder()
                         .timeout(std::time::Duration::from_secs(5))
                         .build();
                     if let Ok(c) = client {
-                        let _ = c.post(&interrupt_url).send();
+                        let _ = c.post(&abort_url).send();
                     }
                 });
             }

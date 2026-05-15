@@ -24,8 +24,8 @@ export function buildMessageWithPendingRefs(
     const fileRefs = snapshot.files
       .map(file =>
         file.isDirectory
-          ? `[Directory: ${file.relativePath} - Use Glob and Read tools to explore this directory]`
-          : `[File: ${file.relativePath} - Use the Read tool to view this file]`
+          ? `[Directory: ${file.sourceRootPath ? `${file.sourceRootPath}/${file.relativePath}` : file.relativePath} - Use Glob and Read tools to explore this directory]`
+          : `[File: ${file.sourceRootPath ? `${file.sourceRootPath}/${file.relativePath}` : file.relativePath} - Use the Read tool to view this file]`
       )
       .join('\n')
     message = message ? `${message}\n\n${fileRefs}` : fileRefs

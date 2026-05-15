@@ -254,6 +254,93 @@ pub async fn get_sessions(
     Ok(sessions)
 }
 
+/// List lightweight session summaries for a worktree without loading message history.
+#[tauri::command]
+pub async fn list_sessions_summary(
+    app: AppHandle,
+    worktree_id: String,
+    worktree_path: String,
+    include_archived: Option<bool>,
+) -> Result<serde_json::Value, String> {
+    let sessions = load_sessions(&app, &worktree_path, &worktree_id)?;
+    let include_archived = include_archived.unwrap_or(false);
+    let session_summaries: Vec<serde_json::Value> = sessions
+        .sessions
+        .into_iter()
+        .filter(|session| include_archived || session.archived_at.is_none())
+        .map(|session| {
+            serde_json::json!({
+                "id": session.id,
+                "name": session.name,
+                "order": session.order,
+                "backend": session.backend,
+                "selectedModel": session.selected_model,
+                "selectedProvider": session.selected_provider,
+                "selectedExecutionMode": session.selected_execution_mode,
+                "createdAt": session.created_at,
+                "updatedAt": session.updated_at,
+                "lastMessageAt": session.last_message_at,
+                "messageCount": session.message_count,
+                "archivedAt": session.archived_at,
+                "lastRunStatus": session.last_run_status,
+                "waitingForInput": session.waiting_for_input,
+                "waitingForInputType": session.waiting_for_input_type,
+            })
+        })
+        .collect();
+
+    Ok(serde_json::json!({
+        "worktreeId": worktree_id,
+        "activeSessionId": sessions.active_session_id,
+        "sessions": session_summaries,
+    }))
+}
+
+/// Get the latest run/session status for polling background work.
+#[tauri::command]
+pub async fn get_session_status(
+    app: AppHandle,
+    session_id: String,
+) -> Result<serde_json::Value, String> {
+    let metadata = load_metadata(&app, &session_id)?
+        .ok_or_else(|| format!("Unknown sessionId: {session_id}"))?;
+    let latest_run = metadata.runs.last();
+    let actively_managed = crate::chat::registry::is_session_actively_managed(&session_id);
+    let status = if actively_managed {
+        "running"
+    } else {
+        match latest_run.map(|run| &run.status) {
+            Some(RunStatus::Running) | Some(RunStatus::Resumable) => "resumable",
+            Some(RunStatus::Cancelled) => "cancelled",
+            Some(RunStatus::Crashed) => "error",
+            Some(RunStatus::Completed) | None => "idle",
+        }
+    };
+
+    Ok(serde_json::json!({
+        "sessionId": session_id,
+        "worktreeId": metadata.worktree_id,
+        "status": status,
+        "activelyManaged": actively_managed,
+        "backend": metadata.backend,
+        "selectedModel": metadata.selected_model,
+        "selectedProvider": metadata.selected_provider,
+        "selectedExecutionMode": metadata.selected_execution_mode,
+        "waitingForInput": metadata.waiting_for_input,
+        "waitingForInputType": metadata.waiting_for_input_type,
+        "latestRun": latest_run.map(|run| serde_json::json!({
+            "runId": run.run_id,
+            "status": run.status,
+            "startedAt": run.started_at,
+            "endedAt": run.ended_at,
+            "model": run.model,
+            "executionMode": run.execution_mode,
+            "cancelled": run.cancelled,
+            "recovered": run.recovered,
+        })),
+    }))
+}
+
 /// List all sessions across all worktrees and projects
 ///
 /// Returns sessions grouped by project/worktree for the Load Context modal.
@@ -425,12 +512,17 @@ pub(crate) async fn get_session_windowed(
 
 /// Create a new session tab
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn create_session(
     app: AppHandle,
     worktree_id: String,
     worktree_path: String,
     name: Option<String>,
     backend: Option<String>,
+    primary_surface: Option<String>,
+    terminal_command: Option<String>,
+    terminal_command_args: Option<Vec<String>>,
+    terminal_label: Option<String>,
 ) -> Result<Session, String> {
     log::trace!("Creating new session for worktree: {worktree_id}");
 
@@ -479,11 +571,15 @@ pub async fn create_session(
         let session_number = sessions.next_session_number();
         let session_name = name.unwrap_or_else(|| format!("Session {session_number}"));
 
-        let session = Session::new(
+        let mut session = Session::new(
             session_name,
             sessions.sessions.len() as u32,
             backend_enum.clone(),
         );
+        session.primary_surface = primary_surface;
+        session.terminal_command = terminal_command;
+        session.terminal_command_args = terminal_command_args.unwrap_or_default();
+        session.terminal_label = terminal_label;
         let session_id = session.id.clone();
 
         sessions.sessions.push(session.clone());
@@ -1855,7 +1951,13 @@ pub async fn send_chat_message(
     let thread_allowed_tools = allowed_tools_for_cli.clone();
     let thread_parallel_prompt = parallel_execution_prompt.clone();
     let thread_ai_language = ai_language.clone();
-    let thread_mcp_config = mcp_config.clone();
+    let thread_mcp_config = if effective_backend == Backend::Claude {
+        super::jean_mcp::merge_into_mcp_config(&app, &session_id, mcp_config.as_deref())
+            .await
+            .or_else(|| mcp_config.clone())
+    } else {
+        mcp_config.clone()
+    };
     let thread_custom_profile = custom_profile_name.clone();
     let thread_message = message.clone();
     let thread_backend = effective_backend.clone();
@@ -2099,7 +2201,8 @@ pub async fn send_chat_message(
                 // thread-level `developerInstructions`.
                 let codex_developer_prompt = {
                     use crate::projects::github_issues::{
-                        get_github_contexts_dir, get_session_issue_refs, get_session_pr_refs,
+                        get_github_contexts_dir, get_session_advisory_refs, get_session_issue_refs,
+                        get_session_pr_refs, get_session_security_refs,
                     };
                     use crate::projects::storage::load_projects_data;
 
@@ -2249,6 +2352,59 @@ pub async fn send_chat_message(
                                     let repo_key = parts[1];
                                     let file_path =
                                         contexts_dir.join(format!("{repo_key}-pr-{number}.md"));
+                                    if file_path.exists() {
+                                        all_context_paths.push(file_path);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    let mut security_keys =
+                        get_session_security_refs(&thread_app, &thread_session_id)
+                            .unwrap_or_default();
+                    if let Ok(wt_keys) = get_session_security_refs(&thread_app, &thread_worktree_id)
+                    {
+                        for key in wt_keys {
+                            if !security_keys.contains(&key) {
+                                security_keys.push(key);
+                            }
+                        }
+                    }
+                    if !security_keys.is_empty() {
+                        if let Ok(contexts_dir) = get_github_contexts_dir(&thread_app) {
+                            for key in &security_keys {
+                                let parts: Vec<&str> = key.rsplitn(2, '-').collect();
+                                if parts.len() == 2 {
+                                    let number = parts[0];
+                                    let repo_key = parts[1];
+                                    let file_path = contexts_dir
+                                        .join(format!("{repo_key}-security-{number}.md"));
+                                    if file_path.exists() {
+                                        all_context_paths.push(file_path);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    let mut advisory_keys =
+                        get_session_advisory_refs(&thread_app, &thread_session_id)
+                            .unwrap_or_default();
+                    if let Ok(wt_keys) = get_session_advisory_refs(&thread_app, &thread_worktree_id)
+                    {
+                        for key in wt_keys {
+                            if !advisory_keys.contains(&key) {
+                                advisory_keys.push(key);
+                            }
+                        }
+                    }
+                    if !advisory_keys.is_empty() {
+                        if let Ok(contexts_dir) = get_github_contexts_dir(&thread_app) {
+                            for key in &advisory_keys {
+                                if let Some((repo_key, ghsa_id)) = key.split_once("::") {
+                                    let file_path = contexts_dir
+                                        .join(format!("{repo_key}-advisory-{ghsa_id}.md"));
                                     if file_path.exists() {
                                         all_context_paths.push(file_path);
                                     }
@@ -2419,7 +2575,8 @@ pub async fn send_chat_message(
 
                 let system_prompt = {
                     use crate::projects::github_issues::{
-                        get_github_contexts_dir, get_session_issue_refs, get_session_pr_refs,
+                        get_github_contexts_dir, get_session_advisory_refs, get_session_issue_refs,
+                        get_session_pr_refs, get_session_security_refs,
                     };
                     use crate::projects::storage::load_projects_data;
 
@@ -2559,6 +2716,61 @@ pub async fn send_chat_message(
                                     let repo_key = parts[1];
                                     let file_path =
                                         contexts_dir.join(format!("{repo_key}-pr-{number}.md"));
+                                    if let Ok(content) = std::fs::read_to_string(&file_path) {
+                                        context_content.push_str(&content);
+                                        context_content.push_str("\n\n---\n\n");
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    let mut security_keys =
+                        get_session_security_refs(&thread_app, &thread_session_id)
+                            .unwrap_or_default();
+                    if let Ok(wt_keys) = get_session_security_refs(&thread_app, &thread_worktree_id)
+                    {
+                        for key in wt_keys {
+                            if !security_keys.contains(&key) {
+                                security_keys.push(key);
+                            }
+                        }
+                    }
+                    if !security_keys.is_empty() {
+                        if let Ok(contexts_dir) = get_github_contexts_dir(&thread_app) {
+                            for key in &security_keys {
+                                let parts: Vec<&str> = key.rsplitn(2, '-').collect();
+                                if parts.len() == 2 {
+                                    let number = parts[0];
+                                    let repo_key = parts[1];
+                                    let file_path = contexts_dir
+                                        .join(format!("{repo_key}-security-{number}.md"));
+                                    if let Ok(content) = std::fs::read_to_string(&file_path) {
+                                        context_content.push_str(&content);
+                                        context_content.push_str("\n\n---\n\n");
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    let mut advisory_keys =
+                        get_session_advisory_refs(&thread_app, &thread_session_id)
+                            .unwrap_or_default();
+                    if let Ok(wt_keys) = get_session_advisory_refs(&thread_app, &thread_worktree_id)
+                    {
+                        for key in wt_keys {
+                            if !advisory_keys.contains(&key) {
+                                advisory_keys.push(key);
+                            }
+                        }
+                    }
+                    if !advisory_keys.is_empty() {
+                        if let Ok(contexts_dir) = get_github_contexts_dir(&thread_app) {
+                            for key in &advisory_keys {
+                                if let Some((repo_key, ghsa_id)) = key.split_once("::") {
+                                    let file_path = contexts_dir
+                                        .join(format!("{repo_key}-advisory-{ghsa_id}.md"));
                                     if let Ok(content) = std::fs::read_to_string(&file_path) {
                                         context_content.push_str(&content);
                                         context_content.push_str("\n\n---\n\n");

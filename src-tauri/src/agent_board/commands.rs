@@ -343,6 +343,7 @@ async fn create_board_worktree(
         )),
         None,
         None,
+        Some(false),
     )
     .await?;
 
@@ -367,6 +368,10 @@ async fn create_board_session(
         worktree.path.clone(),
         Some(format!("{} {name_suffix}", item.title)),
         Some(backend_arg(&item.backend)),
+        None,
+        None,
+        None,
+        None,
     )
     .await?;
     associate_session(&app, &session.id, &item.id)?;

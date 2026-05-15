@@ -181,6 +181,10 @@ describe('preferences service', () => {
         opencode_cli_source: 'jean',
         gh_cli_source: 'path',
         expand_tool_calls_by_default: false,
+        auto_update_ai_backends: true,
+        jean_mcp_enabled: false,
+        jean_mcp_max_depth: 3,
+        jean_mcp_rate_limit_per_minute: 20,
       }
       vi.mocked(invoke).mockResolvedValueOnce(mockPreferences)
 
@@ -193,6 +197,7 @@ describe('preferences service', () => {
       expect(invoke).toHaveBeenCalledWith('load_preferences')
       expect(result.current.data?.theme).toBe('dark')
       expect(result.current.data?.compact_chat_view_enabled).toBe(true)
+      expect(result.current.data?.jean_mcp_enabled).toBe(false)
     })
 
     it('returns defaults when not in Tauri context', async () => {
@@ -209,6 +214,7 @@ describe('preferences service', () => {
       expect(result.current.data?.selected_model).toBe('claude-opus-4-7')
       expect(result.current.data?.selected_codex_model).toBe('gpt-5.5')
       expect(result.current.data?.compact_chat_view_enabled).toBe(false)
+      expect(result.current.data?.jean_mcp_enabled).toBe(true)
     })
 
     it('returns defaults on backend error', async () => {
@@ -222,6 +228,7 @@ describe('preferences service', () => {
       await waitFor(() => expect(result.current.isSuccess).toBe(true))
 
       expect(result.current.data?.theme).toBe('system')
+      expect(result.current.data?.jean_mcp_enabled).toBe(true)
     })
 
     it('normalizes legacy and invalid notification sounds to none', async () => {
@@ -340,6 +347,10 @@ describe('preferences service', () => {
         opencode_cli_source: 'jean',
         gh_cli_source: 'path',
         expand_tool_calls_by_default: false,
+        auto_update_ai_backends: true,
+        jean_mcp_enabled: false,
+        jean_mcp_max_depth: 3,
+        jean_mcp_rate_limit_per_minute: 20,
       }
       vi.mocked(invoke).mockResolvedValueOnce(prefsWithOldBinding)
 
@@ -450,6 +461,10 @@ describe('preferences service', () => {
         opencode_cli_source: 'jean',
         gh_cli_source: 'path',
         expand_tool_calls_by_default: false,
+        auto_update_ai_backends: true,
+        jean_mcp_enabled: false,
+        jean_mcp_max_depth: 3,
+        jean_mcp_rate_limit_per_minute: 20,
       }
       vi.mocked(invoke).mockResolvedValueOnce(prefsWithDeprecatedFastModel)
 
@@ -648,6 +663,10 @@ describe('preferences service', () => {
         opencode_cli_source: 'jean',
         gh_cli_source: 'path',
         expand_tool_calls_by_default: false,
+        auto_update_ai_backends: true,
+        jean_mcp_enabled: false,
+        jean_mcp_max_depth: 3,
+        jean_mcp_rate_limit_per_minute: 20,
       }
 
       const { result } = renderHook(() => useSavePreferences(), {
@@ -760,6 +779,10 @@ describe('preferences service', () => {
         opencode_cli_source: 'jean',
         gh_cli_source: 'path',
         expand_tool_calls_by_default: false,
+        auto_update_ai_backends: true,
+        jean_mcp_enabled: false,
+        jean_mcp_max_depth: 3,
+        jean_mcp_rate_limit_per_minute: 20,
       }
 
       const { result } = renderHook(() => useSavePreferences(), {
@@ -872,6 +895,10 @@ describe('preferences service', () => {
         opencode_cli_source: 'jean',
         gh_cli_source: 'path',
         expand_tool_calls_by_default: false,
+        auto_update_ai_backends: true,
+        jean_mcp_enabled: false,
+        jean_mcp_max_depth: 3,
+        jean_mcp_rate_limit_per_minute: 20,
       }
 
       const { result } = renderHook(() => useSavePreferences(), {
@@ -982,6 +1009,10 @@ describe('preferences service', () => {
         opencode_cli_source: 'jean',
         gh_cli_source: 'path',
         expand_tool_calls_by_default: false,
+        auto_update_ai_backends: true,
+        jean_mcp_enabled: false,
+        jean_mcp_max_depth: 3,
+        jean_mcp_rate_limit_per_minute: 20,
       }
 
       const { result } = renderHook(() => useSavePreferences(), {

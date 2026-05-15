@@ -17,25 +17,15 @@ import {
   useAllBackendsMcpHealth,
   groupServersByBackend,
   BACKEND_LABELS,
+  mcpKey,
+  migrateLegacyMcpKeys,
 } from '@/services/mcp'
 import { useInstalledBackends } from '@/hooks/useInstalledBackends'
 import { useChatStore } from '@/store/chat-store'
 import type { McpHealthStatus } from '@/types/chat'
 import type { CliBackend } from '@/types/preferences'
-
-const SettingsSection: React.FC<{
-  title: string
-  anchorId?: string
-  children: React.ReactNode
-}> = ({ title, anchorId, children }) => (
-  <div id={anchorId} className="space-y-4">
-    <div>
-      <h3 className="text-lg font-medium text-foreground">{title}</h3>
-      <Separator className="mt-2" />
-    </div>
-    {children}
-  </div>
-)
+import { SettingsSection } from '../SettingsSection'
+import { JeanMcpSection } from './JeanMcpSection'
 
 function mcpAuthHint(backend: CliBackend): string {
   switch (backend) {
@@ -114,6 +104,24 @@ function HealthIndicator({
   }
 }
 
+function jeanMcpMode(
+  serverName: string,
+  config: unknown
+): 'dev' | 'prod' | null {
+  if (serverName === 'jean-dev') return 'dev'
+  if (serverName === 'jean') return 'prod'
+  if (!config || typeof config !== 'object') return null
+  const record = config as Record<string, unknown>
+  const env =
+    record.env && typeof record.env === 'object'
+      ? (record.env as Record<string, unknown>)
+      : record.environment && typeof record.environment === 'object'
+        ? (record.environment as Record<string, unknown>)
+        : null
+  const mode = env?.JEAN_MCP_MODE
+  return mode === 'dev' || mode === 'prod' ? mode : null
+}
+
 export const McpServersPane: React.FC = () => {
   const { data: preferences } = usePreferences()
   const patchPreferences = usePatchPreferences()
@@ -131,7 +139,7 @@ export const McpServersPane: React.FC = () => {
     statuses: healthStatuses,
     isFetching: isHealthChecking,
     refetchAll: checkHealth,
-  } = useAllBackendsMcpHealth(installedBackends)
+  } = useAllBackendsMcpHealth(installedBackends, activeWorktreePath)
 
   // Re-read MCP config from disk and trigger health check every time this pane is opened
   useEffect(() => {
@@ -145,27 +153,43 @@ export const McpServersPane: React.FC = () => {
   // Auto-enable newly discovered (non-disabled) servers, but not ones the user has previously disabled
   useEffect(() => {
     if (!preferences || !mcpServers) return
-    const allServerNames = mcpServers.filter(s => !s.disabled).map(s => s.name)
+
+    let currentEnabled = enabledServers
+    let currentKnown = knownServers
+    const enabledMigration = migrateLegacyMcpKeys(enabledServers, mcpServers)
+    const knownMigration = migrateLegacyMcpKeys(knownServers, mcpServers)
+    if (enabledMigration.changed) currentEnabled = enabledMigration.migrated
+    if (knownMigration.changed) currentKnown = knownMigration.migrated
+
+    const allServerKeys = mcpServers
+      .filter(s => !s.disabled)
+      .map(s => mcpKey(s.backend, s.name))
     const newServers = getNewServersToAutoEnable(
       mcpServers,
-      enabledServers,
-      knownServers
+      currentEnabled,
+      currentKnown
     )
-    const updatedKnown = [...new Set([...knownServers, ...allServerNames])]
-    const knownChanged = updatedKnown.length !== knownServers.length
-    if (newServers.length > 0 || knownChanged) {
+    const updatedKnown = [...new Set([...currentKnown, ...allServerKeys])]
+    const knownChanged = updatedKnown.length !== currentKnown.length
+    if (
+      newServers.length > 0 ||
+      knownChanged ||
+      enabledMigration.changed ||
+      knownMigration.changed
+    ) {
       patchPreferences.mutate({
-        default_enabled_mcp_servers: [...enabledServers, ...newServers],
+        default_enabled_mcp_servers: [...currentEnabled, ...newServers],
         known_mcp_servers: updatedKnown,
       })
     }
   }, [mcpServers]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleToggle = (serverName: string) => {
+  const handleToggle = (backend: CliBackend, serverName: string) => {
     if (!preferences) return
-    const updated = enabledServers.includes(serverName)
-      ? enabledServers.filter(n => n !== serverName)
-      : [...enabledServers, serverName]
+    const key = mcpKey(backend, serverName)
+    const updated = enabledServers.includes(key)
+      ? enabledServers.filter(n => n !== key)
+      : [...enabledServers, key]
     patchPreferences.mutate({ default_enabled_mcp_servers: updated })
   }
 
@@ -177,6 +201,7 @@ export const McpServersPane: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      <JeanMcpSection />
       <SettingsSection
         title="Default MCP Servers"
         anchorId="pref-mcp-section-default-servers"
@@ -218,9 +243,10 @@ export const McpServersPane: React.FC = () => {
                     <Checkbox
                       id={`mcp-${backend}-${server.name}`}
                       checked={
-                        !server.disabled && enabledServers.includes(server.name)
+                        !server.disabled &&
+                        enabledServers.includes(mcpKey(backend, server.name))
                       }
-                      onCheckedChange={() => handleToggle(server.name)}
+                      onCheckedChange={() => handleToggle(backend, server.name)}
                       disabled={server.disabled}
                     />
                     <Label
@@ -232,8 +258,13 @@ export const McpServersPane: React.FC = () => {
                     >
                       {server.name}
                     </Label>
+                    {jeanMcpMode(server.name, server.config) && (
+                      <span className="rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase text-muted-foreground">
+                        {jeanMcpMode(server.name, server.config)}
+                      </span>
+                    )}
                     <HealthIndicator
-                      status={healthStatuses[server.name]}
+                      status={healthStatuses[mcpKey(backend, server.name)]}
                       isChecking={isHealthChecking}
                       backend={backend}
                     />

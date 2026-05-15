@@ -504,6 +504,7 @@ impl ProjectsData {
 
 /// Event emitted when worktree creation starts (background operation)
 #[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WorktreeCreatingEvent {
     /// The worktree ID (generated upfront)
     pub id: String,
@@ -532,13 +533,18 @@ pub struct WorktreeCreatingEvent {
     /// Whether this worktree is owned by an automation
     #[serde(default)]
     pub automation_owned: bool,
+    /// Whether Jean UI should auto-select/open this worktree when events arrive
+    pub auto_open_in_jean: bool,
 }
 
 /// Event emitted when worktree creation completes successfully
 #[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WorktreeCreatedEvent {
     /// The fully created worktree
     pub worktree: Worktree,
+    /// Whether Jean UI should auto-select/open this worktree when events arrive
+    pub auto_open_in_jean: bool,
 }
 
 /// Event emitted when worktree setup script completes (after worktree:created)

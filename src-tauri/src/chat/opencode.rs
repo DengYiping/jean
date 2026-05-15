@@ -234,8 +234,13 @@ fn parse_provider_model(model: Option<&str>) -> Option<(String, String)> {
         return None;
     }
 
-    // Strip "opencode/" prefix if present (e.g. "opencode/ollama/Qwen" → "ollama/Qwen")
-    let raw = raw.strip_prefix("opencode/").unwrap_or(raw);
+    // Strip the Jean `opencode/` wrapper prefix only when the remaining string
+    // still contains a `/` - e.g. "opencode/ollama/Qwen" -> "ollama/Qwen".
+    // For inputs like "opencode/gpt-5.5", opencode is the provider.
+    let raw = raw
+        .strip_prefix("opencode/")
+        .filter(|rest| rest.contains('/'))
+        .unwrap_or(raw);
     // Expect provider/model; if not present, let backend pick default.
     let (provider, model_id) = raw.split_once('/')?;
     let provider = provider.trim();
@@ -254,6 +259,37 @@ fn bare_model_id(model: &str) -> Option<&str> {
         return None;
     }
     Some(raw.strip_prefix("opencode/").unwrap_or(raw))
+}
+
+/// Extracts a human-readable error message from an OpenCode message response
+/// when `info.error` is populated despite a 200 OK HTTP status.
+fn extract_opencode_error_message(message: &serde_json::Value) -> Option<String> {
+    let error = message.get("info")?.get("error")?;
+    let data = error.get("data");
+
+    if let Some(body_str) = data
+        .and_then(|d| d.get("responseBody"))
+        .and_then(|v| v.as_str())
+    {
+        if let Ok(body_json) = serde_json::from_str::<serde_json::Value>(body_str) {
+            if let Some(msg) = body_json
+                .get("error")
+                .and_then(|e| e.get("message"))
+                .and_then(|v| v.as_str())
+            {
+                return Some(msg.to_string());
+            }
+        }
+    }
+
+    if let Some(msg) = data.and_then(|d| d.get("message")).and_then(|v| v.as_str()) {
+        return Some(msg.to_string());
+    }
+
+    error
+        .get("name")
+        .and_then(|v| v.as_str())
+        .map(|n| n.to_string())
 }
 
 /// Search the provider list for a provider that owns `target_model_id`.
@@ -1294,6 +1330,22 @@ pub fn execute_opencode_http(
         .json()
         .map_err(|e| format!("Failed to parse OpenCode message response: {e}"))?;
 
+    if let Some(error_msg) = extract_opencode_error_message(&response_json) {
+        done_flag.store(true, Ordering::Relaxed);
+        log::warn!(
+            "OpenCode: upstream error in POST response jean_session={session_id} opencode_session={opencode_session_id} msg={error_msg}"
+        );
+        let _ = app.emit_all(
+            "chat:error",
+            &ErrorEvent {
+                session_id: session_id.to_string(),
+                worktree_id: worktree_id.to_string(),
+                error: error_msg.clone(),
+            },
+        );
+        return Err(error_msg);
+    }
+
     // Let the SSE listener drain any trailing events before deciding whether
     // the POST response needs to synthesize the stream.
     std::thread::sleep(Duration::from_millis(200));
@@ -1671,6 +1723,10 @@ fn one_shot_opencode_blocking(
         .json()
         .map_err(|e| format!("Failed to parse OpenCode response: {e}"))?;
 
+    if let Some(error_msg) = extract_opencode_error_message(&response_json) {
+        return Err(error_msg);
+    }
+
     // When using json_schema format, the structured output is in info.structured
     if json_schema.is_some() {
         if let Some(structured) = response_json.get("info").and_then(|i| i.get("structured")) {
@@ -1728,4 +1784,81 @@ fn one_shot_opencode_blocking(
         .trim();
 
     Ok(stripped.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_provider_model_keeps_single_segment_after_opencode_prefix() {
+        assert_eq!(
+            parse_provider_model(Some("opencode/gpt-5.5")),
+            Some(("opencode".into(), "gpt-5.5".into()))
+        );
+    }
+
+    #[test]
+    fn parse_provider_model_strips_jean_prefix_for_wrapped_paths() {
+        assert_eq!(
+            parse_provider_model(Some("opencode/ollama/Qwen")),
+            Some(("ollama".into(), "Qwen".into()))
+        );
+    }
+
+    #[test]
+    fn parse_provider_model_handles_plain_provider_model() {
+        assert_eq!(
+            parse_provider_model(Some("anthropic/claude-sonnet-4-6")),
+            Some(("anthropic".into(), "claude-sonnet-4-6".into()))
+        );
+    }
+
+    #[test]
+    fn extract_opencode_error_picks_credits_message_from_response_body() {
+        let body = serde_json::json!({
+            "info": {
+                "error": {
+                    "name": "APIError",
+                    "data": {
+                        "message": "Insufficient balance. Manage your billing here: ...",
+                        "responseBody": "{\"type\":\"error\",\"error\":{\"type\":\"CreditsError\",\"message\":\"Insufficient balance.\"}}"
+                    }
+                }
+            },
+            "parts": []
+        });
+        assert_eq!(
+            extract_opencode_error_message(&body),
+            Some("Insufficient balance.".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_opencode_error_falls_back_to_data_message() {
+        let body = serde_json::json!({
+            "info": {
+                "error": {
+                    "name": "ContextOverflowError",
+                    "data": {
+                        "message": "Session too large to compact"
+                    }
+                }
+            },
+            "parts": []
+        });
+        assert_eq!(
+            extract_opencode_error_message(&body),
+            Some("Session too large to compact".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_opencode_error_returns_none_when_no_error() {
+        let body = serde_json::json!({
+            "info": {},
+            "parts": [{"type": "text", "text": "hello"}]
+        });
+        assert_eq!(extract_opencode_error_message(&body), None);
+    }
 }

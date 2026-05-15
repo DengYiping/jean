@@ -301,9 +301,18 @@ pub async fn prepare_cli_yolo_session(
     };
 
     let worktree = create_base_session(app.clone(), project.id.clone()).await?;
-    let session =
-        crate::chat::create_session(app, worktree.id.clone(), worktree.path.clone(), None, None)
-            .await?;
+    let session = crate::chat::create_session(
+        app,
+        worktree.id.clone(),
+        worktree.path.clone(),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .await?;
 
     Ok(CliYoloSessionResult {
         project,

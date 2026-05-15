@@ -749,7 +749,10 @@ export const test = base.extend<TauriMockFixtures>({
             window.setTimeout(() => {
               eventEmitter.dispatchEvent(
                 new CustomEvent('worktree:created', {
-                  detail: { worktree: structuredClone(worktree) },
+                  detail: {
+                    worktree: structuredClone(worktree),
+                    autoOpenInJean: args?.autoOpenInJean ?? true,
+                  },
                 })
               )
             }, 0)
@@ -792,7 +795,10 @@ export const test = base.extend<TauriMockFixtures>({
             window.setTimeout(() => {
               eventEmitter.dispatchEvent(
                 new CustomEvent('worktree:created', {
-                  detail: { worktree: structuredClone(worktree) },
+                  detail: {
+                    worktree: structuredClone(worktree),
+                    autoOpenInJean: true,
+                  },
                 })
               )
             }, 0)
@@ -811,6 +817,11 @@ export const test = base.extend<TauriMockFixtures>({
               updated_at: Date.now() / 1000,
               messages: [],
               backend: (args?.backend as string | undefined) ?? 'claude',
+              primary_surface: args?.primarySurface as string | undefined,
+              terminal_command: args?.terminalCommand as string | undefined,
+              terminal_command_args:
+                (args?.terminalCommandArgs as string[] | undefined) ?? [],
+              terminal_label: args?.terminalLabel as string | undefined,
             }
             store.sessions.unshift(session)
             store.active_session_id = session.id

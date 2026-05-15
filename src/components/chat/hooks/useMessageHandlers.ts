@@ -1890,13 +1890,12 @@ export function useMessageHandlers({
         clearDeniedMessageContext,
         getApprovedTools,
         getPendingDenials,
-        addSendingSession,
+        resumeWaitingSession,
         setLastSentMessage,
         setError,
         setSelectedModel,
         setExecutingMode,
         setExecutionMode,
-        setWaitingForInput,
       } = useChatStore.getState()
       const denials = getPendingDenials(sessionId)
       const isCodexApproval = denials.some(denial => denial.rpc_id != null)
@@ -1909,7 +1908,7 @@ export function useMessageHandlers({
         const nextMode = getCodexPermissionApprovalMode(currentMode, false)
         clearPendingDenials(sessionId)
         clearDeniedMessageContext(sessionId)
-        setWaitingForInput(sessionId, false)
+        resumeWaitingSession(sessionId)
         clearCachedWaitingState(
           sessionId,
           worktreeId,
@@ -1917,7 +1916,6 @@ export function useMessageHandlers({
           nextMode,
           true
         )
-        addSendingSession(sessionId)
         if (nextMode !== currentMode) {
           setExecutionMode(sessionId, nextMode)
           invoke('broadcast_session_setting', {
@@ -1974,7 +1972,7 @@ export function useMessageHandlers({
 
       clearPendingDenials(sessionId)
       clearDeniedMessageContext(sessionId)
-      setWaitingForInput(sessionId, false)
+      resumeWaitingSession(sessionId)
       setExecutionMode(sessionId, 'build')
       invoke('broadcast_session_setting', {
         sessionId,
@@ -2025,7 +2023,6 @@ export function useMessageHandlers({
       const modeToUse = context.executionMode ?? executionModeRef.current
       setLastSentMessage(sessionId, continuationMessage)
       setError(sessionId, null)
-      addSendingSession(sessionId)
       setSelectedModel(sessionId, modelToUse)
       setExecutingMode(sessionId, modeToUse)
 
@@ -2112,13 +2109,12 @@ export function useMessageHandlers({
         getDeniedMessageContext,
         clearDeniedMessageContext,
         getPendingDenials,
-        addSendingSession,
+        resumeWaitingSession,
         setLastSentMessage,
         setError,
         setSelectedModel,
         setExecutingMode,
         setExecutionMode: setMode,
-        setWaitingForInput,
       } = useChatStore.getState()
       const denials = getPendingDenials(sessionId)
       const isCodexApproval = denials.some(denial => denial.rpc_id != null)
@@ -2131,7 +2127,7 @@ export function useMessageHandlers({
         const nextMode = getCodexPermissionApprovalMode(currentMode, true)
         clearPendingDenials(sessionId)
         clearDeniedMessageContext(sessionId)
-        setWaitingForInput(sessionId, false)
+        resumeWaitingSession(sessionId)
         clearCachedWaitingState(
           sessionId,
           worktreeId,
@@ -2139,7 +2135,6 @@ export function useMessageHandlers({
           nextMode,
           true
         )
-        addSendingSession(sessionId)
         setMode(sessionId, nextMode)
         invoke('broadcast_session_setting', {
           sessionId,
@@ -2190,7 +2185,7 @@ export function useMessageHandlers({
 
       clearPendingDenials(sessionId)
       clearDeniedMessageContext(sessionId)
-      setWaitingForInput(sessionId, false)
+      resumeWaitingSession(sessionId)
 
       // Scroll to bottom after DOM updates from collapsing the permission approval UI
       requestAnimationFrame(() => {
@@ -2234,7 +2229,6 @@ export function useMessageHandlers({
       const modelToUse = context.model ?? selectedModelRef.current
       setLastSentMessage(sessionId, continuationMessage)
       setError(sessionId, null)
-      addSendingSession(sessionId)
       setSelectedModel(sessionId, modelToUse)
       setExecutingMode(sessionId, 'yolo')
 

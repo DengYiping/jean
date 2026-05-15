@@ -696,6 +696,36 @@ describe('ChatStore', () => {
 
       expect(getQueueLength('session-1')).toBe(0)
     })
+
+    it('resumes a waiting session without making the queue processable', () => {
+      const sessionId = 'session-1'
+      const observedProcessableStates: boolean[] = []
+
+      useChatStore.setState({
+        messageQueues: { [sessionId]: [mockMessage] },
+        waitingForInputSessionIds: { [sessionId]: true },
+        sendingSessionIds: {},
+        completedDurations: { [sessionId]: 1234 },
+      })
+
+      const unsubscribe = useChatStore.subscribe(state => {
+        const isProcessable =
+          (state.messageQueues[sessionId]?.length ?? 0) > 0 &&
+          !state.sendingSessionIds[sessionId] &&
+          !state.waitingForInputSessionIds[sessionId]
+        observedProcessableStates.push(isProcessable)
+      })
+
+      useChatStore.getState().resumeWaitingSession(sessionId)
+      unsubscribe()
+
+      const state = useChatStore.getState()
+      expect(state.waitingForInputSessionIds[sessionId]).toBeUndefined()
+      expect(state.sendingSessionIds[sessionId]).toBe(true)
+      expect(state.messageQueues[sessionId]).toEqual([mockMessage])
+      expect(state.completedDurations[sessionId]).toBeUndefined()
+      expect(observedProcessableStates).not.toContain(true)
+    })
   })
 
   describe('permission approvals', () => {

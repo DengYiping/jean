@@ -348,6 +348,7 @@ interface ChatUIState {
 
   // Actions - Session-based sending state
   addSendingSession: (sessionId: string, startTime?: number) => void
+  resumeWaitingSession: (sessionId: string, startTime?: number) => void
   removeSendingSession: (sessionId: string) => void
   isSending: (sessionId: string) => boolean
 
@@ -1161,6 +1162,39 @@ export const useChatStore = create<ChatUIState>()(
           },
           undefined,
           'addSendingSession'
+        ),
+
+      resumeWaitingSession: (sessionId, startTime) =>
+        set(
+          state => {
+            if (
+              state.sendingSessionIds[sessionId] &&
+              !state.waitingForInputSessionIds[sessionId]
+            ) {
+              return state
+            }
+
+            const now = startTime ?? Date.now()
+            const { [sessionId]: _waiting, ...waitingForInputSessionIds } =
+              state.waitingForInputSessionIds
+            const { [sessionId]: _duration, ...completedDurations } =
+              state.completedDurations
+
+            return {
+              waitingForInputSessionIds,
+              sendingSessionIds: {
+                ...state.sendingSessionIds,
+                [sessionId]: true,
+              },
+              sendStartedAt: {
+                ...state.sendStartedAt,
+                [sessionId]: now,
+              },
+              completedDurations,
+            }
+          },
+          undefined,
+          'resumeWaitingSession'
         ),
 
       removeSendingSession: sessionId =>

@@ -57,3 +57,9 @@ export interface AutomationUpsertInput {
   run_window_end_hour?: number | null
   status?: AutomationStatus
 }
+
+export interface AutomationThreadCleanupResult {
+  archived_sessions: number
+  affected_worktrees: number
+  skipped_archived_sessions: number
+}

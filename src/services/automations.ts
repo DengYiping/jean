@@ -5,6 +5,7 @@ import { hasBackend } from '@/lib/environment'
 import type {
   Automation,
   AutomationStatus,
+  AutomationThreadCleanupResult,
   AutomationUpsertInput,
 } from '@/types/automations'
 
@@ -123,6 +124,35 @@ export function useDeleteAutomation() {
     },
     onError: error => {
       toast.error('Failed to delete automation', {
+        description: String(error),
+      })
+    },
+  })
+}
+
+export function useCleanupAutomationThreads() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({
+      id,
+      projectId: _projectId,
+    }: {
+      id: string
+      projectId: string
+    }) =>
+      invoke<AutomationThreadCleanupResult>('cleanup_automation_threads', {
+        id,
+      }),
+    onSuccess: (_, { projectId }) => {
+      queryClient.invalidateQueries({
+        queryKey: automationsQueryKeys.list(projectId),
+      })
+      queryClient.invalidateQueries({ queryKey: ['chat'] })
+      queryClient.invalidateQueries({ queryKey: ['all-archived-sessions'] })
+    },
+    onError: error => {
+      toast.error('Failed to cleanup automation threads', {
         description: String(error),
       })
     },

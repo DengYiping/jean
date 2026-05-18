@@ -4297,6 +4297,7 @@ pub fn run() {
             automations::commands::create_automation,
             automations::commands::update_automation,
             automations::commands::delete_automation,
+            automations::commands::cleanup_automation_threads,
             automations::commands::run_automation_now,
             automations::commands::pause_automation,
             automations::commands::resume_automation,

@@ -1,9 +1,28 @@
+use std::collections::HashSet;
+
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 
 use super::scheduler::{compute_next_run_at, now_secs};
 use super::storage::{load_automations, with_automations_mut};
 use super::types::{Automation, AutomationStatus, AutomationTargetMode};
 use super::AutomationManager;
+use crate::chat::storage::load_sessions;
+use crate::chat::types::Session;
+use crate::projects::storage::load_projects_data;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct AutomationThreadCleanupResult {
+    pub archived_sessions: u32,
+    pub affected_worktrees: u32,
+    pub skipped_archived_sessions: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+struct AutomationThreadScan {
+    active_session_ids: Vec<String>,
+    skipped_archived_sessions: u32,
+}
 
 #[tauri::command]
 pub async fn list_automations(
@@ -165,6 +184,79 @@ pub async fn delete_automation(
 }
 
 #[tauri::command]
+pub async fn cleanup_automation_threads(
+    app: AppHandle,
+    state: State<'_, AutomationManager>,
+    id: String,
+) -> Result<AutomationThreadCleanupResult, String> {
+    let automation = load_automations(&app)?
+        .into_iter()
+        .find(|automation| automation.id == id)
+        .ok_or_else(|| "Automation not found.".to_string())?;
+    let projects_data = load_projects_data(&app)?;
+    let mut targets = Vec::new();
+    let mut skipped_archived_sessions = 0u32;
+
+    for worktree in projects_data
+        .worktrees
+        .iter()
+        .filter(|worktree| worktree.project_id == automation.project_id)
+    {
+        let sessions = match load_sessions(&app, &worktree.path, &worktree.id) {
+            Ok(sessions) => sessions,
+            Err(error) => {
+                log::warn!(
+                    "Failed to load sessions for automation cleanup in worktree {}: {error}",
+                    worktree.id
+                );
+                continue;
+            }
+        };
+        let scan = scan_automation_threads(&sessions.sessions, &automation.id);
+        skipped_archived_sessions =
+            skipped_archived_sessions.saturating_add(scan.skipped_archived_sessions);
+        for session_id in scan.active_session_ids {
+            targets.push((worktree.id.clone(), worktree.path.clone(), session_id));
+        }
+    }
+
+    let mut archived_session_ids = Vec::new();
+    let mut affected_worktree_ids = HashSet::new();
+    for (worktree_id, worktree_path, session_id) in targets {
+        crate::chat::archive_session(
+            app.clone(),
+            worktree_id.clone(),
+            worktree_path,
+            session_id.clone(),
+        )
+        .await?;
+        archived_session_ids.push(session_id);
+        affected_worktree_ids.insert(worktree_id);
+    }
+
+    if !archived_session_ids.is_empty() {
+        with_automations_mut(&app, |automations| {
+            let automation = automations
+                .iter_mut()
+                .find(|automation| automation.id == id)
+                .ok_or_else(|| "Automation not found.".to_string())?;
+            prune_cleaned_automation_session_mappings(automation, &archived_session_ids);
+            automation.updated_at = now_secs();
+            Ok(())
+        })?;
+    }
+
+    let result = AutomationThreadCleanupResult {
+        archived_sessions: archived_session_ids.len() as u32,
+        affected_worktrees: affected_worktree_ids.len() as u32,
+        skipped_archived_sessions,
+    };
+
+    state.emit_updated(&id);
+    Ok(result)
+}
+
+#[tauri::command]
 pub async fn run_automation_now(
     state: State<'_, AutomationManager>,
     id: String,
@@ -249,6 +341,7 @@ fn validate_automation_inputs(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::chat::types::{Backend, Session};
 
     #[test]
     fn fresh_worktree_mode_allows_empty_targets() {
@@ -277,6 +370,61 @@ mod tests {
         );
         assert!(result.is_err());
     }
+
+    #[test]
+    fn scan_automation_threads_finds_only_active_sessions_for_automation() {
+        let mut active = Session::new("Automation".to_string(), 0, Backend::Codex);
+        active.id = "session-active".to_string();
+        active.automation_id = Some("automation-1".to_string());
+        active.automation_owned = true;
+
+        let mut archived = Session::new("Archived automation".to_string(), 1, Backend::Codex);
+        archived.id = "session-archived".to_string();
+        archived.automation_id = Some("automation-1".to_string());
+        archived.automation_owned = true;
+        archived.archived_at = Some(123);
+
+        let mut other = Session::new("Other automation".to_string(), 2, Backend::Codex);
+        other.id = "session-other".to_string();
+        other.automation_id = Some("automation-2".to_string());
+        other.automation_owned = true;
+
+        let scan = scan_automation_threads(&[active, archived, other], "automation-1");
+
+        assert_eq!(scan.active_session_ids, vec!["session-active".to_string()]);
+        assert_eq!(scan.skipped_archived_sessions, 1);
+    }
+
+    #[test]
+    fn prune_cleaned_automation_session_mappings_removes_archived_session_ids() {
+        let mut automation = Automation::new(
+            "project-1".to_string(),
+            "Daily triage".to_string(),
+            "Do the work".to_string(),
+            AutomationTargetMode::ExistingWorktrees,
+            vec!["worktree-1".to_string(), "worktree-2".to_string()],
+            "FREQ=DAILY;INTERVAL=1;BYHOUR=9;BYMINUTE=0".to_string(),
+        );
+        automation
+            .session_ids_by_worktree_id
+            .insert("worktree-1".to_string(), "session-cleaned".to_string());
+        automation
+            .session_ids_by_worktree_id
+            .insert("worktree-2".to_string(), "session-kept".to_string());
+
+        prune_cleaned_automation_session_mappings(
+            &mut automation,
+            &["session-cleaned".to_string()],
+        );
+
+        assert_eq!(
+            automation.session_ids_by_worktree_id.get("worktree-2"),
+            Some(&"session-kept".to_string())
+        );
+        assert!(!automation
+            .session_ids_by_worktree_id
+            .contains_key("worktree-1"));
+    }
 }
 
 fn normalize_opt(value: Option<String>) -> Option<String> {
@@ -288,4 +436,30 @@ fn normalize_opt(value: Option<String>) -> Option<String> {
             Some(trimmed.to_string())
         }
     })
+}
+
+fn scan_automation_threads(sessions: &[Session], automation_id: &str) -> AutomationThreadScan {
+    let mut scan = AutomationThreadScan::default();
+    for session in sessions {
+        if session.automation_id.as_deref() != Some(automation_id) {
+            continue;
+        }
+        if session.archived_at.is_some() {
+            scan.skipped_archived_sessions = scan.skipped_archived_sessions.saturating_add(1);
+        } else {
+            scan.active_session_ids.push(session.id.clone());
+        }
+    }
+    scan
+}
+
+fn prune_cleaned_automation_session_mappings(
+    automation: &mut Automation,
+    archived_session_ids: &[String],
+) {
+    let archived_session_ids: HashSet<&str> =
+        archived_session_ids.iter().map(String::as_str).collect();
+    automation
+        .session_ids_by_worktree_id
+        .retain(|_, session_id| !archived_session_ids.contains(session_id.as_str()));
 }

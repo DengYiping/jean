@@ -3048,6 +3048,14 @@ pub async fn dispatch_command(
                 crate::automations::commands::delete_automation(app.clone(), state, id).await?;
             to_value(result)
         }
+        "cleanup_automation_threads" => {
+            let id = from_field(&args, "id")?;
+            let state = app.state::<crate::automations::AutomationManager>();
+            let result =
+                crate::automations::commands::cleanup_automation_threads(app.clone(), state, id)
+                    .await?;
+            to_value(result)
+        }
         "run_automation_now" => {
             let id = from_field(&args, "id")?;
             let state = app.state::<crate::automations::AutomationManager>();

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
+  Archive,
   Bot,
   CalendarClock,
   Pause,
@@ -8,6 +9,17 @@ import {
   Save,
   Trash2,
 } from 'lucide-react'
+import { toast } from 'sonner'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -26,6 +38,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import {
   useAutomations,
+  useCleanupAutomationThreads,
   useCreateAutomation,
   useDeleteAutomation,
   usePauseAutomation,
@@ -208,6 +221,7 @@ export function AutomationsPane({
   const createAutomation = useCreateAutomation()
   const updateAutomation = useUpdateAutomation()
   const deleteAutomation = useDeleteAutomation()
+  const cleanupAutomationThreads = useCleanupAutomationThreads()
   const runAutomationNow = useRunAutomationNow()
   const pauseAutomation = usePauseAutomation()
   const resumeAutomation = useResumeAutomation()
@@ -220,6 +234,7 @@ export function AutomationsPane({
   const [selectedAutomationId, setSelectedAutomationId] = useState<
     string | 'new'
   >('new')
+  const [cleanupConfirm, setCleanupConfirm] = useState<Automation | null>(null)
   const [form, setForm] = useState<AutomationFormState>(() =>
     emptyForm(activeWorktrees)
   )
@@ -304,8 +319,25 @@ export function AutomationsPane({
     createAutomation.isPending ||
     updateAutomation.isPending ||
     deleteAutomation.isPending ||
+    cleanupAutomationThreads.isPending ||
     pauseAutomation.isPending ||
     resumeAutomation.isPending
+
+  const handleCleanupThreads = async (automation: Automation) => {
+    const result = await cleanupAutomationThreads.mutateAsync({
+      id: automation.id,
+      projectId,
+    })
+    setCleanupConfirm(null)
+
+    if (result.archived_sessions > 0) {
+      toast.success(
+        `Archived ${result.archived_sessions} automation thread${result.archived_sessions === 1 ? '' : 's'}`
+      )
+    } else {
+      toast.info('No active automation threads to archive')
+    }
+  }
 
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(18rem,22rem)_1fr]">
@@ -417,6 +449,17 @@ export function AutomationsPane({
                         Pause
                       </Button>
                     )}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={event => {
+                        event.stopPropagation()
+                        setCleanupConfirm(automation)
+                      }}
+                    >
+                      <Archive className="mr-1 h-3.5 w-3.5" />
+                      Cleanup Threads
+                    </Button>
                     <Button
                       size="sm"
                       variant="ghost"
@@ -966,6 +1009,39 @@ export function AutomationsPane({
           )}
         </div>
       </div>
+      <AlertDialog
+        open={cleanupConfirm !== null}
+        onOpenChange={open => !open && setCleanupConfirm(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Archive automation threads?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will archive active Jean sessions created by &quot;
+              {cleanupConfirm?.name}&quot;. Archived sessions remain available
+              in Archives.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={cleanupAutomationThreads.isPending}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={
+                cleanupAutomationThreads.isPending || cleanupConfirm === null
+              }
+              onClick={event => {
+                event.preventDefault()
+                if (cleanupConfirm) {
+                  void handleCleanupThreads(cleanupConfirm)
+                }
+              }}
+            >
+              Archive
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

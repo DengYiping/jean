@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@/test/test-utils'
+import { fireEvent, render, screen, waitFor } from '@/test/test-utils'
 import type { Automation } from '@/types/automations'
 import type { Worktree } from '@/types/projects'
 import { AutomationsPane, buildAutomationInput } from './AutomationsPane'
@@ -9,6 +9,7 @@ import { AutomationsPane, buildAutomationInput } from './AutomationsPane'
 const mockUseAutomations = vi.fn()
 const mockUseCreateAutomation = vi.fn()
 const mockUseDeleteAutomation = vi.fn()
+const mockUseCleanupAutomationThreads = vi.fn()
 const mockUsePauseAutomation = vi.fn()
 const mockUseResumeAutomation = vi.fn()
 const mockUseRunAutomationNow = vi.fn()
@@ -18,6 +19,8 @@ const mockUseWorktrees = vi.fn()
 vi.mock('@/services/automations', () => ({
   useAutomations: (...args: unknown[]) => mockUseAutomations(...args),
   useCreateAutomation: (...args: unknown[]) => mockUseCreateAutomation(...args),
+  useCleanupAutomationThreads: (...args: unknown[]) =>
+    mockUseCleanupAutomationThreads(...args),
   useDeleteAutomation: (...args: unknown[]) => mockUseDeleteAutomation(...args),
   usePauseAutomation: (...args: unknown[]) => mockUsePauseAutomation(...args),
   useResumeAutomation: (...args: unknown[]) => mockUseResumeAutomation(...args),
@@ -152,6 +155,7 @@ describe('AutomationsPane', () => {
     })
     mockUseWorktrees.mockReturnValue({ data: worktrees })
     mockUseCreateAutomation.mockReturnValue(mutationStub)
+    mockUseCleanupAutomationThreads.mockReturnValue(mutationStub)
     mockUseDeleteAutomation.mockReturnValue(mutationStub)
     mockUsePauseAutomation.mockReturnValue(mutationStub)
     mockUseResumeAutomation.mockReturnValue(mutationStub)
@@ -168,5 +172,41 @@ describe('AutomationsPane', () => {
       'flex-col',
       'sm:flex-row'
     )
+  })
+
+  it('confirms before cleaning up automation threads', async () => {
+    const cleanupMutation = {
+      isPending: false,
+      mutateAsync: vi.fn().mockResolvedValue({
+        archived_sessions: 2,
+        affected_worktrees: 1,
+        skipped_archived_sessions: 0,
+      }),
+    }
+    mockUseAutomations.mockReturnValue({
+      data: [createAutomation({ name: 'Daily triage' })],
+    })
+    mockUseWorktrees.mockReturnValue({ data: worktrees })
+    mockUseCreateAutomation.mockReturnValue(mutationStub)
+    mockUseCleanupAutomationThreads.mockReturnValue(cleanupMutation)
+    mockUseDeleteAutomation.mockReturnValue(mutationStub)
+    mockUsePauseAutomation.mockReturnValue(mutationStub)
+    mockUseResumeAutomation.mockReturnValue(mutationStub)
+    mockUseRunAutomationNow.mockReturnValue(mutationStub)
+    mockUseUpdateAutomation.mockReturnValue(mutationStub)
+
+    render(<AutomationsPane projectId="project-1" projectPath="/tmp/project" />)
+
+    fireEvent.click(screen.getByRole('button', { name: /cleanup threads/i }))
+    expect(screen.getByText('Archive automation threads?')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /^Archive$/ }))
+
+    await waitFor(() => {
+      expect(cleanupMutation.mutateAsync).toHaveBeenCalledWith({
+        id: 'automation-1',
+        projectId: 'project-1',
+      })
+    })
   })
 })

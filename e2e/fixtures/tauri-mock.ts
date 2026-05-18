@@ -1230,6 +1230,62 @@ export const test = base.extend<TauriMockFixtures>({
             }
             return false
           },
+          cleanup_automation_threads: args => {
+            const automationId = args?.id as string
+            let archivedSessions = 0
+            const affectedWorktrees = new Set<string>()
+            let skippedArchivedSessions = 0
+
+            for (const [worktreeId, worktreeSessions] of Object.entries(
+              sessionStore
+            )) {
+              for (const session of worktreeSessions.sessions) {
+                if (session.automation_id !== automationId) continue
+                if (session.archived_at) {
+                  skippedArchivedSessions += 1
+                  continue
+                }
+                session.archived_at = Math.floor(Date.now() / 1000)
+                archivedSessions += 1
+                affectedWorktrees.add(worktreeId)
+              }
+            }
+
+            const automation = automationStore.find(
+              item => item.id === automationId
+            )
+            if (automation?.session_ids_by_worktree_id) {
+              const archivedIds = new Set<string>()
+              for (const worktreeSessions of Object.values(sessionStore)) {
+                for (const session of worktreeSessions.sessions) {
+                  if (
+                    session.automation_id === automationId &&
+                    session.archived_at
+                  ) {
+                    archivedIds.add(session.id)
+                  }
+                }
+              }
+              for (const [worktreeId, sessionId] of Object.entries(
+                automation.session_ids_by_worktree_id as Record<string, string>
+              )) {
+                if (archivedIds.has(sessionId)) {
+                  delete (
+                    automation.session_ids_by_worktree_id as Record<
+                      string,
+                      string
+                    >
+                  )[worktreeId]
+                }
+              }
+            }
+
+            return {
+              archived_sessions: archivedSessions,
+              affected_worktrees: affectedWorktrees.size,
+              skipped_archived_sessions: skippedArchivedSessions,
+            }
+          },
           run_automation_now: args => {
             const automation = automationStore.find(
               item => item.id === args?.id

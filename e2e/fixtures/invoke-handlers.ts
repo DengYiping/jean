@@ -374,6 +374,11 @@ export const defaultResponses: Record<string, unknown> = {
   create_automation: null,
   update_automation: null,
   delete_automation: true,
+  cleanup_automation_threads: {
+    archived_sessions: 0,
+    affected_worktrees: 0,
+    skipped_archived_sessions: 0,
+  },
   run_automation_now: null,
   pause_automation: null,
   resume_automation: null,

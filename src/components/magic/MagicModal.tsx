@@ -254,7 +254,7 @@ function buildMagicColumns(
       options: [
         {
           id: 'release-notes',
-          label: 'Generate Notes',
+          label: 'Generate Release Notes',
           icon: FileText,
           key: 'G',
         },

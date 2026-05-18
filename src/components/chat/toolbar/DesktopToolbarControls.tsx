@@ -10,6 +10,7 @@ import {
   Hammer,
   Loader2,
   MessageSquare,
+  Paperclip,
   Plug,
   ShieldAlert,
   Siren,
@@ -129,6 +130,7 @@ interface DesktopToolbarControlsProps {
   onOpenProjectSettings?: () => void
   onResolvePrConflicts: () => void
   onLoadContext: () => void
+  onAttach: () => void
   onOpenPullRequestReview: () => void
   installedBackends: ('claude' | 'codex' | 'opencode')[]
   onBackendChange: (backend: 'claude' | 'codex' | 'opencode') => void
@@ -195,6 +197,7 @@ export function DesktopToolbarControls({
   onOpenProjectSettings,
   onResolvePrConflicts,
   onLoadContext,
+  onAttach,
   onOpenPullRequestReview,
   installedBackends,
   onBackendChange,
@@ -364,20 +367,39 @@ export function DesktopToolbarControls({
         className="hidden @xl:flex"
       />
 
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            aria-label="Magic"
+            disabled={hasPendingQuestions}
+            className="hidden @xl:flex h-8 items-center gap-1 px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+            onClick={onOpenMagicModal}
+          >
+            <Wand2 className="h-3.5 w-3.5" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent>Magic (⌘M)</TooltipContent>
+      </Tooltip>
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            aria-label="Attachments"
+            disabled={hasPendingQuestions}
+            className="hidden @xl:flex h-8 items-center gap-1 px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+            onClick={onAttach}
+          >
+            <Paperclip className="h-3.5 w-3.5" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent>Attachments</TooltipContent>
+      </Tooltip>
+
       <div className="hidden @xl:block h-4 w-px bg-border/50" />
 
       <div className="block @xl:hidden h-4 w-px bg-border/50" />
-
-      <button
-        type="button"
-        className="hidden @xl:flex h-8 items-center gap-1 rounded-l-lg px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
-        disabled={hasPendingQuestions}
-        onClick={onOpenMagicModal}
-      >
-        <Wand2 className="h-3.5 w-3.5" />
-      </button>
-
-      <div className="hidden @xl:block h-4 w-px bg-border/50" />
 
       <DropdownMenu
         open={mcpDropdownOpen}
@@ -1103,6 +1125,7 @@ export function DesktopToolbarControls({
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
+                aria-label={`${executionMode.charAt(0).toUpperCase() + executionMode.slice(1)}`}
                 disabled={hasPendingQuestions}
                 className="hidden @xl:flex h-8 items-center gap-1.5 px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
               >

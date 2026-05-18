@@ -33,6 +33,9 @@ use super::linear_issues::{
     linear_context_to_detail, LinearIssueContext,
 };
 use super::names::generate_unique_workspace_name;
+use super::release_notes::{
+    build_release_notes_prompt_context, format_issue_groups, PrIssueRefsMap,
+};
 use super::slots;
 use super::storage::{get_project_worktrees_dir, load_projects_data, save_projects_data};
 use super::types::{
@@ -9331,19 +9334,36 @@ const RELEASE_NOTES_SCHEMA: &str = r#"{
 
 const RELEASE_NOTES_PROMPT: &str = r#"Generate release notes for changes since the `{tag}` release ({previous_release_name}).
 
+## Merged pull requests and detected issue references
+
+{pull_requests}
+
+## Required PR/issue reference formats
+
+{related_pull_requests}
+
 ## Commits since {tag}
 
 {commits}
 
 ## Instructions
 
-- Write a concise release title
-- Group changes into categories: Features, Fixes, Improvements, Breaking Changes (only include categories that have entries)
-- Use bullet points with brief descriptions
-- Reference PR numbers if visible in commit messages
-- Skip merge commits and trivial changes (typos, formatting)
-- Write in past tense ("Added", "Fixed", "Improved")
-- Keep it concise and user-facing (skip internal implementation details)"#;
+- Write a concise release title.
+- Group changes into categories: Features, Fixes, Improvements, Breaking Changes (only include categories that have entries).
+- Explicitly use the merged pull request metadata above as the primary source, then use commits as fallback context.
+- Inspect PR titles, PR bodies, and PR commit messages for GitHub closing keywords: close/closes/closed, fix/fixes/fixed, resolve/resolves/resolved.
+- Always normalize closing keywords to lowercase final forms: closes, fixes, resolves.
+- Reference the PR number for each bullet when known: `(#123)`.
+- If a PR closes/fixes/resolves issues, include the issue refs after the PR using the detected keyword: `(#123, fixes #456, #789)`.
+- Do not invent PR numbers or issue references; only use the detected metadata above.
+- Skip merge commits and trivial changes (typos, formatting).
+- Write in past tense ("Added", "Fixed", "Improved").
+- Keep it concise and user-facing (skip internal implementation details)."#;
+
+static RELEASE_NOTES_PAREN_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"\(([^)]*#[0-9][^)]*)\)").expect("valid release notes paren regex"));
+static RELEASE_NOTES_LEADING_PR_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)^\s*#(\d+)\b").expect("valid release notes PR regex"));
 
 /// Generate release notes content using Claude CLI
 #[allow(clippy::too_many_arguments)]
@@ -9409,6 +9429,9 @@ fn generate_release_notes_content(
         commits
     };
 
+    let release_notes_context = build_release_notes_prompt_context(app, project_path, tag)?;
+    let related_pull_requests = format_related_pull_requests(&release_notes_context.pr_issue_refs);
+
     // Build prompt
     let prompt_template = custom_prompt
         .filter(|p| !p.trim().is_empty())
@@ -9417,7 +9440,9 @@ fn generate_release_notes_content(
     let prompt = prompt_template
         .replace("{tag}", tag)
         .replace("{previous_release_name}", release_name)
-        .replace("{commits}", &commits);
+        .replace("{commits}", &commits)
+        .replace("{pull_requests}", &release_notes_context.pull_requests)
+        .replace("{related_pull_requests}", &related_pull_requests);
 
     let model_str = model.unwrap_or("sonnet");
 
@@ -9434,10 +9459,13 @@ fn generate_release_notes_content(
             Some(std::path::Path::new(project_path)),
             reasoning_effort,
         )?;
-        return serde_json::from_str(&json_str).map_err(|e| {
+        let mut response: ReleaseNotesResponse = serde_json::from_str(&json_str).map_err(|e| {
             log::error!("Failed to parse OpenCode release notes JSON: {e}, content: {json_str}");
             format!("Failed to parse release notes: {e}")
-        });
+        })?;
+        response.body =
+            augment_pr_references_in_body(&response.body, &release_notes_context.pr_issue_refs);
+        return Ok(response);
     }
 
     if backend == crate::chat::types::Backend::Codex {
@@ -9450,10 +9478,13 @@ fn generate_release_notes_content(
             Some(std::path::Path::new(project_path)),
             reasoning_effort,
         )?;
-        return serde_json::from_str(&json_str).map_err(|e| {
+        let mut response: ReleaseNotesResponse = serde_json::from_str(&json_str).map_err(|e| {
             log::error!("Failed to parse Codex release notes JSON: {e}, content: {json_str}");
             format!("Failed to parse release notes: {e}")
-        });
+        })?;
+        response.body =
+            augment_pr_references_in_body(&response.body, &release_notes_context.pr_issue_refs);
+        return Ok(response);
     }
 
     let cli_path = resolve_cli_binary(app);
@@ -9531,8 +9562,116 @@ fn generate_release_notes_content(
     let json_content = extract_structured_output(&stdout)?;
     log::trace!("Extracted release notes JSON: {json_content}");
 
-    serde_json::from_str::<ReleaseNotesResponse>(&json_content)
-        .map_err(|e| format!("Failed to parse release notes response: {e}"))
+    let mut response = serde_json::from_str::<ReleaseNotesResponse>(&json_content)
+        .map_err(|e| format!("Failed to parse release notes response: {e}"))?;
+    response.body =
+        augment_pr_references_in_body(&response.body, &release_notes_context.pr_issue_refs);
+    Ok(response)
+}
+
+fn augment_pr_references_in_body(body: &str, pr_issue_refs: &PrIssueRefsMap) -> String {
+    RELEASE_NOTES_PAREN_RE
+        .replace_all(body, |captures: &regex::Captures<'_>| {
+            let Some(content_match) = captures.get(1) else {
+                return captures[0].to_string();
+            };
+            let content = content_match.as_str().trim();
+            let Some(pr_captures) = RELEASE_NOTES_LEADING_PR_RE.captures(content) else {
+                return captures[0].to_string();
+            };
+            let Some(pr_number_match) = pr_captures.get(1) else {
+                return captures[0].to_string();
+            };
+            let Ok(pr_number) = pr_number_match.as_str().parse::<u32>() else {
+                return captures[0].to_string();
+            };
+            let Some(issue_groups) = pr_issue_refs.get(&pr_number) else {
+                return captures[0].to_string();
+            };
+            if issue_groups.is_empty() {
+                return captures[0].to_string();
+            }
+
+            format!("(#{pr_number}, {})", format_issue_groups(issue_groups))
+        })
+        .into_owned()
+}
+
+fn format_related_pull_requests(pr_issue_refs: &PrIssueRefsMap) -> String {
+    if pr_issue_refs.is_empty() {
+        return "No merged pull requests with closing issue references were detected in this release window."
+            .to_string();
+    }
+
+    pr_issue_refs
+        .iter()
+        .map(|(pr_number, issue_groups)| {
+            format!(
+                "- PR #{pr_number}: use exact reference `(#{pr_number}, {})`",
+                format_issue_groups(issue_groups)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[cfg(test)]
+mod release_notes_body_tests {
+    use super::{augment_pr_references_in_body, format_related_pull_requests};
+    use std::collections::{BTreeMap, BTreeSet};
+
+    fn issue_map(
+        entries: &[(u32, &[(&str, &[u32])])],
+    ) -> BTreeMap<u32, BTreeMap<String, BTreeSet<u32>>> {
+        entries
+            .iter()
+            .map(|(pr, groups)| {
+                let grouped = groups
+                    .iter()
+                    .map(|(keyword, numbers)| {
+                        (
+                            (*keyword).to_string(),
+                            numbers.iter().copied().collect::<BTreeSet<u32>>(),
+                        )
+                    })
+                    .collect::<BTreeMap<_, _>>();
+                (*pr, grouped)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn augments_missing_issue_refs_for_known_pr() {
+        let body = "- Added support (#9503)";
+        let result =
+            augment_pr_references_in_body(body, &issue_map(&[(9503, &[("fixes", &[9501, 9504])])]));
+        assert_eq!(result, "- Added support (#9503, fixes #9501, #9504)");
+    }
+
+    #[test]
+    fn replaces_partial_issue_refs_with_full_authoritative_set() {
+        let body = "- Added support (#9503, fixes #9501)";
+        let result =
+            augment_pr_references_in_body(body, &issue_map(&[(9503, &[("fixes", &[9501, 9504])])]));
+        assert_eq!(result, "- Added support (#9503, fixes #9501, #9504)");
+    }
+
+    #[test]
+    fn leaves_unknown_pr_references_untouched() {
+        let body = "- Added support (#9503)";
+        let result = augment_pr_references_in_body(body, &BTreeMap::new());
+        assert_eq!(result, body);
+    }
+
+    #[test]
+    fn formats_related_pull_requests_guidance() {
+        let result =
+            format_related_pull_requests(&issue_map(&[(9503, &[("fixes", &[9501, 9504])])]));
+        assert_eq!(
+            result,
+            "- PR #9503: use exact reference `(#9503, fixes #9501, #9504)`"
+        );
+    }
 }
 
 /// Generate release notes comparing a tag to HEAD

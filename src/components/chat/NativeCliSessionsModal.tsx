@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowLeft,
   Bot,
@@ -67,6 +67,7 @@ interface NativeCliSessionsModalProps {
     worktreeId: string,
     worktreePath: string
   ) => void
+  autoStartNew?: boolean
 }
 
 function isCliBackend(kind: NativeCliSessionKind | null): kind is CliBackend {
@@ -118,10 +119,12 @@ export function NativeCliSessionsModal({
   onBack,
   onClose,
   onOpenSessionModal,
+  autoStartNew = false,
 }: NativeCliSessionsModalProps) {
   const [openingSessionId, setOpeningSessionId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const newSessionButtonRef = useRef<HTMLButtonElement>(null)
+  const autoStartedRef = useRef(false)
   const createSession = useCreateSession()
   const backend = isCliBackend(kind) ? kind : undefined
   const sessionsQuery = useSessions(worktreeId, worktreePath, {
@@ -335,6 +338,18 @@ export function NativeCliSessionsModal({
     worktreePath,
   ])
 
+  useEffect(() => {
+    if (!open) {
+      autoStartedRef.current = false
+      return
+    }
+    if (!autoStartNew || autoStartedRef.current || createSession.isPending) {
+      return
+    }
+    autoStartedRef.current = true
+    createNewSession()
+  }, [autoStartNew, createNewSession, createSession.isPending, open])
+
   const openNativeHistorySession = useCallback(
     (nativeSession: NativeCliHistorySession) => {
       createSession.mutate(
@@ -374,6 +389,8 @@ export function NativeCliSessionsModal({
   const isLoading = sessionsQuery.isLoading || nativeSessionsQuery.isLoading
   const hasAnySessions = sessions.length > 0 || nativeSessions.length > 0
   const hasFilteredSessions = visibleRows.length > 0
+
+  if (autoStartNew) return null
 
   return (
     <Dialog open={open} onOpenChange={nextOpen => !nextOpen && onClose()}>

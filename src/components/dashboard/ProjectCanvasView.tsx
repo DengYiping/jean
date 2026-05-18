@@ -1972,7 +1972,7 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
     closeWorktreeDirectly,
   ])
 
-  // Listen for create-new-session event to handle CMD+T
+  // Listen for create-new-session event to handle CMD+T / picker shortcut
   useEffect(() => {
     const handleCreateNewSession = (e: Event) => {
       // Don't create if modal is already open
@@ -1984,11 +1984,15 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
       if (!item) return
 
       e.stopImmediatePropagation()
+      const intent =
+        (e as CustomEvent<{ intent?: 'default' | 'picker' }>).detail?.intent ??
+        'picker'
 
       useUIStore.getState().openNewSessionModeModal({
         worktreeId: item.worktreeId,
         worktreePath: item.worktreePath,
         origin: 'canvas',
+        intent,
       })
     }
 

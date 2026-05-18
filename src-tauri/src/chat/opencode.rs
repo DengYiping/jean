@@ -5,10 +5,13 @@ use crate::http_server::EmitExt;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use regex::Regex;
 use std::collections::HashMap;
+use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::AppHandle;
+
+const OPENCODE_HTTP_CANCEL_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 #[derive(serde::Serialize, Clone)]
 struct ChunkEvent {
@@ -1126,6 +1129,151 @@ fn process_sse_event(
     }
 }
 
+async fn await_opencode_http_or_cancel<F, T>(
+    future: F,
+    cancelled: Arc<AtomicBool>,
+    opencode_session_id: String,
+    working_dir: String,
+) -> Option<T>
+where
+    F: Future<Output = T>,
+{
+    if cancelled.load(Ordering::SeqCst) {
+        super::registry::abort_opencode_session(opencode_session_id, Some(working_dir));
+        return None;
+    }
+
+    tokio::pin!(future);
+    loop {
+        tokio::select! {
+            result = &mut future => return Some(result),
+            _ = tokio::time::sleep(OPENCODE_HTTP_CANCEL_POLL_INTERVAL) => {
+                if cancelled.load(Ordering::SeqCst) {
+                    super::registry::abort_opencode_session(
+                        opencode_session_id.clone(),
+                        Some(working_dir.clone()),
+                    );
+                    return None;
+                }
+            }
+        }
+    }
+}
+
+async fn sleep_or_cancel_opencode_http(
+    duration: Duration,
+    cancelled: Arc<AtomicBool>,
+    opencode_session_id: String,
+    working_dir: String,
+) -> bool {
+    await_opencode_http_or_cancel(
+        tokio::time::sleep(duration),
+        cancelled,
+        opencode_session_id,
+        working_dir,
+    )
+    .await
+    .is_none()
+}
+
+fn post_opencode_message_cancellable(
+    msg_url: String,
+    working_dir: String,
+    payload: serde_json::Value,
+    cancelled: Arc<AtomicBool>,
+    jean_session_id: String,
+    opencode_session_id: String,
+) -> Result<Option<(reqwest::StatusCode, String)>, String> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| format!("Failed to build OpenCode HTTP runtime: {e}"))?;
+
+    runtime.block_on(async move {
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(1800))
+            .build()
+            .map_err(|e| format!("Failed to build OpenCode async HTTP client: {e}"))?;
+
+        let send_once = || {
+            client
+                .post(&msg_url)
+                .query(&[("directory", working_dir.as_str())])
+                .json(&payload)
+                .send()
+        };
+
+        let response = match await_opencode_http_or_cancel(
+            send_once(),
+            cancelled.clone(),
+            opencode_session_id.clone(),
+            working_dir.clone(),
+        )
+        .await
+        {
+            Some(Ok(resp)) => resp,
+            Some(Err(e)) if e.is_connect() || e.is_request() => {
+                log::warn!("OpenCode message connection error, retrying in 2s: {e}");
+                if sleep_or_cancel_opencode_http(
+                    Duration::from_secs(2),
+                    cancelled.clone(),
+                    opencode_session_id.clone(),
+                    working_dir.clone(),
+                )
+                .await
+                {
+                    return Ok(None);
+                }
+
+                match await_opencode_http_or_cancel(
+                    send_once(),
+                    cancelled.clone(),
+                    opencode_session_id.clone(),
+                    working_dir.clone(),
+                )
+                .await
+                {
+                    Some(Ok(resp)) => resp,
+                    Some(Err(e)) => return Err(format!("Failed to send OpenCode message: {e}")),
+                    None => return Ok(None),
+                }
+            }
+            Some(Err(e)) => return Err(format!("Failed to send OpenCode message: {e}")),
+            None => return Ok(None),
+        };
+
+        let status = response.status();
+        log::info!(
+            "OpenCode: POST body read start jean_session={} opencode_session={}",
+            jean_session_id,
+            opencode_session_id
+        );
+        let body_read_start = Instant::now();
+        let body = match await_opencode_http_or_cancel(
+            response.text(),
+            cancelled,
+            opencode_session_id.clone(),
+            working_dir,
+        )
+        .await
+        {
+            Some(Ok(body)) => body,
+            Some(Err(e)) => {
+                log::warn!(
+                    "OpenCode: POST body read failed jean_session={} opencode_session={} elapsed_ms={} err={e}",
+                    jean_session_id,
+                    opencode_session_id,
+                    body_read_start.elapsed().as_millis()
+                );
+                return Err(format!("Failed to read OpenCode message response: {e}"));
+            }
+            None => return Ok(None),
+        };
+
+        Ok(Some((status, body)))
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn execute_opencode_http(
     app: &tauri::AppHandle,
@@ -1294,26 +1442,47 @@ pub fn execute_opencode_http(
         payload["system"] = serde_json::Value::String(system.to_string());
     }
 
-    // Retry once on connection-level errors (server temporarily unreachable).
-    let response = match client.post(&msg_url).query(&query).json(&payload).send() {
-        Ok(resp) => resp,
-        Err(e) if e.is_connect() || e.is_request() => {
-            log::warn!("OpenCode message connection error, retrying in 2s: {e}");
-            std::thread::sleep(std::time::Duration::from_secs(2));
-            client
-                .post(&msg_url)
-                .query(&query)
-                .json(&payload)
-                .send()
-                .map_err(|e| format!("Failed to send OpenCode message: {e}"))?
-        }
-        Err(e) => return Err(format!("Failed to send OpenCode message: {e}")),
+    let post_start = Instant::now();
+    log::info!(
+        "OpenCode: message POST start jean_session={} opencode_session={} url={}",
+        session_id,
+        opencode_session_id,
+        msg_url
+    );
+    let Some((status, body)) = post_opencode_message_cancellable(
+        msg_url,
+        working_dir.to_string_lossy().to_string(),
+        payload,
+        cancelled.clone(),
+        session_id.to_string(),
+        opencode_session_id.clone(),
+    )?
+    else {
+        log::info!(
+            "OpenCode: message POST cancelled jean_session={} opencode_session={} elapsed_ms={}",
+            session_id,
+            opencode_session_id,
+            post_start.elapsed().as_millis()
+        );
+        return Ok(OpenCodeResponse {
+            content: String::new(),
+            session_id: opencode_session_id,
+            tool_calls: vec![],
+            content_blocks: vec![],
+            cancelled: true,
+            usage: None,
+        });
     };
+    log::info!(
+        "OpenCode: message POST finished jean_session={} opencode_session={} elapsed_ms={} status={}",
+        session_id,
+        opencode_session_id,
+        post_start.elapsed().as_millis(),
+        status
+    );
 
-    if !response.status().is_success() {
+    if !status.is_success() {
         done_flag.store(true, Ordering::Relaxed);
-        let status = response.status();
-        let body = response.text().unwrap_or_default();
         let error = format!("OpenCode message failed: status={status}, body={body}");
         let _ = app.emit_all(
             "chat:error",
@@ -1326,9 +1495,27 @@ pub fn execute_opencode_http(
         return Err(error);
     }
 
-    let response_json: serde_json::Value = response
-        .json()
-        .map_err(|e| format!("Failed to parse OpenCode message response: {e}"))?;
+    let body_parse_start = Instant::now();
+    let response_json: serde_json::Value = serde_json::from_str(&body).map_err(|e| {
+        log::warn!(
+            "OpenCode: POST body parse failed jean_session={} opencode_session={} elapsed_ms={} err={e}",
+            session_id,
+            opencode_session_id,
+            body_parse_start.elapsed().as_millis()
+        );
+        format!("Failed to parse OpenCode message response: {e}")
+    })?;
+    log::info!(
+        "OpenCode: POST body parse done jean_session={} opencode_session={} elapsed_ms={} parts={}",
+        session_id,
+        opencode_session_id,
+        body_parse_start.elapsed().as_millis(),
+        response_json
+            .get("parts")
+            .and_then(|v| v.as_array())
+            .map(|a| a.len())
+            .unwrap_or(0)
+    );
 
     if let Some(error_msg) = extract_opencode_error_message(&response_json) {
         done_flag.store(true, Ordering::Relaxed);
@@ -1860,5 +2047,29 @@ mod tests {
             "parts": [{"type": "text", "text": "hello"}]
         });
         assert_eq!(extract_opencode_error_message(&body), None);
+    }
+
+    #[test]
+    fn await_opencode_http_or_cancel_returns_none_when_cancelled() {
+        std::thread::spawn(|| {
+            let cancelled = Arc::new(AtomicBool::new(true));
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+
+            let start = Instant::now();
+            let result = runtime.block_on(await_opencode_http_or_cancel(
+                std::future::pending::<()>(),
+                cancelled,
+                "opencode-session".to_string(),
+                "/tmp".to_string(),
+            ));
+
+            assert!(result.is_none());
+            assert!(start.elapsed() < Duration::from_millis(50));
+        })
+        .join()
+        .unwrap();
     }
 }

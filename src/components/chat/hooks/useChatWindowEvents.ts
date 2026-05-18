@@ -1,4 +1,4 @@
-import { useEffect, useRef, type RefObject } from 'react'
+import { useCallback, useEffect, useRef, type RefObject } from 'react'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { invoke } from '@/lib/transport'
 import { toast } from 'sonner'
@@ -138,7 +138,7 @@ export function useChatWindowEvents({
   currentStreamingContentBlocks,
   isSending,
   currentQueuedMessages,
-  createSession,
+  createSession: _createSession,
   preferences,
   patchPreferences,
   handleSaveContext,
@@ -168,6 +168,9 @@ export function useChatWindowEvents({
   endKeyboardScroll,
 }: UseChatWindowEventsParams) {
   const isMobile = useIsMobile()
+  const focusChatInput = useCallback(() => {
+    inputRef.current?.focus()
+  }, [inputRef])
 
   // Focus input on mount, session change, or worktree change (skip on mobile to avoid keyboard popup)
   useEffect(() => {
@@ -175,6 +178,37 @@ export function useChatWindowEvents({
       inputRef.current?.focus()
     }
   }, [activeSessionId, activeWorktreeId, inputRef, isMobile])
+
+  // When opening a worktree with a visible terminal, xterm can asynchronously
+  // steal focus after the chat input focused. Re-assert focus briefly, but only
+  // if focus is still on the body or inside the terminal.
+  useEffect(() => {
+    if (isMobile || !activeWorktreeId) return
+
+    const shouldReassertFocus = () => {
+      const activeElement = document.activeElement
+      return (
+        !activeElement ||
+        activeElement === document.body ||
+        activeElement.tagName === 'BODY' ||
+        !!activeElement.closest('.xterm, [data-terminal-emulator]')
+      )
+    }
+
+    const timeouts = [0, 75, 200].map(delay =>
+      window.setTimeout(() => {
+        if (shouldReassertFocus()) {
+          focusChatInput()
+        }
+      }, delay)
+    )
+
+    return () => {
+      for (const timeout of timeouts) {
+        window.clearTimeout(timeout)
+      }
+    }
+  }, [activeWorktreeId, focusChatInput, isMobile])
 
   // Scroll to bottom on worktree switch
   useEffect(() => {
@@ -296,29 +330,23 @@ export function useChatWindowEvents({
     setIsGeneratingRecap,
   ])
 
-  // CMD+T: Create new session
+  // CMD+T: Open configured default; CMD+SHIFT+T / plus buttons open picker
   useEffect(() => {
-    const handler = () => {
+    const handler = (event: Event) => {
       if (!activeWorktreeId || !activeWorktreePath) return
-      createSession.mutate(
-        { worktreeId: activeWorktreeId, worktreePath: activeWorktreePath },
-        {
-          onSuccess: session => {
-            useChatStore
-              .getState()
-              .setActiveSession(activeWorktreeId, session.id)
-            window.dispatchEvent(
-              new CustomEvent('open-session-modal', {
-                detail: { sessionId: session.id },
-              })
-            )
-          },
-        }
-      )
+      const intent =
+        (event as CustomEvent<{ intent?: 'default' | 'picker' }>).detail
+          ?.intent ?? 'picker'
+      useUIStore.getState().openNewSessionModeModal({
+        worktreeId: activeWorktreeId,
+        worktreePath: activeWorktreePath,
+        origin: isModal ? 'modal' : 'chat',
+        intent,
+      })
     }
     window.addEventListener('create-new-session', handler)
     return () => window.removeEventListener('create-new-session', handler)
-  }, [activeWorktreeId, activeWorktreePath, createSession])
+  }, [activeWorktreeId, activeWorktreePath, isModal])
 
   // SHIFT+TAB: Cycle execution mode
   useEffect(() => {
@@ -669,6 +697,7 @@ export function useChatWindowEvents({
   // Worktree build keyboard shortcut
   useEffect(() => {
     const handler = () => {
+      if (!isModal && useUIStore.getState().sessionChatModalOpen) return
       if (hasStreamingPlan) {
         handleStreamingWorktreeBuildApproval()
         return
@@ -683,6 +712,7 @@ export function useChatWindowEvents({
     return () =>
       window.removeEventListener('approve-plan-worktree-build', handler)
   }, [
+    isModal,
     hasStreamingPlan,
     pendingPlanMessage,
     handleStreamingWorktreeBuildApproval,
@@ -693,6 +723,7 @@ export function useChatWindowEvents({
   // Worktree yolo keyboard shortcut
   useEffect(() => {
     const handler = () => {
+      if (!isModal && useUIStore.getState().sessionChatModalOpen) return
       if (hasStreamingPlan) {
         handleStreamingWorktreeYoloApproval()
         return
@@ -707,6 +738,7 @@ export function useChatWindowEvents({
     return () =>
       window.removeEventListener('approve-plan-worktree-yolo', handler)
   }, [
+    isModal,
     hasStreamingPlan,
     pendingPlanMessage,
     handleStreamingWorktreeYoloApproval,

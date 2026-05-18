@@ -45,13 +45,19 @@ import {
 } from './ContextMentionPopover'
 import type { ContextMentionItem } from './hooks/useContextMentionData'
 import { getActiveSkillsFromText } from '@/lib/skill-prompt'
+import { processAttachmentFile } from './attachment-processing'
 import {
   decodePromptAttachmentMetadata,
   parsePlainTextPromptMetadata,
   type PromptAttachmentMetadata,
 } from './message-content-utils'
+import { sanitizeTextInputValue } from '@/lib/input-sanitization'
 
-import { MAX_IMAGE_SIZE, ALLOWED_IMAGE_TYPES } from './image-constants'
+import {
+  IMAGE_ATTACHMENT_ACCEPT,
+  MAX_IMAGE_SIZE,
+  ALLOWED_IMAGE_TYPES,
+} from './image-constants'
 
 /** Maximum text file size in bytes (10MB) */
 const MAX_TEXT_SIZE = 10 * 1024 * 1024
@@ -91,6 +97,7 @@ interface ChatInputProps {
   onCommandExecute?: (command: ClaudeCommand) => void
   onHasValueChange?: (hasValue: boolean) => void
   onRegisterClearHandler?: (clearHandler: (() => void) | null) => void
+  onRegisterAttachHandler?: (attachHandler: (() => void) | null) => void
   backend: Backend
   formRef: React.RefObject<HTMLFormElement | null>
   inputRef: React.RefObject<HTMLTextAreaElement | null>
@@ -110,12 +117,14 @@ export const ChatInput = memo(function ChatInput({
   onCommandExecute,
   onHasValueChange,
   onRegisterClearHandler,
+  onRegisterAttachHandler,
   backend,
   formRef,
   inputRef,
 }: ChatInputProps) {
   const isMobile = useIsMobile()
   const resizeTextarea = useAutoResize(inputRef)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   // PERFORMANCE: Use uncontrolled input pattern - track value in ref, not state
   // This avoids React re-renders on every keystroke
@@ -255,6 +264,15 @@ export const ChatInput = memo(function ChatInput({
     onRegisterClearHandler?.(clearInputState)
     return () => onRegisterClearHandler?.(null)
   }, [clearInputState, onRegisterClearHandler])
+
+  const handleAttachClick = useCallback(() => {
+    fileInputRef.current?.click()
+  }, [])
+
+  useEffect(() => {
+    onRegisterAttachHandler?.(handleAttachClick)
+    return () => onRegisterAttachHandler?.(null)
+  }, [handleAttachClick, onRegisterAttachHandler])
 
   // Handle textarea value changes
   const handleChange = useCallback(
@@ -644,6 +662,125 @@ export const ChatInput = memo(function ChatInput({
     async (e: React.ClipboardEvent) => {
       if (!activeSessionId) return
 
+      const insertTextAtCursor = (rawText: string) => {
+        const textToInsert = sanitizeTextInputValue(rawText)
+        if (!textToInsert || !inputRef.current) return
+
+        const textarea = inputRef.current
+        const start = textarea.selectionStart
+        const end = textarea.selectionEnd
+        const current = textarea.value
+        const nextValue =
+          current.slice(0, start) + textToInsert + current.slice(end)
+
+        textarea.value = nextValue
+        valueRef.current = nextValue
+        textarea.selectionStart = textarea.selectionEnd =
+          start + textToInsert.length
+        useChatStore.getState().setInputDraft(activeSessionId, nextValue)
+        const isEmpty = !nextValue.trim()
+        setShowHint(isEmpty)
+        onHasValueChangeRef.current?.(!isEmpty)
+        resizeTextarea()
+      }
+
+      const saveLargeTextPaste = async (text: string): Promise<boolean> => {
+        if (!text || text.length < TEXT_PASTE_THRESHOLD) return false
+
+        const textSize = new TextEncoder().encode(text).length
+        if (textSize > MAX_TEXT_SIZE) {
+          toast.error('Text too large', {
+            description: 'Maximum size is 10MB',
+          })
+          return true
+        }
+
+        try {
+          const result = await invoke<SaveTextResponse>('save_pasted_text', {
+            content: text,
+          })
+
+          useChatStore.getState().addPendingTextFile(activeSessionId, {
+            id: result.id,
+            path: result.path,
+            filename: result.filename,
+            size: result.size,
+            content: text,
+          })
+        } catch (error) {
+          logger.error('Failed to save text file:', error)
+          toast.error('Failed to save text file', {
+            description: String(error),
+          })
+        }
+
+        return true
+      }
+
+      const resolvePastedMentions = async (text: string) => {
+        if (
+          !text ||
+          text.length >= TEXT_PASTE_THRESHOLD ||
+          !activeWorktreePath
+        ) {
+          return
+        }
+
+        const mentionRegex = /@(\S+)/g
+        let mentionMatch
+        const mentions: string[] = []
+        while ((mentionMatch = mentionRegex.exec(text)) !== null) {
+          if (mentionMatch[1]) mentions.push(mentionMatch[1])
+        }
+        if (mentions.length === 0) return
+
+        let fileList: WorktreeFile[] | undefined = queryClient.getQueryData(
+          fileQueryKeys.worktreeFiles(activeWorktreePath)
+        )
+        if (!fileList) {
+          try {
+            fileList = await invoke<WorktreeFile[]>('list_worktree_files', {
+              worktreePath: activeWorktreePath,
+              maxFiles: 5000,
+            })
+            queryClient.setQueryData(
+              fileQueryKeys.worktreeFiles(activeWorktreePath),
+              fileList
+            )
+          } catch {
+            fileList = []
+          }
+        }
+        if (fileList.length === 0) return
+
+        const byFullPath = new Map<string, WorktreeFile>()
+        const byFilename = new Map<string, WorktreeFile[]>()
+        for (const f of fileList) {
+          byFullPath.set(f.relative_path, f)
+          const name = getFilename(f.relative_path)
+          const arr = byFilename.get(name)
+          if (arr) arr.push(f)
+          else byFilename.set(name, [f])
+        }
+
+        const { addPendingFile } = useChatStore.getState()
+        for (const mention of mentions) {
+          let resolved = byFullPath.get(mention)
+          if (!resolved) {
+            const candidates = byFilename.get(mention)
+            if (candidates?.length === 1) resolved = candidates[0]
+          }
+          if (resolved) {
+            addPendingFile(activeSessionId, {
+              id: generateId(),
+              relativePath: resolved.relative_path,
+              extension: resolved.extension,
+              isDirectory: resolved.is_dir,
+            })
+          }
+        }
+      }
+
       // Check for jean-prompt clipboard format (copied from a sent message)
       const html = e.clipboardData?.getData('text/html')
       const plainText = e.clipboardData?.getData('text/plain') ?? ''
@@ -743,13 +880,12 @@ export const ChatInput = memo(function ChatInput({
       for (const item of items) {
         if (!item.type.startsWith('image/')) continue
         hasImage = true
+        e.preventDefault()
 
         // SVGs are XML text — route through text file path instead of raster image pipeline
         if (item.type === 'image/svg+xml') {
           const file = item.getAsFile()
           if (!file) continue
-          e.preventDefault()
-
           try {
             const svgText = await file.text()
             const result = await invoke<SaveTextResponse>('save_pasted_text', {
@@ -773,7 +909,7 @@ export const ChatInput = memo(function ChatInput({
         }
 
         // Check if it's an allowed type
-        if (!ALLOWED_IMAGE_TYPES.includes(item.type)) {
+        if (!(ALLOWED_IMAGE_TYPES as readonly string[]).includes(item.type)) {
           toast.error('Unsupported image type', {
             description: `Allowed types: PNG, JPEG, GIF, WebP, SVG`,
           })
@@ -782,9 +918,6 @@ export const ChatInput = memo(function ChatInput({
 
         const file = item.getAsFile()
         if (!file) continue
-
-        // Prevent default paste (we're handling it)
-        e.preventDefault()
 
         // Check size limit
         if (file.size > MAX_IMAGE_SIZE) {
@@ -843,8 +976,18 @@ export const ChatInput = memo(function ChatInput({
         reader.readAsDataURL(file)
       }
 
-      // If we handled an image, don't also process text
-      if (hasImage) return
+      // Mixed image+text paste should preserve both parts. Because image paste
+      // requires preventDefault(), manually apply the text branch too.
+      if (hasImage) {
+        if (plainText) {
+          const savedAsFile = await saveLargeTextPaste(plainText)
+          if (!savedAsFile) {
+            insertTextAtCursor(plainText)
+            await resolvePastedMentions(plainText)
+          }
+        }
+        return
+      }
 
       // Native clipboard fallback (Linux/WebKitGTK doesn't expose image items via Web API)
       const clipboardText = plainText
@@ -889,100 +1032,30 @@ export const ChatInput = memo(function ChatInput({
       if (text && text.length >= TEXT_PASTE_THRESHOLD) {
         // Prevent default paste (we're handling it as a file)
         e.preventDefault()
-
-        // Check size limit
-        const textSize = new TextEncoder().encode(text).length
-        if (textSize > MAX_TEXT_SIZE) {
-          toast.error('Text too large', {
-            description: 'Maximum size is 10MB',
-          })
-          return
-        }
-
-        try {
-          // Save to disk via Tauri command (saves to app data dir)
-          const result = await invoke<SaveTextResponse>('save_pasted_text', {
-            content: text,
-          })
-
-          // Add to pending text files
-          const { addPendingTextFile } = useChatStore.getState()
-          addPendingTextFile(activeSessionId, {
-            id: result.id,
-            path: result.path,
-            filename: result.filename,
-            size: result.size,
-            content: text,
-          })
-        } catch (error) {
-          logger.error('Failed to save text file:', error)
-          toast.error('Failed to save text file', {
-            description: String(error),
-          })
-        }
+        await saveLargeTextPaste(text)
       }
 
       // Auto-resolve @file mentions in regular (small) text pastes
-      if (text && text.length < TEXT_PASTE_THRESHOLD && activeWorktreePath) {
-        const mentionRegex = /@(\S+)/g
-        let mentionMatch
-        const mentions: string[] = []
-        while ((mentionMatch = mentionRegex.exec(text)) !== null) {
-          if (mentionMatch[1]) mentions.push(mentionMatch[1])
-        }
-
-        if (mentions.length > 0) {
-          // Get file list: cache-first, async fallback
-          let fileList: WorktreeFile[] | undefined = queryClient.getQueryData(
-            fileQueryKeys.worktreeFiles(activeWorktreePath)
-          )
-          if (!fileList) {
-            try {
-              fileList = await invoke<WorktreeFile[]>('list_worktree_files', {
-                worktreePath: activeWorktreePath,
-                maxFiles: 5000,
-              })
-              queryClient.setQueryData(
-                fileQueryKeys.worktreeFiles(activeWorktreePath),
-                fileList
-              )
-            } catch {
-              fileList = []
-            }
-          }
-
-          if (fileList.length > 0) {
-            const byFullPath = new Map<string, WorktreeFile>()
-            const byFilename = new Map<string, WorktreeFile[]>()
-            for (const f of fileList) {
-              byFullPath.set(f.relative_path, f)
-              const name = getFilename(f.relative_path)
-              const arr = byFilename.get(name)
-              if (arr) arr.push(f)
-              else byFilename.set(name, [f])
-            }
-
-            const { addPendingFile } = useChatStore.getState()
-            for (const mention of mentions) {
-              let resolved = byFullPath.get(mention)
-              if (!resolved) {
-                const candidates = byFilename.get(mention)
-                if (candidates?.length === 1) resolved = candidates[0]
-              }
-              if (resolved) {
-                addPendingFile(activeSessionId, {
-                  id: generateId(),
-                  relativePath: resolved.relative_path,
-                  extension: resolved.extension,
-                  isDirectory: resolved.is_dir,
-                })
-              }
-            }
-          }
-        }
-      }
+      await resolvePastedMentions(text)
     },
     [activeSessionId, activeWorktreePath, inputRef, resizeTextarea]
+  )
+
+  const handleFileInputChange = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (!activeSessionId) return
+
+      const files = e.target.files
+      if (!files || files.length === 0) return
+
+      for (const file of Array.from(files)) {
+        await processAttachmentFile(file, activeSessionId)
+      }
+
+      e.target.value = ''
+      inputRef.current?.focus()
+    },
+    [activeSessionId, inputRef]
   )
 
   // Handle file selection from @ mention popover
@@ -1273,6 +1346,15 @@ export const ChatInput = memo(function ChatInput({
 
   return (
     <div className="relative">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept={IMAGE_ATTACHMENT_ACCEPT}
+        multiple
+        tabIndex={-1}
+        className="sr-only"
+        onChange={handleFileInputChange}
+      />
       <Textarea
         ref={inputRef}
         placeholder={

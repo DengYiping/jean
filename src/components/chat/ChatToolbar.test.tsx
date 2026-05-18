@@ -115,6 +115,7 @@ function createProps(
     onReview: vi.fn(),
     onMerge: vi.fn(),
     onMergePr: vi.fn(),
+    onAttach: vi.fn(),
     onResolvePrConflicts: vi.fn(),
     onResolveConflicts: vi.fn(),
     hasOpenPr: false,

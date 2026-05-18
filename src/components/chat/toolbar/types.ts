@@ -82,6 +82,7 @@ export interface ChatToolbarProps {
   onReview: () => void
   onMerge: () => void
   onMergePr: () => void
+  onAttach: () => void
   onResolvePrConflicts: () => void
   onResolveConflicts: () => void
   hasOpenPr: boolean

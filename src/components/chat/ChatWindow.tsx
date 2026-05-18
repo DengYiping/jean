@@ -123,7 +123,6 @@ import {
 } from './VirtualizedMessageList'
 import { CompactMessageList } from './CompactMessageList'
 import {
-  appendPromptMetadataToPlainText,
   buildPromptAttachmentMetadata,
   encodePromptAttachmentMetadata,
   stripAllMarkers,
@@ -999,6 +998,7 @@ export function ChatWindow({
 
   // Ref for approve button (passed to VirtualizedMessageList)
   const approveButtonRef = useRef<HTMLButtonElement>(null)
+  const triggerChatAttachRef = useRef<(() => void) | null>(null)
   const [isInlineApproveVisible, setIsInlineApproveVisible] = useState(false)
 
   // Terminal panel ref for imperative collapse/expand
@@ -2384,7 +2384,6 @@ export function ChatWindow({
     )
 
     const encodedMetadata = encodePromptAttachmentMetadata(metadata)
-    const fallbackText = appendPromptMetadataToPlainText(cleanText, metadata)
     const escapedCleanText = cleanText
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
@@ -2402,11 +2401,12 @@ export function ChatWindow({
         toast.success('Prompt copied')
         return
       } catch {
-        // Fall through to plain-text metadata fallback.
+        // Fall through to clean plain text so external paste targets do not
+        // receive Jean metadata comments.
       }
     }
 
-    await copyToClipboard(fallbackText)
+    await copyToClipboard(cleanText)
     toast.success('Prompt copied')
   }, [])
 
@@ -3219,6 +3219,9 @@ export function ChatWindow({
                               ) => {
                                 clearChatInputStateRef.current = handler
                               }}
+                              onRegisterAttachHandler={handler => {
+                                triggerChatAttachRef.current = handler
+                              }}
                               formRef={formRef}
                               inputRef={inputRef}
                             />
@@ -3284,6 +3287,7 @@ export function ChatWindow({
                             onReview={() => setReviewMethodModalOpen(true)}
                             onMerge={handleMerge}
                             onMergePr={handleMergePr}
+                            onAttach={() => triggerChatAttachRef.current?.()}
                             onResolvePrConflicts={handleResolvePrConflicts}
                             onResolveConflicts={handleResolveConflicts}
                             hasOpenPr={Boolean(worktree?.pr_url)}

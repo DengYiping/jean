@@ -24,6 +24,7 @@ import { cn } from '@/lib/utils'
 import { generateId } from '@/lib/uuid'
 import { getExtensionColor } from '@/lib/file-colors'
 import { fuzzySearchFiles } from '@/lib/fuzzy-search'
+import { Kbd, KbdGroup } from '@/components/ui/kbd'
 
 export interface FileMentionPopoverHandle {
   moveUp: () => void
@@ -79,6 +80,9 @@ export function FileMentionPopover({
   )
   const { data: files = [] } = useWorktreeFiles(selectedRootPath)
   const listRef = useRef<HTMLDivElement>(null)
+  const scopeListRef = useRef<HTMLDivElement>(null)
+  // File row index only. Project scopes live outside the command list so
+  // 3+ linked projects never push file results out of view.
   const [selectedIndex, setSelectedIndex] = useState(0)
 
   const currentProject = useMemo(
@@ -219,6 +223,20 @@ export function FileMentionPopover({
     selectedItem?.scrollIntoView({ block: 'nearest' })
   }, [clampedSelectedIndex])
 
+  // Scroll selected project scope into view when cycling with keyboard.
+  useEffect(() => {
+    const scopeList = scopeListRef.current
+    if (!open || !scopeList || selectedScopeIndex < 0) return
+
+    const selectedScopeItem = scopeList.querySelector(
+      `[data-scope-index="${selectedScopeIndex}"]`
+    )
+    selectedScopeItem?.scrollIntoView({
+      block: 'nearest',
+      inline: 'nearest',
+    })
+  }, [open, selectedScopeIndex])
+
   if (!open || !anchorPosition) return null
 
   return (
@@ -243,34 +261,75 @@ export function FileMentionPopover({
         onOpenAutoFocus={e => e.preventDefault()}
         onCloseAutoFocus={e => e.preventDefault()}
       >
-        {scopes.length > 1 && (
-          <div className="flex gap-1.5 overflow-x-auto border-b px-3 py-2">
-            {scopes.map(scope => {
-              const isActiveScope = scope.rootPath === selectedRootPath
-              return (
-                <button
-                  key={scope.id}
-                  type="button"
-                  onClick={() => handleScopeSelect(scope)}
-                  className={cn(
-                    'max-w-[180px] shrink-0 truncate rounded border px-2 py-1 text-xs',
-                    isActiveScope
-                      ? 'border-primary bg-primary/10 text-primary'
-                      : 'border-border bg-background text-muted-foreground hover:bg-muted'
-                  )}
-                >
-                  {scope.isCurrent ? `${scope.name} current` : scope.name}
-                </button>
-              )
-            })}
+        <div className="space-y-2 border-b px-3 py-2">
+          <div className="flex min-h-5 items-center justify-between gap-3">
+            <span className="text-xs font-medium text-muted-foreground">
+              File links
+            </span>
+            {scopes.length > 1 && (
+              <KbdGroup
+                className="gap-0.5"
+                aria-label="Use Control Shift Left or Right to switch scope"
+              >
+                <Kbd className="h-4 min-w-4 px-1 text-[10px]">Ctrl</Kbd>
+                <Kbd className="h-4 min-w-4 px-1 text-[10px]">Shift</Kbd>
+                <Kbd className="h-4 min-w-4 px-1 text-[10px]">←</Kbd>
+                <Kbd className="h-4 min-w-4 px-1 text-[10px]">→</Kbd>
+              </KbdGroup>
+            )}
           </div>
-        )}
+
+          {scopes.length > 0 && (
+            <div className="space-y-1.5">
+              <div
+                ref={scopeListRef}
+                className="flex gap-1.5 overflow-x-auto pb-0.5"
+                aria-label="Project scope selector"
+              >
+                {scopes.map((scope, index) => {
+                  const isActiveScope = scope.rootPath === selectedRootPath
+                  const label = scope.isCurrent
+                    ? `${scope.name} current`
+                    : scope.name
+
+                  return (
+                    <button
+                      key={`${scope.id}:${scope.rootPath}`}
+                      type="button"
+                      title={scope.name}
+                      data-scope-index={index}
+                      aria-label={`Search files in ${label}`}
+                      aria-pressed={isActiveScope}
+                      onClick={() => handleScopeSelect(scope)}
+                      className={cn(
+                        'flex max-w-[11rem] shrink-0 items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors',
+                        isActiveScope
+                          ? 'border-primary/55 bg-primary/15 text-primary shadow-sm'
+                          : 'border-transparent bg-muted/40 text-muted-foreground hover:bg-muted/70 hover:text-foreground'
+                      )}
+                    >
+                      <FolderIcon className="h-4 w-4 shrink-0" />
+                      <span className="truncate">{scope.name}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </div>
         <Command shouldFilter={false}>
-          <CommandList ref={listRef} className="max-h-[200px]">
+          <CommandList
+            ref={listRef}
+            className="min-h-[280px] max-h-[min(360px,60vh)]"
+          >
             {filteredFiles.length === 0 ? (
-              <CommandEmpty>No files found</CommandEmpty>
+              <CommandEmpty>
+                {scopes.length === 0
+                  ? 'No files found'
+                  : 'No files found in selected project'}
+              </CommandEmpty>
             ) : (
-              <CommandGroup>
+              <CommandGroup heading="Files">
                 {filteredFiles.map((file, index) => {
                   const isSelected = index === clampedSelectedIndex
                   return (

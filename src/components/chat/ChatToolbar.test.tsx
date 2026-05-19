@@ -215,6 +215,24 @@ describe('ChatToolbar', () => {
     expect(onParallelExecutionPromptChange).toHaveBeenCalledWith(true)
   })
 
+  it('keeps the send action outside the scrollable toolbar controls', () => {
+    render(<ChatToolbar {...createProps()} />)
+
+    const scrollArea = screen.getByTestId('chat-toolbar-scroll-controls')
+    const pinnedActions = screen.getByTestId('chat-toolbar-pinned-actions')
+
+    expect(scrollArea).toContainElement(screen.getByTestId('desktop-controls'))
+    expect(scrollArea).toContainElement(
+      screen.getByTestId('mobile-toolbar-menu')
+    )
+    expect(scrollArea).not.toContainElement(
+      screen.getByTestId('send-cancel-button')
+    )
+    expect(pinnedActions).toContainElement(
+      screen.getByTestId('send-cancel-button')
+    )
+  })
+
   it('shows Codex context usage from the toolbar while the floating dock is hidden', () => {
     render(<ChatToolbar {...createProps()} />)
 

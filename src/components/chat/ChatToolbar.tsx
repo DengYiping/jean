@@ -403,182 +403,190 @@ export const ChatToolbar = memo(function ChatToolbar({
 
   return (
     <div className="@container flex justify-center px-4 py-2 md:px-6">
-      <div className="inline-flex max-w-full flex-nowrap items-center overflow-x-auto whitespace-nowrap rounded-lg bg-muted/50 scrollbar-hide">
-        <DockBurgerButton
-          activeMcpCount={activeMcpCount}
-          className="flex @xl:hidden shrink-0"
-        />
-        <SessionUsageMeter side="top" align="start" variant="toolbar" />
-        <MobileToolbarMenu
-          isDisabled={isSending || hasPendingQuestions}
-          hasOpenPr={hasOpenPr}
-          sessionHasMessages={sessionHasMessages}
-          providerLocked={providerLocked}
-          selectedBackend={selectedBackend}
-          selectedProvider={selectedProvider}
-          selectedModel={selectedModel}
-          selectedEffortLevel={selectedEffortLevel}
-          selectedThinkingLevel={selectedThinkingLevel}
-          hideThinkingLevel={hideThinkingLevel}
-          useAdaptiveThinking={useAdaptiveThinking}
-          isCodex={isCodex}
-          executionMode={executionMode}
-          customCliProfiles={customCliProfiles}
-          filteredModelOptions={filteredModelOptions}
-          uncommittedAdded={uncommittedAdded}
-          uncommittedRemoved={uncommittedRemoved}
-          branchDiffAdded={branchDiffAdded}
-          branchDiffRemoved={branchDiffRemoved}
-          prUrl={prUrl}
-          prNumber={prNumber}
-          displayStatus={displayStatus}
-          checkStatus={checkStatus}
-          activeWorktreePath={activeWorktreePath}
-          onSaveContext={onSaveContext}
-          onLoadContext={onLoadContext}
-          onCommit={onCommit}
-          onCommitAndPush={onCommitAndPush}
-          onOpenPr={onOpenPr}
-          onOpenPullRequestReview={onOpenPullRequestReview}
-          onReview={onReview}
-          onMerge={onMerge}
-          onMergePr={onMergePr}
-          onResolveConflicts={openResolveConflictsDialog}
-          installedBackends={installedBackends}
-          onBackendChange={onBackendChange}
-          onSetExecutionMode={onSetExecutionMode}
-          handlePullClick={handlePullClick}
-          handlePullUpstreamClick={handlePullUpstreamClick}
-          handlePushClick={handlePushClick}
-          handleUncommittedDiffClick={handleUncommittedDiffClick}
-          handleBranchDiffClick={handleBranchDiffClick}
-          handleProviderChange={handleProviderChange}
-          handleModelChange={handleModelChange}
-          handleEffortLevelChange={handleEffortLevelChange}
-          handleThinkingLevelChange={handleThinkingLevelChange}
-          loadedIssueContexts={loadedIssueContexts}
-          loadedPRContexts={loadedPRContexts}
-          loadedSecurityContexts={loadedSecurityContexts}
-          loadedAdvisoryContexts={loadedAdvisoryContexts}
-          loadedLinearContexts={loadedLinearContexts}
-          attachedSavedContexts={attachedSavedContexts}
-          handleViewIssue={handleViewIssue}
-          handleViewPR={handleViewPR}
-          handleViewSecurityAlert={handleViewSecurityAlert}
-          handleViewAdvisory={handleViewAdvisory}
-          handleViewLinear={handleViewLinear}
-          handleViewSavedContext={handleViewSavedContext}
-          availableMcpServers={availableMcpServers}
-          enabledMcpServers={enabledMcpServers}
-          activeMcpCount={activeMcpCount}
-          onToggleMcpServer={onToggleMcpServer}
-        />
-
-        <DesktopToolbarControls
-          hasPendingQuestions={hasPendingQuestions}
-          selectedBackend={selectedBackend}
-          selectedModelValue={selectedBaseModel}
-          selectedProvider={selectedProvider}
-          selectedThinkingLevel={selectedThinkingLevel}
-          selectedEffortLevel={selectedEffortLevel}
-          executionMode={executionMode}
-          useAdaptiveThinking={useAdaptiveThinking}
-          hideThinkingLevel={hideThinkingLevel}
-          sessionHasMessages={sessionHasMessages}
-          providerLocked={providerLocked}
-          customCliProfiles={customCliProfiles}
-          desktopModelOptions={desktopModelOptions}
-          selectedModelLabel={selectedModelLabel}
-          selectedModelIsFast={selectedModelIsFast}
-          isCodex={isCodex}
-          prUrl={prUrl}
-          prNumber={prNumber}
-          displayStatus={displayStatus}
-          checkStatus={checkStatus}
-          mergeableStatus={mergeableStatus}
-          activeWorktreePath={activeWorktreePath}
-          availableMcpServers={availableMcpServers}
-          enabledMcpServers={enabledMcpServers}
-          activeMcpCount={activeMcpCount}
-          isHealthChecking={isHealthChecking}
-          mcpStatuses={mcpStatuses}
-          loadedIssueContexts={loadedIssueContexts}
-          loadedPRContexts={loadedPRContexts}
-          loadedSecurityContexts={loadedSecurityContexts}
-          loadedAdvisoryContexts={loadedAdvisoryContexts}
-          loadedLinearContexts={loadedLinearContexts}
-          attachedSavedContexts={attachedSavedContexts}
-          providerDropdownOpen={providerDropdownOpen}
-          modelDropdownOpen={modelDropdownOpen}
-          thinkingDropdownOpen={thinkingDropdownOpen}
-          mcpDropdownOpen={mcpDropdownOpen}
-          setProviderDropdownOpen={setProviderDropdownOpen}
-          setModelDropdownOpen={setModelDropdownOpen}
-          setThinkingDropdownOpen={setThinkingDropdownOpen}
-          onMcpDropdownOpenChange={handleMcpDropdownOpenChange}
-          onOpenMagicModal={onOpenMagicModal}
-          onOpenProjectSettings={onOpenProjectSettings}
-          onResolvePrConflicts={onResolvePrConflicts}
-          onLoadContext={onLoadContext}
-          onAttach={onAttach}
-          onOpenPullRequestReview={onOpenPullRequestReview}
-          installedBackends={installedBackends}
-          onBackendChange={onBackendChange}
-          onSetExecutionMode={onSetExecutionMode}
-          onToggleMcpServer={onToggleMcpServer}
-          handleModelChange={handleModelChange}
-          handleToggleFavoriteModel={handleToggleFavoriteModel}
-          handleFastModeChange={handleFastModeChange}
-          handleProviderChange={handleProviderChange}
-          handleThinkingLevelChange={handleThinkingLevelChange}
-          handleEffortLevelChange={handleEffortLevelChange}
-          handleViewIssue={handleViewIssue}
-          handleViewPR={handleViewPR}
-          handleViewSecurityAlert={handleViewSecurityAlert}
-          handleViewAdvisory={handleViewAdvisory}
-          handleViewLinear={handleViewLinear}
-          handleViewSavedContext={handleViewSavedContext}
-        />
-
-        <div className="h-4 w-px shrink-0 bg-border/50" />
-
-        <div className="flex h-8 shrink-0 items-center gap-1 px-2">
-          <SupervisorActionPopover
-            action={supervisorAction}
-            disabled={!activeSessionId}
-            onChange={onSupervisorActionChange}
+      <div className="flex max-w-full min-w-0 items-center rounded-lg bg-muted/50">
+        <div
+          className="inline-flex min-w-0 flex-1 flex-nowrap items-center overflow-x-auto whitespace-nowrap scrollbar-hide"
+          data-testid="chat-toolbar-scroll-controls"
+        >
+          <DockBurgerButton
+            activeMcpCount={activeMcpCount}
+            className="flex @xl:hidden shrink-0"
           />
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                disabled={isSending}
-                aria-label="Parallel execution prompting"
-                aria-pressed={parallelExecutionPromptEnabled}
-                onClick={() =>
-                  onParallelExecutionPromptChange(
-                    !parallelExecutionPromptEnabled
-                  )
-                }
-                className={cn(
-                  'flex h-7 w-7 items-center justify-center rounded-md transition-colors disabled:pointer-events-none disabled:opacity-50',
-                  parallelExecutionPromptEnabled
-                    ? 'bg-primary/15 text-primary'
-                    : 'text-muted-foreground hover:bg-muted/80 hover:text-foreground'
-                )}
-              >
-                <Workflow className="h-3.5 w-3.5" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>
-              {`Parallel execution prompting (${parallelPromptShortcut})`}
-            </TooltipContent>
-          </Tooltip>
+          <SessionUsageMeter side="top" align="start" variant="toolbar" />
+          <MobileToolbarMenu
+            isDisabled={isSending || hasPendingQuestions}
+            hasOpenPr={hasOpenPr}
+            sessionHasMessages={sessionHasMessages}
+            providerLocked={providerLocked}
+            selectedBackend={selectedBackend}
+            selectedProvider={selectedProvider}
+            selectedModel={selectedModel}
+            selectedEffortLevel={selectedEffortLevel}
+            selectedThinkingLevel={selectedThinkingLevel}
+            hideThinkingLevel={hideThinkingLevel}
+            useAdaptiveThinking={useAdaptiveThinking}
+            isCodex={isCodex}
+            executionMode={executionMode}
+            customCliProfiles={customCliProfiles}
+            filteredModelOptions={filteredModelOptions}
+            uncommittedAdded={uncommittedAdded}
+            uncommittedRemoved={uncommittedRemoved}
+            branchDiffAdded={branchDiffAdded}
+            branchDiffRemoved={branchDiffRemoved}
+            prUrl={prUrl}
+            prNumber={prNumber}
+            displayStatus={displayStatus}
+            checkStatus={checkStatus}
+            activeWorktreePath={activeWorktreePath}
+            onSaveContext={onSaveContext}
+            onLoadContext={onLoadContext}
+            onCommit={onCommit}
+            onCommitAndPush={onCommitAndPush}
+            onOpenPr={onOpenPr}
+            onOpenPullRequestReview={onOpenPullRequestReview}
+            onReview={onReview}
+            onMerge={onMerge}
+            onMergePr={onMergePr}
+            onResolveConflicts={openResolveConflictsDialog}
+            installedBackends={installedBackends}
+            onBackendChange={onBackendChange}
+            onSetExecutionMode={onSetExecutionMode}
+            handlePullClick={handlePullClick}
+            handlePullUpstreamClick={handlePullUpstreamClick}
+            handlePushClick={handlePushClick}
+            handleUncommittedDiffClick={handleUncommittedDiffClick}
+            handleBranchDiffClick={handleBranchDiffClick}
+            handleProviderChange={handleProviderChange}
+            handleModelChange={handleModelChange}
+            handleEffortLevelChange={handleEffortLevelChange}
+            handleThinkingLevelChange={handleThinkingLevelChange}
+            loadedIssueContexts={loadedIssueContexts}
+            loadedPRContexts={loadedPRContexts}
+            loadedSecurityContexts={loadedSecurityContexts}
+            loadedAdvisoryContexts={loadedAdvisoryContexts}
+            loadedLinearContexts={loadedLinearContexts}
+            attachedSavedContexts={attachedSavedContexts}
+            handleViewIssue={handleViewIssue}
+            handleViewPR={handleViewPR}
+            handleViewSecurityAlert={handleViewSecurityAlert}
+            handleViewAdvisory={handleViewAdvisory}
+            handleViewLinear={handleViewLinear}
+            handleViewSavedContext={handleViewSavedContext}
+            availableMcpServers={availableMcpServers}
+            enabledMcpServers={enabledMcpServers}
+            activeMcpCount={activeMcpCount}
+            onToggleMcpServer={onToggleMcpServer}
+          />
+
+          <DesktopToolbarControls
+            hasPendingQuestions={hasPendingQuestions}
+            selectedBackend={selectedBackend}
+            selectedModelValue={selectedBaseModel}
+            selectedProvider={selectedProvider}
+            selectedThinkingLevel={selectedThinkingLevel}
+            selectedEffortLevel={selectedEffortLevel}
+            executionMode={executionMode}
+            useAdaptiveThinking={useAdaptiveThinking}
+            hideThinkingLevel={hideThinkingLevel}
+            sessionHasMessages={sessionHasMessages}
+            providerLocked={providerLocked}
+            customCliProfiles={customCliProfiles}
+            desktopModelOptions={desktopModelOptions}
+            selectedModelLabel={selectedModelLabel}
+            selectedModelIsFast={selectedModelIsFast}
+            isCodex={isCodex}
+            prUrl={prUrl}
+            prNumber={prNumber}
+            displayStatus={displayStatus}
+            checkStatus={checkStatus}
+            mergeableStatus={mergeableStatus}
+            activeWorktreePath={activeWorktreePath}
+            availableMcpServers={availableMcpServers}
+            enabledMcpServers={enabledMcpServers}
+            activeMcpCount={activeMcpCount}
+            isHealthChecking={isHealthChecking}
+            mcpStatuses={mcpStatuses}
+            loadedIssueContexts={loadedIssueContexts}
+            loadedPRContexts={loadedPRContexts}
+            loadedSecurityContexts={loadedSecurityContexts}
+            loadedAdvisoryContexts={loadedAdvisoryContexts}
+            loadedLinearContexts={loadedLinearContexts}
+            attachedSavedContexts={attachedSavedContexts}
+            providerDropdownOpen={providerDropdownOpen}
+            modelDropdownOpen={modelDropdownOpen}
+            thinkingDropdownOpen={thinkingDropdownOpen}
+            mcpDropdownOpen={mcpDropdownOpen}
+            setProviderDropdownOpen={setProviderDropdownOpen}
+            setModelDropdownOpen={setModelDropdownOpen}
+            setThinkingDropdownOpen={setThinkingDropdownOpen}
+            onMcpDropdownOpenChange={handleMcpDropdownOpenChange}
+            onOpenMagicModal={onOpenMagicModal}
+            onOpenProjectSettings={onOpenProjectSettings}
+            onResolvePrConflicts={onResolvePrConflicts}
+            onLoadContext={onLoadContext}
+            onAttach={onAttach}
+            onOpenPullRequestReview={onOpenPullRequestReview}
+            installedBackends={installedBackends}
+            onBackendChange={onBackendChange}
+            onSetExecutionMode={onSetExecutionMode}
+            onToggleMcpServer={onToggleMcpServer}
+            handleModelChange={handleModelChange}
+            handleToggleFavoriteModel={handleToggleFavoriteModel}
+            handleFastModeChange={handleFastModeChange}
+            handleProviderChange={handleProviderChange}
+            handleThinkingLevelChange={handleThinkingLevelChange}
+            handleEffortLevelChange={handleEffortLevelChange}
+            handleViewIssue={handleViewIssue}
+            handleViewPR={handleViewPR}
+            handleViewSecurityAlert={handleViewSecurityAlert}
+            handleViewAdvisory={handleViewAdvisory}
+            handleViewLinear={handleViewLinear}
+            handleViewSavedContext={handleViewSavedContext}
+          />
+
+          <div className="h-4 w-px shrink-0 bg-border/50" />
+
+          <div className="flex h-8 shrink-0 items-center gap-1 px-2">
+            <SupervisorActionPopover
+              action={supervisorAction}
+              disabled={!activeSessionId}
+              onChange={onSupervisorActionChange}
+            />
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  disabled={isSending}
+                  aria-label="Parallel execution prompting"
+                  aria-pressed={parallelExecutionPromptEnabled}
+                  onClick={() =>
+                    onParallelExecutionPromptChange(
+                      !parallelExecutionPromptEnabled
+                    )
+                  }
+                  className={cn(
+                    'flex h-7 w-7 items-center justify-center rounded-md transition-colors disabled:pointer-events-none disabled:opacity-50',
+                    parallelExecutionPromptEnabled
+                      ? 'bg-primary/15 text-primary'
+                      : 'text-muted-foreground hover:bg-muted/80 hover:text-foreground'
+                  )}
+                >
+                  <Workflow className="h-3.5 w-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {`Parallel execution prompting (${parallelPromptShortcut})`}
+              </TooltipContent>
+            </Tooltip>
+          </div>
         </div>
 
         <div className="h-4 w-px shrink-0 bg-border/50" />
 
-        <div className="shrink-0">
+        <div
+          className="shrink-0 pr-1"
+          data-testid="chat-toolbar-pinned-actions"
+        >
           <SendCancelButton
             isSending={isSending}
             canSend={canSend}

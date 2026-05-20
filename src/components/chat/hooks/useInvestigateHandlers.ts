@@ -178,6 +178,10 @@ export function useInvestigateHandlers({
             }),
           staleTime: 0,
         })
+        if ((contexts ?? []).length === 0) {
+          toast.error('No issue context loaded for this worktree')
+          return
+        }
         const refs = (contexts ?? []).map(c => `#${c.number}`).join(', ')
         const word = (contexts ?? []).length === 1 ? 'issue' : 'issues'
         const customPrompt = preferences?.magic_prompts?.investigate_issue
@@ -197,6 +201,10 @@ export function useInvestigateHandlers({
             }),
           staleTime: 0,
         })
+        if ((contexts ?? []).length === 0) {
+          toast.error('No PR context loaded for this worktree')
+          return
+        }
         const refs = (contexts ?? []).map(c => `#${c.number}`).join(', ')
         const word = (contexts ?? []).length === 1 ? 'PR' : 'PRs'
         const customPrompt = preferences?.magic_prompts?.investigate_pr

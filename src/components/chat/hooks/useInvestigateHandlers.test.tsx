@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode, RefObject } from 'react'
 import { invoke } from '@/lib/transport'
+import { toast } from 'sonner'
 import { useChatStore } from '@/store/chat-store'
 import { defaultPreferences, type AppPreferences } from '@/types/preferences'
 import type { ExecutionMode, McpServerInfo, ThinkingLevel } from '@/types/chat'
@@ -29,6 +30,57 @@ function createWrapper(queryClient: QueryClient) {
     return (
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
     )
+  }
+}
+
+function createInvestigateHookParams(
+  overrides: Partial<Parameters<typeof useInvestigateHandlers>[0]> = {}
+) {
+  const sendMessage = { mutate: vi.fn() }
+  const setSessionProvider = { mutate: vi.fn() }
+  const setSessionBackend = { mutate: vi.fn() }
+  const setSessionModel = { mutate: vi.fn() }
+  const setSessionEffortLevel = { mutate: vi.fn() }
+  const createSession = { mutate: vi.fn() }
+  const resolveCustomProfile = vi.fn(() => ({
+    model: 'sonnet',
+    customProfileName: undefined,
+  }))
+
+  return {
+    params: {
+      activeSessionId: 'session-1',
+      activeWorktreeId: 'wt-1',
+      activeWorktreePath: '/tmp/wt-1',
+      inputRef: { current: null } as RefObject<HTMLTextAreaElement | null>,
+      preferences: defaultPreferences,
+      selectedModelRef: { current: 'sonnet' },
+      selectedThinkingLevelRef: {
+        current: 'think',
+      } as RefObject<ThinkingLevel>,
+      executionModeRef: { current: 'plan' } as RefObject<ExecutionMode>,
+      mcpServersDataRef: {
+        current: [],
+      } as RefObject<McpServerInfo[] | undefined>,
+      enabledMcpServersRef: { current: [] } as RefObject<string[]>,
+      activeWorktreeIdRef: {
+        current: 'wt-1',
+      } as RefObject<string | null | undefined>,
+      activeWorktreePathRef: {
+        current: '/tmp/wt-1',
+      } as RefObject<string | null | undefined>,
+      sendMessage,
+      setSessionProvider,
+      setSessionBackend,
+      setSessionModel,
+      setSessionEffortLevel,
+      createSession,
+      resolveCustomProfile,
+      cliVersion: '2.1.32',
+      worktreeProjectId: null,
+      ...overrides,
+    },
+    sendMessage,
   }
 }
 
@@ -228,4 +280,44 @@ describe('useInvestigateHandlers', () => {
     )
     expect(useChatStore.getState().executingModes['session-1']).toBe('build')
   })
+
+  it.each([
+    {
+      type: 'issue' as const,
+      command: 'list_loaded_issue_contexts',
+      message: 'No issue context loaded for this worktree',
+    },
+    {
+      type: 'pr' as const,
+      command: 'list_loaded_pr_contexts',
+      message: 'No PR context loaded for this worktree',
+    },
+  ])(
+    'does not send investigate $type prompts without loaded contexts',
+    async ({ type, command, message }) => {
+      const queryClient = new QueryClient({
+        defaultOptions: {
+          queries: { retry: false },
+          mutations: { retry: false },
+        },
+      })
+      const { params, sendMessage } = createInvestigateHookParams()
+
+      vi.mocked(invoke).mockResolvedValue([])
+
+      const { result } = renderHook(() => useInvestigateHandlers(params), {
+        wrapper: createWrapper(queryClient),
+      })
+
+      await act(async () => {
+        await result.current.handleInvestigate(type)
+      })
+
+      expect(invoke).toHaveBeenCalledWith(command, {
+        sessionId: 'wt-1',
+      })
+      expect(toast.error).toHaveBeenCalledWith(message)
+      expect(sendMessage.mutate).not.toHaveBeenCalled()
+    }
+  )
 })

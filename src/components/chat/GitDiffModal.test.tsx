@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@/test/test-utils'
+import { fireEvent, render, screen, waitFor, within } from '@/test/test-utils'
 import { GitDiffModal } from './GitDiffModal'
 import { useUIStore } from '@/store/ui-store'
 import type { GitDiff } from '@/types/git-diff'
@@ -7,16 +7,23 @@ import type { GitDiff } from '@/types/git-diff'
 const mockGetGitDiff = vi.fn()
 const mockReadFileContent = vi.fn()
 const mockReadGitFileContent = vi.fn()
+const mockTriggerImmediateGitPoll = vi.fn()
 const mockMemoizedFileView = vi.fn()
 const mockMemoizedFileDiff = vi.fn()
 const mockOpenFileInEditorButton = vi.fn()
+const mockInvoke = vi.fn()
 
 vi.mock('@/services/git-status', () => ({
   getGitDiff: (...args: unknown[]) => mockGetGitDiff(...args),
   readFileContent: (...args: unknown[]) => mockReadFileContent(...args),
   readGitFileContent: (...args: unknown[]) => mockReadGitFileContent(...args),
   revertFile: vi.fn(),
-  triggerImmediateGitPoll: vi.fn(),
+  triggerImmediateGitPoll: (...args: unknown[]) =>
+    mockTriggerImmediateGitPoll(...args),
+}))
+
+vi.mock('@/lib/transport', () => ({
+  invoke: (...args: unknown[]) => mockInvoke(...args),
 }))
 
 vi.mock('@/services/preferences', () => ({
@@ -162,6 +169,115 @@ describe('GitDiffModal', () => {
 
   afterEach(() => {
     useUIStore.getState().clearGitDiffSelectedFiles()
+  })
+
+  it('shows a hard reset button for uncommitted diffs with files', async () => {
+    mockGetGitDiff.mockResolvedValueOnce(buildDiff())
+
+    render(
+      <GitDiffModal
+        diffRequest={{
+          type: 'uncommitted',
+          worktreePath: '/tmp/worktree',
+          baseBranch: 'main',
+        }}
+        onClose={vi.fn()}
+      />
+    )
+
+    await screen.findByText('Diff view: src/example.ts')
+
+    expect(
+      screen.getByRole('button', { name: /hard reset/i })
+    ).toBeInTheDocument()
+  })
+
+  it('does not show the hard reset button for branch diffs', async () => {
+    mockGetGitDiff.mockResolvedValueOnce(
+      buildDiff({
+        diff_type: 'branch',
+        base_ref: 'origin/main',
+        target_ref: 'HEAD',
+      })
+    )
+
+    render(
+      <GitDiffModal
+        diffRequest={{
+          type: 'branch',
+          worktreePath: '/tmp/worktree',
+          baseBranch: 'main',
+        }}
+        onClose={vi.fn()}
+      />
+    )
+
+    await screen.findByText('Diff view: src/example.ts')
+
+    expect(
+      screen.queryByRole('button', { name: /hard reset/i })
+    ).not.toBeInTheDocument()
+  })
+
+  it('confirms before hard resetting the worktree', async () => {
+    mockGetGitDiff.mockResolvedValueOnce(buildDiff())
+
+    render(
+      <GitDiffModal
+        diffRequest={{
+          type: 'uncommitted',
+          worktreePath: '/tmp/worktree',
+          baseBranch: 'main',
+        }}
+        onClose={vi.fn()}
+      />
+    )
+
+    await screen.findByText('Diff view: src/example.ts')
+
+    fireEvent.click(screen.getByRole('button', { name: /hard reset/i }))
+
+    expect(mockInvoke).not.toHaveBeenCalled()
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument()
+    expect(screen.getByText('Hard reset worktree?')).toBeInTheDocument()
+  })
+
+  it('hard resets, clears selected files, refreshes diff, and polls git status after confirmation', async () => {
+    mockGetGitDiff
+      .mockResolvedValueOnce(buildDiff())
+      .mockResolvedValueOnce(buildDiff({ files: [], raw_patch: '' }))
+    mockInvoke.mockResolvedValueOnce(null)
+    useUIStore.getState().toggleGitDiffSelectedFile('src/example.ts')
+
+    render(
+      <GitDiffModal
+        diffRequest={{
+          type: 'uncommitted',
+          worktreePath: '/tmp/worktree',
+          baseBranch: 'main',
+        }}
+        onClose={vi.fn()}
+      />
+    )
+
+    await screen.findByText('Diff view: src/example.ts')
+
+    fireEvent.click(screen.getByRole('button', { name: /hard reset/i }))
+    const dialog = screen.getByRole('alertdialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Hard Reset' }))
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith('hard_reset_worktree', {
+        worktreePath: '/tmp/worktree',
+        cleanUntracked: true,
+      })
+    })
+
+    await waitFor(() => {
+      expect(mockGetGitDiff).toHaveBeenCalledTimes(2)
+    })
+    expect(mockTriggerImmediateGitPoll).toHaveBeenCalled()
+    expect(useUIStore.getState().gitDiffSelectedFiles.size).toBe(0)
   })
 
   it('uses git-ref-backed content reads when toggling branch diffs into file mode', async () => {

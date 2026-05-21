@@ -6466,6 +6466,53 @@ pub async fn revert_file(
     Ok(())
 }
 
+/// Hard reset a worktree to HEAD, optionally deleting untracked files.
+#[tauri::command]
+pub async fn hard_reset_worktree(
+    worktree_path: String,
+    clean_untracked: Option<bool>,
+) -> Result<(), String> {
+    log::trace!("Hard resetting worktree in {worktree_path}");
+
+    let reset_output = silent_command("git")
+        .args(["reset", "--hard", "HEAD"])
+        .current_dir(&worktree_path)
+        .output()
+        .map_err(|e| format!("Failed to run git reset: {e}"))?;
+
+    if !reset_output.status.success() {
+        let stderr = String::from_utf8_lossy(&reset_output.stderr);
+        let stdout = String::from_utf8_lossy(&reset_output.stdout);
+        let message = if stderr.trim().is_empty() {
+            stdout.trim()
+        } else {
+            stderr.trim()
+        };
+        return Err(format!("git reset --hard failed: {message}"));
+    }
+
+    if clean_untracked.unwrap_or(false) {
+        let clean_output = silent_command("git")
+            .args(["clean", "-fd"])
+            .current_dir(&worktree_path)
+            .output()
+            .map_err(|e| format!("Failed to run git clean: {e}"))?;
+
+        if !clean_output.status.success() {
+            let stderr = String::from_utf8_lossy(&clean_output.stderr);
+            let stdout = String::from_utf8_lossy(&clean_output.stdout);
+            let message = if stderr.trim().is_empty() {
+                stdout.trim()
+            } else {
+                stderr.trim()
+            };
+            return Err(format!("git clean -fd failed: {message}"));
+        }
+    }
+
+    Ok(())
+}
+
 /// Reorder projects in the sidebar
 #[tauri::command]
 pub async fn reorder_projects(app: AppHandle, project_ids: Vec<String>) -> Result<(), String> {

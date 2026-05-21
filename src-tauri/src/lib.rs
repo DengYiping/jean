@@ -4105,6 +4105,7 @@ pub fn run() {
             projects::get_commit_diff,
             projects::get_repo_branches,
             projects::revert_file,
+            projects::hard_reset_worktree,
             projects::git_pull,
             projects::git_pull_upstream,
             projects::git_stash,

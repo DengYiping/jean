@@ -29,6 +29,7 @@ import {
   Eye,
   ListCollapse,
   ListPlus,
+  Trash2,
 } from 'lucide-react'
 import {
   parsePatchFiles,
@@ -317,6 +318,8 @@ export function GitDiffModal({
     fileStatus: string
   } | null>(null)
   const [isReverting, setIsReverting] = useState(false)
+  const [hardResetDialogOpen, setHardResetDialogOpen] = useState(false)
+  const [isHardResetting, setIsHardResetting] = useState(false)
 
   // Full-file view state
   const [viewMode, setViewMode] = useState<'diff' | 'file'>('diff')
@@ -467,6 +470,33 @@ export function GitDiffModal({
       setRevertTarget(null)
     }
   }, [revertTarget, diffRequest, activeDiffType, loadDiff])
+
+  const handleHardResetWorktree = useCallback(async () => {
+    if (!diffRequest || isHardResetting) return
+
+    setIsHardResetting(true)
+    const toastId = toast.loading('Hard resetting worktree...')
+    try {
+      await invoke('hard_reset_worktree', {
+        worktreePath: diffRequest.worktreePath,
+        cleanUntracked: true,
+      })
+      useUIStore.getState().clearGitDiffSelectedFiles()
+      triggerImmediateGitPoll()
+      setSelectedFileIndex(0)
+      setFileFilter('')
+      await loadDiff({ ...diffRequest, type: 'uncommitted' }, true)
+      toast.success('Worktree reset', { id: toastId })
+      setHardResetDialogOpen(false)
+    } catch (err) {
+      toast.error(
+        `Failed to hard reset: ${err instanceof Error ? err.message : String(err)}`,
+        { id: toastId }
+      )
+    } finally {
+      setIsHardResetting(false)
+    }
+  }, [diffRequest, isHardResetting, loadDiff])
 
   useEffect(() => {
     if (diffRequest) {
@@ -1495,33 +1525,56 @@ export function GitDiffModal({
               {activeDiffType === 'uncommitted' &&
                 diff &&
                 filteredFiles.length > 0 && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        disabled={isCommitting}
-                        onClick={handleCommitFromDiff}
-                        className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 rounded-md text-xs font-medium transition-colors"
-                      >
-                        {isCommitting ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <GitCommitHorizontal className="h-3.5 w-3.5" />
-                        )}
-                        <span className="hidden sm:inline">
-                          Commit
-                          {gitDiffSelectedFiles.size > 0
-                            ? ` (${gitDiffSelectedFiles.size})`
-                            : ''}
-                        </span>
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      {gitDiffSelectedFiles.size > 0
-                        ? `Commit ${gitDiffSelectedFiles.size} selected file${gitDiffSelectedFiles.size !== 1 ? 's' : ''}`
-                        : 'Commit all changes'}
-                    </TooltipContent>
-                  </Tooltip>
+                  <>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          aria-label="Hard reset worktree"
+                          disabled={isHardResetting}
+                          onClick={() => setHardResetDialogOpen(true)}
+                          className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 text-destructive hover:bg-destructive/10 disabled:opacity-50 rounded-md text-xs font-medium transition-colors"
+                        >
+                          {isHardResetting ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-3.5 w-3.5" />
+                          )}
+                          <span className="hidden sm:inline">Hard Reset</span>
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        Discard all changes and untracked files
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          disabled={isCommitting}
+                          onClick={handleCommitFromDiff}
+                          className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 rounded-md text-xs font-medium transition-colors"
+                        >
+                          {isCommitting ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <GitCommitHorizontal className="h-3.5 w-3.5" />
+                          )}
+                          <span className="hidden sm:inline">
+                            Commit
+                            {gitDiffSelectedFiles.size > 0
+                              ? ` (${gitDiffSelectedFiles.size})`
+                              : ''}
+                          </span>
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {gitDiffSelectedFiles.size > 0
+                          ? `Commit ${gitDiffSelectedFiles.size} selected file${gitDiffSelectedFiles.size !== 1 ? 's' : ''}`
+                          : 'Commit all changes'}
+                      </TooltipContent>
+                    </Tooltip>
+                  </>
                 )}
               {/* Mobile sidebar toggle */}
               {isMobile && hasFiles && activeDiffType !== 'commits' && (
@@ -1954,6 +2007,45 @@ export function GitDiffModal({
           )}
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={hardResetDialogOpen}
+        onOpenChange={open => {
+          if (!isHardResetting) setHardResetDialogOpen(open)
+        }}
+      >
+        <AlertDialogContent onKeyDown={e => e.stopPropagation()}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hard reset worktree?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will discard all tracked changes and delete untracked files
+              and directories in this worktree. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isHardResetting}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              disabled={isHardResetting}
+              onClick={event => {
+                event.preventDefault()
+                handleHardResetWorktree()
+              }}
+            >
+              {isHardResetting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Resetting...
+                </>
+              ) : (
+                'Hard Reset'
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog
         open={!!revertTarget}

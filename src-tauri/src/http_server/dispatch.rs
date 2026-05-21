@@ -2707,6 +2707,13 @@ pub async fn dispatch_command(
             crate::projects::revert_file(worktree_path, file_path, file_status).await?;
             Ok(Value::Null)
         }
+        "hard_reset_worktree" => {
+            let worktree_path: String = field(&args, "worktreePath", "worktree_path")?;
+            let clean_untracked: Option<bool> =
+                field_opt(&args, "cleanUntracked", "clean_untracked")?;
+            crate::projects::hard_reset_worktree(worktree_path, clean_untracked).await?;
+            Ok(Value::Null)
+        }
         "set_worktree_last_opened" => {
             let worktree_id: String = field(&args, "worktreeId", "worktree_id")?;
             crate::projects::set_worktree_last_opened(app.clone(), worktree_id).await?;

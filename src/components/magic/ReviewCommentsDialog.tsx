@@ -155,13 +155,23 @@ function ReviewStateBadge({ state }: { state: string }) {
 }
 
 export function ReviewCommentsDialog() {
-  const { reviewCommentsModalOpen, setReviewCommentsModalOpen } = useUIStore()
+  const {
+    reviewCommentsModalOpen,
+    sessionChatModalOpen,
+    sessionChatModalWorktreeId,
+    setReviewCommentsModalOpen,
+  } = useUIStore()
   const selectedProjectId = useProjectsStore(state => state.selectedProjectId)
+  const selectedWorktreeId = useProjectsStore(state => state.selectedWorktreeId)
   const { data: preferences } = usePreferences()
 
   const { data: worktrees } = useWorktrees(selectedProjectId)
-  const selectedWorktreeId = useProjectsStore(state => state.selectedWorktreeId)
-  const worktree = worktrees?.find(w => w.id === selectedWorktreeId) ?? null
+  const activeWorktreeId = useChatStore(state => state.activeWorktreeId)
+  const targetWorktreeId =
+    sessionChatModalOpen && sessionChatModalWorktreeId
+      ? sessionChatModalWorktreeId
+      : (activeWorktreeId ?? selectedWorktreeId)
+  const worktree = worktrees?.find(w => w.id === targetWorktreeId) ?? null
 
   const prNumber = worktree?.pr_number
   const worktreePath = worktree?.path
@@ -397,34 +407,41 @@ ${c.body}`
       .replace(/\{prNumber\}/g, String(prNumber))
       .replace(/\{reviewComments\}/g, formattedComments)
 
+    const targetWorktreeId = worktree?.id ?? selectedWorktreeId
+    const targetWorktreePath = worktree?.path
+    if (!targetWorktreeId || !targetWorktreePath) {
+      setError('No worktree selected for these PR comments')
+      setIsSending(false)
+      return
+    }
+
+    // Store the command first. The mounted ChatWindow consumes it directly; if
+    // no ChatWindow is mounted yet, the canvas modal opened below consumes it.
+    const chatState = useChatStore.getState()
+    chatState.setPendingMagicCommand({ command: 'review-comments', prompt })
+
     // Close dialog
     setReviewCommentsModalOpen(false)
 
-    // Dispatch to ChatWindow via magic-command event or pending command
-    const chatState = useChatStore.getState()
-    if (chatState.activeWorktreePath) {
-      window.dispatchEvent(
-        new CustomEvent('magic-command', {
-          detail: { command: 'review-comments', prompt },
-        })
-      )
-    } else {
-      const worktreeId = selectedWorktreeId
-      if (worktreeId && worktree?.path) {
-        useChatStore
-          .getState()
-          .setPendingMagicCommand({ command: 'review-comments', prompt })
-        window.dispatchEvent(
-          new CustomEvent('open-session-modal', {
-            detail: {
-              worktreeId,
-              worktreePath: worktree.path,
-              sessionId: '',
-            },
-          })
-        )
-      }
+    const activeChatHasTargetWorktree =
+      chatState.activeWorktreeId === targetWorktreeId &&
+      Boolean(chatState.activeWorktreePath)
+    const sessionModalHasTargetWorktree =
+      sessionChatModalOpen && sessionChatModalWorktreeId === targetWorktreeId
+
+    if (activeChatHasTargetWorktree || sessionModalHasTargetWorktree) {
+      return
     }
+
+    window.dispatchEvent(
+      new CustomEvent('open-session-modal', {
+        detail: {
+          worktreeId: targetWorktreeId,
+          worktreePath: targetWorktreePath,
+          sessionId: '',
+        },
+      })
+    )
   }, [
     tab,
     selected,
@@ -435,6 +452,9 @@ ${c.body}`
     preferences?.magic_prompts?.review_comments,
     setReviewCommentsModalOpen,
     selectedWorktreeId,
+    sessionChatModalOpen,
+    sessionChatModalWorktreeId,
+    worktree?.id,
     worktree?.path,
   ])
 

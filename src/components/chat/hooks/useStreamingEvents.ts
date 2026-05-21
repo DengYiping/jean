@@ -1827,6 +1827,9 @@ export default function useStreamingEvents({
         queryClient.invalidateQueries({
           queryKey: chatQueryKeys.session(sessionId),
         })
+        queryClient.invalidateQueries({
+          queryKey: chatQueryKeys.codexSubAgents(sessionId),
+        })
       }
 
       if (persistencePromise) {

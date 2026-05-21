@@ -19,10 +19,11 @@ use super::storage::{
     with_existing_metadata_mut, with_metadata_mut, with_sessions_mut,
 };
 use super::types::{
-    AllSessionsEntry, AllSessionsResponse, Backend, ChatMessage, ClaudeContext, EffortLevel,
-    LabelData, MessageRole, RunEntry, RunStatus, Session, SessionDigest, SessionMetadata,
-    SupervisorAction, SupervisorMagicAction, ThinkingLevel, UnreadSessionEntry,
-    UnreadSessionsResponse, WorktreeIndex, WorktreeSessions,
+    AllSessionsEntry, AllSessionsResponse, Backend, ChatMessage, ClaudeContext, CodexSubAgentEvent,
+    CodexSubAgentIntrospectionResponse, CodexSubAgentMessage, CodexSubAgentSnapshot,
+    CodexSubAgentStatus, CodexSubAgentSummary, EffortLevel, LabelData, MessageRole, RunEntry,
+    RunStatus, Session, SessionDigest, SessionMetadata, SupervisorAction, SupervisorMagicAction,
+    ThinkingLevel, UnreadSessionEntry, UnreadSessionsResponse, WorktreeIndex, WorktreeSessions,
 };
 use crate::claude_cli::resolve_cli_binary;
 use crate::http_server::EmitExt;
@@ -50,6 +51,19 @@ When specifying subagent_type for Task tool calls, always use the fully qualifie
 /// prevents this process from spawning two backend drain loops for one session.
 static BACKEND_QUEUE_DRAINING: Lazy<Mutex<HashSet<String>>> =
     Lazy::new(|| Mutex::new(HashSet::new()));
+
+const CODEX_COLLAB_TOOL_NAMES: [&str; 10] = [
+    "SpawnAgent",
+    "spawnAgent",
+    "WaitForAgents",
+    "wait",
+    "CloseAgent",
+    "closeAgent",
+    "ResumeAgent",
+    "resumeAgent",
+    "SendInput",
+    "sendInput",
+];
 
 /// Resolve the default backend from preferences + project settings (sync).
 /// Falls back to Claude if preferences can't be loaded.
@@ -530,6 +544,485 @@ pub(crate) async fn get_session_windowed(
         Some(message_run_limit),
     )
     .await
+}
+
+fn is_codex_collab_tool(name: &str) -> bool {
+    CODEX_COLLAB_TOOL_NAMES.contains(&name)
+}
+
+fn value_string(input: &Value, snake_key: &str, camel_key: &str) -> Option<String> {
+    input
+        .get(snake_key)
+        .or_else(|| input.get(camel_key))
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn value_string_array(input: &Value, snake_key: &str, camel_key: &str) -> Vec<String> {
+    input
+        .get(snake_key)
+        .or_else(|| input.get(camel_key))
+        .and_then(|value| value.as_array())
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(|value| value.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn agent_state_map(input: &Value) -> Option<&serde_json::Map<String, Value>> {
+    input
+        .get("agents_states")
+        .or_else(|| input.get("agentsStates"))
+        .and_then(|value| value.as_object())
+}
+
+fn normalize_codex_sub_agent_status(status: Option<&str>) -> CodexSubAgentStatus {
+    match status {
+        Some("completed") => CodexSubAgentStatus::Completed,
+        Some("shutdown") => CodexSubAgentStatus::Closed,
+        Some("errored") | Some("failed") => CodexSubAgentStatus::Errored,
+        Some("notFound") | Some("not_found") => CodexSubAgentStatus::NotFound,
+        Some("pendingInit") | Some("pending_init") => CodexSubAgentStatus::Starting,
+        Some("running") | Some("inProgress") | Some("in_progress") => CodexSubAgentStatus::Running,
+        _ => CodexSubAgentStatus::Running,
+    }
+}
+
+fn codex_sub_agent_status_rank(status: &CodexSubAgentStatus) -> u8 {
+    match status {
+        CodexSubAgentStatus::Errored | CodexSubAgentStatus::NotFound => 5,
+        CodexSubAgentStatus::Closed => 4,
+        CodexSubAgentStatus::Completed => 3,
+        CodexSubAgentStatus::Running => 2,
+        CodexSubAgentStatus::Starting => 1,
+    }
+}
+
+fn merge_codex_sub_agent_status(
+    current: &CodexSubAgentStatus,
+    next: CodexSubAgentStatus,
+) -> CodexSubAgentStatus {
+    if codex_sub_agent_status_rank(&next) >= codex_sub_agent_status_rank(current) {
+        next
+    } else {
+        current.clone()
+    }
+}
+
+fn codex_collab_effective_status(
+    tool_name: &str,
+    state_status: Option<&str>,
+    fallback_status: Option<&str>,
+) -> CodexSubAgentStatus {
+    match tool_name {
+        "CloseAgent" | "closeAgent" => {
+            if matches!(fallback_status, Some("completed" | "shutdown"))
+                || matches!(state_status, Some("completed" | "shutdown"))
+            {
+                return CodexSubAgentStatus::Closed;
+            }
+        }
+        "WaitForAgents" | "wait" => {
+            if state_status.is_none() && matches!(fallback_status, Some("completed")) {
+                return CodexSubAgentStatus::Running;
+            }
+        }
+        _ => {}
+    }
+
+    normalize_codex_sub_agent_status(state_status.or(fallback_status))
+}
+
+fn codex_agent_nickname(input: &Value, state: Option<&Value>) -> Option<String> {
+    state
+        .and_then(|value| value_string(value, "agent_nickname", "agentNickname"))
+        .or_else(|| value_string(input, "new_agent_nickname", "newAgentNickname"))
+        .or_else(|| value_string(input, "receiver_agent_nickname", "receiverAgentNickname"))
+}
+
+fn codex_agent_fallback_name(agent_id: &str, index: usize) -> String {
+    let compact = agent_id.trim();
+    if compact.is_empty() {
+        format!("Agent {}", index + 1)
+    } else {
+        format!("Agent {}", compact.chars().take(8).collect::<String>())
+    }
+}
+
+struct CodexSubAgentPatch {
+    agent_id: String,
+    name: Option<String>,
+    prompt: Option<String>,
+    status: CodexSubAgentStatus,
+    message: Option<String>,
+    sender_thread_id: Option<String>,
+    receiver_thread_ids: Vec<String>,
+    event: CodexSubAgentEvent,
+}
+
+fn upsert_codex_sub_agent(
+    agents: &mut std::collections::BTreeMap<String, CodexSubAgentSummary>,
+    patch: CodexSubAgentPatch,
+) {
+    let index = agents.len();
+    let entry = agents
+        .entry(patch.agent_id.clone())
+        .or_insert_with(|| CodexSubAgentSummary {
+            id: patch.agent_id.clone(),
+            name: codex_agent_fallback_name(&patch.agent_id, index),
+            nickname: None,
+            prompt: None,
+            status: CodexSubAgentStatus::Starting,
+            latest_message: None,
+            sender_thread_id: None,
+            receiver_thread_ids: Vec::new(),
+            events: Vec::new(),
+            snapshot: None,
+        });
+
+    if let Some(name) = patch.name.filter(|name| !name.trim().is_empty()) {
+        entry.nickname = Some(name.clone());
+        entry.name = name;
+    }
+    if let Some(prompt) = patch.prompt.filter(|prompt| !prompt.trim().is_empty()) {
+        entry.prompt = Some(prompt);
+    }
+    if let Some(message) = patch.message.filter(|message| !message.trim().is_empty()) {
+        entry.latest_message = Some(message);
+    }
+    if entry.sender_thread_id.is_none() {
+        entry.sender_thread_id = patch.sender_thread_id;
+    }
+    for receiver_thread_id in patch.receiver_thread_ids {
+        if !entry.receiver_thread_ids.contains(&receiver_thread_id) {
+            entry.receiver_thread_ids.push(receiver_thread_id);
+        }
+    }
+    entry.status = merge_codex_sub_agent_status(&entry.status, patch.status);
+    entry.events.push(patch.event);
+}
+
+fn remove_superseded_provisional_codex_agents(
+    agents: &mut std::collections::BTreeMap<String, CodexSubAgentSummary>,
+) {
+    let resolved_prompts: std::collections::HashSet<(Option<String>, String)> = agents
+        .values()
+        .filter(|agent| !agent.receiver_thread_ids.is_empty())
+        .filter_map(|agent| {
+            agent
+                .prompt
+                .as_ref()
+                .map(|prompt| (agent.sender_thread_id.clone(), prompt.clone()))
+        })
+        .collect();
+
+    agents.retain(|_, agent| {
+        !agent.receiver_thread_ids.is_empty()
+            || agent
+                .prompt
+                .as_ref()
+                .map(|prompt| {
+                    !resolved_prompts.contains(&(agent.sender_thread_id.clone(), prompt.clone()))
+                })
+                .unwrap_or(true)
+    });
+}
+
+pub(crate) fn build_codex_sub_agent_introspection(
+    session: &Session,
+) -> CodexSubAgentIntrospectionResponse {
+    let mut agents = std::collections::BTreeMap::new();
+    let parent_thread_id = session.codex_thread_id.clone();
+
+    for message in &session.messages {
+        for tool_call in &message.tool_calls {
+            if !is_codex_collab_tool(&tool_call.name) {
+                continue;
+            }
+
+            let input = &tool_call.input;
+            let prompt = value_string(input, "prompt", "prompt");
+            let sender_thread_id = value_string(input, "sender_thread_id", "senderThreadId");
+            let receiver_thread_ids =
+                value_string_array(input, "receiver_thread_ids", "receiverThreadIds");
+            let fallback_status = value_string(input, "status", "status");
+            let states = agent_state_map(input);
+
+            if receiver_thread_ids.is_empty() {
+                let message_text = tool_call
+                    .output
+                    .as_ref()
+                    .and_then(|output| output.lines().find(|line| !line.trim().is_empty()))
+                    .map(str::trim)
+                    .map(ToOwned::to_owned)
+                    .or_else(|| value_string(input, "message", "message"));
+                let event = CodexSubAgentEvent {
+                    tool_call_id: tool_call.id.clone(),
+                    tool_name: tool_call.name.clone(),
+                    status: value_string(input, "status", "status"),
+                    message: message_text.clone(),
+                    timestamp: Some(message.timestamp),
+                    raw_input: input.clone(),
+                };
+                upsert_codex_sub_agent(
+                    &mut agents,
+                    CodexSubAgentPatch {
+                        agent_id: tool_call.id.clone(),
+                        name: codex_agent_nickname(input, None),
+                        prompt,
+                        status: codex_collab_effective_status(
+                            &tool_call.name,
+                            None,
+                            fallback_status.as_deref(),
+                        ),
+                        message: message_text,
+                        sender_thread_id,
+                        receiver_thread_ids: Vec::new(),
+                        event,
+                    },
+                );
+                continue;
+            }
+
+            for receiver_thread_id in &receiver_thread_ids {
+                let state = states.and_then(|states| states.get(receiver_thread_id));
+                let state_status = state.and_then(|value| value_string(value, "status", "status"));
+                let status = codex_collab_effective_status(
+                    &tool_call.name,
+                    state_status.as_deref(),
+                    fallback_status.as_deref(),
+                );
+                let state_message =
+                    state.and_then(|value| value_string(value, "message", "message"));
+                let event = CodexSubAgentEvent {
+                    tool_call_id: tool_call.id.clone(),
+                    tool_name: tool_call.name.clone(),
+                    status: state_status.or_else(|| fallback_status.clone()),
+                    message: state_message.clone(),
+                    timestamp: Some(message.timestamp),
+                    raw_input: input.clone(),
+                };
+                upsert_codex_sub_agent(
+                    &mut agents,
+                    CodexSubAgentPatch {
+                        agent_id: receiver_thread_id.clone(),
+                        name: codex_agent_nickname(input, state),
+                        prompt: prompt.clone(),
+                        status,
+                        message: state_message,
+                        sender_thread_id: sender_thread_id.clone(),
+                        receiver_thread_ids: receiver_thread_ids.clone(),
+                        event,
+                    },
+                );
+            }
+        }
+    }
+
+    remove_superseded_provisional_codex_agents(&mut agents);
+
+    CodexSubAgentIntrospectionResponse {
+        session_id: session.id.clone(),
+        parent_thread_id,
+        agents: agents.into_values().collect(),
+    }
+}
+
+fn codex_sub_agent_snapshot_from_thread_read(
+    thread_id: &str,
+    value: &Value,
+) -> CodexSubAgentSnapshot {
+    let thread = value.get("thread").unwrap_or(value);
+    let status = thread
+        .get("status")
+        .or_else(|| thread.get("state"))
+        .and_then(|value| value.as_str())
+        .map(ToOwned::to_owned);
+    let title = thread
+        .get("title")
+        .or_else(|| thread.get("name"))
+        .and_then(|value| value.as_str())
+        .map(ToOwned::to_owned);
+    let turn_count = value
+        .get("turns")
+        .or_else(|| thread.get("turns"))
+        .and_then(|value| value.as_array())
+        .map(Vec::len);
+    let messages = codex_sub_agent_messages_from_thread_read(value);
+
+    CodexSubAgentSnapshot {
+        thread_id: thread_id.to_string(),
+        status,
+        title,
+        turn_count,
+        messages,
+        error: None,
+    }
+}
+
+fn codex_thread_read_turns(value: &Value) -> Option<&Vec<Value>> {
+    value
+        .get("thread")
+        .and_then(|thread| thread.get("turns"))
+        .or_else(|| value.get("turns"))
+        .and_then(|turns| turns.as_array())
+}
+
+fn normalize_codex_item_type(item_type: &str) -> &str {
+    match item_type {
+        "agentMessage" => "agent_message",
+        "userMessage" => "user_message",
+        other => other,
+    }
+}
+
+fn codex_item_text(item: &Value) -> Option<String> {
+    let mut fragments = Vec::new();
+    collect_codex_text_fragments(item, &mut fragments);
+    let text = fragments.join("\n").trim().to_string();
+    (!text.is_empty()).then_some(text)
+}
+
+fn collect_codex_text_fragments(value: &Value, fragments: &mut Vec<String>) {
+    if let Some(text) = value
+        .as_str()
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+    {
+        fragments.push(text.to_string());
+        return;
+    }
+
+    let Some(object) = value.as_object() else {
+        return;
+    };
+
+    for key in ["text", "message", "content"] {
+        let Some(child) = object.get(key) else {
+            continue;
+        };
+
+        if let Some(text) = child
+            .as_str()
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+        {
+            fragments.push(text.to_string());
+            continue;
+        }
+
+        if let Some(children) = child.as_array() {
+            for block in children {
+                let block_type = block.get("type").and_then(|value| value.as_str());
+                if matches!(
+                    block_type,
+                    Some("text" | "output_text" | "input_text" | "markdown")
+                ) {
+                    collect_codex_text_fragments(block, fragments);
+                }
+            }
+            continue;
+        }
+
+        collect_codex_text_fragments(child, fragments);
+    }
+}
+
+fn codex_sub_agent_messages_from_thread_read(value: &Value) -> Vec<CodexSubAgentMessage> {
+    let Some(turns) = codex_thread_read_turns(value) else {
+        return Vec::new();
+    };
+
+    let mut messages = Vec::new();
+    for turn in turns {
+        let turn_id = turn
+            .get("id")
+            .and_then(|value| value.as_str())
+            .map(ToOwned::to_owned);
+        let Some(items) = turn.get("items").and_then(|value| value.as_array()) else {
+            continue;
+        };
+
+        for item in items {
+            let item_type = item
+                .get("type")
+                .and_then(|value| value.as_str())
+                .map(normalize_codex_item_type);
+            let role = match item_type {
+                Some("user_message") => "user",
+                Some("agent_message") => "assistant",
+                _ => continue,
+            };
+            let Some(text) = codex_item_text(item) else {
+                continue;
+            };
+            messages.push(CodexSubAgentMessage {
+                role: role.to_string(),
+                text,
+                turn_id: turn_id.clone(),
+            });
+        }
+    }
+
+    messages
+}
+
+/// Get read-only Codex sub-agent introspection for a session.
+#[tauri::command]
+pub async fn get_codex_sub_agents(
+    app: AppHandle,
+    worktree_id: String,
+    worktree_path: String,
+    session_id: String,
+    include_thread_snapshots: Option<bool>,
+) -> Result<CodexSubAgentIntrospectionResponse, String> {
+    let session = get_session(app, worktree_id, worktree_path, session_id).await?;
+    let mut response = build_codex_sub_agent_introspection(&session);
+
+    if include_thread_snapshots.unwrap_or(false) {
+        for agent in &mut response.agents {
+            let Some(thread_id) = agent.receiver_thread_ids.first().cloned().or_else(|| {
+                (agent.id
+                    != agent
+                        .events
+                        .first()
+                        .map(|event| event.tool_call_id.clone())
+                        .unwrap_or_default())
+                .then(|| agent.id.clone())
+            }) else {
+                continue;
+            };
+
+            let snapshot = match super::codex_server::send_request(
+                "thread/read",
+                serde_json::json!({
+                    "threadId": thread_id,
+                    "includeTurns": true,
+                }),
+            ) {
+                Ok(value) => codex_sub_agent_snapshot_from_thread_read(&thread_id, &value),
+                Err(error) => CodexSubAgentSnapshot {
+                    thread_id,
+                    status: None,
+                    title: None,
+                    turn_count: None,
+                    messages: Vec::new(),
+                    error: Some(error),
+                },
+            };
+            agent.snapshot = Some(snapshot);
+        }
+    }
+
+    Ok(response)
 }
 
 /// Create a new session tab
@@ -7328,6 +7821,40 @@ mod tests {
         }
     }
 
+    fn codex_test_session(tool_calls: Vec<super::super::types::ToolCall>) -> Session {
+        let mut session = Session::new("Session 1".to_string(), 0, Backend::Codex);
+        session.id = "session-1".to_string();
+        session.codex_thread_id = Some("parent-thread".to_string());
+        session.messages.push(ChatMessage {
+            id: "assistant-1".to_string(),
+            session_id: "session-1".to_string(),
+            role: MessageRole::Assistant,
+            content: String::new(),
+            timestamp: 10,
+            tool_calls,
+            content_blocks: vec![],
+            cancelled: false,
+            plan_approved: false,
+            model: None,
+            execution_mode: None,
+            thinking_level: None,
+            effort_level: None,
+            recovered: false,
+            usage: None,
+        });
+        session
+    }
+
+    fn collab_tool(id: &str, name: &str, input: Value) -> super::super::types::ToolCall {
+        super::super::types::ToolCall {
+            id: id.to_string(),
+            name: name.to_string(),
+            input,
+            output: None,
+            parent_tool_use_id: None,
+        }
+    }
+
     #[test]
     fn test_queue_default_allowed_tools_match_frontend_git_scope() {
         assert!(QUEUE_DEFAULT_ALLOWED_TOOLS.contains(&"Bash(git:*)"));
@@ -7335,6 +7862,232 @@ mod tests {
         assert!(QUEUE_DEFAULT_ALLOWED_TOOLS.contains(&"Read"));
         assert!(QUEUE_DEFAULT_ALLOWED_TOOLS.contains(&"Glob"));
         assert!(QUEUE_DEFAULT_ALLOWED_TOOLS.contains(&"Grep"));
+    }
+
+    #[test]
+    fn codex_sub_agent_introspection_aggregates_lifecycle_updates() {
+        let session = codex_test_session(vec![
+            collab_tool(
+                "spawn-1",
+                "SpawnAgent",
+                serde_json::json!({
+                    "prompt": "Investigate auth timeout in CI",
+                    "receiverThreadIds": ["agent-1"],
+                    "senderThreadId": "parent-thread",
+                    "agentsStates": {
+                        "agent-1": {
+                            "status": "running",
+                            "message": "Inspecting failing tests",
+                            "agentNickname": "auth scout"
+                        }
+                    }
+                }),
+            ),
+            collab_tool(
+                "wait-1",
+                "WaitForAgents",
+                serde_json::json!({
+                    "receiver_thread_ids": ["agent-1"],
+                    "agents_states": {
+                        "agent-1": {
+                            "status": "completed",
+                            "message": "Found flaky assertion"
+                        }
+                    }
+                }),
+            ),
+        ]);
+
+        let response = build_codex_sub_agent_introspection(&session);
+
+        assert_eq!(response.session_id, "session-1");
+        assert_eq!(response.parent_thread_id.as_deref(), Some("parent-thread"));
+        assert_eq!(response.agents.len(), 1);
+        let agent = &response.agents[0];
+        assert_eq!(agent.id, "agent-1");
+        assert_eq!(agent.name, "auth scout");
+        assert_eq!(
+            agent.prompt.as_deref(),
+            Some("Investigate auth timeout in CI")
+        );
+        assert_eq!(agent.status, CodexSubAgentStatus::Completed);
+        assert_eq!(
+            agent.latest_message.as_deref(),
+            Some("Found flaky assertion")
+        );
+        assert_eq!(agent.sender_thread_id.as_deref(), Some("parent-thread"));
+        assert_eq!(agent.receiver_thread_ids, vec!["agent-1".to_string()]);
+        assert_eq!(agent.events.len(), 2);
+    }
+
+    #[test]
+    fn codex_sub_agent_introspection_keeps_provisional_spawn_without_receiver() {
+        let session = codex_test_session(vec![collab_tool(
+            "spawn-1",
+            "SpawnAgent",
+            serde_json::json!({
+                "prompt": "Look at the migration failure",
+                "status": "inProgress"
+            }),
+        )]);
+
+        let response = build_codex_sub_agent_introspection(&session);
+
+        assert_eq!(response.agents.len(), 1);
+        let agent = &response.agents[0];
+        assert_eq!(agent.id, "spawn-1");
+        assert_eq!(agent.status, CodexSubAgentStatus::Running);
+        assert_eq!(
+            agent.prompt.as_deref(),
+            Some("Look at the migration failure")
+        );
+    }
+
+    #[test]
+    fn codex_sub_agent_introspection_drops_superseded_provisional_spawn_and_closes_agent() {
+        let prompt = "Inspect git state in the current workspace.";
+        let session = codex_test_session(vec![
+            collab_tool(
+                "spawn-started",
+                "SpawnAgent",
+                serde_json::json!({
+                    "prompt": prompt,
+                    "receiver_thread_ids": [],
+                    "sender_thread_id": "parent-thread",
+                    "status": "inProgress"
+                }),
+            ),
+            collab_tool(
+                "spawn-completed",
+                "SpawnAgent",
+                serde_json::json!({
+                    "prompt": prompt,
+                    "receiver_thread_ids": ["agent-1"],
+                    "sender_thread_id": "parent-thread",
+                    "status": "completed",
+                    "agents_states": {
+                        "agent-1": {
+                            "message": null,
+                            "status": "pendingInit"
+                        }
+                    }
+                }),
+            ),
+            collab_tool(
+                "wait-completed",
+                "WaitForAgents",
+                serde_json::json!({
+                    "receiver_thread_ids": ["agent-1"],
+                    "sender_thread_id": "parent-thread",
+                    "status": "completed",
+                    "agents_states": {
+                        "agent-1": {
+                            "message": "Current branch: master.",
+                            "status": "running"
+                        }
+                    }
+                }),
+            ),
+            collab_tool(
+                "close-completed",
+                "closeAgent",
+                serde_json::json!({
+                    "receiver_thread_ids": ["agent-1"],
+                    "sender_thread_id": "parent-thread",
+                    "status": "completed",
+                    "agents_states": {
+                        "agent-1": {
+                            "message": "Current branch: master.",
+                            "status": "completed"
+                        }
+                    }
+                }),
+            ),
+        ]);
+
+        let response = build_codex_sub_agent_introspection(&session);
+
+        assert_eq!(response.agents.len(), 1);
+        let agent = &response.agents[0];
+        assert_eq!(agent.id, "agent-1");
+        assert_eq!(agent.prompt.as_deref(), Some(prompt));
+        assert_eq!(agent.status, CodexSubAgentStatus::Closed);
+        assert_eq!(
+            agent.latest_message.as_deref(),
+            Some("Current branch: master.")
+        );
+        assert_eq!(agent.receiver_thread_ids, vec!["agent-1".to_string()]);
+        assert!(agent
+            .events
+            .iter()
+            .all(|event| event.tool_call_id != "spawn-started"));
+    }
+
+    #[test]
+    fn codex_sub_agent_snapshot_extracts_child_thread_messages() {
+        let snapshot = codex_sub_agent_snapshot_from_thread_read(
+            "agent-1",
+            &serde_json::json!({
+                "thread": {
+                    "status": { "type": "idle" },
+                    "turns": [{
+                        "id": "turn-1",
+                        "items": [
+                            { "type": "userMessage", "text": "Inspect auth" },
+                            { "type": "agentMessage", "text": "The timeout comes from retry backoff." }
+                        ]
+                    }]
+                }
+            }),
+        );
+
+        assert_eq!(snapshot.thread_id, "agent-1");
+        assert_eq!(snapshot.turn_count, Some(1));
+        assert_eq!(snapshot.messages.len(), 2);
+        assert_eq!(snapshot.messages[0].role, "user");
+        assert_eq!(snapshot.messages[0].text, "Inspect auth");
+        assert_eq!(snapshot.messages[1].role, "assistant");
+        assert_eq!(
+            snapshot.messages[1].text,
+            "The timeout comes from retry backoff."
+        );
+    }
+
+    #[test]
+    fn codex_sub_agent_snapshot_extracts_content_block_messages() {
+        let snapshot = codex_sub_agent_snapshot_from_thread_read(
+            "agent-1",
+            &serde_json::json!({
+                "thread": {
+                    "turns": [{
+                        "id": "turn-1",
+                        "items": [
+                            {
+                                "type": "user_message",
+                                "content": [
+                                    { "type": "input_text", "text": "Inspect auth" }
+                                ]
+                            },
+                            {
+                                "type": "agent_message",
+                                "content": [
+                                    { "type": "text", "text": "The timeout comes from retry backoff." }
+                                ]
+                            }
+                        ]
+                    }]
+                }
+            }),
+        );
+
+        assert_eq!(snapshot.messages.len(), 2);
+        assert_eq!(snapshot.messages[0].role, "user");
+        assert_eq!(snapshot.messages[0].text, "Inspect auth");
+        assert_eq!(snapshot.messages[1].role, "assistant");
+        assert_eq!(
+            snapshot.messages[1].text,
+            "The timeout comes from retry backoff."
+        );
     }
 
     #[test]

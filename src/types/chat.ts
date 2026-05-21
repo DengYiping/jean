@@ -821,6 +821,57 @@ export interface CodexAgent {
   message?: string
 }
 
+export type CodexSubAgentStatus =
+  | 'starting'
+  | 'running'
+  | 'completed'
+  | 'errored'
+  | 'closed'
+  | 'not_found'
+
+export interface CodexSubAgentEvent {
+  toolCallId: string
+  toolName: string
+  status?: string
+  message?: string
+  timestamp?: number
+  rawInput: unknown
+}
+
+export interface CodexSubAgentSnapshot {
+  threadId: string
+  status?: string
+  title?: string
+  turnCount?: number
+  messages: CodexSubAgentMessage[]
+  error?: string
+}
+
+export interface CodexSubAgentMessage {
+  role: string
+  text: string
+  turnId?: string
+}
+
+export interface CodexSubAgentSummary {
+  id: string
+  name: string
+  nickname?: string
+  prompt?: string
+  status: CodexSubAgentStatus
+  latestMessage?: string
+  senderThreadId?: string
+  receiverThreadIds: string[]
+  events: CodexSubAgentEvent[]
+  snapshot?: CodexSubAgentSnapshot
+}
+
+export interface CodexSubAgentIntrospectionResponse {
+  sessionId: string
+  parentThreadId?: string
+  agents: CodexSubAgentSummary[]
+}
+
 /** Names of collab tool calls that should be shown in the AgentWidget, not the timeline */
 const COLLAB_TOOL_NAMES = new Set([
   'SpawnAgent',

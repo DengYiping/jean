@@ -114,4 +114,55 @@ describe('useActiveTodosAndAgents', () => {
       },
     ])
   })
+
+  it('treats completed closeAgent calls as closed even with stale running state', () => {
+    const currentToolCalls: ToolCall[] = [
+      {
+        id: 'spawn-1',
+        name: 'SpawnAgent',
+        input: {
+          prompt: 'Inspect docs',
+          status: 'completed',
+          receiver_thread_ids: ['agent-1'],
+          agents_states: {
+            'agent-1': {
+              status: 'running',
+            },
+          },
+        },
+      },
+      {
+        id: 'close-1',
+        name: 'closeAgent',
+        input: {
+          status: 'completed',
+          receiver_thread_ids: ['agent-1'],
+          agents_states: {
+            'agent-1': {
+              status: 'running',
+            },
+          },
+        },
+      },
+    ]
+
+    const { result } = renderHook(() =>
+      useActiveTodosAndAgents({
+        activeSessionId: 'session-1',
+        isSending: true,
+        currentToolCalls,
+        lastAssistantMessage: undefined,
+      })
+    )
+
+    expect(result.current.activeAgents).toEqual([
+      {
+        id: 'agent-1',
+        name: 'Agent agent-1',
+        prompt: 'Inspect docs',
+        status: 'completed',
+        message: 'Closed',
+      },
+    ])
+  })
 })

@@ -13,6 +13,7 @@ import type {
   AllSessionsResponse,
   ArchivedSessionEntry,
   ChatMessage,
+  CodexSubAgentIntrospectionResponse,
   ChatHistory,
   Session,
   UnreadSessionsResponse,
@@ -70,6 +71,8 @@ export const chatQueryKeys = {
     [...chatQueryKeys.all, 'sessions', worktreeId] as const,
   session: (sessionId: string) =>
     [...chatQueryKeys.all, 'session', sessionId] as const,
+  codexSubAgents: (sessionId: string) =>
+    [...chatQueryKeys.all, 'codex-sub-agents', sessionId] as const,
   unreadSessions: () => [...chatQueryKeys.all, 'unread-sessions'] as const,
   unreadCount: () => [...chatQueryKeys.all, 'unread-count'] as const,
   nativeCliSessions: (
@@ -514,6 +517,43 @@ export function useSession(
     // Respects staleTime; cross-client sync handled by cache:invalidate broadcast
     // from Rust after send_chat_message completes (JSONL fully written).
     refetchOnMount: true,
+  })
+}
+
+export function useCodexSubAgents(
+  sessionId: string | null,
+  worktreeId: string | null,
+  worktreePath: string | null,
+  options: {
+    enabled?: boolean
+    includeThreadSnapshots?: boolean
+    refetchWhileStreaming?: boolean
+  } = {}
+) {
+  const enabled =
+    (options.enabled ?? true) && !!sessionId && !!worktreeId && !!worktreePath
+
+  return useQuery({
+    queryKey: chatQueryKeys.codexSubAgents(sessionId ?? ''),
+    queryFn: async (): Promise<CodexSubAgentIntrospectionResponse> => {
+      if (!isTauri() || !sessionId || !worktreeId || !worktreePath) {
+        return { sessionId: sessionId ?? '', agents: [] }
+      }
+
+      return invoke<CodexSubAgentIntrospectionResponse>(
+        'get_codex_sub_agents',
+        {
+          worktreeId,
+          worktreePath,
+          sessionId,
+          includeThreadSnapshots: options.includeThreadSnapshots ?? true,
+        }
+      )
+    },
+    enabled,
+    staleTime: 1000 * 5,
+    gcTime: 1000 * 60 * 5,
+    refetchInterval: options.refetchWhileStreaming ? 2000 : false,
   })
 }
 

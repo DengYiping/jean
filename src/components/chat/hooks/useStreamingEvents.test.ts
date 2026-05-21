@@ -631,6 +631,9 @@ describe('useStreamingEvents question notifications', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: chatQueryKeys.unreadCount(),
     })
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: chatQueryKeys.codexSubAgents('session-1'),
+    })
     expect(mockPlayNotificationSound).toHaveBeenCalledWith('work-work')
     unmount()
   })

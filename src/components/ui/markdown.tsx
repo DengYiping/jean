@@ -14,8 +14,10 @@ import {
 } from 'react'
 import type { Components } from 'react-markdown'
 import ReactMarkdown from 'react-markdown'
+import rehypeKatex from 'rehype-katex'
 import rehypeRaw from 'rehype-raw'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
 import remend from 'remend'
 import { Copy, Check, Table, ListChecks } from 'lucide-react'
 import { toast } from 'sonner'
@@ -154,6 +156,22 @@ function parseLocalEditorLink(
   if (!path) return null
 
   return { path, lineNumber }
+}
+
+function looksLikeLatexFormula(content: string): boolean {
+  const trimmed = content.trim()
+  if (!trimmed) return false
+  return /\\[A-Za-z]+/.test(trimmed) || /[_^{}=<>]/.test(trimmed)
+}
+
+function normalizeStandaloneBracketMath(content: string): string {
+  return content.replace(
+    /^([ \t]*)\[\s+([^\n]+?)\s+\]([ \t]*)$/gm,
+    (line, indent: string, formula: string) =>
+      looksLikeLatexFormula(formula)
+        ? `${indent}$$\n${formula}\n${indent}$$`
+        : line
+  )
 }
 
 /**
@@ -513,7 +531,8 @@ const Markdown = memo(function Markdown({
   sessionId,
 }: MarkdownProps) {
   // Apply remend preprocessing for streaming content to auto-close incomplete markdown
-  const content = streaming ? remend(children) : children
+  const rawContent = normalizeStandaloneBracketMath(children)
+  const content = streaming ? remend(rawContent) : rawContent
 
   const handleLocalLinkOpen = useCallback(async (href: string) => {
     const parsed = parseLocalEditorLink(href)
@@ -578,8 +597,8 @@ const Markdown = memo(function Markdown({
       <MarkdownTableContext.Provider value={contextValue}>
         <ReactMarkdown
           components={renderComponents}
-          remarkPlugins={[remarkGfm]}
-          rehypePlugins={[rehypeRaw]}
+          remarkPlugins={[remarkMath, remarkGfm]}
+          rehypePlugins={[rehypeKatex, rehypeRaw]}
         >
           {content}
         </ReactMarkdown>

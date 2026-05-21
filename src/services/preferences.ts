@@ -4,7 +4,11 @@ import { toast } from 'sonner'
 import { logger } from '@/lib/logger'
 import { normalizeNotificationSound } from '@/lib/sounds'
 import type { AppPreferences } from '@/types/preferences'
-import { defaultPreferences, normalizeCodexModel } from '@/types/preferences'
+import {
+  defaultPreferences,
+  normalizeCodexModel,
+  normalizeCodexModelProviderOverrides,
+} from '@/types/preferences'
 import { DEFAULT_KEYBINDINGS, type KeybindingsMap } from '@/types/keybindings'
 
 // Old default keybindings that have been changed - used for migration
@@ -79,6 +83,9 @@ export function usePreferences() {
           ...preferences,
           selected_codex_model: normalizeCodexModel(
             preferences.selected_codex_model
+          ),
+          codex_model_provider_overrides: normalizeCodexModelProviderOverrides(
+            preferences.codex_model_provider_overrides
           ),
           waiting_sound: normalizeNotificationSound(preferences.waiting_sound),
           review_sound: normalizeNotificationSound(preferences.review_sound),

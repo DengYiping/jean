@@ -274,6 +274,20 @@ pub(crate) fn split_fast_model(model: &str) -> (&str, bool) {
     }
 }
 
+pub(crate) fn resolve_codex_model_provider_override(
+    preferences: &crate::AppPreferences,
+    model: Option<&str>,
+) -> Option<String> {
+    let model = model.map(split_fast_model).map(|(base, _)| base)?;
+    preferences
+        .codex_model_provider_overrides
+        .get(model)
+        .map(String::as_str)
+        .map(str::trim)
+        .filter(|provider| !provider.is_empty())
+        .map(ToString::to_string)
+}
+
 pub fn is_manual_compact_request(prompt: &str) -> bool {
     prompt.trim() == "/compact"
 }
@@ -283,6 +297,7 @@ pub fn is_manual_compact_request(prompt: &str) -> bool {
 pub fn build_thread_start_params(
     working_dir: &std::path::Path,
     model: Option<&str>,
+    model_provider: Option<&str>,
     execution_mode: Option<&str>,
     search_enabled: bool,
     developer_instructions: Option<&str>,
@@ -306,6 +321,13 @@ pub fn build_thread_start_params(
         if is_fast {
             params["serviceTier"] = serde_json::json!("fast");
         }
+    }
+
+    if let Some(provider) = model_provider
+        .map(str::trim)
+        .filter(|provider| !provider.is_empty())
+    {
+        params["modelProvider"] = serde_json::json!(provider);
     }
 
     // Permission mode mapping.
@@ -470,6 +492,7 @@ pub fn execute_codex_via_server(
     working_dir: &std::path::Path,
     existing_thread_id: Option<&str>,
     model: Option<&str>,
+    model_provider: Option<&str>,
     execution_mode: Option<&str>,
     reasoning_effort: Option<&str>,
     search_enabled: bool,
@@ -500,6 +523,7 @@ pub fn execute_codex_via_server(
         let resume_params = build_thread_start_params(
             working_dir,
             model,
+            model_provider,
             execution_mode,
             search_enabled,
             developer_instructions,
@@ -516,6 +540,7 @@ pub fn execute_codex_via_server(
             "sandbox",
             "config",
             "serviceTier",
+            "modelProvider",
             "developerInstructions",
         ] {
             if let Some(v) = resume_params.get(key) {
@@ -529,6 +554,7 @@ pub fn execute_codex_via_server(
                 start_new_thread(
                     working_dir,
                     model,
+                    model_provider,
                     execution_mode,
                     search_enabled,
                     developer_instructions,
@@ -541,6 +567,7 @@ pub fn execute_codex_via_server(
         start_new_thread(
             working_dir,
             model,
+            model_provider,
             execution_mode,
             search_enabled,
             developer_instructions,
@@ -1341,9 +1368,11 @@ pub fn resume_codex_after_crash(
 }
 
 /// Start a new Codex thread via app-server.
+#[allow(clippy::too_many_arguments)]
 fn start_new_thread(
     working_dir: &std::path::Path,
     model: Option<&str>,
+    model_provider: Option<&str>,
     execution_mode: Option<&str>,
     search_enabled: bool,
     developer_instructions: Option<&str>,
@@ -1355,6 +1384,7 @@ fn start_new_thread(
     let params = build_thread_start_params(
         working_dir,
         model,
+        model_provider,
         execution_mode,
         search_enabled,
         developer_instructions,
@@ -4307,6 +4337,7 @@ mod tests {
         let params = build_thread_start_params(
             std::path::Path::new("/tmp"),
             Some("gpt-5.4-fast"),
+            None,
             Some("plan"),
             false,
             None,
@@ -4322,6 +4353,7 @@ mod tests {
         let params = build_thread_start_params(
             std::path::Path::new("/tmp"),
             Some("gpt-5.5-fast"),
+            None,
             Some("plan"),
             false,
             None,
@@ -4337,6 +4369,7 @@ mod tests {
         let params = build_thread_start_params(
             std::path::Path::new("/tmp"),
             Some("gpt-5.4-mini-fast"),
+            None,
             Some("plan"),
             false,
             None,
@@ -4375,6 +4408,7 @@ mod tests {
         let params = build_thread_start_params(
             std::path::Path::new("/tmp"),
             Some("gpt-5.3-fast"),
+            None,
             Some("plan"),
             false,
             None,
@@ -4383,6 +4417,51 @@ mod tests {
         );
         assert_eq!(params["model"], "gpt-5.3");
         assert!(params.get("serviceTier").is_none());
+    }
+
+    #[test]
+    fn thread_start_includes_model_provider_when_supplied() {
+        let params = build_thread_start_params(
+            std::path::Path::new("/tmp"),
+            Some("gpt-5.5"),
+            Some("openrouter"),
+            Some("plan"),
+            false,
+            None,
+            false,
+            None,
+        );
+
+        assert_eq!(params["modelProvider"], "openrouter");
+    }
+
+    #[test]
+    fn thread_start_omits_blank_model_provider() {
+        let params = build_thread_start_params(
+            std::path::Path::new("/tmp"),
+            Some("gpt-5.5"),
+            Some("   "),
+            Some("plan"),
+            false,
+            None,
+            false,
+            None,
+        );
+
+        assert!(params.get("modelProvider").is_none());
+    }
+
+    #[test]
+    fn resolves_codex_model_provider_override_from_fast_base_model() {
+        let mut preferences = crate::AppPreferences::default();
+        preferences
+            .codex_model_provider_overrides
+            .insert("gpt-5.5".to_string(), "openrouter".to_string());
+
+        assert_eq!(
+            resolve_codex_model_provider_override(&preferences, Some("gpt-5.5-fast")).as_deref(),
+            Some("openrouter")
+        );
     }
 
     #[test]
@@ -4398,6 +4477,7 @@ mod tests {
         let params = build_thread_start_params(
             std::path::Path::new("/tmp"),
             Some("gpt-5.4"),
+            None,
             Some("plan"),
             false,
             Some("  Follow repo guidance.  "),
@@ -4417,6 +4497,7 @@ mod tests {
         let params = build_thread_start_params(
             std::path::Path::new("/tmp"),
             Some("gpt-5.4"),
+            None,
             Some("plan"),
             false,
             Some("Use subagents in parallel."),
@@ -4503,6 +4584,7 @@ mod tests {
         let params = build_thread_start_params(
             std::path::Path::new("/tmp"),
             Some("gpt-5.4"),
+            None,
             Some("plan"),
             false,
             None,

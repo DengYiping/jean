@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { logger } from '@/lib/logger'
 import { invoke } from '@/lib/transport'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
@@ -18,6 +18,8 @@ import { usePreferences, usePatchPreferences } from '@/services/preferences'
 import {
   type CustomCliProfile,
   PREDEFINED_CLI_PROFILES,
+  codexModelOptions,
+  normalizeCodexModelProviderOverrides,
 } from '@/types/preferences'
 
 const SettingsSection: React.FC<{
@@ -43,9 +45,20 @@ export const ProvidersPane: React.FC = () => {
   const patchPreferences = usePatchPreferences()
 
   const profiles = preferences?.custom_cli_profiles ?? []
+  const codexProviderOverrides =
+    preferences?.codex_model_provider_overrides ?? {}
 
   const handleSaveProfiles = (updated: CustomCliProfile[]) => {
     patchPreferences.mutate({ custom_cli_profiles: updated })
+  }
+
+  const handleSaveCodexProviderOverrides = (
+    updated: Record<string, string>
+  ) => {
+    patchPreferences.mutate({
+      codex_model_provider_overrides:
+        normalizeCodexModelProviderOverrides(updated),
+    })
   }
 
   const defaultProvider = preferences?.default_provider ?? null
@@ -92,6 +105,72 @@ export const ProvidersPane: React.FC = () => {
           </div>
         )}
       </SettingsSection>
+
+      <SettingsSection
+        title="Codex"
+        description="Optional Codex modelProvider overrides for specific Codex models. Empty fields use the provider configured by Codex."
+        anchorId="pref-providers-section-codex"
+      >
+        <CodexModelProviderOverridesEditor
+          overrides={codexProviderOverrides}
+          onSave={handleSaveCodexProviderOverrides}
+        />
+      </SettingsSection>
+    </div>
+  )
+}
+
+const CodexModelProviderOverridesEditor: React.FC<{
+  overrides: Record<string, string>
+  onSave: (overrides: Record<string, string>) => void
+}> = ({ overrides, onSave }) => {
+  const [drafts, setDrafts] = useState<Record<string, string>>(() =>
+    normalizeCodexModelProviderOverrides(overrides)
+  )
+
+  useEffect(() => {
+    setDrafts(normalizeCodexModelProviderOverrides(overrides))
+  }, [overrides])
+
+  const commit = (model: string, value: string) => {
+    const next = normalizeCodexModelProviderOverrides({
+      ...drafts,
+      [model]: value,
+    })
+    setDrafts(next)
+    onSave(next)
+  }
+
+  return (
+    <div className="space-y-2">
+      {codexModelOptions.map(option => (
+        <div
+          key={option.value}
+          className="flex flex-col gap-2 rounded-md border border-border/60 px-3 py-2 sm:flex-row sm:items-center"
+        >
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium">{option.label}</p>
+            <p className="text-xs text-muted-foreground">{option.value}</p>
+          </div>
+          <Input
+            className="font-mono text-xs sm:w-64"
+            placeholder="Codex default"
+            value={drafts[option.value] ?? ''}
+            onChange={event =>
+              setDrafts(current => ({
+                ...current,
+                [option.value]: event.target.value,
+              }))
+            }
+            onBlur={event => commit(option.value, event.target.value)}
+            onKeyDown={event => {
+              if (event.key === 'Enter') {
+                event.currentTarget.blur()
+              }
+            }}
+          />
+        </div>
+      ))}
     </div>
   )
 }

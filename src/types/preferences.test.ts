@@ -13,6 +13,7 @@ import {
   getCodexFastInfo,
   magicPromptReasoningOptions,
   isMagicPromptModelCompatibleWithBackend,
+  normalizeCodexModelProviderOverrides,
   normalizeCodexModel,
   OPENCODE_DEFAULT_MAGIC_PROMPT_EFFORTS,
   resolveMagicPromptBackend,
@@ -50,6 +51,10 @@ describe('magic prompt backend resolution', () => {
 describe('preference defaults', () => {
   it('keeps recap prompting disabled by default', () => {
     expect(defaultPreferences.recap_prompting_enabled).toBe(false)
+  })
+
+  it('uses Codex default providers unless overrides are configured', () => {
+    expect(defaultPreferences.codex_model_provider_overrides).toEqual({})
   })
 })
 
@@ -119,6 +124,18 @@ describe('codex fast model handling', () => {
     expect(normalizeCodexModel('gpt-5.5-fast')).toBe('gpt-5.5')
     expect(normalizeCodexModel('gpt-5.4-fast')).toBe('gpt-5.4')
     expect(normalizeCodexModel('gpt-5.4-mini-fast')).toBe('gpt-5.4-mini')
+  })
+})
+
+describe('codex model provider overrides', () => {
+  it('trims configured model provider overrides and drops blanks', () => {
+    expect(
+      normalizeCodexModelProviderOverrides({
+        ' gpt-5.5 ': ' openrouter ',
+        'gpt-5.4': '   ',
+        '  ': 'openai',
+      })
+    ).toEqual({ 'gpt-5.5': 'openrouter' })
   })
 })
 

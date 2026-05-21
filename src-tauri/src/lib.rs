@@ -224,6 +224,8 @@ pub struct AppPreferences {
     pub default_backend: String, // Default CLI backend: "claude", "codex", or "opencode"
     #[serde(default = "default_codex_model")]
     pub selected_codex_model: String, // Default Codex model
+    #[serde(default)]
+    pub codex_model_provider_overrides: std::collections::HashMap<String, String>, // Codex model -> model_provider id overrides
     #[serde(default = "default_opencode_model")]
     pub selected_opencode_model: String, // Default OpenCode model (provider/model)
     #[serde(default)]
@@ -883,6 +885,7 @@ mod tests {
 
         assert_eq!(prefs.selected_model, "claude-opus-4-7");
         assert_eq!(prefs.selected_codex_model, "gpt-5.5");
+        assert!(prefs.codex_model_provider_overrides.is_empty());
         assert_eq!(prefs.codex_goal_execution_mode, "build");
         assert!(prefs.favorite_models.is_empty());
         assert!(prefs.fast_mode_models.is_empty());
@@ -893,6 +896,44 @@ mod tests {
         assert_eq!(prefs.magic_prompt_models.release_notes_model, "sonnet");
         assert_eq!(prefs.magic_prompt_models.session_naming_model, "sonnet");
         assert_eq!(prefs.magic_prompt_models.session_recap_model, "sonnet");
+    }
+
+    #[test]
+    fn app_preferences_default_codex_provider_overrides_for_missing_prefs() {
+        let mut prefs_json = serde_json::to_value(AppPreferences::default()).unwrap();
+        prefs_json
+            .as_object_mut()
+            .unwrap()
+            .remove("codex_model_provider_overrides");
+
+        let prefs: AppPreferences = serde_json::from_value(prefs_json).unwrap();
+
+        assert!(prefs.codex_model_provider_overrides.is_empty());
+    }
+
+    #[test]
+    fn normalize_preferences_drops_blank_codex_provider_overrides() {
+        let mut prefs = AppPreferences::default();
+        prefs
+            .codex_model_provider_overrides
+            .insert(" gpt-5.5 ".to_string(), " openrouter ".to_string());
+        prefs
+            .codex_model_provider_overrides
+            .insert("gpt-5.4".to_string(), "   ".to_string());
+        prefs
+            .codex_model_provider_overrides
+            .insert("   ".to_string(), "openai".to_string());
+
+        super::normalize_preferences(&mut prefs);
+
+        assert_eq!(
+            prefs
+                .codex_model_provider_overrides
+                .get("gpt-5.5")
+                .map(String::as_str),
+            Some("openrouter")
+        );
+        assert_eq!(prefs.codex_model_provider_overrides.len(), 1);
     }
 
     #[test]
@@ -1876,6 +1917,7 @@ impl Default for AppPreferences {
             default_execution_mode: default_execution_mode(),
             default_backend: default_backend(),
             selected_codex_model: default_codex_model(),
+            codex_model_provider_overrides: std::collections::HashMap::new(),
             selected_opencode_model: default_opencode_model(),
             claude_update_command: None,
             codex_update_command: None,
@@ -1938,6 +1980,18 @@ fn normalize_optional_path(path: &mut Option<String>) {
     }
 }
 
+fn normalize_string_map(map: &mut std::collections::HashMap<String, String>) {
+    let mut normalized = std::collections::HashMap::new();
+    for (key, value) in map.drain() {
+        let key = key.trim();
+        let value = value.trim();
+        if !key.is_empty() && !value.is_empty() {
+            normalized.insert(key.to_string(), value.to_string());
+        }
+    }
+    *map = normalized;
+}
+
 fn normalize_preferences(preferences: &mut AppPreferences) {
     normalize_optional_path(&mut preferences.git_cli_path);
     normalize_optional_path(&mut preferences.worktrees_base_dir);
@@ -1945,6 +1999,7 @@ fn normalize_preferences(preferences: &mut AppPreferences) {
     normalize_optional_path(&mut preferences.codex_update_command);
     normalize_optional_path(&mut preferences.opencode_launch_command);
     normalize_optional_path(&mut preferences.default_project_id);
+    normalize_string_map(&mut preferences.codex_model_provider_overrides);
     crate::platform::normalize_custom_editors(&mut preferences.custom_editors);
 }
 

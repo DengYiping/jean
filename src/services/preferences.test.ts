@@ -158,6 +158,7 @@ describe('preferences service', () => {
         default_backend: 'claude',
         default_new_session_kind: 'chat',
         selected_codex_model: 'gpt-5.5',
+        codex_model_provider_overrides: {},
         selected_opencode_model: 'opencode/gpt-5.3-codex',
         claude_update_command: null,
         codex_update_command: null,
@@ -252,6 +253,28 @@ describe('preferences service', () => {
       expect(result.current.data?.review_sound).toBe('none')
     })
 
+    it('normalizes Codex model provider overrides from backend preferences', async () => {
+      const { invoke } = await import('@/lib/transport')
+      const mockPreferences: AppPreferences = {
+        ...defaultPreferences,
+        codex_model_provider_overrides: {
+          ' gpt-5.5 ': ' openrouter ',
+          'gpt-5.4': '   ',
+        },
+      }
+      vi.mocked(invoke).mockResolvedValueOnce(mockPreferences)
+
+      const { result } = renderHook(() => usePreferences(), {
+        wrapper: createWrapper(queryClient),
+      })
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+      expect(result.current.data?.codex_model_provider_overrides).toEqual({
+        'gpt-5.5': 'openrouter',
+      })
+    })
+
     it('migrates old keybindings to new defaults', async () => {
       const { invoke } = await import('@/lib/transport')
       const prefsWithOldBinding: AppPreferences = {
@@ -326,6 +349,7 @@ describe('preferences service', () => {
         default_backend: 'claude',
         default_new_session_kind: 'chat',
         selected_codex_model: 'gpt-5.5',
+        codex_model_provider_overrides: {},
         selected_opencode_model: 'opencode/gpt-5.3-codex',
         claude_update_command: null,
         codex_update_command: null,
@@ -442,6 +466,7 @@ describe('preferences service', () => {
         default_new_session_kind: 'chat',
         selected_codex_model:
           'gpt-5.3-fast' as AppPreferences['selected_codex_model'],
+        codex_model_provider_overrides: {},
         selected_opencode_model: 'opencode/gpt-5.3-codex',
         claude_update_command: null,
         codex_update_command: null,
@@ -646,6 +671,7 @@ describe('preferences service', () => {
         default_backend: 'claude',
         default_new_session_kind: 'chat',
         selected_codex_model: 'gpt-5.5',
+        codex_model_provider_overrides: {},
         selected_opencode_model: 'opencode/gpt-5.3-codex',
         claude_update_command: null,
         codex_update_command: null,
@@ -764,6 +790,7 @@ describe('preferences service', () => {
         default_backend: 'claude',
         default_new_session_kind: 'chat',
         selected_codex_model: 'gpt-5.5',
+        codex_model_provider_overrides: {},
         selected_opencode_model: 'opencode/gpt-5.3-codex',
         claude_update_command: null,
         codex_update_command: null,
@@ -882,6 +909,7 @@ describe('preferences service', () => {
         default_backend: 'claude',
         default_new_session_kind: 'chat',
         selected_codex_model: 'gpt-5.5',
+        codex_model_provider_overrides: {},
         selected_opencode_model: 'opencode/gpt-5.3-codex',
         claude_update_command: null,
         codex_update_command: null,
@@ -998,6 +1026,7 @@ describe('preferences service', () => {
         default_backend: 'claude',
         default_new_session_kind: 'chat',
         selected_codex_model: 'gpt-5.5',
+        codex_model_provider_overrides: {},
         selected_opencode_model: 'opencode/gpt-5.3-codex',
         claude_update_command: null,
         codex_update_command: null,

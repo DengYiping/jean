@@ -70,4 +70,11 @@ describe('preferences search index', () => {
 
     expect(results.some(entry => entry.id === 'appearance-fonts')).toBe(true)
   })
+
+  it('returns the Codex provider override section for provider queries', () => {
+    setTauriInternals(false)
+    const results = searchPreferenceEntries('codex model provider')
+
+    expect(results.some(entry => entry.id === 'providers-codex')).toBe(true)
+  })
 })

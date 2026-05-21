@@ -79,6 +79,9 @@ export const mockPreferences = {
   auto_investigate: true,
   auto_archive_on_merge: false,
   default_project_id: null,
+  custom_cli_profiles: [],
+  default_provider: null,
+  selected_codex_model: 'gpt-5.5',
   magic_prompts: {
     investigate_issue: null,
     investigate_pr: null,
@@ -111,6 +114,7 @@ export const mockPreferences = {
   web_access_token: '',
   mcp_servers_enabled: false,
   experimental_features: {},
+  codex_model_provider_overrides: {},
   claude_update_command: null,
   codex_update_command: null,
   coderabbit_cli_source: 'jean',

@@ -336,6 +336,23 @@ const sectionEntries: PreferenceSearchEntry[] = [
     fallbackAnchorId: 'pref-pane-providers',
   },
   {
+    id: 'providers-codex',
+    pane: 'providers',
+    paneTitle: 'Providers',
+    type: 'section',
+    title: 'Codex Model Provider Overrides',
+    sectionTitle: 'Providers',
+    keywords: [
+      'codex provider',
+      'model provider',
+      'modelProvider',
+      'gpt provider',
+      'codex model override',
+    ],
+    anchorId: 'pref-providers-section-codex',
+    fallbackAnchorId: 'pref-pane-providers',
+  },
+  {
     id: 'usage-claude',
     pane: 'usage',
     paneTitle: 'Usage',

@@ -81,4 +81,43 @@ test.describe('Preferences', () => {
 
     await expect(dialog).toBeHidden()
   })
+
+  test('saves Codex model provider overrides from Providers settings', async ({
+    mockPage,
+  }) => {
+    const dialog = await openDialog(mockPage)
+
+    await dialog.getByRole('button', { name: 'Providers' }).click()
+    const codexSection = dialog.locator('#pref-providers-section-codex')
+    await expect(
+      codexSection.getByRole('heading', { name: 'Codex' })
+    ).toBeVisible()
+
+    const firstProviderInput = codexSection.locator('input').first()
+    await firstProviderInput.fill(' openrouter ')
+    await firstProviderInput.blur()
+
+    const patchCall = await mockPage.evaluate(() => {
+      const calls =
+        (
+          window as Window & {
+            __JEAN_E2E_MOCK__?: {
+              invokeCalls?: Array<{ command: string; args?: unknown }>
+            }
+          }
+        ).__JEAN_E2E_MOCK__?.invokeCalls ?? []
+      return calls.findLast(call => call.command === 'patch_preferences')
+    })
+
+    expect(patchCall).toMatchObject({
+      command: 'patch_preferences',
+      args: {
+        patch: {
+          codex_model_provider_overrides: {
+            'gpt-5.5': 'openrouter',
+          },
+        },
+      },
+    })
+  })
 })

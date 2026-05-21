@@ -1014,6 +1014,7 @@ export interface AppPreferences {
   default_backend: CliBackend // Default CLI backend for new sessions: 'claude', 'codex', or 'opencode'
   default_new_session_kind: NewSessionKind // Default action for CMD+T: 'chat', 'terminal', or a CLI backend
   selected_codex_model: CodexModel // Default Codex model
+  codex_model_provider_overrides: Record<string, string> // Codex model -> Codex modelProvider id override
   selected_opencode_model: string // Default OpenCode model (provider/model)
   claude_update_command: string | null // Optional Claude install/update command, e.g. "pnpm install -g @anthropic-ai/claude-code"
   codex_update_command: string | null // Optional Codex install/update command, e.g. "npm install -g @openai/codex"
@@ -1318,7 +1319,11 @@ const deprecatedCodexFastModelMap = {
   'gpt-5.1-codex-mini-fast': 'gpt-5.1-codex-mini',
 } as const
 
-export function normalizeCodexModel(model: string): CodexModel {
+export function normalizeCodexModel(
+  model: string | null | undefined
+): CodexModel {
+  if (!model) return 'gpt-5.5'
+
   if (model in deprecatedCodexFastModelMap) {
     return deprecatedCodexFastModelMap[
       model as keyof typeof deprecatedCodexFastModelMap
@@ -1326,6 +1331,18 @@ export function normalizeCodexModel(model: string): CodexModel {
   }
 
   return isCodexModel(model) ? model : 'gpt-5.5'
+}
+
+export function normalizeCodexModelProviderOverrides(
+  overrides: Record<string, string> | null | undefined
+): Record<string, string> {
+  if (!overrides) return {}
+
+  return Object.fromEntries(
+    Object.entries(overrides)
+      .map(([model, provider]) => [model.trim(), provider.trim()] as const)
+      .filter(([model, provider]) => model.length > 0 && provider.length > 0)
+  )
 }
 
 export type CodexReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh'
@@ -1952,6 +1969,7 @@ export const defaultPreferences: AppPreferences = {
   default_backend: 'claude', // Default: Claude
   default_new_session_kind: 'chat', // Default: Jean Chat for CMD+T
   selected_codex_model: 'gpt-5.5', // Default: latest Codex model
+  codex_model_provider_overrides: {}, // Default: use Codex configured provider
   selected_opencode_model: 'opencode/gpt-5.3-codex', // Default OpenCode model
   claude_update_command: null, // Default: use Jean's built-in Claude guidance
   codex_update_command: null, // Default: use Jean's built-in Codex guidance

@@ -2338,6 +2338,16 @@ pub async fn send_chat_message(
     let thread_codex_search = codex_search_enabled;
     let thread_codex_multi_agent = codex_multi_agent_enabled;
     let thread_codex_max_threads = codex_max_agent_threads;
+    let thread_codex_model_provider = if effective_backend == Backend::Codex {
+        crate::load_preferences(app.clone())
+            .await
+            .ok()
+            .and_then(|prefs| {
+                super::codex::resolve_codex_model_provider_override(&prefs, thread_model.as_deref())
+            })
+    } else {
+        None
+    };
 
     // For OpenCode sessions: create a cancel flag so we can signal the blocking HTTP thread.
     // Register it before spawning so cancel_process can find it immediately.
@@ -2885,6 +2895,7 @@ pub async fn send_chat_message(
                         std::path::Path::new(&thread_working_dir),
                         thread_codex_thread_id.as_deref(),
                         thread_model.as_deref(),
+                        thread_codex_model_provider.as_deref(),
                         thread_execution_mode.as_deref(),
                         codex_reasoning_effort.as_deref(),
                         thread_codex_search,

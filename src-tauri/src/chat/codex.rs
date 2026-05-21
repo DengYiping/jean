@@ -2469,6 +2469,54 @@ fn collab_tool_display_name(collab_tool: &str) -> &str {
     }
 }
 
+fn value_has_non_empty_array(value: &serde_json::Value, key: &str) -> bool {
+    value
+        .get(key)
+        .and_then(|value| value.as_array())
+        .map(|values| !values.is_empty())
+        .unwrap_or(false)
+}
+
+fn value_has_non_empty_object(value: &serde_json::Value, key: &str) -> bool {
+    value
+        .get(key)
+        .and_then(|value| value.as_object())
+        .map(|values| !values.is_empty())
+        .unwrap_or(false)
+}
+
+fn merge_collab_tool_input(
+    previous: &serde_json::Value,
+    next: &serde_json::Value,
+) -> serde_json::Value {
+    let mut merged = next.clone();
+    let Some(merged_obj) = merged.as_object_mut() else {
+        return merged;
+    };
+
+    if !value_has_non_empty_array(next, "receiver_thread_ids") {
+        if let Some(previous_receiver_ids) = previous
+            .get("receiver_thread_ids")
+            .filter(|_| value_has_non_empty_array(previous, "receiver_thread_ids"))
+            .cloned()
+        {
+            merged_obj.insert("receiver_thread_ids".to_string(), previous_receiver_ids);
+        }
+    }
+
+    if !value_has_non_empty_object(next, "agents_states") {
+        if let Some(previous_agents_states) = previous
+            .get("agents_states")
+            .filter(|_| value_has_non_empty_object(previous, "agents_states"))
+            .cloned()
+        {
+            merged_obj.insert("agents_states".to_string(), previous_agents_states);
+        }
+    }
+
+    merged
+}
+
 fn normalize_history_request_questions(questions: &[serde_json::Value]) -> serde_json::Value {
     serde_json::Value::Array(
         questions
@@ -3506,7 +3554,7 @@ fn process_codex_event(
                             .unwrap_or("SpawnAgent");
                         if let Some(tc) = tool_calls.iter_mut().find(|t| t.id == tool_id) {
                             tc.output = Some(output.clone());
-                            tc.input = item.clone();
+                            tc.input = merge_collab_tool_input(&tc.input, item);
                         }
                         let _ = app.emit_all(
                             "chat:tool_use",
@@ -3515,7 +3563,11 @@ fn process_codex_event(
                                 worktree_id: worktree_id.to_string(),
                                 id: tool_id.clone(),
                                 name: tool_name.to_string(),
-                                input: item.clone(),
+                                input: tool_calls
+                                    .iter()
+                                    .find(|t| t.id == tool_id)
+                                    .map(|t| t.input.clone())
+                                    .unwrap_or_else(|| item.clone()),
                                 parent_tool_use_id: None,
                             },
                         );
@@ -4083,7 +4135,7 @@ pub fn parse_codex_run_to_message(
                         if !tool_id.is_empty() {
                             if let Some(tc) = tool_calls.iter_mut().find(|t| t.id == tool_id) {
                                 tc.output = Some(output);
-                                tc.input = item.clone();
+                                tc.input = merge_collab_tool_input(&tc.input, item);
                             }
                         }
                     }
@@ -4137,7 +4189,7 @@ pub fn parse_codex_run_to_message(
                 } else if item_type == "collab_tool_call" {
                     if let Some(tool_id) = pending_tool_ids.get(item_id) {
                         if let Some(tc) = tool_calls.iter_mut().find(|t| t.id == *tool_id) {
-                            tc.input = item.clone();
+                            tc.input = merge_collab_tool_input(&tc.input, item);
                         }
                     }
                 }
@@ -4960,6 +5012,145 @@ mod tests {
             .expect("plan tool should be restored");
 
         assert_eq!(plan_tool.input["plan"], "# Plan\n- one\n");
+    }
+
+    #[test]
+    fn parse_codex_run_refreshes_collab_tool_input_from_completed_history() {
+        let run = crate::chat::types::RunEntry {
+            run_id: "run-1".to_string(),
+            started_at: 1,
+            ended_at: Some(2),
+            status: crate::chat::types::RunStatus::Completed,
+            user_message_id: "user-1".to_string(),
+            assistant_message_id: Some("assistant-1".to_string()),
+            user_message: "Spawn an agent".to_string(),
+            model: None,
+            execution_mode: Some("build".to_string()),
+            thinking_level: None,
+            effort_level: None,
+            claude_session_id: None,
+            pid: None,
+            cancelled: false,
+            recovered: false,
+            usage: None,
+        };
+
+        let lines = vec![
+            serde_json::json!({
+                "type": "item.started",
+                "item": {
+                    "type": "collab_tool_call",
+                    "id": "call-1",
+                    "tool": "spawnAgent",
+                    "prompt": "Inspect git state",
+                    "receiver_thread_ids": [],
+                    "sender_thread_id": "parent-thread",
+                    "status": "inProgress",
+                    "agents_states": {}
+                }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "item.completed",
+                "item": {
+                    "type": "collab_tool_call",
+                    "id": "call-1",
+                    "tool": "spawnAgent",
+                    "prompt": "Inspect git state",
+                    "receiver_thread_ids": ["agent-1"],
+                    "sender_thread_id": "parent-thread",
+                    "status": "completed",
+                    "agents_states": {
+                        "agent-1": {
+                            "message": "Current branch: master.",
+                            "status": "completed"
+                        }
+                    }
+                }
+            })
+            .to_string(),
+        ];
+
+        let message = parse_codex_run_to_message(&lines, &run).expect("message should parse");
+        let collab_tool = message
+            .tool_calls
+            .iter()
+            .find(|tool| tool.name == "SpawnAgent")
+            .expect("collab tool should be restored");
+
+        assert_eq!(collab_tool.input["receiver_thread_ids"][0], "agent-1");
+        assert_eq!(
+            collab_tool.input["agents_states"]["agent-1"]["message"],
+            "Current branch: master."
+        );
+        assert_eq!(
+            collab_tool.output.as_deref(),
+            Some("agent-1: completed — Current branch: master.")
+        );
+    }
+
+    #[test]
+    fn parse_codex_run_preserves_wait_receiver_ids_when_completion_is_empty() {
+        let run = crate::chat::types::RunEntry {
+            run_id: "run-1".to_string(),
+            started_at: 1,
+            ended_at: Some(2),
+            status: crate::chat::types::RunStatus::Completed,
+            user_message_id: "user-1".to_string(),
+            assistant_message_id: Some("assistant-1".to_string()),
+            user_message: "Wait for agents".to_string(),
+            model: None,
+            execution_mode: Some("build".to_string()),
+            thinking_level: None,
+            effort_level: None,
+            claude_session_id: None,
+            pid: None,
+            cancelled: false,
+            recovered: false,
+            usage: None,
+        };
+
+        let lines = vec![
+            serde_json::json!({
+                "type": "item.started",
+                "item": {
+                    "type": "collab_tool_call",
+                    "id": "call-1",
+                    "tool": "wait",
+                    "receiver_thread_ids": ["agent-1", "agent-2"],
+                    "sender_thread_id": "parent-thread",
+                    "status": "inProgress",
+                    "agents_states": {}
+                }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "item.completed",
+                "item": {
+                    "type": "collab_tool_call",
+                    "id": "call-1",
+                    "tool": "wait",
+                    "receiver_thread_ids": [],
+                    "sender_thread_id": "parent-thread",
+                    "status": "completed",
+                    "agents_states": {}
+                }
+            })
+            .to_string(),
+        ];
+
+        let message = parse_codex_run_to_message(&lines, &run).expect("message should parse");
+        let collab_tool = message
+            .tool_calls
+            .iter()
+            .find(|tool| tool.name == "WaitForAgents")
+            .expect("wait tool should be restored");
+
+        assert_eq!(
+            collab_tool.input["receiver_thread_ids"],
+            serde_json::json!(["agent-1", "agent-2"])
+        );
+        assert_eq!(collab_tool.input["status"], "completed");
     }
 
     #[test]

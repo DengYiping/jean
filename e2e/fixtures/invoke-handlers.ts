@@ -83,6 +83,11 @@ export const defaultResponses: Record<string, unknown> = {
       is_unread: false,
     },
   },
+  get_codex_sub_agents: {
+    sessionId: 'unknown',
+    parentThreadId: null,
+    agents: [],
+  },
   list_all_sessions: { entries: [] },
   list_unread_sessions: { entries: [] },
   get_unread_count: 0,

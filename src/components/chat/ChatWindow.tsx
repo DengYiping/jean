@@ -37,6 +37,7 @@ import {
   useCreateSession,
   chatQueryKeys,
   useUpdateSessionState,
+  useCodexSubAgents,
 } from '@/services/chat'
 import { useWorktree, useProjects, useRunScripts } from '@/services/projects'
 import { useProjectsStore } from '@/store/projects-store'
@@ -90,7 +91,7 @@ import { PermissionApproval } from './PermissionApproval'
 import { CodexMcpElicitation } from './CodexMcpElicitation'
 import { SetupScriptOutput } from './SetupScriptOutput'
 import { TodoWidget } from './TodoWidget'
-import { AgentWidget } from './AgentWidget'
+import { CodexSubAgentPanel } from './CodexSubAgentPanel'
 import { normalizeTodosForDisplay } from './tool-call-utils'
 import { ImagePreview } from './ImagePreview'
 import { TextFilePreview } from './TextFilePreview'
@@ -1061,6 +1062,20 @@ export function ChatWindow({
     currentToolCalls,
     lastAssistantMessage,
   })
+  const shouldLoadCodexSubAgents = isCodexBackend && !!activeSessionId
+  const { data: codexSubAgentData, isLoading: codexSubAgentsLoading } =
+    useCodexSubAgents(
+      activeSessionId ?? null,
+      activeWorktreeId ?? null,
+      activeWorktreePath ?? null,
+      {
+        enabled: shouldLoadCodexSubAgents,
+        includeThreadSnapshots: true,
+        refetchWhileStreaming: isSending,
+      }
+    )
+  const codexSubAgents = codexSubAgentData?.agents ?? []
+  const hasCodexSubAgents = activeAgents.length > 0 || codexSubAgents.length > 0
 
   // Plan state: pending plan message, streaming plan, content, file path
   const {
@@ -3178,14 +3193,16 @@ export function ChatWindow({
                             )}
 
                           {/* Agent widget - inline fallback for narrow screens */}
-                          {activeAgents.length > 0 &&
+                          {hasCodexSubAgents &&
                             (dismissedAgentMessageId === null ||
                               (agentSourceMessageId !== null &&
                                 agentSourceMessageId !==
                                   dismissedAgentMessageId)) && (
                               <div className="px-4 md:px-6 pt-2 xl:hidden">
-                                <AgentWidget
-                                  agents={activeAgents}
+                                <CodexSubAgentPanel
+                                  agents={codexSubAgents}
+                                  fallbackAgents={activeAgents}
+                                  isLoading={codexSubAgentsLoading}
                                   isStreaming={agentIsFromStreaming}
                                   onClose={() =>
                                     setDismissedAgentMessageId(
@@ -3326,8 +3343,7 @@ export function ChatWindow({
                         </form>
 
                         {/* Side panel widgets (Tasks + Agents) for wide screens */}
-                        {(activeTodos.length > 0 ||
-                          activeAgents.length > 0) && (
+                        {(activeTodos.length > 0 || hasCodexSubAgents) && (
                           <div className="hidden xl:flex flex-col gap-2 absolute left-full bottom-0 ml-3 w-64 z-20">
                             {activeTodos.length > 0 &&
                               (dismissedTodoMessageId === null ||
@@ -3347,13 +3363,15 @@ export function ChatWindow({
                                   }
                                 />
                               )}
-                            {activeAgents.length > 0 &&
+                            {hasCodexSubAgents &&
                               (dismissedAgentMessageId === null ||
                                 (agentSourceMessageId !== null &&
                                   agentSourceMessageId !==
                                     dismissedAgentMessageId)) && (
-                                <AgentWidget
-                                  agents={activeAgents}
+                                <CodexSubAgentPanel
+                                  agents={codexSubAgents}
+                                  fallbackAgents={activeAgents}
+                                  isLoading={codexSubAgentsLoading}
                                   isStreaming={agentIsFromStreaming}
                                   onClose={() =>
                                     setDismissedAgentMessageId(

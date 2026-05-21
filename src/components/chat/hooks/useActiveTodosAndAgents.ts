@@ -74,6 +74,29 @@ function normalizeToolStatus(
   }
 }
 
+function effectiveAgentStatus(
+  toolName: ToolCall['name'],
+  stateStatus?: string | null,
+  toolStatus?: CodexAgent['status'] | null
+): { status: CodexAgent['status']; label: string } {
+  if (
+    (toolName === 'CloseAgent' || toolName === 'closeAgent') &&
+    toolStatus === 'completed'
+  ) {
+    return { status: 'completed', label: 'Closed' }
+  }
+
+  if (
+    (toolName === 'WaitForAgents' || toolName === 'wait') &&
+    !stateStatus &&
+    toolStatus === 'completed'
+  ) {
+    return { status: 'in_progress', label: 'Running' }
+  }
+
+  return normalizeAgentStatus(stateStatus)
+}
+
 function getCollabReceiverIds(input: CollabToolCallInput): string[] {
   const receiverIds = Array.isArray(input.receiver_thread_ids)
     ? input.receiver_thread_ids
@@ -279,7 +302,11 @@ export function useActiveTodosAndAgents({
 
       for (const receiverId of receiverIds) {
         const agentState = agentStates[receiverId]
-        const normalizedState = normalizeAgentStatus(agentState?.status)
+        const normalizedState = effectiveAgentStatus(
+          tc.name,
+          agentState?.status,
+          toolStatus
+        )
         const detail = agentState?.message?.trim()
         upsertAgent(agents, receiverId, {
           name: getAgentNickname(input, agentState),

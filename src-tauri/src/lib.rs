@@ -4225,6 +4225,7 @@ pub fn run() {
             chat::list_unread_sessions,
             chat::get_unread_count,
             chat::get_session,
+            chat::get_codex_sub_agents,
             chat::create_session,
             chat::rename_session,
             chat::regenerate_session_name,

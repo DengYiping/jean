@@ -1081,6 +1081,22 @@ pub async fn dispatch_command(
                     .await?;
             to_value(result)
         }
+        "get_codex_sub_agents" => {
+            let worktree_id: String = field(&args, "worktreeId", "worktree_id")?;
+            let worktree_path: String = field(&args, "worktreePath", "worktree_path")?;
+            let session_id: String = field(&args, "sessionId", "session_id")?;
+            let include_thread_snapshots: Option<bool> =
+                field_opt(&args, "includeThreadSnapshots", "include_thread_snapshots")?;
+            let result = crate::chat::get_codex_sub_agents(
+                app.clone(),
+                worktree_id,
+                worktree_path,
+                session_id,
+                include_thread_snapshots,
+            )
+            .await?;
+            to_value(result)
+        }
         "list_native_cli_sessions" => {
             let worktree_path: String = field(&args, "worktreePath", "worktree_path")?;
             let backend: String = from_field(&args, "backend")?;

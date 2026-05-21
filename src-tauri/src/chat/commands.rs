@@ -975,6 +975,40 @@ fn codex_sub_agent_messages_from_thread_read(value: &Value) -> Vec<CodexSubAgent
     messages
 }
 
+async fn read_codex_sub_agent_snapshot(thread_id: String) -> CodexSubAgentSnapshot {
+    let request_thread_id = thread_id.clone();
+    let response = tauri::async_runtime::spawn_blocking(move || {
+        super::codex_server::send_request(
+            "thread/read",
+            serde_json::json!({
+                "threadId": request_thread_id,
+                "includeTurns": true,
+            }),
+        )
+    })
+    .await;
+
+    match response {
+        Ok(Ok(value)) => codex_sub_agent_snapshot_from_thread_read(&thread_id, &value),
+        Ok(Err(error)) => CodexSubAgentSnapshot {
+            thread_id,
+            status: None,
+            title: None,
+            turn_count: None,
+            messages: Vec::new(),
+            error: Some(error),
+        },
+        Err(error) => CodexSubAgentSnapshot {
+            thread_id,
+            status: None,
+            title: None,
+            turn_count: None,
+            messages: Vec::new(),
+            error: Some(format!("Failed to read Codex thread snapshot: {error}")),
+        },
+    }
+}
+
 /// Get read-only Codex sub-agent introspection for a session.
 #[tauri::command]
 pub async fn get_codex_sub_agents(
@@ -1001,24 +1035,7 @@ pub async fn get_codex_sub_agents(
                 continue;
             };
 
-            let snapshot = match super::codex_server::send_request(
-                "thread/read",
-                serde_json::json!({
-                    "threadId": thread_id,
-                    "includeTurns": true,
-                }),
-            ) {
-                Ok(value) => codex_sub_agent_snapshot_from_thread_read(&thread_id, &value),
-                Err(error) => CodexSubAgentSnapshot {
-                    thread_id,
-                    status: None,
-                    title: None,
-                    turn_count: None,
-                    messages: Vec::new(),
-                    error: Some(error),
-                },
-            };
-            agent.snapshot = Some(snapshot);
+            agent.snapshot = Some(read_codex_sub_agent_snapshot(thread_id).await);
         }
     }
 

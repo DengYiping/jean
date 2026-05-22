@@ -1259,10 +1259,9 @@ export function GitDiffModal({
       window.removeEventListener('git-commit-completed', handleCommitCompleted)
   }, [diffRequest, activeDiffType, loadDiff])
 
-  // Show switcher whenever both diff contexts are available, even when counts are zero.
-  const hasUncommitted = uncommittedStats !== undefined
-  const hasBranchDiff = branchStats !== undefined
-  const showSwitcher = hasUncommitted && hasBranchDiff
+  // Always show the session header switcher so the commits tab stays reachable
+  // even when the active diff has no files or callers do not provide stats.
+  const showSwitcher = !!diffRequest
   // Prefer cached stats (from loaded diff) over polling stats for consistency across tab switches
   const uncommittedAdded =
     cachedUncommittedStats?.added ?? uncommittedStats?.added ?? 0
@@ -1292,7 +1291,9 @@ export function GitDiffModal({
   const title =
     activeDiffType === 'uncommitted'
       ? 'Uncommitted Changes'
-      : `Changes vs ${diffRequest?.baseBranch ?? 'main'}`
+      : activeDiffType === 'branch'
+        ? `Changes vs ${diffRequest?.baseBranch ?? 'main'}`
+        : 'Commits'
 
   return (
     <>

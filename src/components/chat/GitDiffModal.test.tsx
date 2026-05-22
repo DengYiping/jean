@@ -219,6 +219,34 @@ describe('GitDiffModal', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('keeps the commits tab reachable when the active diff has no files', async () => {
+    mockGetGitDiff.mockResolvedValueOnce(
+      buildDiff({
+        files: [],
+        raw_patch: '',
+        total_additions: 0,
+        total_deletions: 0,
+      })
+    )
+
+    render(
+      <GitDiffModal
+        diffRequest={{
+          type: 'uncommitted',
+          worktreePath: '/tmp/worktree',
+          baseBranch: 'main',
+        }}
+        onClose={vi.fn()}
+      />
+    )
+
+    await screen.findByText('No changes to display')
+
+    fireEvent.click(screen.getByRole('button', { name: /commits/i }))
+
+    expect(screen.getByText('Commits tab')).toBeInTheDocument()
+  })
+
   it('confirms before hard resetting the worktree', async () => {
     mockGetGitDiff.mockResolvedValueOnce(buildDiff())
 

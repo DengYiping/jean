@@ -1101,13 +1101,15 @@ pub async fn create_session(
     let session = with_sessions_mut(&app, &worktree_path, &worktree_id, |sessions| {
         // Generate name if not provided
         let session_number = sessions.next_session_number();
-        let session_name = name.unwrap_or_else(|| format!("Session {session_number}"));
+        let (session_name, session_naming_completed) =
+            initial_session_name_and_naming_state(name, session_number);
 
         let mut session = Session::new(
             session_name,
             sessions.sessions.len() as u32,
             backend_enum.clone(),
         );
+        session.session_naming_completed = session_naming_completed;
         session.primary_surface = primary_surface;
         session.terminal_command = terminal_command;
         session.terminal_command_args = terminal_command_args.unwrap_or_default();
@@ -1146,6 +1148,16 @@ pub async fn create_session(
 
     emit_sessions_cache_invalidation(&app);
     Ok(session)
+}
+
+fn initial_session_name_and_naming_state(
+    name: Option<String>,
+    session_number: u32,
+) -> (String, bool) {
+    match name {
+        Some(name) => (name, true),
+        None => (format!("Session {session_number}"), false),
+    }
 }
 
 fn trigger_backend_queue_drain(
@@ -7836,6 +7848,22 @@ mod tests {
             supervisor_created_turn_count: 0,
             last_handled_run_id: None,
         }
+    }
+
+    #[test]
+    fn explicit_session_name_marks_automatic_naming_completed() {
+        assert_eq!(
+            initial_session_name_and_naming_state(Some("Investigation".to_string()), 3),
+            ("Investigation".to_string(), true)
+        );
+    }
+
+    #[test]
+    fn default_session_name_remains_eligible_for_automatic_naming() {
+        assert_eq!(
+            initial_session_name_and_naming_state(None, 3),
+            ("Session 3".to_string(), false)
+        );
     }
 
     fn codex_test_session(tool_calls: Vec<super::super::types::ToolCall>) -> Session {

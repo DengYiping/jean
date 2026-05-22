@@ -175,6 +175,32 @@ describe('useScrollManagement streaming auto-scroll', () => {
     expect(viewport.scrollTop).toBe(1500)
   })
 
+  it('does not re-pin after a user scroll event moves up from a pinned desktop plan', async () => {
+    const { viewport } = setupHook()
+
+    await triggerResize()
+    expect(viewport.scrollTop).toBe(600)
+
+    viewport.scrollTop = 500
+    fireEvent.scroll(viewport)
+
+    await triggerResize()
+
+    expect(viewport.scrollTop).toBe(500)
+  })
+
+  it('keeps following after the programmatic desktop plan pin emits a scroll event', async () => {
+    const { viewport } = setupHook()
+
+    await triggerResize()
+    expect(viewport.scrollTop).toBe(600)
+
+    fireEvent.scroll(viewport)
+    await triggerResize()
+
+    expect(viewport.scrollTop).toBe(600)
+  })
+
   it('resumes streaming auto-scroll after the user returns to bottom', async () => {
     isMobile = true
     const { viewport } = setupHook()

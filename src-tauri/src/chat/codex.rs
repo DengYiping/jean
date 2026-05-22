@@ -4227,7 +4227,7 @@ pub fn parse_codex_run_to_message(
 /// Execute a one-shot Codex CLI call with `--output-schema` for structured JSON output.
 ///
 /// Equivalent to Claude's `--json-schema` pattern but for Codex:
-///   `codex exec --json --model <model> --full-auto --output-schema <schema> -`
+///   `codex exec --json --model <model> --sandbox workspace-write --output-schema <schema> -`
 ///
 /// Returns the raw JSON string of the structured output.
 pub fn execute_one_shot_codex(
@@ -4260,20 +4260,12 @@ pub fn execute_one_shot_codex(
         .map_err(|e| format!("Failed to write schema file: {e}"))?;
 
     let mut cmd = crate::platform::silent_command(&cli_path);
-    cmd.args(["exec", "--json", "--model", actual_model, "--full-auto"]);
-    if is_fast {
-        cmd.args(["-c", "service_tier=\"fast\""]);
-    }
-    cmd.arg("--output-schema");
-    cmd.arg(&schema_file);
-    if let Some(dir) = working_dir {
-        cmd.arg("--cd");
-        cmd.arg(dir);
-    } else {
-        // One-shot calls that don't know a repository path should still run.
-        cmd.arg("--skip-git-repo-check");
-    }
-    cmd.arg("-"); // Read prompt from stdin
+    cmd.args(build_one_shot_codex_args(
+        actual_model,
+        is_fast,
+        &schema_file,
+        working_dir,
+    ));
     cmd.stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
@@ -4379,6 +4371,49 @@ pub fn execute_one_shot_codex(
     extract_codex_structured_output(&stdout)
 }
 
+fn build_one_shot_codex_args(
+    actual_model: &str,
+    is_fast: bool,
+    schema_file: &std::path::Path,
+    working_dir: Option<&std::path::Path>,
+) -> Vec<std::ffi::OsString> {
+    let mut args = vec![
+        "exec".into(),
+        "--json".into(),
+        "--model".into(),
+        actual_model.into(),
+        "--sandbox".into(),
+        "workspace-write".into(),
+        "-c".into(),
+        "features.multi_agent=false".into(),
+        "-c".into(),
+        "features.multi_agent_v2=false".into(),
+        "-c".into(),
+        "mcp_servers={}".into(),
+        "-c".into(),
+        "web_search=\"disabled\"".into(),
+    ];
+
+    if is_fast {
+        args.push("-c".into());
+        args.push("service_tier=\"fast\"".into());
+    }
+
+    args.push("--output-schema".into());
+    args.push(schema_file.as_os_str().into());
+
+    if let Some(dir) = working_dir {
+        args.push("--cd".into());
+        args.push(dir.as_os_str().into());
+    } else {
+        // One-shot calls that don't know a repository path should still run.
+        args.push("--skip-git-repo-check".into());
+    }
+
+    args.push("-".into()); // Read prompt from stdin
+    args
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4430,6 +4465,45 @@ mod tests {
         );
         assert_eq!(params["model"], "gpt-5.4-mini");
         assert_eq!(params["serviceTier"], "fast");
+    }
+
+    #[test]
+    fn one_shot_codex_args_use_toolless_workspace_write_mode() {
+        let args = build_one_shot_codex_args(
+            "gpt-5.4-nano",
+            false,
+            std::path::Path::new("/tmp/schema.json"),
+            Some(std::path::Path::new("/tmp/worktree")),
+        );
+        let args = args
+            .iter()
+            .map(|arg| arg.to_string_lossy().to_string())
+            .collect::<Vec<_>>();
+
+        assert!(args.contains(&"--sandbox".to_string()));
+        assert!(args.contains(&"workspace-write".to_string()));
+        assert!(args.contains(&"features.multi_agent=false".to_string()));
+        assert!(args.contains(&"features.multi_agent_v2=false".to_string()));
+        assert!(args.contains(&"mcp_servers={}".to_string()));
+        assert!(args.contains(&"web_search=\"disabled\"".to_string()));
+        assert!(!args.contains(&"--full-auto".to_string()));
+    }
+
+    #[test]
+    fn one_shot_codex_fast_args_keep_service_tier() {
+        let args = build_one_shot_codex_args(
+            "gpt-5.4",
+            true,
+            std::path::Path::new("/tmp/schema.json"),
+            None,
+        );
+        let args = args
+            .iter()
+            .map(|arg| arg.to_string_lossy().to_string())
+            .collect::<Vec<_>>();
+
+        assert!(args.contains(&"service_tier=\"fast\"".to_string()));
+        assert!(args.contains(&"--skip-git-repo-check".to_string()));
     }
 
     #[test]

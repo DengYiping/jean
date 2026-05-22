@@ -62,10 +62,6 @@ function isViewportAtBottom(viewport: HTMLDivElement) {
   )
 }
 
-function scrollToTail(viewport: HTMLDivElement) {
-  viewport.scrollTop = viewport.scrollHeight
-}
-
 export function useScrollManagement({
   messages,
   virtualizedListRef,
@@ -94,6 +90,7 @@ export function useScrollManagement({
   // Cooldown: when user scrolls up, block handleScroll from re-setting isAtBottom for a short period
   const userScrollUpUntilRef = useRef(0)
   const lastScrollTopRef = useRef(0)
+  const expectedProgrammaticScrollTopRef = useRef<number | null>(null)
   const touchStartYRef = useRef<number | null>(null)
 
   const stopFollowingTail = useCallback(() => {
@@ -107,6 +104,23 @@ export function useScrollManagement({
     setIsAtBottom(false)
     userScrollUpUntilRef.current = Date.now() + 1000
   }, [])
+
+  const setProgrammaticScrollTop = useCallback(
+    (viewport: HTMLDivElement, top: number) => {
+      isAutoScrollingRef.current = false
+      viewport.scrollTop = top
+      lastScrollTopRef.current = viewport.scrollTop
+      expectedProgrammaticScrollTopRef.current = viewport.scrollTop
+    },
+    []
+  )
+
+  const scrollProgrammaticallyToTail = useCallback(
+    (viewport: HTMLDivElement) => {
+      setProgrammaticScrollTop(viewport, viewport.scrollHeight)
+    },
+    [setProgrammaticScrollTop]
+  )
 
   // Cleanup scroll timeout on unmount
   useEffect(() => {
@@ -319,9 +333,9 @@ export function useScrollManagement({
             offset += el.offsetTop
             el = el.offsetParent as HTMLElement | null
           }
-          viewport.scrollTop = offset
+          setProgrammaticScrollTop(viewport, offset)
         } else {
-          scrollToTail(viewport)
+          scrollProgrammaticallyToTail(viewport)
         }
       })
     })
@@ -331,7 +345,12 @@ export function useScrollManagement({
       cancelAnimationFrame(rafId)
       observer.disconnect()
     }
-  }, [isSending, isMobile])
+  }, [
+    isSending,
+    isMobile,
+    scrollProgrammaticallyToTail,
+    setProgrammaticScrollTop,
+  ])
 
   // [Tier 4] Scroll management on streaming transitions.
   // - Start: if user was at bottom, smooth-scroll to follow queued/approved execution.
@@ -371,7 +390,7 @@ export function useScrollManagement({
               isFollowingTailRef.current &&
               scrollHeight - scrollTop - clientHeight > 2
             ) {
-              scrollToTail(viewport)
+              scrollProgrammaticallyToTail(viewport)
             }
           }
           viewport.addEventListener('scrollend', onEnd, { once: true })
@@ -396,7 +415,7 @@ export function useScrollManagement({
           if (viewport && isFollowingTailRef.current) {
             const { scrollTop, scrollHeight, clientHeight } = viewport
             if (scrollHeight - scrollTop - clientHeight > 1) {
-              scrollToTail(viewport)
+              scrollProgrammaticallyToTail(viewport)
             }
           }
         })
@@ -407,7 +426,7 @@ export function useScrollManagement({
       }
     }
     wasSendingRef.current = !!isSending
-  }, [isSending])
+  }, [isSending, scrollProgrammaticallyToTail])
 
   // Scroll to bottom before paint when switching worktrees to prevent flash of top content
   useLayoutEffect(() => {
@@ -415,9 +434,9 @@ export function useScrollManagement({
     if (viewport) {
       isFollowingTailRef.current = true
       userScrollUpUntilRef.current = 0
-      scrollToTail(viewport)
+      scrollProgrammaticallyToTail(viewport)
     }
-  }, [activeWorktreeId])
+  }, [activeWorktreeId, scrollProgrammaticallyToTail])
 
   // Scroll to bottom when messages first load for a session (async data arrival).
   // Without this, opening a session shows the top of the message list.
@@ -432,10 +451,10 @@ export function useScrollManagement({
       if (viewport) {
         isFollowingTailRef.current = true
         userScrollUpUntilRef.current = 0
-        scrollToTail(viewport)
+        scrollProgrammaticallyToTail(viewport)
       }
     }
-  }, [messages?.length])
+  }, [messages?.length, scrollProgrammaticallyToTail])
 
   // [Tier 1] Handle scroll events — findings visibility removed (handled by IntersectionObserver)
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
@@ -446,18 +465,27 @@ export function useScrollManagement({
     }
 
     const target = e.target as HTMLDivElement
-    const previousScrollTop = lastScrollTopRef.current
     lastScrollTopRef.current = target.scrollTop
 
-    if (
-      hasScrollableOverflow(target) &&
-      target.scrollTop < previousScrollTop - SCROLL_EPSILON_PX
-    ) {
+    const atBottom = isViewportAtBottom(target)
+    const expectedProgrammaticScrollTop =
+      expectedProgrammaticScrollTopRef.current
+    const isProgrammaticScroll =
+      expectedProgrammaticScrollTop !== null &&
+      Math.abs(target.scrollTop - expectedProgrammaticScrollTop) <=
+        SCROLL_EPSILON_PX
+
+    if (isProgrammaticScroll) {
+      expectedProgrammaticScrollTopRef.current = null
+      return
+    }
+
+    expectedProgrammaticScrollTopRef.current = null
+
+    if (hasScrollableOverflow(target) && !atBottom) {
       isFollowingTailRef.current = false
       userScrollUpUntilRef.current = Date.now() + 1000
     }
-
-    const atBottom = isViewportAtBottom(target)
 
     if (atBottom) {
       userScrollUpUntilRef.current = 0
@@ -487,66 +515,69 @@ export function useScrollManagement({
   // Pass instant=true for user-initiated actions (answering questions, approving plans)
   // where DOM changes immediately and smooth scroll would target stale scrollHeight.
   // Default smooth is for auto-scroll during streaming.
-  const scrollToBottom = useCallback((instant?: boolean) => {
-    const viewport = scrollViewportRef.current
-    if (!viewport) return
+  const scrollToBottom = useCallback(
+    (instant?: boolean) => {
+      const viewport = scrollViewportRef.current
+      if (!viewport) return
 
-    // Clear existing timeout to prevent memory leaks
-    if (scrollTimeoutRef.current) {
-      clearTimeout(scrollTimeoutRef.current)
-      scrollTimeoutRef.current = null
-    }
-
-    isAtBottomRef.current = true
-    isFollowingTailRef.current = true
-    userScrollUpUntilRef.current = 0
-    setIsAtBottom(true)
-
-    if (instant) {
-      // Instant scroll — no animation, no correction needed
-      isAutoScrollingRef.current = false
-      scrollToTail(viewport)
-      return
-    }
-
-    // Skip if a smooth scroll is already in flight — it will reach bottom.
-    // This prevents cascading animations when the auto-scroll effect fires
-    // rapidly (e.g. on every streaming content block).
-    if (isAutoScrollingRef.current) return
-
-    isAutoScrollingRef.current = true
-
-    viewport.scrollTo({
-      top: viewport.scrollHeight,
-      behavior: 'smooth',
-    })
-
-    // Use scrollend event to detect when smooth scroll finishes.
-    // Fallback to 400ms timeout for environments without scrollend support.
-    const onScrollEnd = () => {
-      isAutoScrollingRef.current = false
-      cleanup()
-
-      // Correct scroll position if smooth scroll ended at wrong spot
-      // (DOM changes during animation can cause stale scrollHeight targeting)
-      const { scrollTop, scrollHeight, clientHeight } = viewport
-      if (scrollHeight - scrollTop - clientHeight > 2) {
-        scrollToTail(viewport)
-      }
-    }
-
-    const cleanup = () => {
-      viewport.removeEventListener('scrollend', onScrollEnd)
+      // Clear existing timeout to prevent memory leaks
       if (scrollTimeoutRef.current) {
         clearTimeout(scrollTimeoutRef.current)
         scrollTimeoutRef.current = null
       }
-    }
 
-    viewport.addEventListener('scrollend', onScrollEnd, { once: true })
-    // Fallback timeout in case scrollend doesn't fire
-    scrollTimeoutRef.current = setTimeout(onScrollEnd, 400)
-  }, [])
+      isAtBottomRef.current = true
+      isFollowingTailRef.current = true
+      userScrollUpUntilRef.current = 0
+      setIsAtBottom(true)
+
+      if (instant) {
+        // Instant scroll — no animation, no correction needed
+        isAutoScrollingRef.current = false
+        scrollProgrammaticallyToTail(viewport)
+        return
+      }
+
+      // Skip if a smooth scroll is already in flight — it will reach bottom.
+      // This prevents cascading animations when the auto-scroll effect fires
+      // rapidly (e.g. on every streaming content block).
+      if (isAutoScrollingRef.current) return
+
+      isAutoScrollingRef.current = true
+
+      viewport.scrollTo({
+        top: viewport.scrollHeight,
+        behavior: 'smooth',
+      })
+
+      // Use scrollend event to detect when smooth scroll finishes.
+      // Fallback to 400ms timeout for environments without scrollend support.
+      const onScrollEnd = () => {
+        isAutoScrollingRef.current = false
+        cleanup()
+
+        // Correct scroll position if smooth scroll ended at wrong spot
+        // (DOM changes during animation can cause stale scrollHeight targeting)
+        const { scrollTop, scrollHeight, clientHeight } = viewport
+        if (scrollHeight - scrollTop - clientHeight > 2) {
+          scrollProgrammaticallyToTail(viewport)
+        }
+      }
+
+      const cleanup = () => {
+        viewport.removeEventListener('scrollend', onScrollEnd)
+        if (scrollTimeoutRef.current) {
+          clearTimeout(scrollTimeoutRef.current)
+          scrollTimeoutRef.current = null
+        }
+      }
+
+      viewport.addEventListener('scrollend', onScrollEnd, { once: true })
+      // Fallback timeout in case scrollend doesn't fire
+      scrollTimeoutRef.current = setTimeout(onScrollEnd, 400)
+    },
+    [scrollProgrammaticallyToTail]
+  )
 
   // Mark scroll state as "at bottom" without performing any physical scroll.
   // Used when sending a message so VirtualizedMessageList's gentle scrollIntoView

@@ -87,23 +87,30 @@ export function useScrollManagement({
   const [areFindingsVisible, setAreFindingsVisible] = useState(true)
   // Ref for scroll timeout cleanup
   const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const scrollCorrectionCleanupRef = useRef<(() => void) | null>(null)
   // Cooldown: when user scrolls up, block handleScroll from re-setting isAtBottom for a short period
   const userScrollUpUntilRef = useRef(0)
   const lastScrollTopRef = useRef(0)
   const expectedProgrammaticScrollTopRef = useRef<number | null>(null)
   const touchStartYRef = useRef<number | null>(null)
 
-  const stopFollowingTail = useCallback(() => {
+  const cancelPendingScrollCorrection = useCallback(() => {
     if (scrollTimeoutRef.current) {
       clearTimeout(scrollTimeoutRef.current)
       scrollTimeoutRef.current = null
     }
+    scrollCorrectionCleanupRef.current?.()
+    scrollCorrectionCleanupRef.current = null
+  }, [])
+
+  const stopFollowingTail = useCallback(() => {
+    cancelPendingScrollCorrection()
     isAutoScrollingRef.current = false
     isFollowingTailRef.current = false
     isAtBottomRef.current = false
     setIsAtBottom(false)
     userScrollUpUntilRef.current = Date.now() + 1000
-  }, [])
+  }, [cancelPendingScrollCorrection])
 
   const setProgrammaticScrollTop = useCallback(
     (viewport: HTMLDivElement, top: number) => {
@@ -125,11 +132,9 @@ export function useScrollManagement({
   // Cleanup scroll timeout on unmount
   useEffect(() => {
     return () => {
-      if (scrollTimeoutRef.current) {
-        clearTimeout(scrollTimeoutRef.current)
-      }
+      cancelPendingScrollCorrection()
     }
-  }, [])
+  }, [cancelPendingScrollCorrection])
 
   // [Tier 1] IntersectionObserver for findings visibility.
   // Replaces per-scroll getBoundingClientRect() calls with an observer that
@@ -189,10 +194,7 @@ export function useScrollManagement({
     const handleWheel = (e: WheelEvent) => {
       if (e.deltaY < 0) {
         // User scrolling up — cancel auto-scroll and block re-activation for 1s
-        if (scrollTimeoutRef.current) {
-          clearTimeout(scrollTimeoutRef.current)
-          scrollTimeoutRef.current = null
-        }
+        cancelPendingScrollCorrection()
         isAutoScrollingRef.current = false
 
         // Trackpads can emit upward wheel events even when the chat content
@@ -219,7 +221,7 @@ export function useScrollManagement({
 
     viewport.addEventListener('wheel', handleWheel, { passive: true })
     return () => viewport.removeEventListener('wheel', handleWheel)
-  }, [stopFollowingTail])
+  }, [cancelPendingScrollCorrection, stopFollowingTail])
 
   // Touch scrolling does not emit wheel events. Disable follow mode when the
   // gesture moves content upward (finger moves down), and resume only when the
@@ -521,10 +523,8 @@ export function useScrollManagement({
       if (!viewport) return
 
       // Clear existing timeout to prevent memory leaks
-      if (scrollTimeoutRef.current) {
-        clearTimeout(scrollTimeoutRef.current)
-        scrollTimeoutRef.current = null
-      }
+      cancelPendingScrollCorrection()
+      isAutoScrollingRef.current = false
 
       isAtBottomRef.current = true
       isFollowingTailRef.current = true
@@ -537,11 +537,6 @@ export function useScrollManagement({
         scrollProgrammaticallyToTail(viewport)
         return
       }
-
-      // Skip if a smooth scroll is already in flight — it will reach bottom.
-      // This prevents cascading animations when the auto-scroll effect fires
-      // rapidly (e.g. on every streaming content block).
-      if (isAutoScrollingRef.current) return
 
       isAutoScrollingRef.current = true
 
@@ -559,7 +554,10 @@ export function useScrollManagement({
         // Correct scroll position if smooth scroll ended at wrong spot
         // (DOM changes during animation can cause stale scrollHeight targeting)
         const { scrollTop, scrollHeight, clientHeight } = viewport
-        if (scrollHeight - scrollTop - clientHeight > 2) {
+        if (
+          isFollowingTailRef.current &&
+          scrollHeight - scrollTop - clientHeight > 2
+        ) {
           scrollProgrammaticallyToTail(viewport)
         }
       }
@@ -570,13 +568,17 @@ export function useScrollManagement({
           clearTimeout(scrollTimeoutRef.current)
           scrollTimeoutRef.current = null
         }
+        if (scrollCorrectionCleanupRef.current === cleanup) {
+          scrollCorrectionCleanupRef.current = null
+        }
       }
 
       viewport.addEventListener('scrollend', onScrollEnd, { once: true })
+      scrollCorrectionCleanupRef.current = cleanup
       // Fallback timeout in case scrollend doesn't fire
       scrollTimeoutRef.current = setTimeout(onScrollEnd, 400)
     },
-    [scrollProgrammaticallyToTail]
+    [cancelPendingScrollCorrection, scrollProgrammaticallyToTail]
   )
 
   // Mark scroll state as "at bottom" without performing any physical scroll.
@@ -594,15 +596,12 @@ export function useScrollManagement({
   // so that handleScroll is blocked during the animation (prevents it from
   // re-setting isAtBottom=true on early frames when still near bottom).
   const beginKeyboardScroll = useCallback(() => {
-    if (scrollTimeoutRef.current) {
-      clearTimeout(scrollTimeoutRef.current)
-      scrollTimeoutRef.current = null
-    }
+    cancelPendingScrollCorrection()
     isAutoScrollingRef.current = true
     isFollowingTailRef.current = false
     isAtBottomRef.current = false
     setIsAtBottom(false)
-  }, [])
+  }, [cancelPendingScrollCorrection])
 
   // End a user-initiated keyboard scroll.
   // Unblocks handleScroll and syncs isAtBottom with actual scroll position.

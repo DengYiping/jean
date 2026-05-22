@@ -49,14 +49,13 @@ function setupHook({ isSending = true }: SetupHookOptions = {}) {
   const virtualizedListRef = { current: null }
 
   function TestHarness() {
-    const { isAtBottom, scrollViewportRef, handleScroll } = useScrollManagement(
-      {
+    const { isAtBottom, scrollViewportRef, handleScroll, scrollToBottom } =
+      useScrollManagement({
         messages: [],
         virtualizedListRef,
         activeWorktreeId: 'worktree-1',
         isSending,
-      }
-    )
+      })
 
     return (
       <div
@@ -65,6 +64,9 @@ function setupHook({ isSending = true }: SetupHookOptions = {}) {
         onScroll={handleScroll}
       >
         <span data-testid="is-at-bottom">{String(isAtBottom)}</span>
+        <button type="button" onClick={() => scrollToBottom()}>
+          Scroll to bottom
+        </button>
         <div data-testid="content">
           <div data-plan-display data-testid="plan" />
         </div>
@@ -242,6 +244,22 @@ describe('useScrollManagement streaming auto-scroll', () => {
     })
 
     expect(getByTestId('is-at-bottom')).toHaveTextContent('false')
+  })
+
+  it('does not run a stale bottom correction after user scrolls up during smooth scroll', () => {
+    const { getByRole, viewport } = setupHook({ isSending: false })
+    viewport.scrollTop = 1500
+
+    fireEvent.click(getByRole('button', { name: 'Scroll to bottom' }))
+    expect(viewport.scrollTop).toBe(2000)
+
+    viewport.scrollTop = 1500
+    act(() => {
+      viewport.dispatchEvent(new WheelEvent('wheel', { deltaY: -100 }))
+    })
+    viewport.dispatchEvent(new Event('scrollend'))
+
+    expect(viewport.scrollTop).toBe(1500)
   })
 
   it('resets stale away-from-bottom state when content no longer overflows', async () => {

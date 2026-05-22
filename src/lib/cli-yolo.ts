@@ -3,10 +3,10 @@ import { chatQueryKeys } from '@/services/chat'
 import { projectsQueryKeys } from '@/services/projects'
 import { useChatStore } from '@/store/chat-store'
 import { useProjectsStore } from '@/store/projects-store'
-import { useUIStore } from '@/store/ui-store'
-import type { EffortLevel, ThinkingLevel } from '@/types/chat'
+import type { EffortLevel, ThinkingLevel, WorktreeSessions } from '@/types/chat'
 import type { AppPreferences, CliBackend } from '@/types/preferences'
 import type { CliYoloSessionResult, Project, Worktree } from '@/types/projects'
+import { openWorkspaceSession } from './workspace-navigation'
 
 function upsertById<T extends { id: string }>(
   items: T[] | undefined,
@@ -35,6 +35,17 @@ export function applyCliYoloNavigation(
     chatQueryKeys.session(result.session.id),
     result.session
   )
+  queryClient.setQueryData<WorktreeSessions>(
+    chatQueryKeys.sessions(result.worktree.id),
+    existing => ({
+      worktree_id: result.worktree.id,
+      sessions: upsertById(existing?.sessions, result.session),
+      active_session_id: result.session.id,
+      default_model: existing?.default_model,
+      version: existing?.version ?? 2,
+      branch_naming_completed: existing?.branch_naming_completed,
+    })
+  )
 
   queryClient.invalidateQueries({ queryKey: projectsQueryKeys.list() })
   queryClient.invalidateQueries({
@@ -46,24 +57,16 @@ export function applyCliYoloNavigation(
 
   const projectsStore = useProjectsStore.getState()
   const chatStore = useChatStore.getState()
-  const uiStore = useUIStore.getState()
 
   projectsStore.expandProject(result.project.id)
-  projectsStore.selectProject(result.project.id)
-  projectsStore.selectWorktree(result.worktree.id)
 
   chatStore.registerWorktreePath(result.worktree.id, result.worktree.path)
-  chatStore.setActiveSession(result.worktree.id, result.session.id, {
-    markOpened: false,
+  openWorkspaceSession({
+    projectId: result.project.id,
+    worktreeId: result.worktree.id,
+    worktreePath: result.worktree.path,
+    sessionId: result.session.id,
   })
-  chatStore.setActiveWorktree(result.worktree.id, result.worktree.path)
-  chatStore.setLastOpenedForProject(
-    result.project.id,
-    result.worktree.id,
-    result.session.id
-  )
-
-  uiStore.setSessionChatModalOpen(false)
 }
 
 export function resolveCliYoloExecutionConfig({

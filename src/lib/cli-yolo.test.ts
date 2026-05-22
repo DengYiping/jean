@@ -105,7 +105,7 @@ describe('cli yolo helpers', () => {
     })
   })
 
-  it('navigates to the prepared base session and primes the cache', () => {
+  it('navigates to the prepared base session in the session modal and primes the cache', () => {
     const queryClient = new QueryClient({
       defaultOptions: {
         queries: { retry: false },
@@ -148,18 +148,44 @@ describe('cli yolo helpers', () => {
 
     expect(useProjectsStore.getState().selectedProjectId).toBe('project-1')
     expect(useProjectsStore.getState().selectedWorktreeId).toBe('worktree-1')
-    expect(useChatStore.getState().activeWorktreeId).toBe('worktree-1')
-    expect(useChatStore.getState().activeWorktreePath).toBe('/tmp/repo')
+    expect(useChatStore.getState().activeWorktreeId).toBeNull()
+    expect(useChatStore.getState().activeWorktreePath).toBeNull()
     expect(useChatStore.getState().getActiveSession('worktree-1')).toBe(
       'session-1'
     )
+    expect(useChatStore.getState().worktreePaths['worktree-1']).toBe(
+      '/tmp/repo'
+    )
+    expect(useChatStore.getState().lastOpenedPerProject['project-1']).toEqual({
+      worktreeId: 'worktree-1',
+      sessionId: 'session-1',
+    })
     expect(queryClient.getQueryData(projectsQueryKeys.list())).toEqual([
       result.project,
     ])
     expect(
       queryClient.getQueryData(chatQueryKeys.session(result.session.id))
     ).toEqual(result.session)
-    expect(useUIStore.getState().sessionChatModalOpen).toBe(false)
+    expect(
+      queryClient.getQueryData(chatQueryKeys.sessions('worktree-1'))
+    ).toEqual({
+      worktree_id: 'worktree-1',
+      sessions: [result.session],
+      active_session_id: 'session-1',
+      default_model: undefined,
+      version: 2,
+      branch_naming_completed: undefined,
+    })
+    expect(
+      useUIStore.getState().autoOpenSessionWorktreeIds.has('worktree-1')
+    ).toBe(true)
+    expect(useUIStore.getState().pendingAutoOpenSessionIds['worktree-1']).toBe(
+      'session-1'
+    )
+    expect(useUIStore.getState().sessionChatModalOpen).toBe(true)
+    expect(useUIStore.getState().sessionChatModalWorktreeId).toBe(
+      'old-worktree'
+    )
   })
 
   it('resolves yolo overrides before falling back to backend defaults', () => {

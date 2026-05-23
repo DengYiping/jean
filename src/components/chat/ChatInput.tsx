@@ -51,7 +51,10 @@ import {
   parsePlainTextPromptMetadata,
   type PromptAttachmentMetadata,
 } from './message-content-utils'
-import { sanitizeTextInputValue } from '@/lib/input-sanitization'
+import {
+  sanitizeTextInputElement,
+  sanitizeTextInputValue,
+} from '@/lib/input-sanitization'
 
 import {
   IMAGE_ATTACHMENT_ACCEPT,
@@ -277,7 +280,7 @@ export const ChatInput = memo(function ChatInput({
   // Handle textarea value changes
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      const value = e.target.value
+      const value = sanitizeTextInputElement(e.target)
       if (!activeSessionId) return
 
       // PERFORMANCE: Update ref only, no React render

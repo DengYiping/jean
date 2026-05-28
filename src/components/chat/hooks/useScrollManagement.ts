@@ -108,6 +108,7 @@ export function useScrollManagement({
     isAutoScrollingRef.current = false
     isFollowingTailRef.current = false
     isAtBottomRef.current = false
+    expectedProgrammaticScrollTopRef.current = null
     setIsAtBottom(false)
     userScrollUpUntilRef.current = Date.now() + 1000
   }, [cancelPendingScrollCorrection])
@@ -186,7 +187,7 @@ export function useScrollManagement({
     }
   }, [])
 
-  // Detect user scrolling up during auto-scroll and break the lock
+  // Detect user wheel intent during auto-scroll and break the lock
   useEffect(() => {
     const viewport = scrollViewportRef.current
     if (!viewport) return
@@ -211,6 +212,17 @@ export function useScrollManagement({
 
         stopFollowingTail()
       } else if (e.deltaY > 0) {
+        const hasDesktopPlanPin =
+          !isMobile && !!viewport.querySelector('[data-plan-display]')
+        if (
+          hasDesktopPlanPin &&
+          hasScrollableOverflow(viewport) &&
+          !isViewportAtBottom(viewport)
+        ) {
+          stopFollowingTail()
+          return
+        }
+
         // User scrolling down — clear cooldown so bottom detection works
         userScrollUpUntilRef.current = 0
         if (isViewportAtBottom(viewport)) {
@@ -221,7 +233,7 @@ export function useScrollManagement({
 
     viewport.addEventListener('wheel', handleWheel, { passive: true })
     return () => viewport.removeEventListener('wheel', handleWheel)
-  }, [cancelPendingScrollCorrection, stopFollowingTail])
+  }, [cancelPendingScrollCorrection, isMobile, stopFollowingTail])
 
   // Touch scrolling does not emit wheel events. Disable follow mode when the
   // gesture moves content upward (finger moves down), and resume only when the

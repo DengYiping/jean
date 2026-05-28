@@ -143,6 +143,22 @@ describe('useScrollManagement streaming auto-scroll', () => {
     expect(viewport.scrollTop).toBe(600)
   })
 
+  it('does not re-pin the desktop plan after a normal downward wheel gesture', async () => {
+    const { viewport } = setupHook()
+
+    await triggerResize()
+    expect(viewport.scrollTop).toBe(600)
+
+    act(() => {
+      viewport.dispatchEvent(new WheelEvent('wheel', { deltaY: 100 }))
+    })
+    viewport.scrollTop = 700
+
+    await triggerResize()
+
+    expect(viewport.scrollTop).toBe(700)
+  })
+
   it('follows the streaming tail on mobile even when a plan is visible', async () => {
     isMobile = true
     const { viewport } = setupHook()

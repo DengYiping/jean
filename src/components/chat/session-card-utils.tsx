@@ -61,6 +61,7 @@ export interface SessionCardProps {
   onWorktreeYoloApprove?: () => void
   onToggleLabel?: () => void
   onToggleReview?: () => void
+  onReconnect?: () => void
   onRename?: (sessionId: string, newName: string) => void
   isRenaming?: boolean
   renameValue?: string
@@ -409,6 +410,31 @@ export function getResumeCommand(session: Session): string | null {
   }
   if (session.backend === 'opencode' && session.opencode_session_id) {
     return `opencode -s ${session.opencode_session_id}`
+  }
+  return null
+}
+
+export function getResumeArgs(
+  session: Session
+): { command: string; args: string[] } | null {
+  const command = session.terminal_command || ''
+  if (session.backend === 'claude' && session.claude_session_id) {
+    return {
+      command: command || 'claude',
+      args: ['--resume', session.claude_session_id],
+    }
+  }
+  if (session.backend === 'codex' && session.codex_thread_id) {
+    return {
+      command: command || 'codex',
+      args: ['resume', session.codex_thread_id],
+    }
+  }
+  if (session.backend === 'opencode' && session.opencode_session_id) {
+    return {
+      command: command || 'opencode',
+      args: ['--session', session.opencode_session_id],
+    }
   }
   return null
 }

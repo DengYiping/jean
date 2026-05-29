@@ -203,7 +203,7 @@ export const test = base.extend<TauriMockFixtures>({
             pendingTextFiles: [],
             model:
               (session.selected_model as string | undefined) ??
-              (session.backend === 'codex' ? 'gpt-5.4' : 'claude-opus-4-7'),
+              (session.backend === 'codex' ? 'gpt-5.4' : 'claude-opus-4-8[1m]'),
             provider: (session.selected_provider as string | null) ?? null,
             executionMode:
               (session.selected_execution_mode as string | undefined) ?? 'plan',

@@ -62,7 +62,7 @@ describe('ChatStore', () => {
 
   describe('defaults', () => {
     it('uses the current Claude default model id', () => {
-      expect(DEFAULT_MODEL).toBe('claude-opus-4-7')
+      expect(DEFAULT_MODEL).toBe('claude-opus-4-8[1m]')
     })
   })
 

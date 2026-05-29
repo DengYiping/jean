@@ -120,6 +120,7 @@ interface MobileToolbarMenuProps {
   onMerge: () => void
   onMergePr: () => void
   onResolveConflicts: () => void
+  onOpenMagicModal: () => void
   installedBackends: ('claude' | 'codex' | 'opencode')[]
   onBackendChange: (backend: 'claude' | 'codex' | 'opencode') => void
   onSetExecutionMode: (mode: ExecutionMode) => void
@@ -174,6 +175,7 @@ export function MobileToolbarMenu({
   onMerge,
   onMergePr,
   onResolveConflicts: _onResolveConflicts,
+  onOpenMagicModal,
   installedBackends,
   onBackendChange,
   onSetExecutionMode,
@@ -270,6 +272,21 @@ export function MobileToolbarMenu({
           align={isMobile ? 'end' : 'start'}
           className="w-56"
         >
+          <DropdownMenuItem
+            onClick={() => {
+              setMenuOpen(false)
+              onOpenMagicModal()
+            }}
+          >
+            <Wand2 className="h-4 w-4" />
+            Magic
+            <span className="ml-auto text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+              ⌘M
+            </span>
+          </DropdownMenuItem>
+
+          <DropdownMenuSeparator />
+
           <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">
             Context
           </div>

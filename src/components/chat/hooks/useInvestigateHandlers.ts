@@ -43,6 +43,23 @@ export interface WorkflowRunDetail {
   projectPath?: string | null
 }
 
+interface SendMessageArgs {
+  sessionId: string
+  worktreeId: string
+  worktreePath: string
+  message: string
+  model?: string
+  executionMode?: ExecutionMode
+  thinkingLevel?: ThinkingLevel
+  effortLevel?: string
+  mcpConfig?: string
+  customProfileName?: string
+  parallelExecutionPrompt?: string
+  chromeEnabled?: boolean
+  aiLanguage?: string
+  backend?: string
+}
+
 interface UseInvestigateHandlersParams {
   activeSessionId: string | null | undefined
   activeWorktreeId: string | null | undefined
@@ -56,8 +73,10 @@ interface UseInvestigateHandlersParams {
   enabledMcpServersRef: RefObject<string[]>
   activeWorktreeIdRef: RefObject<string | null | undefined>
   activeWorktreePathRef: RefObject<string | null | undefined>
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  sendMessage: { mutate: (args: any, opts?: any) => void }
+  sendMessage: {
+    mutate: (args: SendMessageArgs, opts?: { onSettled?: () => void }) => void
+    mutateAsync?: (args: SendMessageArgs) => Promise<unknown>
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   setSessionProvider: { mutate: (args: any) => void }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -74,6 +93,10 @@ interface UseInvestigateHandlersParams {
         onError?: (error: unknown) => void
       }
     ) => void
+    mutateAsync?: (args: {
+      worktreeId: string
+      worktreePath: string
+    }) => Promise<{ id: string }>
   }
   resolveCustomProfile: (
     model: string,
@@ -736,10 +759,17 @@ export function useInvestigateHandlers({
   )
 
   const handleReviewComments = useCallback(
-    async (prompt: string) => {
+    async (promptOrPrompts: string | string[]) => {
       const worktreeId = activeWorktreeIdRef.current
       const worktreePath = activeWorktreePathRef.current
       if (!worktreeId || !worktreePath) return
+      const prompts = Array.isArray(promptOrPrompts)
+        ? promptOrPrompts.filter(prompt => prompt.trim().length > 0)
+        : [promptOrPrompts].filter(prompt => prompt.trim().length > 0)
+      if (prompts.length === 0) return
+      const reviewExecutionMode = Array.isArray(promptOrPrompts)
+        ? 'plan'
+        : executionModeRef.current
 
       const reviewCommentsBackend = resolveMagicPromptBackend(
         preferences?.magic_prompt_backends,
@@ -787,7 +817,7 @@ export function useInvestigateHandlers({
         !isCustom && supportsAdaptiveThinking(reviewCommentsModel, cliVersion)
 
       // Helper to send the message once we have a session ID
-      const sendInSession = (sessionId: string) => {
+      const sendInSession = (sessionId: string, prompt: string) => {
         const {
           addSendingSession,
           setLastSentMessage,
@@ -807,7 +837,7 @@ export function useInvestigateHandlers({
           setEffortLevel(sessionId, reviewCommentsEffortLevel)
         }
         setSelectedProvider(sessionId, reviewCommentsProvider)
-        setExecutingMode(sessionId, executionModeRef.current)
+        setExecutingMode(sessionId, reviewExecutionMode)
         setZustandBackend(sessionId, reviewCommentsBackend)
 
         useChatStore.getState().setSelectedModel(sessionId, reviewCommentsModel)
@@ -851,58 +881,84 @@ export function useInvestigateHandlers({
               : old
         )
 
-        sendMessage.mutate(
-          {
+        const args = {
+          sessionId,
+          worktreeId,
+          worktreePath,
+          message: prompt,
+          model: reviewCommentsModel,
+          executionMode: reviewExecutionMode,
+          thinkingLevel: selectedThinkingLevelRef.current,
+          effortLevel: useAdaptive
+            ? (reviewCommentsEffort ?? undefined)
+            : undefined,
+          mcpConfig: buildMcpConfigJson(
+            mcpServersDataRef.current ?? [],
+            enabledMcpServersRef.current,
+            reviewCommentsBackend
+          ),
+          customProfileName: resolvedProfile,
+          parallelExecutionPrompt: resolveParallelExecutionPromptForSession(
             sessionId,
+            preferences
+          ),
+          chromeEnabled: preferences?.chrome_enabled ?? false,
+          aiLanguage: preferences?.ai_language,
+          backend: reviewCommentsBackend,
+        }
+
+        if (sendMessage.mutateAsync) {
+          return sendMessage
+            .mutateAsync(args)
+            .finally(() => inputRef.current?.focus())
+        }
+        sendMessage.mutate(args, { onSettled: () => inputRef.current?.focus() })
+        return Promise.resolve()
+      }
+
+      const createAndSend = async (prompt: string) => {
+        const onSession = async (session: { id: string }) => {
+          const { setActiveSession, copySessionSettings, activeSessionIds } =
+            useChatStore.getState()
+          const currentSessionId = activeSessionIds[worktreeId]
+          if (currentSessionId) {
+            copySessionSettings(currentSessionId, session.id)
+          }
+          setActiveSession(worktreeId, session.id)
+          queryClient.invalidateQueries({
+            queryKey: chatQueryKeys.sessions(worktreeId),
+          })
+          await sendInSession(session.id, prompt)
+        }
+
+        if (createSession.mutateAsync) {
+          const session = await createSession.mutateAsync({
             worktreeId,
             worktreePath,
-            message: prompt,
-            model: reviewCommentsModel,
-            executionMode: executionModeRef.current,
-            thinkingLevel: selectedThinkingLevelRef.current,
-            effortLevel: useAdaptive
-              ? (reviewCommentsEffort ?? undefined)
-              : undefined,
-            mcpConfig: buildMcpConfigJson(
-              mcpServersDataRef.current ?? [],
-              enabledMcpServersRef.current,
-              reviewCommentsBackend
-            ),
-            customProfileName: resolvedProfile,
-            parallelExecutionPrompt: resolveParallelExecutionPromptForSession(
-              sessionId,
-              preferences
-            ),
-            chromeEnabled: preferences?.chrome_enabled ?? false,
-            aiLanguage: preferences?.ai_language,
-            backend: reviewCommentsBackend,
-          },
-          { onSettled: () => inputRef.current?.focus() }
+          })
+          await onSession(session)
+          return
+        }
+
+        createSession.mutate(
+          { worktreeId, worktreePath },
+          {
+            onSuccess: session => {
+              void onSession(session)
+            },
+            onError: error => {
+              console.error(
+                '[REVIEW-COMMENTS] Failed to create session:',
+                error
+              )
+            },
+          }
         )
       }
 
-      // Create a new session for review comments
-      createSession.mutate(
-        { worktreeId, worktreePath },
-        {
-          onSuccess: session => {
-            const { setActiveSession, copySessionSettings, activeSessionIds } =
-              useChatStore.getState()
-            const currentSessionId = activeSessionIds[worktreeId]
-            if (currentSessionId) {
-              copySessionSettings(currentSessionId, session.id)
-            }
-            setActiveSession(worktreeId, session.id)
-            queryClient.invalidateQueries({
-              queryKey: chatQueryKeys.sessions(worktreeId),
-            })
-            sendInSession(session.id)
-          },
-          onError: error => {
-            console.error('[REVIEW-COMMENTS] Failed to create session:', error)
-          },
-        }
-      )
+      for (const prompt of prompts) {
+        await createAndSend(prompt)
+      }
     },
     [
       sendMessage,

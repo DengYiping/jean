@@ -23,6 +23,7 @@ import {
   Hammer,
   MoreHorizontal,
   Pencil,
+  RefreshCw,
   Sparkles,
   Tag,
   Terminal,
@@ -51,7 +52,11 @@ import { useChatStore } from '@/store/chat-store'
 import { useTerminalStore } from '@/store/terminal-store'
 import { useBrowserStore } from '@/store/browser-store'
 import { useUIStore } from '@/store/ui-store'
-import { useSessions, useRenameSession } from '@/services/chat'
+import {
+  reconnectNativeCliSession,
+  useRenameSession,
+  useSessions,
+} from '@/services/chat'
 import { usePreferences } from '@/services/preferences'
 import {
   useBuildScript,
@@ -99,6 +104,7 @@ import { getEffectiveEditor, getOpenInDefaultLabel } from '@/types/preferences'
 import {
   computeSessionCardData,
   type ChatStoreState,
+  getResumeArgs,
   getResumeCommand,
   statusConfig,
   type SessionStatus,
@@ -324,6 +330,9 @@ export function SessionChatModal({
     !!currentSession?.digest
   const currentResumeCommand = currentSession
     ? getResumeCommand(currentSession)
+    : null
+  const currentResumeArgs = currentSession
+    ? getResumeArgs(currentSession)
     : null
 
   // Git status for header badges
@@ -1190,6 +1199,20 @@ export function SessionChatModal({
                         Copy Resume Command
                       </DropdownMenuItem>
                     )}
+                    {currentSession?.primary_surface === 'terminal' &&
+                      currentResumeArgs && (
+                        <DropdownMenuItem
+                          onSelect={() =>
+                            void reconnectNativeCliSession(
+                              currentSession,
+                              worktreeId
+                            )
+                          }
+                        >
+                          <RefreshCw className="h-4 w-4" />
+                          Reconnect
+                        </DropdownMenuItem>
+                      )}
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
                       disabled={!hasRecap}
@@ -1253,6 +1276,7 @@ export function SessionChatModal({
                       const sessionHasRecap =
                         !!sessionDigests[session.id] || !!session.digest
                       const resumeCommand = getResumeCommand(session)
+                      const resumeArgs = getResumeArgs(session)
                       return (
                         <ContextMenu key={session.id}>
                           <ContextMenuTrigger asChild>
@@ -1380,6 +1404,20 @@ export function SessionChatModal({
                                 Copy Resume Command
                               </ContextMenuItem>
                             )}
+                            {session.primary_surface === 'terminal' &&
+                              resumeArgs && (
+                                <ContextMenuItem
+                                  onSelect={() =>
+                                    void reconnectNativeCliSession(
+                                      session,
+                                      worktreeId
+                                    )
+                                  }
+                                >
+                                  <RefreshCw className="mr-2 h-4 w-4" />
+                                  Reconnect
+                                </ContextMenuItem>
+                              )}
                             <ContextMenuSeparator />
                             <ContextMenuItem
                               disabled={!sessionHasRecap}

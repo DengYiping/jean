@@ -142,7 +142,7 @@ describe('codex model provider overrides', () => {
 describe('magic prompt review comments defaults', () => {
   it('includes review comments overrides in the shared defaults', () => {
     expect(DEFAULT_MAGIC_PROMPT_MODELS.review_comments_model).toBe(
-      'claude-opus-4-7'
+      'claude-opus-4-8[1m]'
     )
     expect(DEFAULT_MAGIC_PROMPT_PROVIDERS.review_comments_provider).toBeNull()
     expect(DEFAULT_MAGIC_PROMPT_EFFORTS.review_comments_effort).toBeNull()

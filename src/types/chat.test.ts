@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { ToolCall } from './chat'
-import { codexTodoListToTodos, getTodosFromToolCall } from './chat'
+import {
+  buildCodexUserInputAnswerMap,
+  codexTodoListToTodos,
+  getTodosFromToolCall,
+  isAskUserQuestion,
+  normalizeCodexQuestions,
+} from './chat'
 
 describe('chat todo adapters', () => {
   it('normalizes Codex todo list items into widget todos', () => {
@@ -76,5 +82,54 @@ describe('chat todo adapters', () => {
         status: 'completed',
       },
     ])
+  })
+})
+
+describe('Codex user input adapters', () => {
+  it('recognizes and normalizes native request_user_input questions', () => {
+    const toolCall: ToolCall = {
+      id: 'question-1',
+      name: 'request_user_input',
+      input: {
+        questions: [
+          {
+            question: 'Choose an option',
+            options: [{ label: 'A', description: 'First' }],
+          },
+        ],
+      },
+    }
+
+    expect(isAskUserQuestion(toolCall)).toBe(true)
+    expect(
+      normalizeCodexQuestions(
+        (toolCall.input as { questions: unknown[] }).questions
+      )
+    ).toEqual([
+      {
+        id: '0',
+        question: 'Choose an option',
+        header: undefined,
+        multiSelect: false,
+        isOther: false,
+        isSecret: false,
+        options: [{ label: 'A', description: 'First' }],
+      },
+    ])
+  })
+
+  it('maps Codex answers by raw question id', () => {
+    expect(
+      buildCodexUserInputAnswerMap(
+        [
+          {
+            id: 'choice',
+            question: 'Pick',
+            options: [{ label: 'One' }, { label: 'Two' }],
+          },
+        ],
+        [{ questionIndex: 0, selectedOptions: [1] }]
+      )
+    ).toEqual({ choice: { answers: ['Two'] } })
   })
 })

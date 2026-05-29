@@ -1,5 +1,10 @@
 import type { ToolCall, ContentBlock, Todo } from '@/types/chat'
-import { isTodoWrite, isCollabToolCall } from '@/types/chat'
+import {
+  isTodoWrite,
+  isCollabToolCall,
+  isAskUserQuestion,
+  normalizeCodexQuestions,
+} from '@/types/chat'
 
 /** Check if a tool is a task/agent container (Claude CLI uses both names) */
 function isAgentTool(name: string): boolean {
@@ -50,7 +55,7 @@ export type GroupedToolCall =
  */
 function isSpecialTool(toolCall: ToolCall): boolean {
   return (
-    toolCall.name === 'AskUserQuestion' ||
+    isAskUserQuestion(toolCall) ||
     toolCall.name === 'ExitPlanMode' ||
     toolCall.name === 'EnterPlanMode' ||
     toolCall.name === 'FileChange' ||
@@ -303,7 +308,7 @@ export function buildTimeline(
       if (!toolCall) continue
 
       // Handle special tools
-      if (toolCall.name === 'AskUserQuestion') {
+      if (isAskUserQuestion(toolCall)) {
         // Skip if we've already processed this AskUserQuestion
         if (renderedAskUserQuestions.has(toolCall.id)) continue
         renderedAskUserQuestions.add(toolCall.id)
@@ -320,10 +325,23 @@ export function buildTimeline(
           }
         }
 
+        const questionToolCall =
+          toolCall.name === 'request_user_input' || toolCall.name === 'question'
+            ? {
+                ...toolCall,
+                input: {
+                  ...toolCall.input,
+                  questions: normalizeCodexQuestions(
+                    (toolCall.input as { questions: unknown[] }).questions
+                  ),
+                },
+              }
+            : toolCall
+
         // Render inline in natural position (not at end)
         result.push({
           type: 'askUserQuestion',
-          tool: toolCall,
+          tool: questionToolCall,
           introText,
           key: `ask-${toolCall.id}`,
         })

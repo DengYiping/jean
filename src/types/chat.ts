@@ -681,6 +681,95 @@ export interface AskUserQuestionInput {
   rpcId?: number
 }
 
+export function normalizeCodexQuestions(questions: unknown): Question[] {
+  if (!Array.isArray(questions)) return []
+
+  return questions
+    .filter(
+      (question): question is Record<string, unknown> =>
+        typeof question === 'object' && question !== null
+    )
+    .map((question, index) => {
+      const options = Array.isArray(question.options)
+        ? question.options
+            .filter(
+              (option): option is Record<string, unknown> =>
+                typeof option === 'object' && option !== null
+            )
+            .map(option => ({
+              label:
+                typeof option.label === 'string'
+                  ? option.label
+                  : String(option.label ?? ''),
+              description:
+                typeof option.description === 'string'
+                  ? option.description
+                  : undefined,
+            }))
+            .filter(option => option.label.length > 0)
+        : []
+
+      const id =
+        typeof question.id === 'string' && question.id.length > 0
+          ? question.id
+          : String(index)
+      const text =
+        typeof question.question === 'string'
+          ? question.question
+          : typeof question.prompt === 'string'
+            ? question.prompt
+            : ''
+
+      return {
+        id,
+        question: text,
+        header:
+          typeof question.header === 'string' ? question.header : undefined,
+        multiSelect:
+          question.multiSelect === true || question.multiple === true,
+        isOther: question.isOther === true,
+        isSecret: question.isSecret === true,
+        options,
+      }
+    })
+    .filter(question => question.question.length > 0)
+}
+
+export type CodexUserInputAnswerMap = Record<string, { answers: string[] }>
+
+export function buildCodexUserInputAnswerMap(
+  rawQuestions: unknown[],
+  answers: QuestionAnswer[]
+): CodexUserInputAnswerMap {
+  return Object.fromEntries(
+    rawQuestions.map((rawQuestion, index) => {
+      const question =
+        typeof rawQuestion === 'object' && rawQuestion !== null
+          ? (rawQuestion as Record<string, unknown>)
+          : {}
+      const rawOptions = Array.isArray(question.options) ? question.options : []
+      const answer = answers.find(item => item.questionIndex === index)
+      const selected = answer?.customText?.trim()
+        ? [answer.customText.trim()]
+        : (answer?.selectedOptions ?? [])
+            .map(optionIndex => {
+              const rawOption = rawOptions[optionIndex]
+              const option =
+                typeof rawOption === 'object' && rawOption !== null
+                  ? (rawOption as Record<string, unknown>)
+                  : {}
+              return typeof option.label === 'string' ? option.label : undefined
+            })
+            .filter((label): label is string => Boolean(label))
+      const questionId =
+        typeof question.id === 'string' && question.id.length > 0
+          ? question.id
+          : String(index)
+      return [questionId, { answers: selected }]
+    })
+  )
+}
+
 /**
  * Type guard to check if a tool call is AskUserQuestion
  */
@@ -688,7 +777,9 @@ export function isAskUserQuestion(
   toolCall: ToolCall
 ): toolCall is ToolCall & { input: AskUserQuestionInput } {
   return (
-    toolCall.name === 'AskUserQuestion' &&
+    (toolCall.name === 'AskUserQuestion' ||
+      toolCall.name === 'question' ||
+      toolCall.name === 'request_user_input') &&
     typeof toolCall.input === 'object' &&
     toolCall.input !== null &&
     'questions' in toolCall.input &&

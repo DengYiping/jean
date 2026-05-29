@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   computeSessionCardData,
+  getResumeArgs,
   type ChatStoreState,
 } from './session-card-utils'
 import type { Session } from '@/types/chat'
@@ -204,5 +205,51 @@ describe('computeSessionCardData', () => {
 
     expect(card.isWaiting).toBe(true)
     expect(card.status).toBe('waiting')
+  })
+})
+
+describe('getResumeArgs', () => {
+  it('builds resume args for terminal CLI sessions', () => {
+    expect(
+      getResumeArgs(
+        createSession({
+          backend: 'claude',
+          primary_surface: 'terminal',
+          terminal_command: '/usr/local/bin/claude',
+          claude_session_id: 'claude-1',
+        })
+      )
+    ).toEqual({
+      command: '/usr/local/bin/claude',
+      args: ['--resume', 'claude-1'],
+    })
+
+    expect(
+      getResumeArgs(
+        createSession({
+          backend: 'codex',
+          primary_surface: 'terminal',
+          codex_thread_id: 'codex-1',
+        })
+      )
+    ).toEqual({ command: 'codex', args: ['resume', 'codex-1'] })
+
+    expect(
+      getResumeArgs(
+        createSession({
+          backend: 'opencode',
+          primary_surface: 'terminal',
+          opencode_session_id: 'opencode-1',
+        })
+      )
+    ).toEqual({ command: 'opencode', args: ['--session', 'opencode-1'] })
+  })
+
+  it('returns null without a backend resume id', () => {
+    expect(
+      getResumeArgs(
+        createSession({ backend: 'claude', primary_surface: 'chat' })
+      )
+    ).toBeNull()
   })
 })

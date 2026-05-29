@@ -352,111 +352,121 @@ export function ReviewCommentsDialog() {
     conversationItems.length,
   ])
 
-  const handleSendToChat = useCallback(() => {
-    if (!prNumber) return
+  const handleSendToChat = useCallback(
+    (separate = false) => {
+      if (!prNumber) return
 
-    const currentSelected = tab === 'inline' ? selected : conversationSelected
-    if (currentSelected.size === 0) return
+      const currentSelected = tab === 'inline' ? selected : conversationSelected
+      if (currentSelected.size === 0) return
 
-    setIsSending(true)
+      setIsSending(true)
 
-    let formattedComments: string
+      let formattedComments: string[]
 
-    if (tab === 'inline') {
-      formattedComments = comments
-        .filter((_, i) => selected.has(i))
-        .map(c => {
-          const lineInfo = c.line ? `:${c.line}` : ''
-          return `### File: ${c.path}${lineInfo}
+      if (tab === 'inline') {
+        formattedComments = comments
+          .filter((_, i) => selected.has(i))
+          .map(c => {
+            const lineInfo = c.line ? `:${c.line}` : ''
+            return `### File: ${c.path}${lineInfo}
 **@${c.author.login}** (${c.createdAt}):
 ${c.body}
 
 \`\`\`diff
 ${c.diffHunk}
 \`\`\``
-        })
-        .join('\n\n---\n\n')
-    } else {
-      formattedComments = conversationItems
-        .filter((_, i) => conversationSelected.has(i))
-        .map(item => {
-          if (item.kind === 'review') {
-            const r = item.data
-            const date = r.submittedAt ?? ''
-            return `### Review (${reviewStateLabel(r.state)})
+          })
+      } else {
+        formattedComments = conversationItems
+          .filter((_, i) => conversationSelected.has(i))
+          .map(item => {
+            if (item.kind === 'review') {
+              const r = item.data
+              const date = r.submittedAt ?? ''
+              return `### Review (${reviewStateLabel(r.state)})
 **@${r.author.login}** — ${date}:
 ${r.body}`
-          } else {
-            const c = item.data
-            const date = getCreatedAt(c as unknown as Record<string, unknown>)
-            return `### PR Comment
+            } else {
+              const c = item.data
+              const date = getCreatedAt(c as unknown as Record<string, unknown>)
+              return `### PR Comment
 **@${c.author.login}** — ${date}:
 ${c.body}`
-          }
-        })
-        .join('\n\n---\n\n')
-    }
+            }
+          })
+      }
 
-    // Build prompt from magic prompt template
-    const customPrompt = preferences?.magic_prompts?.review_comments
-    const template =
-      customPrompt && customPrompt.trim()
-        ? customPrompt
-        : DEFAULT_REVIEW_COMMENTS_PROMPT
-    const prompt = template
-      .replace(/\{prNumber\}/g, String(prNumber))
-      .replace(/\{reviewComments\}/g, formattedComments)
+      // Build prompt from magic prompt template
+      const customPrompt = preferences?.magic_prompts?.review_comments
+      const template =
+        customPrompt && customPrompt.trim()
+          ? customPrompt
+          : DEFAULT_REVIEW_COMMENTS_PROMPT
+      const buildPrompt = (commentsText: string) =>
+        template
+          .replace(/\{prNumber\}/g, String(prNumber))
+          .replace(/\{reviewComments\}/g, commentsText)
 
-    const targetWorktreeId = worktree?.id ?? selectedWorktreeId
-    const targetWorktreePath = worktree?.path
-    if (!targetWorktreeId || !targetWorktreePath) {
-      setError('No worktree selected for these PR comments')
-      setIsSending(false)
-      return
-    }
+      const prompt = buildPrompt(formattedComments.join('\n\n---\n\n'))
+      const prompts = separate ? formattedComments.map(buildPrompt) : undefined
 
-    // Store the command first. The mounted ChatWindow consumes it directly; if
-    // no ChatWindow is mounted yet, the canvas modal opened below consumes it.
-    const chatState = useChatStore.getState()
-    chatState.setPendingMagicCommand({ command: 'review-comments', prompt })
+      const targetWorktreeId = worktree?.id ?? selectedWorktreeId
+      const targetWorktreePath = worktree?.path
+      if (!targetWorktreeId || !targetWorktreePath) {
+        setError('No worktree selected for these PR comments')
+        setIsSending(false)
+        return
+      }
 
-    // Close dialog
-    setReviewCommentsModalOpen(false)
-
-    const activeChatHasTargetWorktree =
-      chatState.activeWorktreeId === targetWorktreeId &&
-      Boolean(chatState.activeWorktreePath)
-    const sessionModalHasTargetWorktree =
-      sessionChatModalOpen && sessionChatModalWorktreeId === targetWorktreeId
-
-    if (activeChatHasTargetWorktree || sessionModalHasTargetWorktree) {
-      return
-    }
-
-    window.dispatchEvent(
-      new CustomEvent('open-session-modal', {
-        detail: {
-          worktreeId: targetWorktreeId,
-          worktreePath: targetWorktreePath,
-          sessionId: '',
-        },
+      // Store the command first. The mounted ChatWindow consumes it directly; if
+      // no ChatWindow is mounted yet, the canvas modal opened below consumes it.
+      const chatState = useChatStore.getState()
+      chatState.setPendingMagicCommand({
+        command: 'review-comments',
+        prompt,
+        prompts,
+        executionMode: separate ? 'plan' : undefined,
       })
-    )
-  }, [
-    tab,
-    selected,
-    comments,
-    conversationSelected,
-    conversationItems,
-    prNumber,
-    preferences?.magic_prompts?.review_comments,
-    setReviewCommentsModalOpen,
-    selectedWorktreeId,
-    sessionChatModalOpen,
-    sessionChatModalWorktreeId,
-    worktree?.id,
-    worktree?.path,
-  ])
+
+      // Close dialog
+      setReviewCommentsModalOpen(false)
+
+      const activeChatHasTargetWorktree =
+        chatState.activeWorktreeId === targetWorktreeId &&
+        Boolean(chatState.activeWorktreePath)
+      const sessionModalHasTargetWorktree =
+        sessionChatModalOpen && sessionChatModalWorktreeId === targetWorktreeId
+
+      if (activeChatHasTargetWorktree || sessionModalHasTargetWorktree) {
+        return
+      }
+
+      window.dispatchEvent(
+        new CustomEvent('open-session-modal', {
+          detail: {
+            worktreeId: targetWorktreeId,
+            worktreePath: targetWorktreePath,
+            sessionId: '',
+          },
+        })
+      )
+    },
+    [
+      tab,
+      selected,
+      comments,
+      conversationSelected,
+      conversationItems,
+      prNumber,
+      preferences?.magic_prompts?.review_comments,
+      setReviewCommentsModalOpen,
+      selectedWorktreeId,
+      sessionChatModalOpen,
+      sessionChatModalWorktreeId,
+      worktree?.id,
+      worktree?.path,
+    ]
+  )
 
   const hasAnyComments = comments.length > 0 || conversationItems.length > 0
 
@@ -725,7 +735,7 @@ ${c.body}`
               <Button
                 size="sm"
                 disabled={activeSelected.size === 0 || isSending}
-                onClick={handleSendToChat}
+                onClick={() => handleSendToChat(false)}
               >
                 {isSending ? (
                   <Loader2 className="size-3.5 mr-1.5 animate-spin" />
@@ -733,6 +743,19 @@ ${c.body}`
                   <MessageSquare className="size-3.5 mr-1.5" />
                 )}
                 Send to Chat ({activeSelected.size})
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={activeSelected.size === 0 || isSending}
+                onClick={() => handleSendToChat(true)}
+              >
+                {isSending ? (
+                  <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+                ) : (
+                  <MessagesSquare className="size-3.5 mr-1.5" />
+                )}
+                Send Separately ({activeSelected.size})
               </Button>
             </div>
           </>

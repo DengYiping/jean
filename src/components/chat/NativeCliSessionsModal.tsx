@@ -60,6 +60,7 @@ interface NativeCliSessionsModalProps {
   worktreePath: string
   command: string | null
   commandArgs?: string[] | null
+  initialCommandArgs?: string[]
   onBack: () => void
   onClose: () => void
   onOpenSessionModal: (
@@ -116,6 +117,7 @@ export function NativeCliSessionsModal({
   worktreePath,
   command,
   commandArgs,
+  initialCommandArgs = [],
   onBack,
   onClose,
   onOpenSessionModal,
@@ -248,6 +250,32 @@ export function NativeCliSessionsModal({
     [backend, worktreeId]
   )
 
+  const shouldAppendPreparedContext = useCallback(
+    (savedArgs: string[]): boolean => {
+      if (!backend) return false
+      const baseArgs = commandArgs ?? []
+      const expectedPrefix = [...baseArgs, ...initialCommandArgs]
+      if (expectedPrefix.length === 0) return false
+      return expectedPrefix.every((arg, index) => savedArgs[index] === arg)
+    },
+    [backend, commandArgs, initialCommandArgs]
+  )
+
+  const resolveTerminalCommandArgs = useCallback(
+    async (session: Session): Promise<string[]> => {
+      const savedArgs = session.terminal_command_args ?? []
+      if (savedArgs.length === 0) {
+        return prepareCommandArgs(session.id)
+      }
+      if (!shouldAppendPreparedContext(savedArgs)) {
+        return savedArgs
+      }
+      const preparedArgs = await prepareCommandArgs(session.id)
+      return [...savedArgs, ...preparedArgs]
+    },
+    [prepareCommandArgs, shouldAppendPreparedContext]
+  )
+
   const openTerminalSession = useCallback(
     async (session: Session) => {
       setOpeningSessionId(session.id)
@@ -263,11 +291,7 @@ export function NativeCliSessionsModal({
 
         let terminalId = existingTerminal?.id
         if (!terminalId) {
-          const resolvedCommandArgs =
-            session.terminal_command_args &&
-            session.terminal_command_args.length > 0
-              ? session.terminal_command_args
-              : await prepareCommandArgs(session.id)
+          const resolvedCommandArgs = await resolveTerminalCommandArgs(session)
           terminalId = terminalStore.addTerminal(
             worktreeId,
             session.terminal_command ?? command ?? undefined,
@@ -297,13 +321,14 @@ export function NativeCliSessionsModal({
       command,
       onClose,
       onOpenSessionModal,
-      prepareCommandArgs,
+      resolveTerminalCommandArgs,
       worktreeId,
       worktreePath,
     ]
   )
 
   const createNewSession = useCallback(() => {
+    const sessionCommandArgs = [...(commandArgs ?? []), ...initialCommandArgs]
     createSession.mutate(
       {
         worktreeId,
@@ -312,7 +337,7 @@ export function NativeCliSessionsModal({
         backend,
         primarySurface: 'terminal',
         terminalCommand: command,
-        terminalCommandArgs: commandArgs ?? [],
+        terminalCommandArgs: sessionCommandArgs,
         terminalLabel: label,
       },
       {
@@ -321,7 +346,7 @@ export function NativeCliSessionsModal({
             ...session,
             primary_surface: 'terminal',
             terminal_command: command,
-            terminal_command_args: commandArgs ?? [],
+            terminal_command_args: sessionCommandArgs,
             terminal_label: label,
           })
         },
@@ -332,6 +357,7 @@ export function NativeCliSessionsModal({
     command,
     commandArgs,
     createSession,
+    initialCommandArgs,
     label,
     openTerminalSession,
     worktreeId,

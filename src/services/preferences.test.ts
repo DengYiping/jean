@@ -214,7 +214,7 @@ describe('preferences service', () => {
       await waitFor(() => expect(result.current.isSuccess).toBe(true))
 
       expect(result.current.data?.theme).toBe('system')
-      expect(result.current.data?.selected_model).toBe('claude-opus-4-7')
+      expect(result.current.data?.selected_model).toBe('claude-opus-4-8[1m]')
       expect(result.current.data?.selected_codex_model).toBe('gpt-5.5')
       expect(result.current.data?.compact_chat_view_enabled).toBe(false)
       expect(result.current.data?.jean_mcp_enabled).toBe(true)

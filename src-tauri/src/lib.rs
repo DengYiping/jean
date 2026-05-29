@@ -87,7 +87,7 @@ fn greet(name: &str) -> String {
 pub struct AppPreferences {
     pub theme: String,
     #[serde(default = "default_model")]
-    pub selected_model: String, // Claude model: claude-opus-4-7, claude-opus-4-6, sonnet, haiku
+    pub selected_model: String, // Claude model: claude-opus-4-8[1m], claude-opus-4-7, sonnet, haiku
     #[serde(default = "default_thinking_level")]
     pub thinking_level: String, // Thinking level: off, think, megathink, ultrathink
     #[serde(default = "default_effort_level")]
@@ -103,11 +103,11 @@ pub struct AppPreferences {
     #[serde(default = "default_auto_branch_naming")]
     pub auto_branch_naming: bool, // Automatically generate branch names from first message
     #[serde(default = "default_branch_naming_model")]
-    pub branch_naming_model: String, // Model for generating branch names: haiku, sonnet, claude-opus-4-7, claude-opus-4-6
+    pub branch_naming_model: String, // Model for generating branch names: haiku, sonnet, claude-opus-4-8[1m], claude-opus-4-7
     #[serde(default = "default_auto_session_naming")]
     pub auto_session_naming: bool, // Automatically generate session names from first message
     #[serde(default = "default_session_naming_model")]
-    pub session_naming_model: String, // Model for generating session names: haiku, sonnet, claude-opus-4-7, claude-opus-4-6
+    pub session_naming_model: String, // Model for generating session names: haiku, sonnet, claude-opus-4-8[1m], claude-opus-4-7
     #[serde(default = "default_font_size")]
     pub ui_font_size: u32, // Font size for UI text in pixels (10-24)
     #[serde(default = "default_font_size")]
@@ -379,7 +379,7 @@ fn default_chat_font() -> String {
 }
 
 fn default_model() -> String {
-    "claude-opus-4-7".to_string()
+    "claude-opus-4-8[1m]".to_string()
 }
 
 fn default_thinking_level() -> String {
@@ -883,7 +883,7 @@ mod tests {
     fn app_preferences_defaults_use_current_claude_model_ids() {
         let prefs = AppPreferences::default();
 
-        assert_eq!(prefs.selected_model, "claude-opus-4-7");
+        assert_eq!(prefs.selected_model, "claude-opus-4-8[1m]");
         assert_eq!(prefs.selected_codex_model, "gpt-5.5");
         assert!(prefs.codex_model_provider_overrides.is_empty());
         assert_eq!(prefs.codex_goal_execution_mode, "build");
@@ -896,6 +896,30 @@ mod tests {
         assert_eq!(prefs.magic_prompt_models.release_notes_model, "sonnet");
         assert_eq!(prefs.magic_prompt_models.session_naming_model, "sonnet");
         assert_eq!(prefs.magic_prompt_models.session_recap_model, "sonnet");
+    }
+
+    #[test]
+    fn migrate_loaded_preferences_updates_legacy_magic_opus_defaults() {
+        let mut prefs = AppPreferences::default();
+        prefs.magic_prompt_models.investigate_issue_model = "opus".to_string();
+        prefs.magic_prompt_models.code_review_model = "claude-opus-4-7".to_string();
+        prefs.magic_prompt_models.review_comments_model = "claude-opus-4-7[1m]".to_string();
+
+        let needs_resave = migrate_loaded_preferences(&mut prefs);
+
+        assert!(needs_resave);
+        assert_eq!(
+            prefs.magic_prompt_models.investigate_issue_model,
+            "claude-opus-4-8[1m]"
+        );
+        assert_eq!(
+            prefs.magic_prompt_models.code_review_model,
+            "claude-opus-4-8[1m]"
+        );
+        assert_eq!(
+            prefs.magic_prompt_models.review_comments_model,
+            "claude-opus-4-8[1m]"
+        );
     }
 
     #[test]
@@ -1577,10 +1601,9 @@ impl Default for MagicPromptModels {
 }
 
 impl MagicPromptModels {
-    /// Upgrade legacy default model values left on existing installs:
-    /// fields that previously defaulted to `"opus"` (Opus 4.6) are bumped to
-    /// the new default (`"claude-opus-4-7"`). Users who explicitly picked
-    /// other models are untouched. Returns true if any field changed.
+    /// Upgrade previous Opus defaults left on existing installs to the current
+    /// default (`"claude-opus-4-8[1m]"`). Users who explicitly picked non-Opus
+    /// default models are untouched. Returns true if any field changed.
     fn migrate_legacy_defaults(&mut self) -> bool {
         let new_opus = default_model();
         let new_lightweight = default_lightweight_model();
@@ -1598,7 +1621,10 @@ impl MagicPromptModels {
         ];
         let mut changed = false;
         for field in opus_fields {
-            if field == "opus" {
+            if matches!(
+                field.as_str(),
+                "opus" | "claude-opus-4-7" | "claude-opus-4-7[1m]"
+            ) {
                 *field = new_opus.clone();
                 changed = true;
             }

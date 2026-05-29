@@ -63,6 +63,47 @@ describe('buildTimeline', () => {
     expect(timeline).toHaveLength(0)
   })
 
+  it('renders native Codex request_user_input as an inline question card', () => {
+    const toolCalls: ToolCall[] = [
+      {
+        id: 'question-1',
+        name: 'request_user_input',
+        input: {
+          questions: [
+            {
+              question: 'Which path?',
+              options: [{ label: 'A' }],
+            },
+          ],
+        },
+      },
+    ]
+    const contentBlocks: ContentBlock[] = [
+      { type: 'text', text: 'I need a choice.' },
+      { type: 'tool_use', tool_call_id: 'question-1' },
+    ]
+
+    const timeline = buildTimeline(contentBlocks, toolCalls)
+
+    expect(timeline).toHaveLength(1)
+    expect(timeline[0]).toMatchObject({
+      type: 'askUserQuestion',
+      introText: 'I need a choice.',
+      tool: {
+        id: 'question-1',
+        input: {
+          questions: [
+            {
+              id: '0',
+              question: 'Which path?',
+              options: [{ label: 'A', description: undefined }],
+            },
+          ],
+        },
+      },
+    })
+  })
+
   it('coalesces fragmented text deltas before rendering the timeline', () => {
     const contentBlocks: ContentBlock[] = [
       { type: 'text', text: 'Repo inspected.\n\n' },

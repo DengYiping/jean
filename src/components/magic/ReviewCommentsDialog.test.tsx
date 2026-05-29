@@ -139,12 +139,61 @@ describe('ReviewCommentsDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: /send to chat/i }))
 
     await waitFor(() => {
-      expect(hoisted.setPendingMagicCommandMock).toHaveBeenCalledWith({
-        command: 'review-comments',
-        prompt: expect.stringContaining('Please fix this'),
-      })
+      expect(hoisted.setPendingMagicCommandMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          command: 'review-comments',
+          prompt: expect.stringContaining('Please fix this'),
+        })
+      )
     })
     expect(hoisted.setReviewCommentsModalOpenMock).toHaveBeenCalledWith(false)
+  })
+
+  it('queues selected PR comments as separate plan-mode prompts', async () => {
+    hoisted.invokeMock.mockImplementation((command: string) => {
+      if (command === 'get_pr_review_comments') {
+        return Promise.resolve([
+          {
+            path: 'src/App.tsx',
+            line: 12,
+            body: 'Please fix this',
+            diffHunk: '@@ -1 +1 @@',
+            author: { login: 'reviewer' },
+            createdAt: '2026-05-21T10:00:00Z',
+          },
+          {
+            path: 'src/main.tsx',
+            line: 2,
+            body: 'Please test this',
+            diffHunk: '@@ -2 +2 @@',
+            author: { login: 'reviewer' },
+            createdAt: '2026-05-21T11:00:00Z',
+          },
+        ])
+      }
+      if (command === 'get_github_pr') {
+        return Promise.resolve({ comments: [], reviews: [] })
+      }
+      return Promise.resolve(null)
+    })
+
+    render(<ReviewCommentsDialog />)
+
+    await screen.findByText('Please fix this')
+    fireEvent.click(screen.getByRole('button', { name: /send separately/i }))
+
+    await waitFor(() => {
+      expect(hoisted.setPendingMagicCommandMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          command: 'review-comments',
+          executionMode: 'plan',
+          prompts: [
+            expect.stringContaining('Please fix this'),
+            expect.stringContaining('Please test this'),
+          ],
+        })
+      )
+    })
   })
 
   it('opens the session modal when no chat surface is mounted', async () => {

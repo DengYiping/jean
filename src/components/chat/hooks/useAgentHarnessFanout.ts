@@ -28,7 +28,7 @@ import {
   type PendingInputSnapshot,
 } from '@/components/chat/pending-input'
 
-const DEFAULT_CLAUDE_MODEL = 'claude-opus-4-7'
+const DEFAULT_CLAUDE_MODEL = 'claude-opus-4-8[1m]'
 const DEFAULT_CODEX_MODEL = 'gpt-5.5'
 const DEFAULT_OPENCODE_MODEL = 'opencode/gpt-5.3-codex'
 

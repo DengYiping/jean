@@ -53,7 +53,7 @@ describe('agent harness fan-out', () => {
 
   it('falls back to the current Claude default model id when needed', () => {
     expect(getDefaultModelForBackend('claude', undefined, '')).toBe(
-      'claude-opus-4-7'
+      'claude-opus-4-8[1m]'
     )
   })
 
@@ -112,13 +112,13 @@ describe('agent harness fan-out', () => {
       worktreeId: 'claude-wt',
       worktreePath: '/repo/claude-wt',
       sessionId: 'claude-session',
-      model: 'claude-opus-4-7',
+      model: 'claude-opus-4-8[1m]',
     })
     expect(sendMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionId: 'claude-session',
         worktreeId: 'claude-wt',
-        model: 'claude-opus-4-7',
+        model: 'claude-opus-4-8[1m]',
         thinkingLevel: 'think',
         mcpConfig: 'mcp:claude',
         parallelExecutionPrompt: 'parallel:claude-session',

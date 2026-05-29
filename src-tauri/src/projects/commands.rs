@@ -34,7 +34,8 @@ use super::linear_issues::{
 };
 use super::names::generate_unique_workspace_name;
 use super::release_notes::{
-    build_release_notes_prompt_context, format_issue_groups, PrIssueRefsMap,
+    build_pr_prompt_context_from_revision_range, build_release_notes_prompt_context,
+    format_issue_groups, PrIssueRefsMap,
 };
 use super::slots;
 use super::storage::{get_project_worktrees_dir, load_projects_data, save_projects_data};
@@ -6600,9 +6601,23 @@ const PR_CONTENT_PROMPT: &str = r#"<task>Generate a pull request title and descr
 {commits}
 </commits>
 
+<related_pull_requests>
+{related_pull_requests}
+</related_pull_requests>
+
 <diff>
 {diff}
-</diff>"#;
+</diff>
+
+<instructions>
+- Use merged pull request metadata as the primary source when present; use commits and diff as fallback context.
+- Inspect pull request titles, bodies, and commit messages for GitHub closing keywords: close/closes/closed, fix/fixes/fixed, resolve/resolves/resolved.
+- Normalize closing keywords in the final body to lowercase forms: closes, fixes, resolves.
+- Reference the pull request number for each relevant bullet when known: `(#123)`.
+- If a pull request closes/fixes/resolves issues, include the issue refs after the PR using the detected keyword: `(#123, fixes #456, #789)`.
+- Do not invent pull request numbers or issue references; only use detected metadata.
+- Keep the description concise and user-facing; avoid internal implementation details unless needed for review.
+</instructions>"#;
 
 /// Structured response from PR content generation
 #[derive(Debug, Deserialize, Serialize)]
@@ -6867,6 +6882,17 @@ fn generate_pr_content(
 
     let commits = get_branch_commits(repo_path, target_branch, head_ref)?;
     let commit_count = count_branch_commits(repo_path, target_branch, head_ref)?;
+    let pr_prompt_context = build_pr_prompt_context_from_revision_range(
+        app,
+        repo_path,
+        &format!("origin/{target_branch}..{head_ref}"),
+    )
+    .unwrap_or_else(
+        |_| crate::projects::release_notes::ReleaseNotesPromptContext {
+            pull_requests: String::new(),
+            pr_issue_refs: PrIssueRefsMap::new(),
+        },
+    );
 
     // Build prompt - use custom if provided and non-empty, otherwise use default
     let prompt_template = custom_prompt
@@ -6881,6 +6907,7 @@ fn generate_pr_content(
         context,
         session_recap,
         &commits,
+        &pr_prompt_context.pull_requests,
         &diff,
     );
 
@@ -7019,6 +7046,7 @@ fn build_pr_content_prompt(
     context: &str,
     session_recap: &str,
     commits: &str,
+    related_pull_requests: &str,
     diff: &str,
 ) -> String {
     let prompt_template = custom_prompt
@@ -7032,6 +7060,7 @@ fn build_pr_content_prompt(
         .replace("{context}", context)
         .replace("{session_recap}", session_recap)
         .replace("{commits}", commits)
+        .replace("{related_pull_requests}", related_pull_requests)
         .replace("{diff}", diff)
 }
 
@@ -7717,6 +7746,14 @@ const COMMIT_MESSAGE_SCHEMA: &str = r#"{"type":"object","properties":{"message":
 /// Prompt template for commit message generation
 const COMMIT_MESSAGE_PROMPT: &str = r#"Generate a conventional commit message for these staged changes.
 
+Rules:
+- Output a commit message about the actual staged code changes only.
+- Do not describe this prompt, commit-message guidance, instructions, inspection, or the act of generating a commit message.
+- Avoid vague subjects like "update files", "inspect changes", "adjust code", or "misc changes".
+- Use a specific Conventional Commits subject: type(optional-scope): concrete behavior changed.
+- First line must be 72 characters or fewer.
+- If prompt/config files changed, name the product behavior affected, not "guidance".
+
 Files changed:
 {diff_stat}
 
@@ -7733,6 +7770,75 @@ Recent commits (style reference):
 #[derive(Debug, Deserialize)]
 struct CommitMessageResponse {
     message: String,
+}
+
+fn commit_message_subject(message: &str) -> &str {
+    message.lines().next().unwrap_or("").trim()
+}
+
+fn validate_commit_message(message: &str) -> Result<(), String> {
+    let subject = commit_message_subject(message);
+    if subject.is_empty() {
+        return Err("commit message subject is empty".to_string());
+    }
+
+    if subject.chars().count() > 72 {
+        return Err("commit message subject exceeds 72 characters".to_string());
+    }
+
+    static CONVENTIONAL_COMMIT_RE: Lazy<Regex> = Lazy::new(|| {
+        Regex::new(r"^(feat|fix|docs|style|refactor|perf|test|chore)(\([a-z0-9._-]+\))?!?: .+")
+            .expect("valid conventional commit regex")
+    });
+    if !CONVENTIONAL_COMMIT_RE.is_match(subject) {
+        return Err("commit message must use Conventional Commits format".to_string());
+    }
+
+    let lower_subject = subject.to_lowercase();
+    let meta_terms = [
+        "commit message guidance",
+        "commit guidance",
+        "message guidance",
+        "commit message prompt",
+        "prompt instructions",
+        "inspect commit message",
+        "guidance",
+        "prompt",
+        "instructions",
+    ];
+    if meta_terms.iter().any(|term| lower_subject.contains(term)) {
+        return Err(
+            "commit message is meta/generic instead of describing staged changes".to_string(),
+        );
+    }
+
+    let generic_subjects = [
+        "chore: update files",
+        "chore: update changes",
+        "chore: inspect changes",
+        "chore: adjust files",
+        "chore: misc changes",
+        "fix: update files",
+        "fix: update changes",
+        "refactor: update files",
+    ];
+    if generic_subjects
+        .iter()
+        .any(|generic| lower_subject.trim() == *generic)
+    {
+        return Err("commit message is too generic for the staged changes".to_string());
+    }
+
+    Ok(())
+}
+
+fn build_commit_retry_prompt(original_prompt: &str, rejection_reason: &str) -> String {
+    format!(
+        "Previous generated commit message was rejected: {rejection_reason}\n\n\
+Generate a replacement commit message that describes the actual staged diff only. \
+Never mention commit-message guidance, prompts, instructions, or inspection unless those exact user-facing product concepts are the changed feature.\n\n\
+{original_prompt}"
+    )
 }
 
 /// Response from creating a commit with AI-generated message
@@ -7995,9 +8101,61 @@ fn push_for_commit(
     }
 }
 
-/// Generate commit message using Claude CLI with JSON schema
+/// Generate commit message using the configured magic backend and validate it.
 #[allow(clippy::too_many_arguments)]
 fn generate_commit_message(
+    app: &AppHandle,
+    prompt: &str,
+    model: Option<&str>,
+    custom_profile_name: Option<&str>,
+    working_dir: Option<&std::path::Path>,
+    worktree_id: Option<&str>,
+    magic_backend: Option<&str>,
+    reasoning_effort: Option<&str>,
+) -> Result<CommitMessageResponse, String> {
+    let response = generate_commit_message_once(
+        app,
+        prompt,
+        model,
+        custom_profile_name,
+        working_dir,
+        worktree_id,
+        magic_backend,
+        reasoning_effort,
+    )?;
+
+    match validate_commit_message(&response.message) {
+        Ok(()) => Ok(response),
+        Err(first_reason) => {
+            log::warn!(
+                "Generated commit message rejected, retrying once: {} ({first_reason})",
+                commit_message_subject(&response.message)
+            );
+            let retry_prompt = build_commit_retry_prompt(prompt, &first_reason);
+            let retry_response = generate_commit_message_once(
+                app,
+                &retry_prompt,
+                model,
+                custom_profile_name,
+                working_dir,
+                worktree_id,
+                magic_backend,
+                reasoning_effort,
+            )?;
+            validate_commit_message(&retry_response.message).map_err(|reason| {
+                format!(
+                    "AI generated invalid commit message twice. Last rejection: {reason}. Message: {}",
+                    commit_message_subject(&retry_response.message)
+                )
+            })?;
+            Ok(retry_response)
+        }
+    }
+}
+
+/// Generate commit message using Claude CLI with JSON schema
+#[allow(clippy::too_many_arguments)]
+fn generate_commit_message_once(
     app: &AppHandle,
     prompt: &str,
     model: Option<&str>,
@@ -9617,7 +9775,8 @@ fn generate_release_notes_content(
 }
 
 fn augment_pr_references_in_body(body: &str, pr_issue_refs: &PrIssueRefsMap) -> String {
-    RELEASE_NOTES_PAREN_RE
+    let mut referenced_prs = std::collections::BTreeSet::new();
+    let mut augmented = RELEASE_NOTES_PAREN_RE
         .replace_all(body, |captures: &regex::Captures<'_>| {
             let Some(content_match) = captures.get(1) else {
                 return captures[0].to_string();
@@ -9632,6 +9791,7 @@ fn augment_pr_references_in_body(body: &str, pr_issue_refs: &PrIssueRefsMap) -> 
             let Ok(pr_number) = pr_number_match.as_str().parse::<u32>() else {
                 return captures[0].to_string();
             };
+            referenced_prs.insert(pr_number);
             let Some(issue_groups) = pr_issue_refs.get(&pr_number) else {
                 return captures[0].to_string();
             };
@@ -9641,7 +9801,27 @@ fn augment_pr_references_in_body(body: &str, pr_issue_refs: &PrIssueRefsMap) -> 
 
             format!("(#{pr_number}, {})", format_issue_groups(issue_groups))
         })
-        .into_owned()
+        .into_owned();
+
+    let missing_refs = pr_issue_refs
+        .iter()
+        .filter(|(pr_number, issue_groups)| {
+            !referenced_prs.contains(pr_number) && !issue_groups.is_empty()
+        })
+        .map(|(pr_number, issue_groups)| {
+            format!("- (#{pr_number}, {})", format_issue_groups(issue_groups))
+        })
+        .collect::<Vec<_>>();
+
+    if !missing_refs.is_empty() {
+        if !augmented.ends_with('\n') {
+            augmented.push_str("\n\n");
+        }
+        augmented.push_str("Related issue references:\n");
+        augmented.push_str(&missing_refs.join("\n"));
+    }
+
+    augmented
 }
 
 fn format_related_pull_requests(pr_issue_refs: &PrIssueRefsMap) -> String {
@@ -9708,6 +9888,21 @@ mod release_notes_body_tests {
         let body = "- Added support (#9503)";
         let result = augment_pr_references_in_body(body, &BTreeMap::new());
         assert_eq!(result, body);
+    }
+
+    #[test]
+    fn appends_missing_known_pr_references_not_present_in_body() {
+        let body = "- Added support";
+        let result =
+            augment_pr_references_in_body(body, &issue_map(&[(9503, &[("fixes", &[9501])])]));
+
+        assert_eq!(
+            result,
+            "- Added support
+
+Related issue references:
+- (#9503, fixes #9501)"
+        );
     }
 
     #[test]
@@ -11715,6 +11910,41 @@ mod tests {
     }
 
     #[test]
+    fn validate_commit_message_rejects_meta_subject() {
+        let result = validate_commit_message("chore: inspect commit message guidance");
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("meta"));
+    }
+
+    #[test]
+    fn validate_commit_message_rejects_generic_subjects() {
+        let result = validate_commit_message("chore: update files");
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("generic"));
+    }
+
+    #[test]
+    fn validate_commit_message_accepts_specific_conventional_commit() {
+        let result = validate_commit_message("fix(chat): preserve mobile toolbar actions");
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn build_commit_retry_prompt_includes_reason_and_context() {
+        let retry_prompt = build_commit_retry_prompt(
+            "Generate a conventional commit message.\nDiff:\n+new behavior",
+            "commit message is meta/generic",
+        );
+
+        assert!(retry_prompt.contains("Previous generated commit message was rejected"));
+        assert!(retry_prompt.contains("commit message is meta/generic"));
+        assert!(retry_prompt.contains("+new behavior"));
+    }
+
+    #[test]
     fn resolve_pr_target_branch_uses_project_default_without_base_branch() {
         let worktree = test_worktree("wt-1", "project-1", "feature");
         let project = test_project("project-1", "main");
@@ -11985,12 +12215,15 @@ Body
             "Loaded issue context",
             "Summary: Implemented feature\nLast action: Ran tests",
             "abc123 feat: add feature",
+            "- PR #42: Add feature",
             "diff --git a/file b/file",
         );
 
         assert!(prompt.contains("<session_recap>"));
         assert!(prompt.contains("Summary: Implemented feature"));
+        assert!(prompt.contains("- PR #42: Add feature"));
         assert!(!prompt.contains("{session_recap}"));
+        assert!(!prompt.contains("{related_pull_requests}"));
     }
 
     #[test]
@@ -12002,6 +12235,7 @@ Body
             2,
             "",
             "Summary: Custom recap",
+            "",
             "",
             "",
         );
@@ -12019,6 +12253,7 @@ Body
             "feature-branch",
             "main",
             2,
+            "",
             "",
             "",
             "",

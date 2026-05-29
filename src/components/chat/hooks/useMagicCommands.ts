@@ -28,7 +28,7 @@ interface MagicCommandHandlers {
   handleResolveConflicts: (override?: ResolveConflictsOverride) => void
   handleInvestigateWorkflowRun: (detail: WorkflowRunDetail) => void
   handleInvestigate: (type: 'issue' | 'pr' | 'advisory') => void
-  handleReviewComments: (prompt: string) => void
+  handleReviewComments: (prompt: string | string[]) => void
 }
 
 interface UseMagicCommandsOptions extends MagicCommandHandlers {
@@ -237,7 +237,9 @@ export function useMagicCommands({
         break
       }
       case 'review-comments':
-        if (pendingMagicCommand.prompt) {
+        if (pendingMagicCommand.prompts?.length) {
+          handlers.handleReviewComments(pendingMagicCommand.prompts)
+        } else if (pendingMagicCommand.prompt) {
           handlers.handleReviewComments(pendingMagicCommand.prompt)
         }
         break

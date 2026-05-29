@@ -50,6 +50,7 @@ function createProps(
     onMerge: vi.fn(),
     onMergePr: vi.fn(),
     onResolveConflicts: vi.fn(),
+    onOpenMagicModal: vi.fn(),
     installedBackends: ['codex'],
     onBackendChange: vi.fn(),
     onSetExecutionMode: vi.fn(),
@@ -81,6 +82,17 @@ describe('MobileToolbarMenu', () => {
     )
     expect(modelItem).toBeInTheDocument()
     expect(modelItem?.querySelector('svg.lucide-chevron-right')).toBeNull()
+  })
+
+  it('opens Magic from the mobile toolbar menu', async () => {
+    const user = userEvent.setup()
+    const onOpenMagicModal = vi.fn()
+    render(<MobileToolbarMenu {...createProps({ onOpenMagicModal })} />)
+
+    await user.click(screen.getByRole('button', { name: 'More actions' }))
+    await user.click(await screen.findByText('Magic'))
+
+    expect(onOpenMagicModal).toHaveBeenCalledOnce()
   })
 
   it('shows MCP as a disabled row when no servers can be toggled', async () => {

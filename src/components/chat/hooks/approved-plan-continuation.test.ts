@@ -39,13 +39,13 @@ describe('resolveApprovedPlanContinuation', () => {
       mode: 'build',
       planContent: 'Ship it',
       originalBackend: 'claude',
-      originalModel: 'claude-opus-4-7',
+      originalModel: 'claude-opus-4-8[1m]',
       preferences: basePreferences,
     })
 
     expect(continuation).toMatchObject({
       backend: 'claude',
-      model: 'claude-opus-4-7',
+      model: 'claude-opus-4-8[1m]',
       modeLabel: 'Build',
       modeOverride: '',
       thinkingLevel: 'think',
@@ -62,7 +62,7 @@ describe('resolveApprovedPlanContinuation', () => {
       planContent: 'Update screenshots',
       planFilePath: '/tmp/plan.md',
       originalBackend: 'claude',
-      originalModel: 'claude-opus-4-7',
+      originalModel: 'claude-opus-4-8[1m]',
       preferences: {
         ...basePreferences,
         yolo_backend: 'opencode',
@@ -102,7 +102,7 @@ describe('resolveApprovedPlanContinuation', () => {
       mode: 'build',
       planContent: 'Implement API',
       originalBackend: 'claude',
-      originalModel: 'claude-opus-4-7',
+      originalModel: 'claude-opus-4-8[1m]',
       preferences: {
         ...basePreferences,
         build_backend: 'codex',

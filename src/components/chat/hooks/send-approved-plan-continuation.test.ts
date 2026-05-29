@@ -55,7 +55,7 @@ describe('sendApprovedPlanContinuation', () => {
       order: 0,
       status: 'idle',
       backend: 'claude',
-      selected_model: 'claude-opus-4-7',
+      selected_model: 'claude-opus-4-8[1m]',
     } as Session)
 
     await sendApprovedPlanContinuation({
@@ -130,7 +130,7 @@ describe('sendApprovedPlanContinuation', () => {
       },
       mode: 'build',
       continuation: {
-        model: 'claude-opus-4-7',
+        model: 'claude-opus-4-8[1m]',
         modeLabel: 'Build',
         modeOverride: '',
         message: 'Execute this plan.',

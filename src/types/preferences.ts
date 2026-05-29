@@ -190,9 +190,23 @@ export const DEFAULT_PR_CONTENT_PROMPT = `<task>Generate a pull request title an
 {commits}
 </commits>
 
+<related_pull_requests>
+{related_pull_requests}
+</related_pull_requests>
+
 <diff>
 {diff}
-</diff>`
+</diff>
+
+<instructions>
+- Use merged pull request metadata as the primary source when present; use commits and diff as fallback context.
+- Inspect pull request titles, bodies, and commit messages for GitHub closing keywords: close/closes/closed, fix/fixes/fixed, resolve/resolves/resolved.
+- Normalize closing keywords in the final body to lowercase forms: closes, fixes, resolves.
+- Reference the pull request number for each relevant bullet when known: \`(#123)\`.
+- If a pull request closes/fixes/resolves issues, include the issue refs after the PR using the detected keyword: \`(#123, fixes #456, #789)\`.
+- Do not invent pull request numbers or issue references; only use detected metadata.
+- Keep the description concise and user-facing; avoid internal implementation details unless needed for review.
+</instructions>`
 
 /** Default prompt for commit message generation */
 export const DEFAULT_COMMIT_MESSAGE_PROMPT = `Generate a conventional commit message for these staged changes.
@@ -558,6 +572,11 @@ export const DEFAULT_CLAUDE_SYSTEM_PROMPT = `### 1. Plan Mode Default
 - **No Laziness**: Find root causes. No temporary fixes. Senior developer standards.
 - **Minimal Impact**: Changes should only touch what's necessary. Avoid introducing bugs.
 
+## Jean Worktree Policy
+- Do NOT create git worktrees manually (\`git worktree add\`, Superpowers \`using-git-worktrees\`, or similar) unless the user explicitly asks for a new worktree.
+- If a new worktree is explicitly required, use Jean's worktree features through Jean MCP/tools, not raw git worktree commands.
+- If already in a Jean worktree or base/main workspace, continue in the current workspace.
+
 ## Important!
 
 - After each finished task, please write a few bullet points on how to test the changes.`
@@ -701,21 +720,21 @@ export interface MagicPromptReasoningEfforts {
 
 /** Default models for each magic prompt */
 export const DEFAULT_MAGIC_PROMPT_MODELS: MagicPromptModels = {
-  investigate_issue_model: 'claude-opus-4-7',
-  investigate_pr_model: 'claude-opus-4-7',
-  investigate_workflow_run_model: 'claude-opus-4-7',
+  investigate_issue_model: 'claude-opus-4-8[1m]',
+  investigate_pr_model: 'claude-opus-4-8[1m]',
+  investigate_workflow_run_model: 'claude-opus-4-8[1m]',
   pr_content_model: 'sonnet',
   commit_message_model: 'sonnet',
-  code_review_model: 'claude-opus-4-7',
-  context_summary_model: 'claude-opus-4-7',
-  resolve_conflicts_model: 'claude-opus-4-7',
+  code_review_model: 'claude-opus-4-8[1m]',
+  context_summary_model: 'claude-opus-4-8[1m]',
+  resolve_conflicts_model: 'claude-opus-4-8[1m]',
   release_notes_model: 'sonnet',
   session_naming_model: 'sonnet',
   session_recap_model: 'sonnet',
-  investigate_security_alert_model: 'claude-opus-4-7',
-  investigate_advisory_model: 'claude-opus-4-7',
-  investigate_linear_issue_model: 'claude-opus-4-7',
-  review_comments_model: 'claude-opus-4-7',
+  investigate_security_alert_model: 'claude-opus-4-8[1m]',
+  investigate_advisory_model: 'claude-opus-4-8[1m]',
+  investigate_linear_issue_model: 'claude-opus-4-8[1m]',
+  review_comments_model: 'claude-opus-4-8[1m]',
 }
 
 /** Codex preset: heavy tasks use top model, light tasks use mini */
@@ -1145,11 +1164,15 @@ export const fileEditModeOptions: { value: FileEditMode; label: string }[] = [
 ]
 
 export type ClaudeModel =
+  | 'claude-opus-4-8'
+  | 'claude-opus-4-8[1m]'
   | 'claude-opus-4-7'
   | 'claude-opus-4-7[1m]'
   | 'claude-opus-4-6'
   | 'claude-opus-4-5-20251101'
   | 'claude-opus-4-6[1m]'
+  | 'claude-opus-4-8[1m]-fast'
+  | 'claude-opus-4-7[1m]-fast'
   | 'claude-opus-4-6-fast'
   | 'claude-opus-4-6[1m]-fast'
   | 'opus' // Legacy/provider-alias: resolved by CLI via ANTHROPIC_DEFAULT_OPUS_MODEL env
@@ -1159,6 +1182,7 @@ export type ClaudeModel =
   | 'haiku'
 
 export const modelOptions: { value: ClaudeModel; label: string }[] = [
+  { value: 'claude-opus-4-8[1m]', label: 'Claude Opus 4.8 (1M)' },
   { value: 'claude-opus-4-7', label: 'Claude Opus 4.7' },
   { value: 'claude-opus-4-7[1m]', label: 'Claude Opus 4.7 (1M)' },
   { value: 'claude-opus-4-6', label: 'Claude Opus 4.6' },
@@ -1179,6 +1203,8 @@ export interface FastModelInfo {
 }
 
 export const CLAUDE_FAST_MODEL_MAP = {
+  'claude-opus-4-8[1m]': 'claude-opus-4-8[1m]-fast',
+  'claude-opus-4-7[1m]': 'claude-opus-4-7[1m]-fast',
   'claude-opus-4-6': 'claude-opus-4-6-fast',
   'claude-opus-4-6[1m]': 'claude-opus-4-6[1m]-fast',
   opus: 'opus-fast',
@@ -1901,7 +1927,7 @@ export function getEditorLabel(
 
 export const defaultPreferences: AppPreferences = {
   theme: 'system',
-  selected_model: 'claude-opus-4-7',
+  selected_model: 'claude-opus-4-8[1m]',
   thinking_level: 'ultrathink',
   default_effort_level: 'high',
   terminal: isWindows ? 'powershell' : 'terminal',

@@ -2,7 +2,6 @@ import { ChevronDown, Rocket } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { getModifierSymbol, isMacOS } from '@/lib/platform'
 import { cn } from '@/lib/utils'
-import { Kbd } from '@/components/ui/kbd'
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -75,16 +74,11 @@ export function SendCancelButton({
             type="button"
             onClick={onCancel}
             className={cn(
-              'flex h-8 items-center justify-center gap-1.5 px-3 text-xs font-medium transition-colors bg-primary text-primary-foreground hover:bg-primary/90',
+              'flex h-8 items-center justify-center gap-1.5 px-3 text-xs font-medium text-foreground transition-colors bg-background/70 hover:bg-destructive/15 hover:text-destructive',
               !canSend && 'rounded-r-lg'
             )}
           >
             <span>{queuedMessageCount ? 'Skip to Next' : 'Cancel'}</span>
-            {!isMobile && (
-              <Kbd className="ml-0.5 h-4 text-[10px] bg-primary-foreground/20 text-primary-foreground">
-                {isMacOS ? `${getModifierSymbol()}⌥⌫` : 'Ctrl+Alt+⌫'}
-              </Kbd>
-            )}
           </button>
         </TooltipTrigger>
         <TooltipContent>

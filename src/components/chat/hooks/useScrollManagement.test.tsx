@@ -207,6 +207,38 @@ describe('useScrollManagement streaming auto-scroll', () => {
     expect(viewport.scrollTop).toBe(500)
   })
 
+  it('does not continuously re-pin a desktop plan during normal upward scrolling', async () => {
+    const { viewport } = setupHook()
+
+    await triggerResize()
+    expect(viewport.scrollTop).toBe(600)
+
+    viewport.scrollTop = 520
+    act(() => {
+      viewport.dispatchEvent(new WheelEvent('wheel', { deltaY: -40 }))
+    })
+
+    await triggerResize()
+
+    expect(viewport.scrollTop).toBe(520)
+  })
+
+  it('does not re-pin a desktop plan after a small scroll event near the pin target', async () => {
+    const { viewport } = setupHook()
+    defineReadonlyNumber(viewport, 'clientHeight', 400)
+    defineReadonlyNumber(viewport, 'scrollHeight', 1050)
+
+    await triggerResize()
+    expect(viewport.scrollTop).toBe(600)
+
+    viewport.scrollTop = 560
+    fireEvent.scroll(viewport)
+
+    await triggerResize()
+
+    expect(viewport.scrollTop).toBe(560)
+  })
+
   it('keeps following after the programmatic desktop plan pin emits a scroll event', async () => {
     const { viewport } = setupHook()
 

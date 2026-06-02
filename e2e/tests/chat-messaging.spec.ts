@@ -218,4 +218,100 @@ test.describe('Chat Messaging', () => {
       timeout: 3000,
     })
   })
+
+  test('generated plan does not prevent small manual upward scrolling', async ({
+    mockPage,
+    emitEvent,
+  }) => {
+    await activateWorktree(mockPage, 'fuzzy-tiger')
+
+    const sessionId = await mockPage
+      .locator('[data-session-id]')
+      .first()
+      .getAttribute('data-session-id')
+    expect(sessionId).toBeTruthy()
+
+    const worktreeId = await mockPage.evaluate(() => {
+      const mock = (window as any).__JEAN_E2E_MOCK__
+      const worktree = mock?.invokeHandlers
+        ?.list_worktrees?.()
+        ?.find((item: Record<string, unknown>) => item.name === 'fuzzy-tiger')
+      return String(worktree?.id ?? 'e2e')
+    })
+
+    await emitEvent('chat:sending', {
+      session_id: sessionId,
+      worktree_id: worktreeId,
+      user_message: 'Create a plan for scroll testing',
+    })
+
+    await emitEvent('chat:chunk', {
+      session_id: sessionId,
+      worktree_id: worktreeId,
+      content: Array.from(
+        { length: 36 },
+        (_, index) => `Context line ${index + 1}: enough prior work to scroll.`
+      ).join('\n'),
+    })
+
+    await emitEvent('chat:tool_use', {
+      session_id: sessionId,
+      worktree_id: worktreeId,
+      id: 'e2e-plan-tool',
+      name: 'ExitPlanMode',
+      input: {
+        plan: [
+          '# Plan',
+          '',
+          '1. Make the scroll regression visible.',
+          '2. Keep manual scrolling respected.',
+        ].join('\n'),
+      },
+    })
+    await emitEvent('chat:tool_block', {
+      session_id: sessionId,
+      tool_call_id: 'e2e-plan-tool',
+    })
+
+    await expect(
+      mockPage.getByText('Keep manual scrolling respected.')
+    ).toBeVisible({
+      timeout: 3000,
+    })
+    await expect(
+      mockPage.getByRole('button', { name: 'Approve' }).first()
+    ).toBeVisible({
+      timeout: 3000,
+    })
+
+    const viewport = mockPage
+      .locator('[data-slot="scroll-area-viewport"]')
+      .last()
+    await expect
+      .poll(async () =>
+        viewport.evaluate(el => ({
+          canScroll: el.scrollHeight > el.clientHeight,
+          scrollTop: el.scrollTop,
+        }))
+      )
+      .toMatchObject({ canScroll: true })
+
+    const pinnedTop = await viewport.evaluate(el => el.scrollTop)
+    await viewport.hover()
+    await mockPage.mouse.wheel(0, -80)
+    await expect
+      .poll(async () => viewport.evaluate(el => el.scrollTop))
+      .toBeLessThan(pinnedTop)
+    const userSelectedTop = await viewport.evaluate(el => el.scrollTop)
+
+    await emitEvent('chat:chunk', {
+      session_id: sessionId,
+      worktree_id: worktreeId,
+      content: '\nAdditional streamed detail after the plan.',
+    })
+    await mockPage.waitForTimeout(250)
+
+    const finalTop = await viewport.evaluate(el => el.scrollTop)
+    expect(Math.abs(finalTop - userSelectedTop)).toBeLessThanOrEqual(2)
+  })
 })

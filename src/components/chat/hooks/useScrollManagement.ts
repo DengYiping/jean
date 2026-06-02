@@ -62,6 +62,17 @@ function isViewportAtBottom(viewport: HTMLDivElement) {
   )
 }
 
+function isViewportAtPhysicalBottom(viewport: HTMLDivElement) {
+  if (!hasScrollableOverflow(viewport)) {
+    return true
+  }
+
+  return (
+    viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight <=
+    SCROLL_EPSILON_PX
+  )
+}
+
 export function useScrollManagement({
   messages,
   virtualizedListRef,
@@ -92,6 +103,7 @@ export function useScrollManagement({
   const userScrollUpUntilRef = useRef(0)
   const lastScrollTopRef = useRef(0)
   const expectedProgrammaticScrollTopRef = useRef<number | null>(null)
+  const pinnedPlanElementRef = useRef<HTMLElement | null>(null)
   const touchStartYRef = useRef<number | null>(null)
 
   const cancelPendingScrollCorrection = useCallback(() => {
@@ -340,6 +352,9 @@ export function useScrollManagement({
           '[data-plan-display]'
         ) as HTMLElement | null
         if (!isMobile && planEl) {
+          if (pinnedPlanElementRef.current === planEl) return
+          pinnedPlanElementRef.current = planEl
+
           // Accumulate offsetTop up the offsetParent chain to the viewport
           let offset = 0
           let el: HTMLElement | null = planEl
@@ -349,6 +364,7 @@ export function useScrollManagement({
           }
           setProgrammaticScrollTop(viewport, offset)
         } else {
+          pinnedPlanElementRef.current = null
           scrollProgrammaticallyToTail(viewport)
         }
       })
@@ -373,6 +389,10 @@ export function useScrollManagement({
   //   streaming → final content reflow (double-rAF ≈ 33ms).
   const wasSendingRef = useRef(false)
   useEffect(() => {
+    if (isSending) {
+      pinnedPlanElementRef.current = null
+    }
+
     // Streaming just started.
     if (!wasSendingRef.current && isSending) {
       const viewport = scrollViewportRef.current
@@ -421,6 +441,7 @@ export function useScrollManagement({
 
     // Streaming just ended — pin to actual bottom
     if (wasSendingRef.current && !isSending && isFollowingTailRef.current) {
+      pinnedPlanElementRef.current = null
       let cancelled = false
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
@@ -438,6 +459,9 @@ export function useScrollManagement({
       return () => {
         cancelled = true
       }
+    }
+    if (!isSending) {
+      pinnedPlanElementRef.current = null
     }
     wasSendingRef.current = !!isSending
   }, [isSending, scrollProgrammaticallyToTail])
@@ -471,50 +495,68 @@ export function useScrollManagement({
   }, [messages?.length, scrollProgrammaticallyToTail])
 
   // [Tier 1] Handle scroll events — findings visibility removed (handled by IntersectionObserver)
-  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    // Skip updating isAtBottom during auto-scroll to avoid race conditions
-    // This prevents the smooth scroll animation from incorrectly marking us as "not at bottom"
-    if (isAutoScrollingRef.current) {
-      return
-    }
+  const handleScroll = useCallback(
+    (e: React.UIEvent<HTMLDivElement>) => {
+      // Skip updating isAtBottom during auto-scroll to avoid race conditions
+      // This prevents the smooth scroll animation from incorrectly marking us as "not at bottom"
+      if (isAutoScrollingRef.current) {
+        return
+      }
 
-    const target = e.target as HTMLDivElement
-    lastScrollTopRef.current = target.scrollTop
+      const target = e.target as HTMLDivElement
+      const previousScrollTop = lastScrollTopRef.current
+      lastScrollTopRef.current = target.scrollTop
 
-    const atBottom = isViewportAtBottom(target)
-    const expectedProgrammaticScrollTop =
-      expectedProgrammaticScrollTopRef.current
-    const isProgrammaticScroll =
-      expectedProgrammaticScrollTop !== null &&
-      Math.abs(target.scrollTop - expectedProgrammaticScrollTop) <=
-        SCROLL_EPSILON_PX
+      const atBottom = isViewportAtBottom(target)
+      const expectedProgrammaticScrollTop =
+        expectedProgrammaticScrollTopRef.current
+      const isProgrammaticScroll =
+        expectedProgrammaticScrollTop !== null &&
+        Math.abs(target.scrollTop - expectedProgrammaticScrollTop) <=
+          SCROLL_EPSILON_PX
 
-    if (isProgrammaticScroll) {
+      if (isProgrammaticScroll) {
+        expectedProgrammaticScrollTopRef.current = null
+        return
+      }
+
       expectedProgrammaticScrollTopRef.current = null
-      return
-    }
 
-    expectedProgrammaticScrollTopRef.current = null
+      const hasDesktopPlanPin =
+        !isMobile && !!target.querySelector('[data-plan-display]')
+      const hasRealScrollMovement =
+        Math.abs(target.scrollTop - previousScrollTop) > SCROLL_EPSILON_PX
+      if (
+        hasDesktopPlanPin &&
+        hasRealScrollMovement &&
+        hasScrollableOverflow(target) &&
+        !isViewportAtPhysicalBottom(target)
+      ) {
+        stopFollowingTail()
+        return
+      }
 
-    if (hasScrollableOverflow(target) && !atBottom) {
-      isFollowingTailRef.current = false
-      userScrollUpUntilRef.current = Date.now() + 1000
-    }
+      if (hasScrollableOverflow(target) && !atBottom) {
+        isFollowingTailRef.current = false
+        userScrollUpUntilRef.current = Date.now() + 1000
+      }
 
-    if (atBottom) {
-      userScrollUpUntilRef.current = 0
-      isFollowingTailRef.current = true
-    }
+      if (atBottom) {
+        userScrollUpUntilRef.current = 0
+        isFollowingTailRef.current = true
+      }
 
-    // During cooldown after user scrolled up, only allow transitions to NOT-at-bottom
-    if (Date.now() < userScrollUpUntilRef.current && atBottom) {
-      return
-    }
+      // During cooldown after user scrolled up, only allow transitions to NOT-at-bottom
+      if (Date.now() < userScrollUpUntilRef.current && atBottom) {
+        return
+      }
 
-    isAtBottomRef.current = atBottom
-    // PERFORMANCE: Functional setState skips re-render when value hasn't changed
-    setIsAtBottom(prev => (prev === atBottom ? prev : atBottom))
-  }, [])
+      isAtBottomRef.current = atBottom
+      // PERFORMANCE: Functional setState skips re-render when value hasn't changed
+      setIsAtBottom(prev => (prev === atBottom ? prev : atBottom))
+    },
+    [isMobile, stopFollowingTail]
+  )
 
   // Handle scroll-to-bottom completion from VirtualizedMessageList
   const handleScrollToBottomHandled = useCallback(() => {

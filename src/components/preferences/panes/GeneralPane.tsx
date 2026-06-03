@@ -141,6 +141,8 @@ import { useProjects } from '@/services/projects'
 interface CleanupResult {
   deleted_worktrees: number
   deleted_sessions: number
+  deleted_contexts?: number
+  deleted_orphan_indexes?: number
 }
 
 type LegacyCliTarget = 'claude' | 'codex' | 'opencode' | 'gh' | 'coderabbit'
@@ -508,6 +510,16 @@ export const GeneralPane: React.FC = () => {
       if (result.deleted_sessions > 0) {
         parts.push(
           `${result.deleted_sessions} session${result.deleted_sessions === 1 ? '' : 's'}`
+        )
+      }
+      if ((result.deleted_contexts ?? 0) > 0) {
+        parts.push(
+          `${result.deleted_contexts} context${result.deleted_contexts === 1 ? '' : 's'}`
+        )
+      }
+      if ((result.deleted_orphan_indexes ?? 0) > 0) {
+        parts.push(
+          `${result.deleted_orphan_indexes} stale session index${result.deleted_orphan_indexes === 1 ? '' : 'es'}`
         )
       }
 

@@ -239,7 +239,9 @@ pub enum EffortLevel {
     Medium,
     #[default]
     High,
+    Xhigh,
     Max,
+    Ultracode,
 }
 
 impl EffortLevel {
@@ -250,7 +252,9 @@ impl EffortLevel {
             EffortLevel::Low => Some("low"),
             EffortLevel::Medium => Some("medium"),
             EffortLevel::High => Some("high"),
+            EffortLevel::Xhigh => Some("xhigh"),
             EffortLevel::Max => Some("max"),
+            EffortLevel::Ultracode => Some("ultracode"),
         }
     }
 }

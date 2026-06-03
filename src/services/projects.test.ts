@@ -4,12 +4,14 @@ import { act, renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   projectsQueryKeys,
+  useReorderWorktrees,
   useSwitchWorktreeBaseBranch,
   useUpdateProjectSettings,
   useWorktree,
 } from './projects'
 import type { Project, Worktree } from '@/types/projects'
 import { toast } from 'sonner'
+import { useProjectsStore } from '@/store/projects-store'
 
 const mockInvoke = vi.hoisted(() => vi.fn())
 
@@ -58,6 +60,7 @@ const worktree: Worktree = {
 describe('projects service', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    useProjectsStore.setState({ projectCanvasSettings: {} })
     Object.defineProperty(window, '__TAURI_INTERNALS__', {
       value: { invoke: vi.fn() },
       configurable: true,
@@ -167,5 +170,63 @@ describe('projects service', () => {
       ])
     ).toEqual(updatedWorktree)
     expect(toast.success).toHaveBeenCalledWith('Base branch switched')
+  })
+
+  it('preserves cached worktrees and switches canvas to manual sort when reordering', async () => {
+    const queryClient = createTestQueryClient()
+    const base: Worktree = {
+      ...worktree,
+      id: 'base',
+      name: 'main',
+      branch: 'main',
+      session_type: 'base',
+      order: 0,
+    }
+    const first: Worktree = { ...worktree, id: 'first', order: 1 }
+    const second: Worktree = { ...worktree, id: 'second', order: 2 }
+    const pending: Worktree = {
+      ...worktree,
+      id: 'pending',
+      status: 'pending',
+      order: 99,
+    }
+    queryClient.setQueryData(projectsQueryKeys.worktrees('project-1'), [
+      base,
+      first,
+      second,
+      pending,
+    ])
+    mockInvoke.mockResolvedValue(null)
+
+    const { result } = renderHook(() => useReorderWorktrees(), {
+      wrapper: createWrapper(queryClient),
+    })
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        projectId: 'project-1',
+        worktreeIds: ['second', 'first'],
+        switchToManualSort: true,
+      })
+    })
+
+    expect(mockInvoke).toHaveBeenCalledWith('reorder_worktrees', {
+      projectId: 'project-1',
+      worktreeIds: ['second', 'first'],
+    })
+    expect(
+      queryClient
+        .getQueryData<Worktree[]>(projectsQueryKeys.worktrees('project-1'))
+        ?.map(w => [w.id, w.order])
+    ).toEqual([
+      ['base', 0],
+      ['first', 2],
+      ['second', 1],
+      ['pending', 99],
+    ])
+    expect(
+      useProjectsStore.getState().projectCanvasSettings['project-1']
+        ?.worktreeSortMode
+    ).toBe('manual')
   })
 })

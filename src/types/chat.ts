@@ -22,9 +22,17 @@ export type ThinkingLevel = 'off' | 'think' | 'megathink' | 'ultrathink'
  * - low: Minimal thinking, skips for simple tasks
  * - medium: Moderate thinking, may skip for very simple queries
  * - high: Deep reasoning (default), almost always thinks
+ * - xhigh: Extra high effort
  * - max: No constraints on thinking depth
+ * - ultracode: Claude Code ultracode mode (xhigh + Dynamic Workflows)
  */
-export type EffortLevel = 'low' | 'medium' | 'high' | 'max'
+export type EffortLevel =
+  | 'low'
+  | 'medium'
+  | 'high'
+  | 'xhigh'
+  | 'max'
+  | 'ultracode'
 
 /**
  * Backend for a chat session (Claude CLI, Codex CLI, or OpenCode)

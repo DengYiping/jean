@@ -1,7 +1,9 @@
 import React, { useCallback, useState } from 'react'
+import { toast } from 'sonner'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { Slider } from '@/components/ui/slider'
+import { Switch } from '@/components/ui/switch'
 import {
   Select,
   SelectContent,
@@ -11,6 +13,7 @@ import {
 } from '@/components/ui/select'
 import { useTheme } from '@/hooks/use-theme'
 import { usePreferences, usePatchPreferences } from '@/services/preferences'
+import { invoke } from '@/lib/transport'
 import {
   uiFontOptions,
   chatFontOptions,
@@ -77,6 +80,14 @@ const ScalingField: React.FC<{
 
 const modKey = isMacOS ? 'Cmd' : 'Ctrl'
 
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error
+    ? error.message
+    : typeof error === 'string'
+      ? error
+      : 'Unknown error occurred'
+}
+
 export const AppearancePane: React.FC = () => {
   const { theme, setTheme } = useTheme()
   const { data: preferences } = usePreferences()
@@ -86,6 +97,7 @@ export const AppearancePane: React.FC = () => {
   // localZoom tracks slider position, preferences are saved only on release.
   const prefsZoom = preferences?.zoom_level ?? ZOOM_LEVEL_DEFAULT
   const [localZoom, setLocalZoom] = useState<number | null>(null)
+  const [isVibrancyPending, setIsVibrancyPending] = useState(false)
   const zoomValue = localZoom ?? prefsZoom
 
   const handleThemeChange = useCallback(
@@ -134,6 +146,42 @@ export const AppearancePane: React.FC = () => {
     [patchPreferences]
   )
 
+  const handleVibrancyChange = useCallback(
+    async (checked: boolean) => {
+      const previous = preferences?.window_vibrancy ?? false
+      if (checked === previous) return
+
+      setIsVibrancyPending(true)
+      try {
+        await patchPreferences.mutateAsync({ window_vibrancy: checked })
+      } catch {
+        setIsVibrancyPending(false)
+        return
+      }
+
+      try {
+        await invoke('set_window_vibrancy', { enabled: checked })
+      } catch (error) {
+        try {
+          await invoke('set_window_vibrancy', { enabled: previous })
+          await patchPreferences.mutateAsync({ window_vibrancy: previous })
+        } catch (rollbackError) {
+          toast.error('Window transparency was not applied or rolled back', {
+            description: getErrorMessage(rollbackError),
+          })
+          return
+        }
+
+        toast.error('Window transparency was not applied', {
+          description: getErrorMessage(error),
+        })
+      } finally {
+        setIsVibrancyPending(false)
+      }
+    },
+    [patchPreferences, preferences?.window_vibrancy]
+  )
+
   return (
     <div className="space-y-6">
       <SettingsSection title="Theme" anchorId="pref-appearance-section-theme">
@@ -157,6 +205,19 @@ export const AppearancePane: React.FC = () => {
               </SelectContent>
             </Select>
           </InlineField>
+
+          {isMacOS && (
+            <InlineField
+              label="Window transparency"
+              description="Translucent window with desktop blur (uses significant GPU)"
+            >
+              <Switch
+                checked={preferences?.window_vibrancy ?? false}
+                onCheckedChange={handleVibrancyChange}
+                disabled={patchPreferences.isPending || isVibrancyPending}
+              />
+            </InlineField>
+          )}
 
           <InlineField
             label="Syntax theme (dark)"

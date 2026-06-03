@@ -122,6 +122,7 @@ export const defaultResponses: Record<string, unknown> = {
   load_preferences: mockPreferences,
   save_preferences: null,
   patch_preferences: null,
+  set_window_vibrancy: null,
   list_available_editors: [],
 
   // UI State
@@ -159,6 +160,9 @@ export const defaultResponses: Record<string, unknown> = {
   install_coderabbit_cli: null,
   uninstall_coderabbit_cli: null,
   update_coderabbit_cli: null,
+  check_opinionated_plugin_status: { installed: false, version: null },
+  install_opinionated_plugin: 'Plugin installed successfully',
+  uninstall_opinionated_plugin: 'Plugin uninstalled successfully',
   check_opencode_cli_installed: { installed: true, version: '1.0.0' },
   check_opencode_cli_auth: { authenticated: true },
   uninstall_opencode_cli: null,
@@ -342,7 +346,12 @@ export const defaultResponses: Record<string, unknown> = {
 
   // Recovery
   cleanup_old_recovery_files: 0,
-  cleanup_old_archives: { removed: 0 },
+  cleanup_old_archives: {
+    deleted_worktrees: 0,
+    deleted_sessions: 0,
+    deleted_contexts: 0,
+    deleted_orphan_indexes: 0,
+  },
 
   // App
   get_app_data_dir: `${process.env.HOME}/Library/Application Support/com.jean.desktop.test`,

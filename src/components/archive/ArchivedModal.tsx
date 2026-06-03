@@ -95,6 +95,8 @@ type DeleteConfirmType =
 interface CleanupResult {
   deleted_worktrees: number
   deleted_sessions: number
+  deleted_contexts?: number
+  deleted_orphan_indexes?: number
 }
 
 export function ArchivedModal({ open, onOpenChange }: ArchivedModalProps) {
@@ -396,6 +398,16 @@ export function ArchivedModal({ open, onOpenChange }: ArchivedModalProps) {
       if (result.deleted_sessions > 0) {
         parts.push(
           `${result.deleted_sessions} session${result.deleted_sessions === 1 ? '' : 's'}`
+        )
+      }
+      if ((result.deleted_contexts ?? 0) > 0) {
+        parts.push(
+          `${result.deleted_contexts} context${result.deleted_contexts === 1 ? '' : 's'}`
+        )
+      }
+      if ((result.deleted_orphan_indexes ?? 0) > 0) {
+        parts.push(
+          `${result.deleted_orphan_indexes} stale session index${result.deleted_orphan_indexes === 1 ? '' : 'es'}`
         )
       }
 

@@ -569,6 +569,7 @@ export const DEFAULT_CLAUDE_SYSTEM_PROMPT = `### 1. Plan Mode Default
 
 ## Core Principles
 - **Simplicity First**: Make every change as simple as possible. Impact minimal code.
+- **Clickable References**: When output mentions issues, PRs, security advisories/alerts, Linear issues, or other external resources, include clickable links when available so users can open them directly.
 - **No Laziness**: Find root causes. No temporary fixes. Senior developer standards.
 - **Minimal Impact**: Changes should only touch what's necessary. Avoid introducing bugs.
 
@@ -966,7 +967,7 @@ export interface AppPreferences {
   theme: string
   selected_model: ClaudeModel // Claude model ID passed to --model flag
   thinking_level: ThinkingLevel // Thinking level: 'off' | 'think' | 'megathink' | 'ultrathink'
-  default_effort_level: EffortLevel // Effort level for Opus adaptive thinking: 'low' | 'medium' | 'high' | 'max'
+  default_effort_level: EffortLevel // Effort level for Opus adaptive thinking: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultracode'
   terminal: TerminalApp // Terminal app: 'terminal' | 'warp' | 'ghostty' | 'iterm2' | 'powershell' | 'windows-terminal'
   editor: EditorApp // Editor app id: built-in or custom editor id
   custom_editors?: CustomEditorConfig[] // Custom editor launch configs
@@ -1060,6 +1061,7 @@ export interface AppPreferences {
   gh_cli_source: 'jean' | 'path' // Legacy GitHub CLI source field; gh always resolves from system PATH
   coderabbit_cli_source?: 'jean' | 'path' // CodeRabbit CLI source: 'jean' (managed) or 'path' (system PATH)
   expand_tool_calls_by_default: boolean // Expand all tool call collapsibles by default
+  window_vibrancy: boolean // macOS window vibrancy effect (high GPU cost, default false)
   auto_update_ai_backends: boolean // Auto-install CLI updates in background when a new version is detected
   jean_mcp_enabled: boolean // Expose Jean MCP server to spawned CLIs through explicit CLI config entries
   jean_mcp_max_depth: number // Max recursive spawn depth via Jean MCP (default 3)
@@ -1258,7 +1260,13 @@ export const effortLevelOptions: {
   { value: 'low', label: 'Low', description: 'Minimal thinking' },
   { value: 'medium', label: 'Medium', description: 'Moderate thinking' },
   { value: 'high', label: 'High', description: 'Deep reasoning' },
+  { value: 'xhigh', label: 'xHigh', description: 'Extra high effort' },
   { value: 'max', label: 'Max', description: 'No limits' },
+  {
+    value: 'ultracode',
+    label: 'Ultracode',
+    description: 'xHigh + Dynamic Workflows',
+  },
 ]
 
 // =============================================================================
@@ -2022,6 +2030,7 @@ export const defaultPreferences: AppPreferences = {
   gh_cli_source: 'path', // Default: host system PATH
   coderabbit_cli_source: 'jean', // Default: Jean-managed
   expand_tool_calls_by_default: false, // Default: collapsed
+  window_vibrancy: false, // Default: disabled (high GPU cost)
   auto_update_ai_backends: true, // Default: auto-update AI backends in the background
   jean_mcp_enabled: true, // Default: enabled
   jean_mcp_max_depth: 3,

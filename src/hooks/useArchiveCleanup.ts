@@ -10,6 +10,7 @@ interface CleanupResult {
   deleted_worktrees: number
   deleted_sessions: number
   deleted_contexts?: number
+  deleted_orphan_indexes?: number
 }
 
 /**
@@ -32,12 +33,6 @@ export function useArchiveCleanup() {
     // Mark as run to prevent re-running
     hasRunRef.current = true
 
-    // If retention is 0, cleanup is disabled
-    if (preferences.archive_retention_days === 0) {
-      logger.debug('Archive cleanup is disabled (retention_days = 0)')
-      return
-    }
-
     const runCleanup = async () => {
       try {
         logger.info('Running archive cleanup', {
@@ -49,11 +44,13 @@ export function useArchiveCleanup() {
         })
 
         const deletedContexts = result.deleted_contexts ?? 0
+        const deletedOrphanIndexes = result.deleted_orphan_indexes ?? 0
 
         if (
           result.deleted_worktrees > 0 ||
           result.deleted_sessions > 0 ||
-          deletedContexts > 0
+          deletedContexts > 0 ||
+          deletedOrphanIndexes > 0
         ) {
           // Invalidate archive queries to refresh UI
           queryClient.invalidateQueries({ queryKey: ['archived-worktrees'] })
@@ -76,15 +73,24 @@ export function useArchiveCleanup() {
               `${deletedContexts} context${deletedContexts === 1 ? '' : 's'}`
             )
           }
+          if (deletedOrphanIndexes > 0) {
+            parts.push(
+              `${deletedOrphanIndexes} stale session index${deletedOrphanIndexes === 1 ? '' : 'es'}`
+            )
+          }
 
           toast.info(`Cleaned up ${parts.join(' and ')} from archive`, {
-            description: `Archives older than ${preferences.archive_retention_days} days`,
+            description:
+              preferences.archive_retention_days === 0
+                ? 'Removed stale session references'
+                : `Archives older than ${preferences.archive_retention_days} days`,
           })
 
           logger.info('Archive cleanup complete', {
             deleted_worktrees: result.deleted_worktrees,
             deleted_sessions: result.deleted_sessions,
             deleted_contexts: deletedContexts,
+            deleted_orphan_indexes: deletedOrphanIndexes,
           })
         } else {
           logger.debug('No old archives to clean up')

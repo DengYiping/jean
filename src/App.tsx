@@ -666,6 +666,20 @@ function App() {
     }
   }, [])
 
+  // Pause animations when window loses focus to save GPU.
+  useEffect(() => {
+    const onBlur = () =>
+      document.documentElement.classList.add('window-blurred')
+    const onFocus = () =>
+      document.documentElement.classList.remove('window-blurred')
+    window.addEventListener('blur', onBlur)
+    window.addEventListener('focus', onFocus)
+    return () => {
+      window.removeEventListener('blur', onBlur)
+      window.removeEventListener('focus', onFocus)
+    }
+  }, [])
+
   useEffect(() => {
     if (!isNativeApp()) return
 

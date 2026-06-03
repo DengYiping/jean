@@ -12,6 +12,8 @@ export type SessionType = 'worktree' | 'base'
  */
 export type WorktreeStatus = 'pending' | 'ready' | 'error' | 'deleting'
 
+export type WorktreeSortMode = 'created' | 'last_activity' | 'manual'
+
 /**
  * Check if a worktree is a base session
  */

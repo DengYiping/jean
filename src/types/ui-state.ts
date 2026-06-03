@@ -8,7 +8,7 @@
 // Review results are also stored in Session files (review_results field).
 
 export interface ProjectCanvasSettingsState {
-  worktree_sort_mode?: 'created' | 'last_activity'
+  worktree_sort_mode?: 'created' | 'last_activity' | 'manual'
 }
 
 export type ModalBrowserDockMode = 'floating' | 'left' | 'right' | 'bottom'

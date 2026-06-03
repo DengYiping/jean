@@ -566,7 +566,9 @@ fn parse_effort_level(value: Option<&str>) -> Result<Option<EffortLevel>, String
         Some("low") => Ok(Some(EffortLevel::Low)),
         Some("medium") => Ok(Some(EffortLevel::Medium)),
         Some("high") => Ok(Some(EffortLevel::High)),
+        Some("xhigh") => Ok(Some(EffortLevel::Xhigh)),
         Some("max") => Ok(Some(EffortLevel::Max)),
+        Some("ultracode") => Ok(Some(EffortLevel::Ultracode)),
         Some(other) => Err(format!("Unsupported effort level: {other}")),
     }
 }

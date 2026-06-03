@@ -34,6 +34,11 @@ pub async fn dispatch_command(
             emit_cache_invalidation(app, &["preferences"]);
             Ok(Value::Null)
         }
+        "set_window_vibrancy" => {
+            let enabled: bool = from_field(&args, "enabled")?;
+            crate::set_window_vibrancy(app.clone(), enabled).await?;
+            Ok(Value::Null)
+        }
         "load_ui_state" => {
             let result = crate::load_ui_state(app.clone()).await?;
             to_value(result)
@@ -935,11 +940,13 @@ pub async fn dispatch_command(
             let session_id: String = field(&args, "sessionId", "session_id")?;
             let ghsa_id: String = field(&args, "ghsaId", "ghsa_id")?;
             let project_path: String = field(&args, "projectPath", "project_path")?;
+            let worktree_id: Option<String> = field_opt(&args, "worktreeId", "worktree_id")?;
             let result = crate::projects::get_advisory_context_content(
                 app.clone(),
                 session_id,
                 ghsa_id,
                 project_path,
+                worktree_id,
             )
             .await?;
             to_value(result)
@@ -1233,9 +1240,21 @@ pub async fn dispatch_command(
                     }
                     Some(crate::chat::types::ThinkingLevel::Off)
                 }
-                Some("max" | "xhigh") => {
+                Some("xhigh") => {
+                    if effort_level.is_none() {
+                        effort_level = Some(crate::chat::types::EffortLevel::Xhigh);
+                    }
+                    Some(crate::chat::types::ThinkingLevel::Off)
+                }
+                Some("max") => {
                     if effort_level.is_none() {
                         effort_level = Some(crate::chat::types::EffortLevel::Max);
+                    }
+                    Some(crate::chat::types::ThinkingLevel::Off)
+                }
+                Some("ultracode") => {
+                    if effort_level.is_none() {
+                        effort_level = Some(crate::chat::types::EffortLevel::Ultracode);
                     }
                     Some(crate::chat::types::ThinkingLevel::Off)
                 }
@@ -2947,13 +2966,21 @@ pub async fn dispatch_command(
         }
         "check_opinionated_plugin_status" => {
             let plugin_name: String = field(&args, "pluginName", "plugin_name")?;
-            let result = crate::opinionated::check_opinionated_plugin_status(plugin_name).await?;
+            let result =
+                crate::opinionated::check_opinionated_plugin_status(app.clone(), plugin_name)
+                    .await?;
             to_value(result)
         }
         "install_opinionated_plugin" => {
             let plugin_name: String = field(&args, "pluginName", "plugin_name")?;
             let result =
                 crate::opinionated::install_opinionated_plugin(app.clone(), plugin_name).await?;
+            to_value(result)
+        }
+        "uninstall_opinionated_plugin" => {
+            let plugin_name: String = field(&args, "pluginName", "plugin_name")?;
+            let result =
+                crate::opinionated::uninstall_opinionated_plugin(app.clone(), plugin_name).await?;
             to_value(result)
         }
 

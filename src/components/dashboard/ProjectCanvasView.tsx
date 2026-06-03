@@ -60,6 +60,7 @@ import {
   useOpenWorktreeInFinder,
   useOpenWorktreeInTerminal,
   useRemoveProject,
+  useReorderWorktrees,
   projectsQueryKeys,
 } from '@/services/projects'
 import { cancelChatMessage } from '@/services/chat'
@@ -155,7 +156,7 @@ interface FlatCard {
   isPending?: boolean
 }
 
-type WorktreeSortMode = 'created' | 'last_activity'
+type WorktreeSortMode = 'created' | 'last_activity' | 'manual'
 
 type ActiveStatus =
   | 'waiting'
@@ -277,11 +278,50 @@ function getWorktreeSortValue(
   latestActivityAt: number,
   sortMode: WorktreeSortMode
 ): number {
+  if (sortMode === 'manual') {
+    return worktree.order
+  }
+
   if (sortMode === 'created') {
     return worktree.created_at
   }
 
   return Math.max(latestActivityAt, worktree.created_at)
+}
+
+function compareWorktreeSectionsForSort(
+  a: WorktreeSection,
+  b: WorktreeSection,
+  latestActivityByWorktreeId: ReadonlyMap<string, number>,
+  sortMode: WorktreeSortMode
+): number {
+  const aIsBase = isBaseSession(a.worktree)
+  const bIsBase = isBaseSession(b.worktree)
+  if (aIsBase && !bIsBase) return -1
+  if (!aIsBase && bIsBase) return 1
+
+  if (sortMode === 'manual') {
+    const orderDiff = a.worktree.order - b.worktree.order
+    if (orderDiff !== 0) return orderDiff
+    const createdDiff = b.worktree.created_at - a.worktree.created_at
+    if (createdDiff !== 0) return createdDiff
+    return a.worktree.id.localeCompare(b.worktree.id)
+  }
+
+  const sortDiff =
+    getWorktreeSortValue(
+      b.worktree,
+      latestActivityByWorktreeId.get(b.worktree.id) ?? b.worktree.created_at,
+      sortMode
+    ) -
+    getWorktreeSortValue(
+      a.worktree,
+      latestActivityByWorktreeId.get(a.worktree.id) ?? a.worktree.created_at,
+      sortMode
+    )
+  if (sortDiff !== 0) return sortDiff
+
+  return b.worktree.created_at - a.worktree.created_at
 }
 
 function getSessionMetrics(cards: SessionCardData[]) {
@@ -722,6 +762,7 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
   // Project action mutations
   const createBaseSession = useCreateBaseSession()
   const removeProject = useRemoveProject()
+  const reorderWorktrees = useReorderWorktrees()
   const openOnGitHub = useOpenProjectOnGitHub()
   const openInFinder = useOpenWorktreeInFinder()
   const openWorktreesFolder = useOpenProjectWorktreesFolder()
@@ -952,28 +993,14 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
     }
 
     // Sort ready worktrees: base sessions first, then selected sort mode
-    readySections.sort((a, b) => {
-      const aIsBase = isBaseSession(a.worktree)
-      const bIsBase = isBaseSession(b.worktree)
-      if (aIsBase && !bIsBase) return -1
-      if (!aIsBase && bIsBase) return 1
-
-      const sortDiff =
-        getWorktreeSortValue(
-          b.worktree,
-          latestActivityByWorktreeId.get(b.worktree.id) ??
-            b.worktree.created_at,
-          worktreeSortMode
-        ) -
-        getWorktreeSortValue(
-          a.worktree,
-          latestActivityByWorktreeId.get(a.worktree.id) ??
-            a.worktree.created_at,
-          worktreeSortMode
-        )
-      if (sortDiff !== 0) return sortDiff
-      return b.worktree.created_at - a.worktree.created_at
-    })
+    readySections.sort((a, b) =>
+      compareWorktreeSectionsForSort(
+        a,
+        b,
+        latestActivityByWorktreeId,
+        worktreeSortMode
+      )
+    )
 
     result.push(...readySections)
 
@@ -1598,6 +1625,57 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
     handleFilterTabKeyboardNav(1)
   }, [handleFilterTabKeyboardNav])
 
+  const moveSelectedWorktreeByKeyboard = useCallback(
+    (direction: -1 | 1) => {
+      if (
+        activeFilterTab !== 'all' ||
+        searchQuery ||
+        reorderWorktrees.isPending
+      )
+        return
+
+      const selectedItem =
+        selectedIndex === null ? null : (flatCards[selectedIndex] ?? null)
+      if (!selectedItem || selectedItem.isPending) return
+
+      const movableIds = worktreeSections
+        .filter(
+          section =>
+            !section.isPending &&
+            !isBaseSession(section.worktree) &&
+            section.worktree.status !== 'deleting'
+        )
+        .map(section => section.worktree.id)
+
+      const currentIndex = movableIds.indexOf(selectedItem.worktreeId)
+      if (currentIndex === -1) return
+
+      const targetIndex = currentIndex + direction
+      if (targetIndex < 0 || targetIndex >= movableIds.length) return
+
+      const nextIds = [...movableIds]
+      const [moved] = nextIds.splice(currentIndex, 1)
+      if (!moved) return
+      nextIds.splice(targetIndex, 0, moved)
+
+      reorderWorktrees.mutate({
+        projectId,
+        worktreeIds: nextIds,
+        switchToManualSort: worktreeSortMode !== 'manual',
+      })
+    },
+    [
+      activeFilterTab,
+      flatCards,
+      projectId,
+      reorderWorktrees,
+      searchQuery,
+      selectedIndex,
+      worktreeSections,
+      worktreeSortMode,
+    ]
+  )
+
   // Keep selectedWorktreeId in sync whenever selectedIndex changes (click, keyboard, or external)
   // This fixes the bug where closing a session calls selectProject() which clears selectedWorktreeId,
   // but the dashboard still has a card selected via selectedIndex
@@ -1854,6 +1932,8 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
     onSelect: handleSelect,
     onNavigateLeft: handleNavigateFilterTabLeft,
     onNavigateRight: handleNavigateFilterTabRight,
+    onMoveUp: () => moveSelectedWorktreeByKeyboard(-1),
+    onMoveDown: () => moveSelectedWorktreeByKeyboard(1),
     enabled: !isModalOpen,
     onSelectionChange: syncSelectionToStore,
   })
@@ -2275,6 +2355,9 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
                     </DropdownMenuRadioItem>
                     <DropdownMenuRadioItem value="last_activity">
                       Last activity
+                    </DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="manual">
+                      Manual order
                     </DropdownMenuRadioItem>
                   </DropdownMenuRadioGroup>
                 </DropdownMenuContent>

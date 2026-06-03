@@ -12,6 +12,7 @@ import {
   Loader2,
   RefreshCw,
   ChevronRight,
+  Trash2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -27,7 +28,7 @@ interface PluginDefinition {
   description: string
   githubUrl: string
   usage: UsageStep[]
-  scope: 'system-wide' | 'claude-cli'
+  scope: 'system-wide' | 'ai-backends' | 'claude-cli'
   backends: string[]
 }
 
@@ -39,7 +40,7 @@ const PLUGINS: PluginDefinition[] = [
       'CLI proxy that reduces token usage on common dev commands by filtering and compressing command output before it reaches your assistant.',
     githubUrl: 'https://github.com/rtk-ai/rtk',
     scope: 'system-wide',
-    backends: ['Claude', 'Codex', 'OpenCode', 'Cursor', 'all CLIs'],
+    backends: ['Claude', 'Codex', 'OpenCode', 'all CLIs'],
     usage: [
       {
         note: 'Once installed, keep using your normal shell commands. RTK works transparently.',
@@ -53,12 +54,17 @@ const PLUGINS: PluginDefinition[] = [
     id: 'caveman',
     name: 'Caveman',
     description:
-      'Claude Code plugin that pushes responses toward terse, low-token output while preserving technical accuracy.',
+      'Cross-backend skill/plugin that reduces output tokens through terse communication while maintaining technical accuracy.',
     githubUrl: 'https://github.com/JuliusBrussee/caveman',
-    scope: 'claude-cli',
-    backends: ['Claude'],
+    scope: 'ai-backends',
+    backends: ['Claude', 'Codex', 'OpenCode'],
     usage: [
-      { note: 'Takes effect on your next Claude prompt after installation.' },
+      {
+        note: "Installs through Caveman's unified installer for every Jean AI backend found on this machine: Claude, Codex, and OpenCode.",
+      },
+      {
+        note: 'Claude and OpenCode can auto-activate. Codex exposes skills for per-session activation with /caveman.',
+      },
       { label: 'Switch intensity', command: '/caveman lite|full|ultra' },
       { label: 'Disable', command: 'stop caveman' },
       {
@@ -71,13 +77,13 @@ const PLUGINS: PluginDefinition[] = [
     id: 'superpowers',
     name: 'Superpowers',
     description:
-      'Skills framework for Claude Code. Adds brainstorming, TDD, systematic debugging, code review, plan writing/execution, parallel agent dispatch, and git worktree workflows.',
+      'Cross-backend skill pack. Adds brainstorming, TDD, systematic debugging, code review, plan writing/execution, parallel agent dispatch, and git worktree workflows.',
     githubUrl: 'https://github.com/obra/superpowers',
-    scope: 'claude-cli',
-    backends: ['Claude'],
+    scope: 'ai-backends',
+    backends: ['Claude', 'Codex', 'OpenCode'],
     usage: [
       {
-        note: 'Auto-loads skills on session start. Claude invokes the Skill tool when a workflow matches.',
+        note: 'Installs through Claude when available, then mirrors Superpowers skills into installed Jean AI backends. Without Claude, Jean fetches the Superpowers repo directly.',
       },
       {
         label: 'Brainstorm a feature',
@@ -126,6 +132,7 @@ function PluginCard({ plugin }: { plugin: PluginDefinition }) {
   const [status, setStatus] = useState<PluginStatus | null>(null)
   const [checking, setChecking] = useState(true)
   const [installing, setInstalling] = useState(false)
+  const [uninstalling, setUninstalling] = useState(false)
   const [expanded, setExpanded] = useState(false)
 
   const checkStatus = useCallback(async () => {
@@ -163,6 +170,24 @@ function PluginCard({ plugin }: { plugin: PluginDefinition }) {
     }
   }, [checkStatus, plugin.id, plugin.name])
 
+  const handleUninstall = useCallback(async () => {
+    setUninstalling(true)
+    const toastId = toast.loading(`Uninstalling ${plugin.name}...`)
+    try {
+      const message = await invoke<string>('uninstall_opinionated_plugin', {
+        pluginName: plugin.id,
+      })
+      toast.success(message, { id: toastId })
+      await checkStatus()
+    } catch (error) {
+      toast.error(`Failed to uninstall ${plugin.name}: ${error}`, {
+        id: toastId,
+      })
+    } finally {
+      setUninstalling(false)
+    }
+  }, [checkStatus, plugin.id, plugin.name])
+
   return (
     <div className="rounded-lg border">
       <button
@@ -188,23 +213,45 @@ function PluginCard({ plugin }: { plugin: PluginDefinition }) {
         <Badge variant="outline" className="text-xs">
           {plugin.scope === 'system-wide'
             ? 'System-wide (shell)'
-            : 'Claude CLI plugin'}
+            : plugin.scope === 'ai-backends'
+              ? 'All AI backends'
+              : 'Claude CLI plugin'}
         </Badge>
         <span className="ml-auto flex items-center gap-2 shrink-0">
           {checking ? (
             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
           ) : status?.installed ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={e => {
-                e.stopPropagation()
-                checkStatus()
-              }}
-              disabled={installing}
-            >
-              <RefreshCw className="h-4 w-4" />
-            </Button>
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={e => {
+                  e.stopPropagation()
+                  checkStatus()
+                }}
+                disabled={installing || uninstalling}
+              >
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+              {plugin.scope === 'ai-backends' && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={e => {
+                    e.stopPropagation()
+                    handleUninstall()
+                  }}
+                  disabled={installing || uninstalling}
+                >
+                  {uninstalling ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-4 w-4" />
+                  )}
+                  Uninstall
+                </Button>
+              )}
+            </>
           ) : (
             <Button
               size="sm"

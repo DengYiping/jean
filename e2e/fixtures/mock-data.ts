@@ -118,6 +118,9 @@ export const mockPreferences = {
   claude_update_command: null,
   codex_update_command: null,
   coderabbit_cli_source: 'jean',
+  expand_tool_calls_by_default: false,
+  window_vibrancy: false,
+  auto_update_ai_backends: true,
 }
 
 export const mockUIState = {

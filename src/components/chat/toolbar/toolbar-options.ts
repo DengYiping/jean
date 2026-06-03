@@ -43,5 +43,11 @@ export const EFFORT_LEVEL_OPTIONS: {
   { value: 'low', label: 'Low', description: 'Minimal' },
   { value: 'medium', label: 'Medium', description: 'Moderate' },
   { value: 'high', label: 'High', description: 'Deep' },
+  { value: 'xhigh', label: 'xHigh', description: 'Extra high' },
   { value: 'max', label: 'Max', description: 'No limits' },
+  {
+    value: 'ultracode',
+    label: 'Ultracode',
+    description: 'xHigh + workflows',
+  },
 ]

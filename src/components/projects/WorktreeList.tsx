@@ -152,7 +152,11 @@ export function WorktreeList({
       )
       const worktreeIds = reorderedWorktrees.map(w => w.id)
 
-      reorderWorktrees.mutate({ projectId, worktreeIds })
+      reorderWorktrees.mutate({
+        projectId,
+        worktreeIds,
+        switchToManualSort: true,
+      })
     },
     [sortedWorktrees, projectId, reorderWorktrees]
   )

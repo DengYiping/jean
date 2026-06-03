@@ -248,14 +248,14 @@ describe('ProjectsStore', () => {
       const { setProjectCanvasWorktreeSortMode } = useProjectsStore.getState()
 
       setProjectCanvasWorktreeSortMode('project-1', 'last_activity')
-      setProjectCanvasWorktreeSortMode('project-2', 'created')
+      setProjectCanvasWorktreeSortMode('project-2', 'manual')
 
       const state = useProjectsStore.getState()
       expect(state.projectCanvasSettings['project-1']?.worktreeSortMode).toBe(
         'last_activity'
       )
       expect(state.projectCanvasSettings['project-2']?.worktreeSortMode).toBe(
-        'created'
+        'manual'
       )
     })
   })

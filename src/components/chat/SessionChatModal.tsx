@@ -499,16 +499,10 @@ export function SessionChatModal({
           action()
         }
       } else {
-        handleArchiveSession(session.id)
+        handleDeleteSession(session.id)
       }
     },
-    [
-      sessions,
-      handleDeleteSession,
-      onClose,
-      preferences?.confirm_session_close,
-      handleArchiveSession,
-    ]
+    [sessions, handleDeleteSession, onClose, preferences?.confirm_session_close]
   )
 
   const handleTabAuxClick = useCallback(

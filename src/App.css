@@ -351,6 +351,13 @@
   animation: icon-glow 2s ease-in-out infinite;
 }
 
+.window-blurred *,
+.window-blurred *::before,
+.window-blurred *::after {
+  animation-play-state: paused !important;
+  transition-duration: 0s !important;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50 outline-none;

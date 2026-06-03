@@ -5,23 +5,24 @@ import { listen, type UnlistenFn } from '@/lib/transport'
 import { toast } from 'sonner'
 import { logger } from '@/lib/logger'
 import { disposeAllWorktreeTerminals } from '@/lib/terminal-instances'
-import type {
-  Project,
-  Worktree,
-  WorktreeSlot,
-  DetectPrResponse,
-  WorktreeCreatingEvent,
-  WorktreeCreatedEvent,
-  WorktreeCreateErrorEvent,
-  WorktreeDeletingEvent,
-  WorktreeDeletedEvent,
-  WorktreeDeleteErrorEvent,
-  WorktreeArchivedEvent,
-  WorktreeUnarchivedEvent,
-  WorktreePermanentlyDeletedEvent,
-  WorktreePathExistsEvent,
-  WorktreeBranchExistsEvent,
-  WorktreeSetupCompleteEvent,
+import {
+  isBaseSession,
+  type Project,
+  type Worktree,
+  type WorktreeSlot,
+  type DetectPrResponse,
+  type WorktreeCreatingEvent,
+  type WorktreeCreatedEvent,
+  type WorktreeCreateErrorEvent,
+  type WorktreeDeletingEvent,
+  type WorktreeDeletedEvent,
+  type WorktreeDeleteErrorEvent,
+  type WorktreeArchivedEvent,
+  type WorktreeUnarchivedEvent,
+  type WorktreePermanentlyDeletedEvent,
+  type WorktreePathExistsEvent,
+  type WorktreeBranchExistsEvent,
+  type WorktreeSetupCompleteEvent,
 } from '@/types/projects'
 import { useProjectsStore } from '@/store/projects-store'
 import { useChatStore } from '@/store/chat-store'
@@ -2931,6 +2932,7 @@ export function useReorderWorktrees() {
     }: {
       projectId: string
       worktreeIds: string[]
+      switchToManualSort?: boolean
     }): Promise<void> => {
       if (!isTauri()) {
         throw new Error('Not in Tauri context')
@@ -2940,7 +2942,7 @@ export function useReorderWorktrees() {
       await invoke('reorder_worktrees', { projectId, worktreeIds })
       logger.info('Worktrees reordered')
     },
-    onMutate: async ({ projectId, worktreeIds }) => {
+    onMutate: async ({ projectId, worktreeIds, switchToManualSort }) => {
       // Cancel outgoing refetches
       await queryClient.cancelQueries({
         queryKey: projectsQueryKeys.worktrees(projectId),
@@ -2950,20 +2952,21 @@ export function useReorderWorktrees() {
       const previousWorktrees = queryClient.getQueryData<Worktree[]>(
         projectsQueryKeys.worktrees(projectId)
       )
+      const previousProjectCanvasSettings =
+        useProjectsStore.getState().projectCanvasSettings
 
       // Optimistically update the cache
       if (previousWorktrees) {
-        const reorderedWorktrees = worktreeIds
-          .map((id, index) => {
-            const worktree = previousWorktrees.find(w => w.id === id)
-            // Base sessions keep order 0, others get index + 1
-            if (worktree) {
-              const newOrder = worktree.session_type === 'base' ? 0 : index + 1
-              return { ...worktree, order: newOrder }
-            }
-            return null
-          })
-          .filter((w): w is Worktree => w !== null)
+        const orderById = new Map(
+          worktreeIds.map((id, index) => [id, index + 1])
+        )
+        const reorderedWorktrees = previousWorktrees.map(worktree => {
+          if (isBaseSession(worktree)) {
+            return { ...worktree, order: 0 }
+          }
+          const order = orderById.get(worktree.id)
+          return order === undefined ? worktree : { ...worktree, order }
+        })
 
         queryClient.setQueryData<Worktree[]>(
           projectsQueryKeys.worktrees(projectId),
@@ -2971,7 +2974,13 @@ export function useReorderWorktrees() {
         )
       }
 
-      return { previousWorktrees, projectId }
+      if (switchToManualSort) {
+        useProjectsStore
+          .getState()
+          .setProjectCanvasWorktreeSortMode(projectId, 'manual')
+      }
+
+      return { previousWorktrees, previousProjectCanvasSettings, projectId }
     },
     onError: (error, _, context) => {
       // Rollback on error
@@ -2980,6 +2989,11 @@ export function useReorderWorktrees() {
           projectsQueryKeys.worktrees(context.projectId),
           context.previousWorktrees
         )
+      }
+      if (context?.previousProjectCanvasSettings) {
+        useProjectsStore
+          .getState()
+          .setProjectCanvasSettings(context.previousProjectCanvasSettings)
       }
       const message =
         error instanceof Error

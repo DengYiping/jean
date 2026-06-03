@@ -276,6 +276,8 @@ pub struct AppPreferences {
     pub coderabbit_cli_source: String, // CodeRabbit CLI source: "jean" (managed) or "path" (system PATH)
     #[serde(default)]
     pub expand_tool_calls_by_default: bool, // Expand all tool call collapsibles by default (default: false)
+    #[serde(default)]
+    pub window_vibrancy: bool, // macOS window vibrancy effect (high GPU cost, default false)
     #[serde(default = "default_auto_update_ai_backends")]
     pub auto_update_ai_backends: bool, // Automatically update AI backend CLIs when a new version is available
     #[serde(default = "default_jean_mcp_enabled")]
@@ -1969,6 +1971,7 @@ impl Default for AppPreferences {
             gh_cli_source: default_gh_cli_source(),
             coderabbit_cli_source: default_cli_source(),
             expand_tool_calls_by_default: false,
+            window_vibrancy: false,
             auto_update_ai_backends: default_auto_update_ai_backends(),
             jean_mcp_enabled: default_jean_mcp_enabled(),
             jean_mcp_max_depth: default_jean_mcp_max_depth(),
@@ -2456,6 +2459,62 @@ async fn patch_preferences(app: AppHandle, patch: Value) -> Result<(), String> {
     let merged: AppPreferences =
         serde_json::from_value(current_json).map_err(|e| format!("Merge error: {e}"))?;
     save_preferences(app, merged).await
+}
+
+#[cfg(target_os = "macos")]
+fn apply_macos_window_opacity(window: &tauri::WebviewWindow, opaque: bool) -> Result<(), String> {
+    use objc2_app_kit::{NSColor, NSWindow};
+
+    let ns_window_ptr = window.ns_window().map_err(|e| format!("ns_window: {e}"))?;
+    if ns_window_ptr.is_null() {
+        return Err("ns_window pointer is null".into());
+    }
+    let ptr_addr = ns_window_ptr as usize;
+
+    window
+        .run_on_main_thread(move || unsafe {
+            let ns_window: &NSWindow = &*(ptr_addr as *const NSWindow);
+            ns_window.setOpaque(opaque);
+            let bg = if opaque {
+                NSColor::windowBackgroundColor()
+            } else {
+                NSColor::clearColor()
+            };
+            ns_window.setBackgroundColor(Some(&bg));
+        })
+        .map_err(|e| format!("run_on_main_thread: {e}"))
+}
+
+#[tauri::command]
+async fn set_window_vibrancy(app: AppHandle, enabled: bool) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        use tauri::window::Effect;
+
+        if let Some(window) = app.get_webview_window("main") {
+            if enabled {
+                apply_macos_window_opacity(&window, false)?;
+                window
+                    .set_effects(tauri::utils::config::WindowEffectsConfig {
+                        effects: vec![Effect::Sidebar],
+                        radius: Some(12.0),
+                        state: Some(tauri::window::EffectState::Active),
+                        color: None,
+                    })
+                    .map_err(|e| format!("Failed to set vibrancy: {e}"))?;
+            } else {
+                window
+                    .set_effects(None)
+                    .map_err(|e| format!("Failed to clear vibrancy: {e}"))?;
+                apply_macos_window_opacity(&window, true)?;
+            }
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, enabled);
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -3751,6 +3810,34 @@ pub fn run() {
 
             log::info!("Startup: orphaned server cleanup spawned at {:?}", setup_start.elapsed());
 
+            let opinionated_cleanup_started_at = setup_start.elapsed();
+            tauri::async_runtime::spawn(async move {
+                let result =
+                    tokio::task::spawn_blocking(
+                        opinionated::cleanup_disallowed_opinionated_skills_on_startup,
+                    )
+                    .await;
+
+                match result {
+                    Ok(Ok(count)) if count > 0 => log::info!(
+                        "Startup: removed {count} disallowed opinionated skill path(s)"
+                    ),
+                    Ok(Ok(_)) => log::trace!(
+                        "Startup: no disallowed opinionated skills found during cleanup"
+                    ),
+                    Ok(Err(e)) => {
+                        log::warn!("Startup: disallowed opinionated skill cleanup failed: {e}")
+                    }
+                    Err(e) => log::warn!(
+                        "Startup: disallowed opinionated skill cleanup task failed: {e}"
+                    ),
+                }
+            });
+            log::info!(
+                "Startup: opinionated skill cleanup spawned at {:?}",
+                opinionated_cleanup_started_at
+            );
+
             // Allow image access from all known project/worktree directories.
             match crate::projects::storage::load_projects_data(&app_handle) {
                 Ok(data) => {
@@ -3785,6 +3872,37 @@ pub fn run() {
             }
 
             log::info!("Startup: projects loaded + asset scopes registered at {:?}", setup_start.elapsed());
+
+            #[cfg(target_os = "macos")]
+            if !headless {
+                let mut want_vibrancy = false;
+                if let Ok(prefs_path) = get_preferences_path(&app_handle) {
+                    if prefs_path.exists() {
+                        if let Ok(contents) = std::fs::read_to_string(&prefs_path) {
+                            if let Ok(prefs) = serde_json::from_str::<AppPreferences>(&contents) {
+                                want_vibrancy = prefs.window_vibrancy;
+                            }
+                        }
+                    }
+                }
+                if let Some(window) = app_handle.get_webview_window("main") {
+                    if want_vibrancy {
+                        use tauri::window::Effect;
+                        let _ = apply_macos_window_opacity(&window, false);
+                        let _ = window.set_effects(tauri::utils::config::WindowEffectsConfig {
+                            effects: vec![Effect::Sidebar],
+                            radius: Some(12.0),
+                            state: Some(tauri::window::EffectState::Active),
+                            color: None,
+                        });
+                        log::info!("Applied window vibrancy from saved preferences");
+                    } else {
+                        let _ = window.set_effects(None);
+                        let _ = apply_macos_window_opacity(&window, true);
+                        log::info!("Window opaque (vibrancy disabled in preferences)");
+                    }
+                }
+            }
 
             // NOTE: Run recovery (crash recovery) is handled by check_resumable_sessions
             // which the frontend calls once it's ready. Previously this was done here in
@@ -4028,6 +4146,7 @@ pub fn run() {
             load_preferences,
             save_preferences,
             patch_preferences,
+            set_window_vibrancy,
             save_cli_profile,
             delete_cli_profile,
             load_ui_state,
@@ -4372,6 +4491,7 @@ pub fn run() {
             opencode_cli::list_opencode_models,
             opinionated::check_opinionated_plugin_status,
             opinionated::install_opinionated_plugin,
+            opinionated::uninstall_opinionated_plugin,
             // GitHub CLI management commands
             gh_cli::check_gh_cli_installed,
             gh_cli::detect_gh_in_path,

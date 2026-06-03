@@ -36,6 +36,7 @@ const DEFAULT_CODEX_SYSTEM_PROMPT: &str = "\
 ## Not Plan Mode\n\
 \n\
 - After each finished task, please write a few bullet points on how to test the changes.\n\
+- When output mentions issues, PRs, security advisories/alerts, Linear issues, or other external resources, include clickable links when available so users can open them directly.\n\
 - When multiple independent operations are needed, batch them into parallel tool calls. Launch independent Task subagents simultaneously rather than sequentially.\n\
 - When specifying subagent_type for Task tool calls, always use the fully qualified name exactly as listed in the system prompt (e.g., \"code-simplifier:code-simplifier\", not just \"code-simplifier\"). If the agent type contains a colon, include the full namespace:name string.";
 

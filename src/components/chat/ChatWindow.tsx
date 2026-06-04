@@ -1129,17 +1129,6 @@ export function ChatWindow({
     session?.messages?.length,
   ])
 
-  // When the approval UI appears after the final render, keep the viewport pinned
-  // so the inline Approve controls stay visible instead of requiring a manual scroll.
-  useEffect(() => {
-    if (!isAtBottom) return
-    if (!pendingPlanMessage && !hasStreamingPlan) return
-
-    requestAnimationFrame(() => {
-      scrollToBottom(true)
-    })
-  }, [hasStreamingPlan, isAtBottom, pendingPlanMessage?.id, scrollToBottom])
-
   // State for plan dialog
   const [isPlanDialogOpen, setIsPlanDialogOpen] = useState(false)
   const [planDialogContent, setPlanDialogContent] = useState<string | null>(

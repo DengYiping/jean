@@ -363,6 +363,11 @@ export function useScrollManagement({
             el = el.offsetParent as HTMLElement | null
           }
           setProgrammaticScrollTop(viewport, offset)
+          const physicallyAtBottom = isViewportAtPhysicalBottom(viewport)
+          isAtBottomRef.current = physicallyAtBottom
+          setIsAtBottom(prev =>
+            prev === physicallyAtBottom ? prev : physicallyAtBottom
+          )
         } else {
           pinnedPlanElementRef.current = null
           scrollProgrammaticallyToTail(viewport)

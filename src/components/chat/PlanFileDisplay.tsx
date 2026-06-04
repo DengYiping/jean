@@ -123,6 +123,7 @@ export function PlanDisplay({
 
   return (
     <Collapsible
+      data-plan-display
       open={isOpen}
       onOpenChange={setIsOpen}
       className={cn(

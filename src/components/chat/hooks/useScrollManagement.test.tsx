@@ -136,11 +136,12 @@ describe('useScrollManagement streaming auto-scroll', () => {
   })
 
   it('keeps desktop plan pinning during streaming', async () => {
-    const { viewport } = setupHook()
+    const { getByTestId, viewport } = setupHook()
 
     await triggerResize()
 
     expect(viewport.scrollTop).toBe(600)
+    expect(getByTestId('is-at-bottom')).toHaveTextContent('false')
   })
 
   it('does not re-pin the desktop plan after a normal downward wheel gesture', async () => {

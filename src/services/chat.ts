@@ -312,15 +312,15 @@ export async function prefetchSessions(
         reviewingUpdates[session.id] = true
       }
       // Only restore waiting state if the session's last run is actually active,
-      // OR if it's a completed plan-mode run (Codex/Opencode plan mode intentionally
-      // sets waiting_for_input after the run completes)
+      // OR if it's a completed run waiting on persisted plan/question input.
       const canBeWaiting =
         !session.last_run_status ||
         session.last_run_status === 'running' ||
         session.last_run_status === 'resumable' ||
         (session.pending_permission_denials?.length ?? 0) > 0 ||
         (session.last_run_status === 'completed' &&
-          session.waiting_for_input_type === 'plan')
+          (session.waiting_for_input_type === 'plan' ||
+            session.waiting_for_input_type === 'question'))
       if (session.waiting_for_input && canBeWaiting) {
         waitingUpdates[session.id] = true
       }

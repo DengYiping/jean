@@ -134,7 +134,8 @@ export function sessionCanBeWaiting(session: Session): boolean {
     session.last_run_status === 'running' ||
     session.last_run_status === 'resumable' ||
     (session.last_run_status === 'completed' &&
-      session.waiting_for_input_type === 'plan')
+      (session.waiting_for_input_type === 'plan' ||
+        session.waiting_for_input_type === 'question'))
   )
 }
 
@@ -148,10 +149,6 @@ export function getEffectiveSessionWaiting(
   if (!sessionCanBeWaiting(session)) return false
 
   const derived = session.session_derived_state
-  if (derived?.is_waiting ?? session.waiting_for_input ?? false) {
-    return true
-  }
-
   const isReviewing =
     (storeState.reviewingSessions[session.id] ?? false) ||
     !!session.is_reviewing ||
@@ -160,6 +157,10 @@ export function getEffectiveSessionWaiting(
 
   if (isReviewing) {
     return false
+  }
+
+  if (derived?.is_waiting ?? session.waiting_for_input ?? false) {
+    return true
   }
 
   return storeState.waitingForInputSessionIds[session.id] ?? false

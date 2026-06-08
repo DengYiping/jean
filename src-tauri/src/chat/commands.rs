@@ -65,6 +65,31 @@ const CODEX_COLLAB_TOOL_NAMES: [&str; 10] = [
     "sendInput",
 ];
 
+fn codex_execution_mode_instruction(execution_mode: Option<&str>) -> Option<&'static str> {
+    match execution_mode.unwrap_or("plan") {
+        "build" => Some(
+            "You are in BUILD MODE. Start implementing immediately. \
+             This current BUILD MODE instruction supersedes any earlier plan-mode \
+             instructions remembered from conversation history; treat the approved plan \
+             as authorization to implement now. \
+             Do NOT call update_plan/emit CodexPlan unless the user explicitly asks \
+             for a new plan. If a required decision is missing, use request_user_input \
+             instead of switching back to plan mode.",
+        ),
+        "yolo" => Some(
+            "You are in YOLO EXECUTION MODE. Start implementing immediately. \
+             This current YOLO EXECUTION MODE instruction supersedes any earlier plan-mode \
+             instructions remembered from conversation history; treat the approved plan \
+             as authorization to implement now. \
+             Do NOT call update_plan/emit CodexPlan unless the user explicitly asks \
+             for a new plan. Do not ask for confirmation before routine implementation steps. \
+             If a required decision is missing, use request_user_input instead of \
+             switching back to plan mode.",
+        ),
+        _ => None,
+    }
+}
+
 /// Resolve the default backend from preferences + project settings (sync).
 /// Falls back to Claude if preferences can't be loaded.
 pub(crate) fn resolve_default_backend(app: &AppHandle, worktree_id: Option<&str>) -> Backend {
@@ -3126,6 +3151,10 @@ pub async fn send_chat_message(
                              End with any unresolved questions."
                                 .to_string(),
                         );
+                    } else if let Some(instruction) =
+                        codex_execution_mode_instruction(thread_execution_mode.as_deref())
+                    {
+                        system_prompt_parts.push(instruction.to_string());
                     }
 
                     // AI language preference
@@ -8372,6 +8401,23 @@ mod tests {
         assert_eq!(max_threads_low, Some(1));
         assert!(enabled_high);
         assert_eq!(max_threads_high, Some(8));
+    }
+
+    #[test]
+    fn codex_execution_mode_instruction_only_overrides_plan_history_in_execute_modes() {
+        assert!(codex_execution_mode_instruction(Some("plan")).is_none());
+
+        let build = codex_execution_mode_instruction(Some("build")).unwrap();
+        assert!(build.contains("BUILD MODE"));
+        assert!(build.contains("supersedes any earlier plan-mode"));
+        assert!(build.contains("approved plan"));
+        assert!(build.contains("Do NOT call update_plan/emit CodexPlan"));
+
+        let yolo = codex_execution_mode_instruction(Some("yolo")).unwrap();
+        assert!(yolo.contains("YOLO EXECUTION MODE"));
+        assert!(yolo.contains("supersedes any earlier plan-mode"));
+        assert!(yolo.contains("approved plan"));
+        assert!(yolo.contains("Do not ask for confirmation"));
     }
 
     #[test]

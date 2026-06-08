@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef } from 'react'
 import { useChatStore } from '@/store/chat-store'
 import { useUIStore } from '@/store/ui-store'
 import type { ResolveConflictsOverride } from '@/components/magic/ResolveConflictsDialog'
+import type { ExecutionMode } from '@/types/chat'
 
 export interface WorkflowRunDetail {
   workflowName: string
@@ -28,7 +29,10 @@ interface MagicCommandHandlers {
   handleResolveConflicts: (override?: ResolveConflictsOverride) => void
   handleInvestigateWorkflowRun: (detail: WorkflowRunDetail) => void
   handleInvestigate: (type: 'issue' | 'pr' | 'advisory') => void
-  handleReviewComments: (prompt: string | string[]) => void
+  handleReviewComments: (
+    prompt: string | string[],
+    options?: { executionMode?: ExecutionMode }
+  ) => void
 }
 
 interface UseMagicCommandsOptions extends MagicCommandHandlers {
@@ -187,7 +191,10 @@ export function useMagicCommands({
           handlers.handleInvestigateWorkflowRun(rest as WorkflowRunDetail)
           break
         case 'review-comments':
-          handlers.handleReviewComments((rest as { prompt: string }).prompt)
+          handlers.handleReviewComments((rest as { prompt: string }).prompt, {
+            executionMode: (rest as { executionMode?: ExecutionMode })
+              .executionMode,
+          })
           break
       }
     }
@@ -238,9 +245,13 @@ export function useMagicCommands({
       }
       case 'review-comments':
         if (pendingMagicCommand.prompts?.length) {
-          handlers.handleReviewComments(pendingMagicCommand.prompts)
+          handlers.handleReviewComments(pendingMagicCommand.prompts, {
+            executionMode: pendingMagicCommand.executionMode,
+          })
         } else if (pendingMagicCommand.prompt) {
-          handlers.handleReviewComments(pendingMagicCommand.prompt)
+          handlers.handleReviewComments(pendingMagicCommand.prompt, {
+            executionMode: pendingMagicCommand.executionMode,
+          })
         }
         break
     }

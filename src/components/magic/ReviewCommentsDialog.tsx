@@ -425,7 +425,7 @@ ${c.body}`
         command: 'review-comments',
         prompt,
         prompts,
-        executionMode: separate ? 'plan' : undefined,
+        executionMode: 'yolo',
       })
 
       // Close dialog

@@ -759,7 +759,10 @@ export function useInvestigateHandlers({
   )
 
   const handleReviewComments = useCallback(
-    async (promptOrPrompts: string | string[]) => {
+    async (
+      promptOrPrompts: string | string[],
+      options?: { executionMode?: ExecutionMode }
+    ) => {
       const worktreeId = activeWorktreeIdRef.current
       const worktreePath = activeWorktreePathRef.current
       if (!worktreeId || !worktreePath) return
@@ -767,9 +770,9 @@ export function useInvestigateHandlers({
         ? promptOrPrompts.filter(prompt => prompt.trim().length > 0)
         : [promptOrPrompts].filter(prompt => prompt.trim().length > 0)
       if (prompts.length === 0) return
-      const reviewExecutionMode = Array.isArray(promptOrPrompts)
-        ? 'plan'
-        : executionModeRef.current
+      const reviewExecutionMode =
+        options?.executionMode ??
+        (Array.isArray(promptOrPrompts) ? 'plan' : executionModeRef.current)
 
       const reviewCommentsBackend = resolveMagicPromptBackend(
         preferences?.magic_prompt_backends,

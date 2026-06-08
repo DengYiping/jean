@@ -149,7 +149,7 @@ describe('ReviewCommentsDialog', () => {
     expect(hoisted.setReviewCommentsModalOpenMock).toHaveBeenCalledWith(false)
   })
 
-  it('queues selected PR comments as separate plan-mode prompts', async () => {
+  it('queues selected PR comments as separate yolo prompts', async () => {
     hoisted.invokeMock.mockImplementation((command: string) => {
       if (command === 'get_pr_review_comments') {
         return Promise.resolve([
@@ -186,7 +186,7 @@ describe('ReviewCommentsDialog', () => {
       expect(hoisted.setPendingMagicCommandMock).toHaveBeenCalledWith(
         expect.objectContaining({
           command: 'review-comments',
-          executionMode: 'plan',
+          executionMode: 'yolo',
           prompts: [
             expect.stringContaining('Please fix this'),
             expect.stringContaining('Please test this'),

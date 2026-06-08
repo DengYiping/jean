@@ -191,6 +191,22 @@ describe('computeSessionCardData', () => {
     expect(card.status).toBe('waiting')
   })
 
+  it('honors persisted waiting_for_input when completed run is waiting for a question', () => {
+    const session: Session = {
+      ...createBaseSession(),
+      waiting_for_input: true,
+      waiting_for_input_type: 'question',
+      last_run_status: 'completed',
+      last_run_execution_mode: 'plan',
+    }
+    const storeState = createBaseStoreState()
+
+    const card = computeSessionCardData(session, storeState)
+
+    expect(card.isWaiting).toBe(true)
+    expect(card.status).toBe('waiting')
+  })
+
   it('honors persisted waiting_for_input while run still active', () => {
     const session: Session = {
       ...createBaseSession(),

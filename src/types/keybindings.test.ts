@@ -114,4 +114,17 @@ describe('eventToShortcutString', () => {
       category: 'navigation',
     })
   })
+
+  it('registers the chat search shortcut in defaults and settings metadata', () => {
+    expect(DEFAULT_KEYBINDINGS.search_chat).toBe('mod+f')
+    expect(
+      KEYBINDING_DEFINITIONS.find(
+        definition => definition.action === 'search_chat'
+      )
+    ).toMatchObject({
+      label: 'Search chat',
+      default_shortcut: 'mod+f',
+      category: 'chat',
+    })
+  })
 })

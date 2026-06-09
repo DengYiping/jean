@@ -452,6 +452,16 @@ function executeKeybindingAction(
         new CustomEvent('scroll-chat', { detail: { direction: 'down' } })
       )
       break
+    case 'search_chat': {
+      logger.debug('Keybinding: search_chat')
+      const uiStore = useUIStore.getState()
+      if (!uiStore.chatSearchOpen) {
+        uiStore.setChatSearchOpen(true)
+      } else {
+        window.dispatchEvent(new CustomEvent('chat-search-toggle'))
+      }
+      break
+    }
     case 'open_github_dashboard':
       useUIStore.getState().setGitHubDashboardOpen(true)
       break

@@ -9,6 +9,7 @@ describe('UIStore', () => {
       rightSidebarVisible: false,
       commandPaletteOpen: false,
       preferencesOpen: false,
+      chatSearchOpen: false,
       sessionPrimarySurface: {},
       sessionTerminalIds: {},
       newSessionModeTarget: null,
@@ -21,6 +22,7 @@ describe('UIStore', () => {
     expect(state.rightSidebarVisible).toBe(false)
     expect(state.commandPaletteOpen).toBe(false)
     expect(state.preferencesOpen).toBe(false)
+    expect(state.chatSearchOpen).toBe(false)
   })
 
   it('toggles left sidebar visibility', () => {
@@ -61,6 +63,16 @@ describe('UIStore', () => {
 
     toggleCommandPalette()
     expect(useUIStore.getState().commandPaletteOpen).toBe(false)
+  })
+
+  it('opens and closes chat search', () => {
+    const { setChatSearchOpen } = useUIStore.getState()
+
+    setChatSearchOpen(true)
+    expect(useUIStore.getState().chatSearchOpen).toBe(true)
+
+    setChatSearchOpen(false)
+    expect(useUIStore.getState().chatSearchOpen).toBe(false)
   })
 
   it('tracks and clears terminal-first session surface state', () => {

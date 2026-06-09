@@ -100,6 +100,43 @@ test.describe('Chat Messaging', () => {
     })
   })
 
+  test('searches within the current chat', async ({ mockPage, emitEvent }) => {
+    await activateWorktree(mockPage, 'fuzzy-tiger')
+
+    const sessionId = await mockPage
+      .locator('[data-session-id]')
+      .first()
+      .getAttribute('data-session-id')
+
+    await emitEvent('chat:sending', {
+      session_id: sessionId,
+      worktree_id: 'e2e',
+    })
+    await emitEvent('chat:chunk', {
+      session_id: sessionId,
+      worktree_id: 'e2e',
+      content: 'Alpha beta response with another beta match.',
+    })
+
+    await expect(mockPage.getByText(/Alpha beta response/)).toBeVisible({
+      timeout: 3000,
+    })
+
+    await mockPage.keyboard.press(
+      process.platform === 'darwin' ? 'Meta+F' : 'Control+F'
+    )
+
+    const searchInput = mockPage.getByPlaceholder('Find in chat...')
+    await expect(searchInput).toBeVisible({ timeout: 3000 })
+    await searchInput.fill('beta')
+
+    await expect(mockPage.getByText('1/2')).toBeVisible({ timeout: 3000 })
+    await searchInput.press('Enter')
+    await expect(mockPage.getByText('2/2')).toBeVisible({ timeout: 3000 })
+    await searchInput.press('Escape')
+    await expect(searchInput).toBeHidden({ timeout: 3000 })
+  })
+
   test('autonomous Codex goal turn renders like a normal stream', async ({
     mockPage,
     emitEvent,

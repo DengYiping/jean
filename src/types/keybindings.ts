@@ -44,6 +44,7 @@ export type KeybindingAction =
   | 'open_usage_dropdown'
   | 'open_agent_board'
   | 'new_agent_todo'
+  | 'search_chat'
 
 // Shortcut string format: "mod+key" where mod is cmd/ctrl
 // Examples: "mod+l", "mod+shift+p", "mod+1"
@@ -107,6 +108,7 @@ export const DEFAULT_KEYBINDINGS: KeybindingsMap = {
   open_usage_dropdown: 'mod+u',
   open_agent_board: 'mod+shift+a',
   new_agent_todo: 'mod+alt+a',
+  search_chat: 'mod+f',
 }
 
 // UI definitions for the settings pane
@@ -421,6 +423,13 @@ export const KEYBINDING_DEFINITIONS: KeybindingDefinition[] = [
     description: 'Create a new todo card on the agent board',
     default_shortcut: 'mod+alt+a',
     category: 'navigation',
+  },
+  {
+    action: 'search_chat',
+    label: 'Search chat',
+    description: 'Search within the current chat conversation',
+    default_shortcut: 'mod+f',
+    category: 'chat',
   },
 ]
 

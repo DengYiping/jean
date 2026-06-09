@@ -123,6 +123,7 @@ interface UIState {
   pendingUpdateVersion: string | null
   /** When non-null, shows the update available modal */
   updateModalVersion: string | null
+  chatSearchOpen: boolean
   toggleLeftSidebar: () => void
   setLeftSidebarVisible: (visible: boolean) => void
   setLeftSidebarSize: (size: number) => void
@@ -210,6 +211,7 @@ interface UIState {
   setUIStateInitialized: (initialized: boolean) => void
   setPendingUpdateVersion: (version: string | null) => void
   setUpdateModalVersion: (version: string | null) => void
+  setChatSearchOpen: (open: boolean) => void
   setActiveMainView: (view: MainView) => void
   requestNewAgentTodoDialog: () => void
   setNewAgentTodoDialogOpen: (open: boolean) => void
@@ -287,6 +289,7 @@ export const useUIStore = create<UIState>()(
       uiStateInitialized: false,
       pendingUpdateVersion: null,
       updateModalVersion: null,
+      chatSearchOpen: false,
       githubDashboardOpen: false,
       toggleLeftSidebar: () =>
         set(
@@ -868,6 +871,16 @@ export const useUIStore = create<UIState>()(
           { updateModalVersion: version },
           undefined,
           'setUpdateModalVersion'
+        ),
+
+      setChatSearchOpen: (open: boolean) =>
+        set(
+          state => {
+            if (state.chatSearchOpen === open) return state
+            return { chatSearchOpen: open }
+          },
+          undefined,
+          'setChatSearchOpen'
         ),
 
       setActiveMainView: (view: MainView) =>

@@ -534,7 +534,7 @@ pub fn parse_run_to_message(lines: &[String], run: &RunEntry) -> Result<ChatMess
         // Days-since-epoch via civil_from_days (no leap-second concerns here).
         let y = if month <= 2 { year - 1 } else { year };
         let era = y.div_euclid(400);
-        let yoe = (y - era * 400) as i64;
+        let yoe = y - era * 400;
         let doy = (153 * (month + (if month > 2 { -3 } else { 9 })) + 2) / 5 + day - 1;
         let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
         let days = era * 146097 + doe - 719468;

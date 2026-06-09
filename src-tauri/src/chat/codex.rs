@@ -2243,10 +2243,8 @@ fn synthetic_todo_list_item_from_plan_update(
         steps
     } else if let Some(plan_array) = plan.as_array() {
         plan_array
-    } else if let Some(params_array) = params.as_array() {
-        params_array
     } else {
-        return None;
+        params.as_array()?
     };
 
     let normalized_items: Vec<serde_json::Value> = items

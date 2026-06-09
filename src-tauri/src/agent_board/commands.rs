@@ -745,10 +745,10 @@ fn sync_item_from_implementation_session(item: &mut AgentBoardItem, metadata: &S
                 item.lane = AgentBoardLane::Implementing;
             }
         }
-        Some(RunStatus::Completed) => {
-            if latest_run_is_build && item.lane == AgentBoardLane::Implementing {
-                item.lane = AgentBoardLane::Implemented;
-            }
+        Some(RunStatus::Completed)
+            if latest_run_is_build && item.lane == AgentBoardLane::Implementing =>
+        {
+            item.lane = AgentBoardLane::Implemented;
         }
         _ => {}
     }
@@ -770,10 +770,10 @@ fn sync_item_from_yolo_session(item: &mut AgentBoardItem, metadata: &SessionMeta
                 item.lane = AgentBoardLane::Yoloing;
             }
         }
-        Some(RunStatus::Completed | RunStatus::Cancelled | RunStatus::Crashed) => {
-            if item.lane == AgentBoardLane::Yoloing {
-                item.lane = AgentBoardLane::Yoloed;
-            }
+        Some(RunStatus::Completed | RunStatus::Cancelled | RunStatus::Crashed)
+            if item.lane == AgentBoardLane::Yoloing =>
+        {
+            item.lane = AgentBoardLane::Yoloed;
         }
         _ => {}
     }

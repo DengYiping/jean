@@ -241,4 +241,45 @@ describe('useQueueProcessor', () => {
     })
     expect(mockMutate).not.toHaveBeenCalled()
   })
+
+  it('executes a queued create PR with draft disabled', async () => {
+    const sessionId = 'session-1'
+    const worktreeId = 'worktree-1'
+    const worktreePath = '/tmp/worktree-1'
+    const magic = {
+      ...createQueuedMessage('magic-1', '/create-pr'),
+      kind: 'magic_command' as const,
+      magicCommand: 'open-pr' as const,
+      magicCommandLabel: 'Create PR',
+    }
+
+    useChatStore.setState({
+      messageQueues: { [sessionId]: [magic] },
+      sessionWorktreeMap: { [sessionId]: worktreeId },
+      worktreePaths: { [worktreeId]: worktreePath },
+    })
+
+    mockPersistDequeue.mockResolvedValueOnce(magic)
+    mockInvoke.mockResolvedValue({
+      title: 'Test PR',
+      pr_number: 12,
+      pr_url: 'https://example.com/pr/12',
+      existing: false,
+      is_draft: false,
+    })
+
+    renderHook(() => useQueueProcessor())
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith(
+        'create_pr_with_ai_content',
+        expect.objectContaining({
+          worktreePath,
+          sessionId,
+          draft: false,
+        })
+      )
+    })
+    expect(mockMutate).not.toHaveBeenCalled()
+  })
 })

@@ -215,6 +215,12 @@ pub(crate) fn emit_sessions_cache_invalidation(app: &AppHandle) {
     }
 }
 
+fn emit_cache_invalidation(app: &AppHandle, keys: &[&str]) {
+    if let Err(e) = app.emit_all("cache:invalidate", &serde_json::json!({ "keys": keys })) {
+        log::error!("Failed to emit cache:invalidate: {e}");
+    }
+}
+
 // ============================================================================
 // Session Management Commands
 // ============================================================================
@@ -490,7 +496,7 @@ pub async fn list_unread_sessions(app: AppHandle) -> Result<UnreadSessionsRespon
         }
     }
 
-    entries.sort_by(|a, b| b.session.updated_at.cmp(&a.session.updated_at));
+    entries.sort_by_key(|entry| std::cmp::Reverse(entry.session.updated_at));
     Ok(UnreadSessionsResponse { entries })
 }
 
@@ -655,10 +661,10 @@ fn codex_collab_effective_status(
                 return CodexSubAgentStatus::Closed;
             }
         }
-        "WaitForAgents" | "wait" => {
-            if state_status.is_none() && matches!(fallback_status, Some("completed")) {
-                return CodexSubAgentStatus::Running;
-            }
+        "WaitForAgents" | "wait"
+            if state_status.is_none() && matches!(fallback_status, Some("completed")) =>
+        {
+            return CodexSubAgentStatus::Running;
         }
         _ => {}
     }
@@ -1260,6 +1266,35 @@ async fn drain_backend_queue(
             .unwrap_or("<unknown>")
             .to_string();
 
+        match queued_magic_command(&queued) {
+            Ok(Some(command)) => {
+                log::info!(
+                    "[QueueDrain] processing queued magic command session={session_id} message_id={queued_id} command={command:?}"
+                );
+                if let Err(e) = execute_queued_magic_command(
+                    &app,
+                    &session_id,
+                    &worktree_path,
+                    &queued,
+                    command,
+                )
+                .await
+                {
+                    log::error!(
+                        "[QueueDrain] queued magic command failed session={session_id} message_id={queued_id}: {e}"
+                    );
+                }
+                continue;
+            }
+            Ok(None) => {}
+            Err(e) => {
+                log::error!(
+                    "[QueueDrain] dropping malformed queued magic command session={session_id} message_id={queued_id}: {e}"
+                );
+                continue;
+            }
+        }
+
         let request = match queued_message_to_send_request(&app, &queued).await {
             Ok(request) => request,
             Err(e) => {
@@ -1299,6 +1334,98 @@ async fn drain_backend_queue(
             );
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum QueuedMagicCommand {
+    Commit,
+    CommitAndPush,
+    OpenPr,
+    DraftPr,
+}
+
+fn queued_magic_command(queued: &Value) -> Result<Option<QueuedMagicCommand>, String> {
+    if queued.get("kind").and_then(Value::as_str) != Some("magic_command") {
+        return Ok(None);
+    }
+
+    match queued.get("magicCommand").and_then(Value::as_str) {
+        Some("commit") => Ok(Some(QueuedMagicCommand::Commit)),
+        Some("commit-and-push") => Ok(Some(QueuedMagicCommand::CommitAndPush)),
+        Some("open-pr") => Ok(Some(QueuedMagicCommand::OpenPr)),
+        Some("draft-pr") => Ok(Some(QueuedMagicCommand::DraftPr)),
+        Some(command) => Err(format!("unsupported magicCommand: {command}")),
+        None => Err("missing magicCommand".to_string()),
+    }
+}
+
+fn queued_specific_files(queued: &Value) -> Option<Vec<String>> {
+    let files: Vec<String> = queued
+        .get("specificFiles")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or(&[])
+        .iter()
+        .filter_map(Value::as_str)
+        .map(str::trim)
+        .filter(|file| !file.is_empty())
+        .map(ToString::to_string)
+        .collect();
+
+    (!files.is_empty()).then_some(files)
+}
+
+async fn execute_queued_magic_command(
+    app: &AppHandle,
+    session_id: &str,
+    worktree_path: &str,
+    queued: &Value,
+    command: QueuedMagicCommand,
+) -> Result<(), String> {
+    let prefs = crate::load_preferences(app.clone())
+        .await
+        .unwrap_or_default();
+
+    match command {
+        QueuedMagicCommand::Commit | QueuedMagicCommand::CommitAndPush => {
+            let push = command == QueuedMagicCommand::CommitAndPush;
+            crate::projects::create_commit_with_ai(
+                app.clone(),
+                worktree_path.to_string(),
+                prefs.magic_prompts.commit_message,
+                push,
+                None,
+                None,
+                Some(prefs.magic_prompt_models.commit_message_model),
+                prefs.magic_prompt_providers.commit_message_provider,
+                prefs.magic_prompt_efforts.commit_message_effort,
+                queued_specific_files(queued),
+            )
+            .await?;
+
+            app.emit_all("git-commit-completed", &serde_json::json!({}))
+                .ok();
+            emit_cache_invalidation(app, &["projects"]);
+        }
+        QueuedMagicCommand::OpenPr | QueuedMagicCommand::DraftPr => {
+            let draft = command == QueuedMagicCommand::DraftPr;
+            crate::projects::create_pr_with_ai_content(
+                app.clone(),
+                worktree_path.to_string(),
+                Some(session_id.to_string()),
+                prefs.magic_prompts.pr_content,
+                Some(prefs.magic_prompt_models.pr_content_model),
+                prefs.magic_prompt_providers.pr_content_provider,
+                prefs.magic_prompt_efforts.pr_content_effort,
+                Some(draft),
+            )
+            .await?;
+
+            emit_cache_invalidation(app, &["projects", "agent-board"]);
+        }
+    }
+
+    Ok(())
 }
 
 struct QueuedSendRequest {
@@ -5554,7 +5681,7 @@ pub async fn list_saved_contexts(app: AppHandle) -> Result<SavedContextsResponse
     }
 
     // Sort by created_at descending (newest first)
-    contexts.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    contexts.sort_by_key(|context| std::cmp::Reverse(context.created_at));
 
     log::trace!("Found {} saved contexts", contexts.len());
     Ok(SavedContextsResponse { contexts })
@@ -8208,6 +8335,45 @@ mod tests {
         assert!(message.contains(
             "[Text file attached: /tmp/notes.txt - Use the Read tool to view this file]"
         ));
+    }
+
+    #[test]
+    fn queued_magic_command_classifies_create_pr_alias() {
+        let queued = serde_json::json!({
+            "kind": "magic_command",
+            "magicCommand": "open-pr",
+            "message": "/create-pr"
+        });
+
+        assert_eq!(
+            queued_magic_command(&queued).unwrap(),
+            Some(QueuedMagicCommand::OpenPr)
+        );
+    }
+
+    #[test]
+    fn queued_magic_command_rejects_malformed_magic_item() {
+        let queued = serde_json::json!({
+            "kind": "magic_command",
+            "message": "/create-pr"
+        });
+
+        assert_eq!(
+            queued_magic_command(&queued).unwrap_err(),
+            "missing magicCommand"
+        );
+    }
+
+    #[test]
+    fn queued_specific_files_discards_blank_entries() {
+        let queued = serde_json::json!({
+            "specificFiles": ["src/main.rs", "", "  ", "src/lib.rs"]
+        });
+
+        assert_eq!(
+            queued_specific_files(&queued),
+            Some(vec!["src/main.rs".to_string(), "src/lib.rs".to_string()])
+        );
     }
 
     #[test]

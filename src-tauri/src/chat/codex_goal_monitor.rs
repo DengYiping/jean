@@ -424,12 +424,19 @@ fn turn_id_from_started_event(event: &ServerEvent) -> Option<String> {
 mod tests {
     use super::*;
 
+    static TEST_REGISTRY_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+
+    fn registry_test_guard() -> std::sync::MutexGuard<'static, ()> {
+        TEST_REGISTRY_LOCK.lock().unwrap()
+    }
+
     fn clear_registry() {
         lock_monitors().clear();
     }
 
     #[test]
     fn registry_prevents_duplicate_monitors() {
+        let _guard = registry_test_guard();
         clear_registry();
         let monitor_key = key("session-1", "thread-1");
         let handle = MonitorHandle {
@@ -447,6 +454,7 @@ mod tests {
 
     #[test]
     fn remove_monitor_if_current_respects_stale_handles() {
+        let _guard = registry_test_guard();
         clear_registry();
         let old_stop = Arc::new(AtomicBool::new(false));
         let new_stop = Arc::new(AtomicBool::new(false));
@@ -469,6 +477,7 @@ mod tests {
 
     #[test]
     fn active_autonomous_turn_tracks_only_monitored_turns() {
+        let _guard = registry_test_guard();
         clear_registry();
         let active_turn_id = Arc::new(Mutex::new(Some("turn-1".to_string())));
         {

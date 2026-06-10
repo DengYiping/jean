@@ -1,0 +1,232 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>bundleid</key>
+	<string>dev.jean.yolo-project</string>
+	<key>connections</key>
+	<dict>
+		<key>965D42DC-7895-4E07-8625-09636F8E6651</key>
+		<array>
+			<dict>
+				<key>destinationuid</key>
+				<string>9046E642-D090-4FC0-96CC-6645A2588A56</string>
+				<key>modifiers</key>
+				<integer>0</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+		</array>
+	</dict>
+	<key>createdby</key>
+	<string>Codex</string>
+	<key>description</key>
+	<string>Search Jean projects, then run `jean yolo --project` with a prompt.</string>
+	<key>disabled</key>
+	<false/>
+	<key>name</key>
+	<string>Jean Yolo Project</string>
+	<key>objects</key>
+	<array>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>alfredfiltersresults</key>
+				<true/>
+				<key>alfredfiltersresultsmatchmode</key>
+				<integer>0</integer>
+				<key>argumenttreatemptyqueryasnil</key>
+				<true/>
+				<key>argumenttrimmode</key>
+				<integer>0</integer>
+				<key>argumenttype</key>
+				<integer>1</integer>
+				<key>escaping</key>
+				<integer>102</integer>
+				<key>keyword</key>
+				<string>yp</string>
+				<key>queuedelaycustom</key>
+				<integer>3</integer>
+				<key>queuedelayimmediatelyinitially</key>
+				<true/>
+				<key>queuedelaymode</key>
+				<integer>0</integer>
+				<key>queuemode</key>
+				<integer>1</integer>
+				<key>runningsubtext</key>
+				<string>Loading Jean projects...</string>
+				<key>script</key>
+				<string><![CDATA[export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+
+projects_output="$(jean projects list 2>&1)"
+cli_status=$?
+
+JEAN_PROJECTS_OUTPUT="$projects_output" JEAN_PROJECTS_STATUS="$cli_status" python3 - <<'PY'
+import json
+import os
+import re
+
+output = os.environ.get("JEAN_PROJECTS_OUTPUT", "")
+status = os.environ.get("JEAN_PROJECTS_STATUS", "1")
+
+def item(title, subtitle, valid=False):
+    return {
+        "items": [{
+            "title": title,
+            "subtitle": subtitle,
+            "valid": valid,
+            "icon": {"path": "icon.png"},
+        }]
+    }
+
+if status != "0":
+    print(json.dumps(item("Jean CLI project list failed", output.strip() or "Run `jean projects list` in Terminal for details.")))
+    raise SystemExit
+
+lines = [line.rstrip() for line in output.splitlines() if line.strip()]
+if not lines or lines[0].startswith("No Jean projects found"):
+    print(json.dumps(item("No Jean projects found", "Add a project in Jean before using `yp`.")))
+    raise SystemExit
+
+projects = []
+for line in lines[1:]:
+    parts = re.split(r"\s{2,}", line, maxsplit=3)
+    if len(parts) != 4:
+        continue
+    project_id, name, branch, path = parts
+    projects.append({
+        "title": name,
+        "subtitle": f"{branch} - {path}",
+        "arg": project_id,
+        "match": f"{name} {branch} {path} {project_id}",
+        "valid": True,
+        "icon": {"path": "icon.png"},
+        "variables": {
+            "project_name": name,
+            "project_path": path,
+        },
+    })
+
+if projects:
+    print(json.dumps({"items": projects}))
+else:
+    print(json.dumps(item("No Jean projects parsed", "Run `jean projects list` in Terminal to inspect the output.")))
+PY]]></string>
+				<key>scriptargtype</key>
+				<integer>1</integer>
+				<key>scriptfile</key>
+				<string></string>
+				<key>skipuniversalaction</key>
+				<true/>
+				<key>subtext</key>
+				<string>Search Jean projects, then enter a yolo prompt.</string>
+				<key>title</key>
+				<string>Jean Yolo Project</string>
+				<key>type</key>
+				<integer>0</integer>
+				<key>withspace</key>
+				<true/>
+			</dict>
+			<key>type</key>
+			<string>alfred.workflow.input.scriptfilter</string>
+			<key>uid</key>
+			<string>965D42DC-7895-4E07-8625-09636F8E6651</string>
+			<key>version</key>
+			<integer>3</integer>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>concurrently</key>
+				<false/>
+				<key>escaping</key>
+				<integer>102</integer>
+				<key>script</key>
+				<string><![CDATA[export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+
+project_id="$1"
+project_label="${project_name:-$project_id}"
+
+prompt="$(osascript - "$project_label" <<'APPLESCRIPT'
+on run argv
+	set projectLabel to item 1 of argv
+	try
+		set dialogResult to display dialog "Prompt for " & projectLabel default answer "" buttons {"Cancel", "Run Yolo"} default button "Run Yolo" cancel button "Cancel" with title "Jean Yolo Project"
+		return text returned of dialogResult
+	on error number -128
+		return "__JEAN_CANCELLED__"
+	end try
+end run
+APPLESCRIPT
+)"
+
+if [[ "$prompt" == "__JEAN_CANCELLED__" ]]; then
+	exit 0
+fi
+
+if [[ -z "${prompt//[[:space:]]/}" ]]; then
+	osascript -e 'display alert "Jean Yolo Project" message "Prompt cannot be empty." as warning'
+	exit 1
+fi
+
+output="$(jean yolo --project "$project_id" "$prompt" 2>&1)"
+cli_status=$?
+
+if [[ $cli_status -ne 0 ]]; then
+	osascript - "$output" <<'APPLESCRIPT'
+on run argv
+	display alert "Jean Yolo Project failed" message (item 1 of argv) as critical
+end run
+APPLESCRIPT
+	exit "$cli_status"
+fi
+
+osascript - "$project_label" <<'APPLESCRIPT'
+on run argv
+	display notification "Queued yolo session for " & (item 1 of argv) with title "Jean"
+end run
+APPLESCRIPT]]></string>
+				<key>scriptargtype</key>
+				<integer>1</integer>
+				<key>scriptfile</key>
+				<string></string>
+				<key>type</key>
+				<integer>0</integer>
+			</dict>
+			<key>type</key>
+			<string>alfred.workflow.action.script</string>
+			<key>uid</key>
+			<string>9046E642-D090-4FC0-96CC-6645A2588A56</string>
+			<key>version</key>
+			<integer>2</integer>
+		</dict>
+	</array>
+	<key>readme</key>
+	<string>Trigger with `yp`, type to search Jean projects, select one, then enter a prompt. The workflow runs `jean yolo --project &lt;project-id&gt; &lt;prompt&gt;`.</string>
+	<key>uidata</key>
+	<dict>
+		<key>9046E642-D090-4FC0-96CC-6645A2588A56</key>
+		<dict>
+			<key>xpos</key>
+			<integer>360</integer>
+			<key>ypos</key>
+			<integer>140</integer>
+		</dict>
+		<key>965D42DC-7895-4E07-8625-09636F8E6651</key>
+		<dict>
+			<key>xpos</key>
+			<integer>120</integer>
+			<key>ypos</key>
+			<integer>140</integer>
+		</dict>
+	</dict>
+	<key>userconfigurationconfig</key>
+	<array/>
+	<key>version</key>
+	<string>1.0</string>
+	<key>webaddress</key>
+	<string></string>
+</dict>
+</plist>

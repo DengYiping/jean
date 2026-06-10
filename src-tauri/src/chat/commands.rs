@@ -1211,6 +1211,38 @@ fn trigger_backend_queue_drain(
     });
 }
 
+fn is_active_request_error(error: &str) -> bool {
+    error.contains("Session already has an active request")
+}
+
+fn queued_message_id(queued: &Value) -> Option<&str> {
+    queued.get("id").and_then(Value::as_str)
+}
+
+fn restore_dequeued_message_to_queue(metadata: &mut SessionMetadata, queued: Value) -> Vec<Value> {
+    let queued_id = queued_message_id(&queued);
+    let already_queued = queued_id.is_some_and(|id| {
+        metadata
+            .queued_messages
+            .iter()
+            .any(|message| queued_message_id(message) == Some(id))
+    });
+    if !already_queued {
+        metadata.queued_messages.insert(0, queued);
+    }
+    metadata.queued_messages.clone()
+}
+
+fn restore_dequeued_message_to_front(
+    app: &AppHandle,
+    session_id: &str,
+    queued: Value,
+) -> Result<Vec<Value>, String> {
+    with_existing_metadata_mut(app, session_id, |metadata| {
+        restore_dequeued_message_to_queue(metadata, queued)
+    })
+}
+
 async fn drain_backend_queue(
     app: AppHandle,
     worktree_id: String,
@@ -1265,6 +1297,27 @@ async fn drain_backend_queue(
             .and_then(Value::as_str)
             .unwrap_or("<unknown>")
             .to_string();
+
+        if super::registry::is_session_actively_managed(&session_id) {
+            log::trace!(
+                "[QueueDrain] session became active after dequeue, restoring message session={session_id} message_id={queued_id}"
+            );
+            match restore_dequeued_message_to_front(&app, &session_id, queued) {
+                Ok(queue) => {
+                    app.emit_all(
+                        "queue:updated",
+                        &serde_json::json!({ "sessionId": session_id, "queue": queue }),
+                    )
+                    .ok();
+                }
+                Err(e) => {
+                    log::error!(
+                        "[QueueDrain] failed to restore queued message session={session_id} message_id={queued_id}: {e}"
+                    );
+                }
+            }
+            return;
+        }
 
         match queued_magic_command(&queued) {
             Ok(Some(command)) => {
@@ -1332,6 +1385,23 @@ async fn drain_backend_queue(
             log::error!(
                 "[QueueDrain] queued message failed session={session_id} message_id={queued_id}: {e}"
             );
+            if is_active_request_error(&e) {
+                match restore_dequeued_message_to_front(&app, &session_id, queued) {
+                    Ok(queue) => {
+                        app.emit_all(
+                            "queue:updated",
+                            &serde_json::json!({ "sessionId": session_id, "queue": queue }),
+                        )
+                        .ok();
+                    }
+                    Err(restore_error) => {
+                        log::error!(
+                            "[QueueDrain] failed to restore queued message after active request session={session_id} message_id={queued_id}: {restore_error}"
+                        );
+                    }
+                }
+                return;
+            }
         }
     }
 }
@@ -7814,6 +7884,21 @@ fn spawn_supervisor_action_after_terminal_run(
 // Queue management commands (atomic operations for cross-client sync)
 // =============================================================================
 
+/// Request backend processing for a session queue.
+///
+/// The drain runs asynchronously and is guarded per session so multiple clients can
+/// safely request processing without racing each other.
+#[tauri::command]
+pub async fn process_message_queue(
+    app: AppHandle,
+    worktree_id: String,
+    worktree_path: String,
+    session_id: String,
+) -> Result<(), String> {
+    trigger_backend_queue_drain(app, worktree_id, worktree_path, session_id);
+    Ok(())
+}
+
 /// Push a message onto a session's queue. Returns the updated queue.
 /// Uses per-session metadata locking to avoid racing with send_chat_message.
 #[tauri::command]
@@ -8067,6 +8152,33 @@ mod tests {
         assert!(QUEUE_DEFAULT_ALLOWED_TOOLS.contains(&"Read"));
         assert!(QUEUE_DEFAULT_ALLOWED_TOOLS.contains(&"Glob"));
         assert!(QUEUE_DEFAULT_ALLOWED_TOOLS.contains(&"Grep"));
+    }
+
+    #[test]
+    fn active_request_error_is_retryable_for_queue_drain() {
+        assert!(is_active_request_error(
+            "Session already has an active request"
+        ));
+        assert!(!is_active_request_error("queued message is empty"));
+    }
+
+    #[test]
+    fn restore_dequeued_message_to_queue_prepends_without_duplication() {
+        let queued = serde_json::json!({ "id": "msg-1", "message": "first" });
+        let second = serde_json::json!({ "id": "msg-2", "message": "second" });
+        let mut metadata = SessionMetadata::new(
+            "session-1".to_string(),
+            "worktree-1".to_string(),
+            "Session 1".to_string(),
+            0,
+        );
+        metadata.queued_messages = vec![second.clone()];
+
+        let restored = restore_dequeued_message_to_queue(&mut metadata, queued.clone());
+        assert_eq!(restored, vec![queued.clone(), second.clone()]);
+
+        let restored_again = restore_dequeued_message_to_queue(&mut metadata, queued.clone());
+        assert_eq!(restored_again, vec![queued, second]);
     }
 
     #[test]

@@ -380,6 +380,7 @@ export const defaultResponses: Record<string, unknown> = {
   send_chat_message: null,
   cancel_chat_message: false,
   create_commit_with_ai: { message: 'test commit', commit_hash: 'abc123' },
+  process_message_queue: null,
   enqueue_message: [],
   dequeue_message: null,
   remove_queued_message: null,

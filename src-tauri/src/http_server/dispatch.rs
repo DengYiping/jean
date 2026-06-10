@@ -2514,6 +2514,14 @@ pub async fn dispatch_command(
         // =====================================================================
         // Queue management (cross-client sync)
         // =====================================================================
+        "process_message_queue" => {
+            let worktree_id: String = field(&args, "worktreeId", "worktree_id")?;
+            let worktree_path: String = field(&args, "worktreePath", "worktree_path")?;
+            let session_id: String = field(&args, "sessionId", "session_id")?;
+            crate::chat::process_message_queue(app.clone(), worktree_id, worktree_path, session_id)
+                .await?;
+            Ok(Value::Null)
+        }
         "enqueue_message" => {
             let worktree_id: String = field(&args, "worktreeId", "worktree_id")?;
             let worktree_path: String = field(&args, "worktreePath", "worktree_path")?;

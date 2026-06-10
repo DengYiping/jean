@@ -4412,6 +4412,7 @@ pub fn run() {
             chat::codex_goal_get,
             chat::codex_goal_clear,
             // Chat commands - Queue management (cross-client sync)
+            chat::process_message_queue,
             chat::enqueue_message,
             chat::dequeue_message,
             chat::remove_queued_message,

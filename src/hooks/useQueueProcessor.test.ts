@@ -5,37 +5,14 @@ import type * as TransportModule from '@/lib/transport'
 import type { QueuedMessage } from '@/types/chat'
 import { useQueueProcessor } from './useQueueProcessor'
 
-const { mockInvoke, mockMutate, mockPersistDequeue, mockToastLoading } =
-  vi.hoisted(() => ({
-    mockInvoke: vi.fn(),
-    mockMutate: vi.fn(),
-    mockPersistDequeue: vi.fn(),
-    mockToastLoading: vi.fn(),
-  }))
-
-vi.mock('@/services/chat', () => ({
-  useSendMessage: () => ({ mutate: mockMutate }),
-  persistDequeue: mockPersistDequeue,
+const { mockInvoke } = vi.hoisted(() => ({
+  mockInvoke: vi.fn(),
 }))
 
-vi.mock('@/services/preferences', () => ({
-  usePreferences: () => ({ data: undefined }),
-}))
+vi.mock('@/services/chat', () => ({}))
 
 vi.mock('@/services/projects', () => ({
   isTauri: () => true,
-}))
-
-vi.mock('@/services/git-status', () => ({
-  triggerImmediateGitPoll: vi.fn(),
-}))
-
-vi.mock('sonner', () => ({
-  toast: {
-    loading: mockToastLoading,
-    success: vi.fn(),
-    error: vi.fn(),
-  },
 }))
 
 vi.mock('@/lib/transport', async importOriginal => {
@@ -66,9 +43,7 @@ function createQueuedMessage(id: string, message: string): QueuedMessage {
 describe('useQueueProcessor', () => {
   beforeEach(() => {
     mockInvoke.mockReset()
-    mockMutate.mockReset()
-    mockPersistDequeue.mockReset()
-    mockToastLoading.mockReturnValue('toast-1')
+    mockInvoke.mockResolvedValue(null)
 
     useChatStore.setState({
       messageQueues: {},
@@ -90,7 +65,7 @@ describe('useQueueProcessor', () => {
     })
   })
 
-  it('continues draining queued prompts after completion clears sending before mutate settles', async () => {
+  it('asks the backend to drain a processable queue', async () => {
     const sessionId = 'session-1'
     const worktreeId = 'worktree-1'
     const worktreePath = '/tmp/worktree-1'
@@ -103,32 +78,18 @@ describe('useQueueProcessor', () => {
       worktreePaths: { [worktreeId]: worktreePath },
     })
 
-    mockPersistDequeue
-      .mockResolvedValueOnce(first)
-      .mockResolvedValueOnce(second)
-    mockMutate.mockImplementation(
-      (
-        _args: unknown,
-        opts?: {
-          onSettled?: () => void
-        }
-      ) => {
-        useChatStore.getState().setStreamingContent(sessionId, 'done')
-        useChatStore.getState().completeSession(sessionId)
-        opts?.onSettled?.()
-      }
-    )
-
     renderHook(() => useQueueProcessor())
 
     await waitFor(() => {
-      expect(mockPersistDequeue).toHaveBeenCalledTimes(2)
+      expect(mockInvoke).toHaveBeenCalledWith('process_message_queue', {
+        sessionId,
+        worktreeId,
+        worktreePath,
+      })
     })
-
-    expect(mockMutate).toHaveBeenCalledTimes(2)
   })
 
-  it('executes queued messages in dequeue order', async () => {
+  it('only requests one backend drain for a session with multiple queued messages', async () => {
     const sessionId = 'session-1'
     const worktreeId = 'worktree-1'
     const worktreePath = '/tmp/worktree-1'
@@ -136,150 +97,59 @@ describe('useQueueProcessor', () => {
     const second = createQueuedMessage('msg-2', 'second')
 
     useChatStore.setState({
-      messageQueues: { [sessionId]: [second, first] },
+      messageQueues: { [sessionId]: [first, second] },
       sessionWorktreeMap: { [sessionId]: worktreeId },
       worktreePaths: { [worktreeId]: worktreePath },
     })
 
-    mockPersistDequeue
-      .mockResolvedValueOnce(second)
-      .mockResolvedValueOnce(first)
-    mockMutate.mockImplementation(
-      (
-        _args: unknown,
-        opts?: {
-          onSettled?: () => void
-        }
-      ) => {
-        useChatStore.getState().setStreamingContent(sessionId, 'done')
-        useChatStore.getState().completeSession(sessionId)
-        opts?.onSettled?.()
-      }
-    )
-
     renderHook(() => useQueueProcessor())
 
     await waitFor(() => {
-      expect(mockMutate).toHaveBeenCalledTimes(2)
+      expect(mockInvoke).toHaveBeenCalledTimes(1)
     })
 
-    expect(mockMutate.mock.calls[0]?.[0]).toMatchObject({ message: 'second' })
-    expect(mockMutate.mock.calls[1]?.[0]).toMatchObject({ message: 'first' })
+    expect(mockInvoke).toHaveBeenCalledWith('process_message_queue', {
+      sessionId,
+      worktreeId,
+      worktreePath,
+    })
   })
 
-  it('executes a queued magic commit without sending a chat message', async () => {
+  it('does not ask the backend to drain while a session is sending', () => {
     const sessionId = 'session-1'
     const worktreeId = 'worktree-1'
     const worktreePath = '/tmp/worktree-1'
-    const magic = {
-      ...createQueuedMessage('magic-1', '/commit'),
-      kind: 'magic_command' as const,
-      magicCommand: 'commit' as const,
-      magicCommandLabel: 'Commit',
-    }
 
     useChatStore.setState({
-      messageQueues: { [sessionId]: [magic] },
+      messageQueues: {
+        [sessionId]: [createQueuedMessage('msg-1', 'first')],
+      },
+      sendingSessionIds: { [sessionId]: true },
       sessionWorktreeMap: { [sessionId]: worktreeId },
       worktreePaths: { [worktreeId]: worktreePath },
     })
 
-    mockPersistDequeue.mockResolvedValueOnce(magic)
-    mockInvoke.mockResolvedValue({ message: 'test commit', commit_hash: 'abc' })
-
     renderHook(() => useQueueProcessor())
 
-    await waitFor(() => {
-      expect(mockInvoke).toHaveBeenCalledWith(
-        'create_commit_with_ai',
-        expect.objectContaining({
-          worktreePath,
-          push: false,
-        })
-      )
-    })
-    expect(mockMutate).not.toHaveBeenCalled()
+    expect(mockInvoke).not.toHaveBeenCalled()
   })
 
-  it('executes a queued draft PR with draft enabled', async () => {
+  it('does not ask the backend to drain while a session is waiting for input', () => {
     const sessionId = 'session-1'
     const worktreeId = 'worktree-1'
     const worktreePath = '/tmp/worktree-1'
-    const magic = {
-      ...createQueuedMessage('magic-1', '/create draft pr'),
-      kind: 'magic_command' as const,
-      magicCommand: 'draft-pr' as const,
-      magicCommandLabel: 'Create draft PR',
-    }
 
     useChatStore.setState({
-      messageQueues: { [sessionId]: [magic] },
+      messageQueues: {
+        [sessionId]: [createQueuedMessage('msg-1', 'first')],
+      },
+      waitingForInputSessionIds: { [sessionId]: true },
       sessionWorktreeMap: { [sessionId]: worktreeId },
       worktreePaths: { [worktreeId]: worktreePath },
     })
 
-    mockPersistDequeue.mockResolvedValueOnce(magic)
-    mockInvoke.mockResolvedValue({
-      title: 'Test PR',
-      pr_number: 12,
-      pr_url: 'https://example.com/pr/12',
-      existing: false,
-      is_draft: true,
-    })
-
     renderHook(() => useQueueProcessor())
 
-    await waitFor(() => {
-      expect(mockInvoke).toHaveBeenCalledWith(
-        'create_pr_with_ai_content',
-        expect.objectContaining({
-          worktreePath,
-          sessionId,
-          draft: true,
-        })
-      )
-    })
-    expect(mockMutate).not.toHaveBeenCalled()
-  })
-
-  it('executes a queued create PR with draft disabled', async () => {
-    const sessionId = 'session-1'
-    const worktreeId = 'worktree-1'
-    const worktreePath = '/tmp/worktree-1'
-    const magic = {
-      ...createQueuedMessage('magic-1', '/create-pr'),
-      kind: 'magic_command' as const,
-      magicCommand: 'open-pr' as const,
-      magicCommandLabel: 'Create PR',
-    }
-
-    useChatStore.setState({
-      messageQueues: { [sessionId]: [magic] },
-      sessionWorktreeMap: { [sessionId]: worktreeId },
-      worktreePaths: { [worktreeId]: worktreePath },
-    })
-
-    mockPersistDequeue.mockResolvedValueOnce(magic)
-    mockInvoke.mockResolvedValue({
-      title: 'Test PR',
-      pr_number: 12,
-      pr_url: 'https://example.com/pr/12',
-      existing: false,
-      is_draft: false,
-    })
-
-    renderHook(() => useQueueProcessor())
-
-    await waitFor(() => {
-      expect(mockInvoke).toHaveBeenCalledWith(
-        'create_pr_with_ai_content',
-        expect.objectContaining({
-          worktreePath,
-          sessionId,
-          draft: false,
-        })
-      )
-    })
-    expect(mockMutate).not.toHaveBeenCalled()
+    expect(mockInvoke).not.toHaveBeenCalled()
   })
 })

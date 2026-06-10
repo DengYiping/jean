@@ -4,7 +4,11 @@ import {
   OPENCODE_MODEL_OPTIONS,
 } from '@/components/chat/toolbar/toolbar-options'
 import { formatOpencodeModelLabel } from '@/components/chat/toolbar/toolbar-utils'
-import { getClaudeFastInfo, getCodexFastInfo } from '@/types/preferences'
+import {
+  getClaudeFastInfo,
+  getCodexFastInfo,
+  type CustomCodexModel,
+} from '@/types/preferences'
 
 const ALL_MODEL_OPTIONS = [
   ...MODEL_OPTIONS,
@@ -24,7 +28,15 @@ function getKnownModelLabel(model: string): string | null {
   )
 }
 
-export function getMessageModelLabel(model: string): string {
+export function getMessageModelLabel(
+  model: string,
+  customCodexModels: readonly CustomCodexModel[] = []
+): string {
+  const customCodexLabel = customCodexModels.find(
+    custom => custom.model_id === model
+  )?.display_name
+  if (customCodexLabel) return customCodexLabel
+
   const directLabel = getKnownModelLabel(model)
   if (directLabel) return directLabel
 

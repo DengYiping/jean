@@ -15,10 +15,10 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { usePreferences, usePatchPreferences } from '@/services/preferences'
+import { getCodexModelOptions, useModelCatalog } from '@/services/model-catalog'
 import {
   type CustomCliProfile,
   PREDEFINED_CLI_PROFILES,
-  codexModelOptions,
   normalizeCodexModelProviderOverrides,
 } from '@/types/preferences'
 
@@ -42,11 +42,17 @@ const SettingsSection: React.FC<{
 
 export const ProvidersPane: React.FC = () => {
   const { data: preferences } = usePreferences()
+  const { data: modelCatalog } = useModelCatalog()
   const patchPreferences = usePatchPreferences()
 
   const profiles = preferences?.custom_cli_profiles ?? []
   const codexProviderOverrides =
     preferences?.codex_model_provider_overrides ?? {}
+  const codexModelOptions = getCodexModelOptions(
+    modelCatalog,
+    preferences?.custom_codex_models ?? [],
+    preferences?.selected_codex_model
+  )
 
   const handleSaveProfiles = (updated: CustomCliProfile[]) => {
     patchPreferences.mutate({ custom_cli_profiles: updated })
@@ -112,6 +118,7 @@ export const ProvidersPane: React.FC = () => {
         anchorId="pref-providers-section-codex"
       >
         <CodexModelProviderOverridesEditor
+          modelOptions={codexModelOptions}
           overrides={codexProviderOverrides}
           onSave={handleSaveCodexProviderOverrides}
         />
@@ -121,9 +128,10 @@ export const ProvidersPane: React.FC = () => {
 }
 
 const CodexModelProviderOverridesEditor: React.FC<{
+  modelOptions: { value: string; label: string }[]
   overrides: Record<string, string>
   onSave: (overrides: Record<string, string>) => void
-}> = ({ overrides, onSave }) => {
+}> = ({ modelOptions, overrides, onSave }) => {
   const [drafts, setDrafts] = useState<Record<string, string>>(() =>
     normalizeCodexModelProviderOverrides(overrides)
   )
@@ -143,7 +151,7 @@ const CodexModelProviderOverridesEditor: React.FC<{
 
   return (
     <div className="space-y-2">
-      {codexModelOptions.map(option => (
+      {modelOptions.map(option => (
         <div
           key={option.value}
           className="flex flex-col gap-2 rounded-md border border-border/60 px-3 py-2 sm:flex-row sm:items-center"

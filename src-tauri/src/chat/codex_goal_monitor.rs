@@ -529,6 +529,7 @@ mod tests {
             user_message_id: "msg-1".to_string(),
             user_message: "hello".to_string(),
             model: None,
+            backend: None,
             execution_mode: None,
             thinking_level: None,
             effort_level: None,

@@ -83,6 +83,12 @@ fn greet(name: &str) -> String {
 
 // Preferences data structure
 // Only contains settings that should be persisted to disk
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CustomCodexModel {
+    pub model_id: String,
+    pub display_name: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppPreferences {
     pub theme: String,
@@ -224,6 +230,8 @@ pub struct AppPreferences {
     pub default_backend: String, // Default CLI backend: "claude", "codex", or "opencode"
     #[serde(default = "default_codex_model")]
     pub selected_codex_model: String, // Default Codex model
+    #[serde(default)]
+    pub custom_codex_models: Vec<CustomCodexModel>, // User-defined Codex model ids and display names
     #[serde(default)]
     pub codex_model_provider_overrides: std::collections::HashMap<String, String>, // Codex model -> model_provider id overrides
     #[serde(default = "default_opencode_model")]
@@ -888,6 +896,7 @@ mod tests {
         assert_eq!(prefs.selected_model, "claude-opus-4-8[1m]");
         assert_eq!(prefs.selected_codex_model, "gpt-5.5");
         assert!(prefs.codex_model_provider_overrides.is_empty());
+        assert!(prefs.custom_codex_models.is_empty());
         assert_eq!(prefs.codex_goal_execution_mode, "build");
         assert!(prefs.favorite_models.is_empty());
         assert!(prefs.fast_mode_models.is_empty());
@@ -960,6 +969,45 @@ mod tests {
             Some("openrouter")
         );
         assert_eq!(prefs.codex_model_provider_overrides.len(), 1);
+    }
+
+    #[test]
+    fn normalize_preferences_trims_and_dedupes_custom_codex_models() {
+        let mut prefs = AppPreferences::default();
+        prefs.custom_codex_models = vec![
+            super::CustomCodexModel {
+                model_id: " o3 ".to_string(),
+                display_name: " O3 ".to_string(),
+            },
+            super::CustomCodexModel {
+                model_id: "o3".to_string(),
+                display_name: "Duplicate".to_string(),
+            },
+            super::CustomCodexModel {
+                model_id: "custom-model".to_string(),
+                display_name: "   ".to_string(),
+            },
+            super::CustomCodexModel {
+                model_id: "   ".to_string(),
+                display_name: "Missing id".to_string(),
+            },
+        ];
+
+        super::normalize_preferences(&mut prefs);
+
+        assert_eq!(
+            prefs.custom_codex_models,
+            vec![
+                super::CustomCodexModel {
+                    model_id: "o3".to_string(),
+                    display_name: "O3".to_string(),
+                },
+                super::CustomCodexModel {
+                    model_id: "custom-model".to_string(),
+                    display_name: "custom-model".to_string(),
+                },
+            ]
+        );
     }
 
     #[test]
@@ -1945,6 +1993,7 @@ impl Default for AppPreferences {
             default_execution_mode: default_execution_mode(),
             default_backend: default_backend(),
             selected_codex_model: default_codex_model(),
+            custom_codex_models: Vec::new(),
             codex_model_provider_overrides: std::collections::HashMap::new(),
             selected_opencode_model: default_opencode_model(),
             claude_update_command: None,
@@ -2021,6 +2070,28 @@ fn normalize_string_map(map: &mut std::collections::HashMap<String, String>) {
     *map = normalized;
 }
 
+fn normalize_custom_codex_models(models: &mut Vec<CustomCodexModel>) {
+    let mut seen = std::collections::HashSet::new();
+    let mut normalized = Vec::new();
+    for model in models.drain(..) {
+        let model_id = model.model_id.trim();
+        if model_id.is_empty() || !seen.insert(model_id.to_string()) {
+            continue;
+        }
+
+        let display_name = model.display_name.trim();
+        normalized.push(CustomCodexModel {
+            model_id: model_id.to_string(),
+            display_name: if display_name.is_empty() {
+                model_id.to_string()
+            } else {
+                display_name.to_string()
+            },
+        });
+    }
+    *models = normalized;
+}
+
 fn normalize_preferences(preferences: &mut AppPreferences) {
     normalize_optional_path(&mut preferences.git_cli_path);
     normalize_optional_path(&mut preferences.worktrees_base_dir);
@@ -2029,6 +2100,7 @@ fn normalize_preferences(preferences: &mut AppPreferences) {
     normalize_optional_path(&mut preferences.opencode_launch_command);
     normalize_optional_path(&mut preferences.default_project_id);
     normalize_string_map(&mut preferences.codex_model_provider_overrides);
+    normalize_custom_codex_models(&mut preferences.custom_codex_models);
     crate::platform::normalize_custom_editors(&mut preferences.custom_editors);
 }
 

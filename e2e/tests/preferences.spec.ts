@@ -120,4 +120,42 @@ test.describe('Preferences', () => {
       },
     })
   })
+
+  test('saves custom Codex models from General settings', async ({
+    mockPage,
+  }) => {
+    const dialog = await openDialog(mockPage)
+
+    await dialog.getByRole('button', { name: 'Add model' }).click()
+    await dialog.getByPlaceholder('O3', { exact: true }).fill('O3')
+    const modelIdInput = dialog.getByPlaceholder('o3', { exact: true })
+    await modelIdInput.fill('o3')
+    await modelIdInput
+      .locator(
+        'xpath=ancestor::div[contains(@class, "rounded-md") and contains(@class, "bg-muted")][1]'
+      )
+      .getByRole('button', { name: 'Save' })
+      .click()
+
+    const patchCall = await mockPage.evaluate(() => {
+      const calls =
+        (
+          window as Window & {
+            __JEAN_E2E_MOCK__?: {
+              invokeCalls?: Array<{ command: string; args?: unknown }>
+            }
+          }
+        ).__JEAN_E2E_MOCK__?.invokeCalls ?? []
+      return calls.findLast(call => call.command === 'patch_preferences')
+    })
+
+    expect(patchCall).toMatchObject({
+      command: 'patch_preferences',
+      args: {
+        patch: {
+          custom_codex_models: [{ model_id: 'o3', display_name: 'O3' }],
+        },
+      },
+    })
+  })
 })

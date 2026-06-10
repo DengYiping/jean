@@ -4,6 +4,7 @@ import {
   getModelFastInfo,
   modelOptions,
   type CliBackend,
+  type CustomCodexModel,
 } from '@/types/preferences'
 
 export const MODEL_CATALOG_URL =
@@ -232,6 +233,32 @@ export function getCatalogModelOptions(
   return models
     .filter(model => !model.hidden)
     .map(model => ({ value: model.id, label: model.label }))
+}
+
+export function getCodexModelOptions(
+  catalog: ModelCatalog | null | undefined,
+  customModels: readonly CustomCodexModel[] = [],
+  selectedModel?: string | null
+): { value: string; label: string }[] {
+  const options = getCatalogModelOptions(catalog, 'codex')
+  const seen = new Set(options.map(option => option.value))
+
+  for (const model of customModels) {
+    const modelId = model.model_id.trim()
+    if (!modelId || seen.has(modelId)) continue
+    seen.add(modelId)
+    options.push({
+      value: modelId,
+      label: model.display_name.trim() || modelId,
+    })
+  }
+
+  const selected = selectedModel?.trim()
+  if (selected && !seen.has(selected)) {
+    options.push({ value: selected, label: selected })
+  }
+
+  return options
 }
 
 export function getCatalogModelFastInfo(

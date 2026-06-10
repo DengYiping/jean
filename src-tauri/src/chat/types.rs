@@ -1457,6 +1457,9 @@ pub struct RunEntry {
     /// Model used for this run
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// Backend used for this run
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backend: Option<Backend>,
     /// Execution mode (plan, build, yolo)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub execution_mode: Option<String>,
@@ -2185,6 +2188,7 @@ mod tests {
             user_message_id: "msg-1".to_string(),
             user_message: "Hello".to_string(),
             model: None,
+            backend: None,
             execution_mode: None,
             thinking_level: None,
             effort_level: None,
@@ -2221,6 +2225,7 @@ mod tests {
             user_message_id: "msg-1".to_string(),
             user_message: "First".to_string(),
             model: None,
+            backend: None,
             execution_mode: None,
             thinking_level: None,
             effort_level: None,
@@ -2243,6 +2248,7 @@ mod tests {
             user_message_id: "msg-2".to_string(),
             user_message: "Second".to_string(),
             model: None,
+            backend: None,
             execution_mode: None,
             thinking_level: None,
             effort_level: None,
@@ -2275,6 +2281,7 @@ mod tests {
             user_message_id: "msg-1".to_string(),
             user_message: "Hello".to_string(),
             model: None,
+            backend: None,
             execution_mode: None,
             thinking_level: None,
             effort_level: None,
@@ -2319,6 +2326,7 @@ mod tests {
             user_message_id: "msg-1".to_string(),
             user_message: "Plan this".to_string(),
             model: None,
+            backend: None,
             execution_mode: Some("plan".to_string()),
             thinking_level: None,
             effort_level: None,

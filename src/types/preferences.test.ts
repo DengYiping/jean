@@ -15,6 +15,7 @@ import {
   isMagicPromptModelCompatibleWithBackend,
   normalizeCodexModelProviderOverrides,
   normalizeCodexModel,
+  normalizeCustomCodexModels,
   OPENCODE_DEFAULT_MAGIC_PROMPT_EFFORTS,
   resolveMagicPromptBackend,
   type MagicPromptBackends,
@@ -56,6 +57,10 @@ describe('preference defaults', () => {
   it('uses Codex default providers unless overrides are configured', () => {
     expect(defaultPreferences.codex_model_provider_overrides).toEqual({})
   })
+
+  it('has no custom Codex models by default', () => {
+    expect(defaultPreferences.custom_codex_models).toEqual([])
+  })
 })
 
 describe('magic prompt model compatibility', () => {
@@ -74,6 +79,16 @@ describe('magic prompt model compatibility', () => {
     expect(isMagicPromptModelCompatibleWithBackend('gpt-5.4', 'claude')).toBe(
       false
     )
+  })
+
+  it('accepts custom Codex models only for the Codex backend', () => {
+    const customCodexModels = [{ model_id: 'o3', display_name: 'O3' }]
+    expect(
+      isMagicPromptModelCompatibleWithBackend('o3', 'codex', customCodexModels)
+    ).toBe(true)
+    expect(
+      isMagicPromptModelCompatibleWithBackend('o3', 'claude', customCodexModels)
+    ).toBe(false)
   })
 
   it('accepts OpenCode models only for the OpenCode backend', () => {
@@ -125,6 +140,10 @@ describe('codex fast model handling', () => {
     expect(normalizeCodexModel('gpt-5.4-fast')).toBe('gpt-5.4')
     expect(normalizeCodexModel('gpt-5.4-mini-fast')).toBe('gpt-5.4-mini')
   })
+
+  it('preserves unknown custom Codex model ids', () => {
+    expect(normalizeCodexModel(' o3 ')).toBe('o3')
+  })
 })
 
 describe('codex model provider overrides', () => {
@@ -136,6 +155,22 @@ describe('codex model provider overrides', () => {
         '  ': 'openai',
       })
     ).toEqual({ 'gpt-5.5': 'openrouter' })
+  })
+})
+
+describe('custom Codex models', () => {
+  it('trims rows, drops blank ids, dedupes by model id, and falls back to id for blank names', () => {
+    expect(
+      normalizeCustomCodexModels([
+        { model_id: ' o3 ', display_name: ' O3 ' },
+        { model_id: 'o3', display_name: 'Duplicate' },
+        { model_id: ' custom-model ', display_name: '   ' },
+        { model_id: '   ', display_name: 'No id' },
+      ])
+    ).toEqual([
+      { model_id: 'o3', display_name: 'O3' },
+      { model_id: 'custom-model', display_name: 'custom-model' },
+    ])
   })
 })
 

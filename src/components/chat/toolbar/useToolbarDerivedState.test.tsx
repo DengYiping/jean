@@ -59,6 +59,7 @@ describe('useToolbarDerivedState', () => {
           selectedModel: 'gpt-5.4-fast',
           opencodeModelOptions: undefined,
           customCliProfiles: [],
+          customCodexModels: [],
           favoriteModels: ['codex:gpt-5.4'],
           fastModeModels: ['codex:gpt-5.4'],
           availableMcpServers: [],
@@ -102,6 +103,7 @@ describe('useToolbarDerivedState', () => {
           selectedModel: 'sonnet',
           opencodeModelOptions: undefined,
           customCliProfiles: [],
+          customCodexModels: [],
           favoriteModels: [],
           fastModeModels: [],
           availableMcpServers: [],
@@ -119,6 +121,39 @@ describe('useToolbarDerivedState', () => {
           value: 'claude-opus-4-7',
           label: 'Opus 4.7',
         }),
+      ])
+    )
+  })
+
+  it('shows custom Codex model display names in the desktop picker', () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
+
+    const { result } = renderHook(
+      () =>
+        useToolbarDerivedState({
+          selectedBackend: 'codex',
+          selectedProvider: null,
+          selectedModel: 'o3',
+          opencodeModelOptions: undefined,
+          customCliProfiles: [],
+          customCodexModels: [{ model_id: 'o3', display_name: 'O3' }],
+          favoriteModels: [],
+          fastModeModels: [],
+          availableMcpServers: [],
+          enabledMcpServers: [],
+        }),
+      { wrapper }
+    )
+
+    expect(result.current.selectedModelLabel).toBe('O3')
+    expect(result.current.desktopModelOptions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ value: 'o3', label: 'O3' }),
       ])
     )
   })

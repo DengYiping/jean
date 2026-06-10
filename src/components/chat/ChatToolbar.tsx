@@ -198,6 +198,7 @@ export const ChatToolbar = memo(function ChatToolbar({
     selectedModel,
     opencodeModelOptions,
     customCliProfiles,
+    customCodexModels: preferences?.custom_codex_models ?? [],
     favoriteModels: preferences?.favorite_models ?? [],
     fastModeModels: preferences?.fast_mode_models ?? [],
     availableMcpServers,

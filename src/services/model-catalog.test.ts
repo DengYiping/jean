@@ -5,6 +5,7 @@ import {
   fetchModelCatalog,
   getCatalogModelFastInfo,
   getCatalogModelOptions,
+  getCodexModelOptions,
   readCachedModelCatalog,
   resolveRememberedCatalogFastModel,
 } from './model-catalog'
@@ -134,5 +135,43 @@ describe('model catalog', () => {
       value: 'gpt-5.5',
       label: 'GPT 5.5',
     })
+  })
+
+  it('merges custom Codex models after catalog models without duplicate rows', async () => {
+    const catalog = await fetchModelCatalog({
+      storage: createStorage(),
+      fetchImpl: vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              version: 1,
+              updated_at: '2026-06-09T00:00:00Z',
+              defaults: { claude: 'claude-fable-5', codex: 'gpt-5.5' },
+              backends: {
+                claude: {
+                  models: [{ id: 'claude-fable-5', label: 'Claude Fable 5' }],
+                },
+                codex: { models: [{ id: 'gpt-5.5', label: 'GPT 5.5' }] },
+              },
+            }),
+            { status: 200 }
+          )
+      ),
+    })
+
+    expect(
+      getCodexModelOptions(
+        catalog,
+        [
+          { model_id: 'o3', display_name: 'O3' },
+          { model_id: 'gpt-5.5', display_name: 'Duplicate' },
+        ],
+        'legacy-codex'
+      )
+    ).toEqual([
+      { value: 'gpt-5.5', label: 'GPT 5.5' },
+      { value: 'o3', label: 'O3' },
+      { value: 'legacy-codex', label: 'legacy-codex' },
+    ])
   })
 })

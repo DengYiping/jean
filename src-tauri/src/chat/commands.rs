@@ -8064,6 +8064,7 @@ mod tests {
             user_message_id: format!("user-{run_id}"),
             user_message: "test".to_string(),
             model: None,
+            backend: None,
             execution_mode: None,
             thinking_level: None,
             effort_level: None,

@@ -25,6 +25,7 @@ import {
 import { usePreferences, usePatchPreferences } from '@/services/preferences'
 import { useInstalledBackends } from '@/hooks/useInstalledBackends'
 import { useAvailableOpencodeModels } from '@/services/opencode-cli'
+import { getCodexModelOptions, useModelCatalog } from '@/services/model-catalog'
 import { formatOpencodeModelLabel } from '@/components/chat/toolbar/toolbar-utils'
 import { OPENCODE_MODEL_OPTIONS as OPENCODE_FALLBACK_OPTIONS } from '@/components/chat/toolbar/toolbar-options'
 import {
@@ -63,7 +64,6 @@ import {
   OPENCODE_DEFAULT_MAGIC_PROMPT_MODELS,
   CODEX_DEFAULT_MAGIC_PROMPT_EFFORTS,
   OPENCODE_DEFAULT_MAGIC_PROMPT_EFFORTS,
-  codexModelOptions,
   magicPromptReasoningOptions,
   isMagicPromptModelCompatibleWithBackend,
   resolveMagicPromptBackend,
@@ -585,9 +585,6 @@ const CLAUDE_MODEL_OPTIONS: { value: MagicPromptModel; label: string }[] = [
   { value: 'haiku', label: 'Haiku' },
 ]
 
-const CODEX_MODEL_OPTIONS: { value: MagicPromptModel; label: string }[] =
-  codexModelOptions.map(o => ({ value: o.value, label: o.label }))
-
 function getDefaultModelForBackend(
   backend: CliBackend,
   config: PromptConfig,
@@ -628,6 +625,7 @@ export const MagicPromptsPane: React.FC<MagicPromptsPaneProps> = ({
   searchTargetPromptKey = null,
 }) => {
   const { data: preferences } = usePreferences()
+  const { data: modelCatalog } = useModelCatalog()
   const patchPreferences = usePatchPreferences()
   const [selectedKey, setSelectedKey] =
     useState<keyof MagicPrompts>('investigate_issue')
@@ -658,6 +656,22 @@ export const MagicPromptsPane: React.FC<MagicPromptsPaneProps> = ({
       label: formatOpenCodeLabel(value),
     }))
   }, [availableOpencodeModels])
+  const codexModelOptions = useMemo(
+    () =>
+      getCodexModelOptions(
+        modelCatalog,
+        preferences?.custom_codex_models ?? [],
+        preferences?.selected_codex_model
+      ).map(option => ({
+        value: option.value as MagicPromptModel,
+        label: option.label,
+      })),
+    [
+      modelCatalog,
+      preferences?.custom_codex_models,
+      preferences?.selected_codex_model,
+    ]
+  )
 
   const currentPrompts = preferences?.magic_prompts ?? DEFAULT_MAGIC_PROMPTS
   const currentModels =
@@ -697,7 +711,11 @@ export const MagicPromptsPane: React.FC<MagicPromptsPaneProps> = ({
     : undefined
   const resolvedModel =
     currentModel && effectiveBackend
-      ? isMagicPromptModelCompatibleWithBackend(currentModel, effectiveBackend)
+      ? isMagicPromptModelCompatibleWithBackend(
+          currentModel,
+          effectiveBackend,
+          preferences?.custom_codex_models ?? []
+        )
         ? currentModel
         : getDefaultModelForBackend(
             effectiveBackend,
@@ -1150,7 +1168,7 @@ export const MagicPromptsPane: React.FC<MagicPromptsPaneProps> = ({
                         {(() => {
                           const allOptions = [
                             ...filteredClaudeOptions,
-                            ...CODEX_MODEL_OPTIONS,
+                            ...codexModelOptions,
                             ...opencodeModelOptions,
                           ]
                           return (
@@ -1202,7 +1220,7 @@ export const MagicPromptsPane: React.FC<MagicPromptsPaneProps> = ({
                         )}
                         {effectiveBackend === 'codex' && (
                           <CommandGroup heading="Codex">
-                            {CODEX_MODEL_OPTIONS.map(opt => (
+                            {codexModelOptions.map(opt => (
                               <CommandItem
                                 key={opt.value}
                                 value={`${opt.label} ${opt.value}`}

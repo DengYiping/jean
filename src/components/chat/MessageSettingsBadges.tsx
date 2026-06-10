@@ -4,6 +4,7 @@ import {
   EFFORT_LEVEL_OPTIONS,
 } from '@/components/chat/toolbar/toolbar-options'
 import { getMessageModelLabel } from '@/components/chat/message-settings-labels'
+import { usePreferences } from '@/services/preferences'
 import type { EffortLevel, ExecutionMode, ThinkingLevel } from '@/types/chat'
 
 interface MessageSettingsBadgesProps {
@@ -21,9 +22,14 @@ export const MessageSettingsBadges = memo(function MessageSettingsBadges({
   effortLevel,
   isCursor,
 }: MessageSettingsBadgesProps) {
+  const { data: preferences } = usePreferences()
+
   if (!model) return null
 
-  const modelLabel = getMessageModelLabel(model)
+  const modelLabel = getMessageModelLabel(
+    model,
+    preferences?.custom_codex_models ?? []
+  )
 
   const effortLabel = effortLevel
     ? (EFFORT_LEVEL_OPTIONS.find(o => o.value === effortLevel)?.label ??

@@ -17,6 +17,10 @@ export function resolveApprovalLabel(
         selected_opencode_model?: string | null
         selected_cursor_model?: string | null
         default_backend?: string | null
+        custom_codex_models?: {
+          model_id: string
+          display_name: string
+        }[]
       }
     | undefined,
   sessionBackend?: string | null
@@ -44,7 +48,9 @@ export function resolveApprovalLabel(
           : (preferences.selected_model ?? null)
   const resolvedModel = model ?? backendDefaultModel
   if (!resolvedModel && !resolvedBackend) return null
-  const modelLabel = resolvedModel ? getMessageModelLabel(resolvedModel) : null
+  const modelLabel = resolvedModel
+    ? getMessageModelLabel(resolvedModel, preferences.custom_codex_models ?? [])
+    : null
   const parts: string[] = []
   if (resolvedBackend && resolvedBackend !== 'claude')
     parts.push(resolvedBackend)

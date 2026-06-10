@@ -1,5 +1,9 @@
 import { useMemo } from 'react'
-import type { ClaudeModel, CustomCliProfile } from '@/types/preferences'
+import type {
+  ClaudeModel,
+  CustomCliProfile,
+  CustomCodexModel,
+} from '@/types/preferences'
 import {
   CODEX_MODEL_OPTIONS,
   MODEL_OPTIONS,
@@ -9,6 +13,7 @@ import {
   getCatalogModelFastInfo,
   getCatalogModelOptions,
   getCatalogModelPreferenceKey,
+  getCodexModelOptions,
   useModelCatalog,
 } from '@/services/model-catalog'
 
@@ -43,6 +48,7 @@ interface UseToolbarDerivedStateArgs {
   selectedModel: string
   opencodeModelOptions?: { value: string; label: string }[]
   customCliProfiles: CustomCliProfile[]
+  customCodexModels: CustomCodexModel[]
   favoriteModels: string[]
   fastModeModels: string[]
   availableMcpServers: { name: string; disabled?: boolean }[]
@@ -55,6 +61,7 @@ export function useToolbarDerivedState({
   selectedModel,
   opencodeModelOptions,
   customCliProfiles,
+  customCodexModels,
   favoriteModels,
   fastModeModels,
   availableMcpServers,
@@ -78,7 +85,7 @@ export function useToolbarDerivedState({
   const filteredModelOptions = useMemo(() => {
     if (isCodex) {
       return appendMissingModelOptions(
-        getCatalogModelOptions(modelCatalog, 'codex'),
+        getCodexModelOptions(modelCatalog, customCodexModels, selectedModel),
         CODEX_MODEL_OPTIONS as { value: string; label: string }[]
       )
     }
@@ -125,6 +132,8 @@ export function useToolbarDerivedState({
     isOpencode,
     modelCatalog,
     opencodeModelOptions,
+    customCodexModels,
+    selectedModel,
   ])
 
   const selectedFastInfo = useMemo(

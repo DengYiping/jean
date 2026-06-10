@@ -303,6 +303,7 @@ pub fn start_run(
         "worktree_id": worktree_id,
         "user_message_id": user_message_id,
         "model": model,
+        "backend": backend,
         "execution_mode": execution_mode,
         "thinking_level": thinking_level,
         "started_at": now,
@@ -318,6 +319,7 @@ pub fn start_run(
         user_message_id: user_message_id.to_string(),
         user_message: user_message.to_string(),
         model: model.map(|s| s.to_string()),
+        backend: backend.clone(),
         execution_mode: execution_mode.map(|s| s.to_string()),
         thinking_level: thinking_level.map(|s| s.to_string()),
         effort_level: effort_level.map(|s| s.to_string()),
@@ -1000,27 +1002,11 @@ pub fn load_session_messages_window(
         if !is_undo_send {
             let lines = read_run_log(app, session_id, &run.run_id)?;
 
-            // Parse JSONL content — route by backend.
-            // Per-run model is authoritative when present. Only fall back to
-            // session-level metadata.backend for legacy runs with no model stored.
-            let run_is_codex = run
-                .model
-                .as_deref()
-                .map(crate::is_codex_model)
-                .unwrap_or(false);
-            let run_is_opencode = run
-                .model
-                .as_deref()
-                .map(crate::is_opencode_model)
-                .unwrap_or(false);
-            let use_codex_parser = if run.model.is_some() {
-                // Model stored per-run: use it directly (prevents misrouting
-                // when metadata.backend was overwritten by a later run).
-                run_is_codex || run_is_opencode
-            } else {
-                // Legacy run without model field: fall back to session backend.
-                metadata.backend == Backend::Codex || metadata.backend == Backend::Opencode
-            };
+            // Parse JSONL content with the protocol that produced it.
+            // Known model prefixes identify Codex/OpenCode directly; custom
+            // model IDs use the per-run backend, with session backend as a
+            // legacy fallback for older run entries.
+            let use_codex_parser = should_use_codex_parser(run, &metadata.backend);
             let mut assistant_msg = if use_codex_parser {
                 super::codex::parse_codex_run_to_message(&lines, run)?
             } else {
@@ -1663,13 +1649,54 @@ fn now_timestamp() -> u64 {
         .as_secs()
 }
 
+fn should_use_codex_parser(run: &RunEntry, session_backend: &Backend) -> bool {
+    if let Some(model) = run.model.as_deref() {
+        if crate::is_opencode_model(model) || crate::is_codex_model(model) {
+            return true;
+        }
+
+        // Custom Codex model IDs are arbitrary provider/model strings, so they
+        // often do not match the built-in Codex heuristic. In that case the
+        // run backend is the source of truth; session backend is only a legacy
+        // fallback for run entries created before backend was stored per run.
+        let backend = run.backend.as_ref().unwrap_or(session_backend);
+        return matches!(backend, Backend::Codex | Backend::Opencode);
+    }
+
+    // Legacy run without model field: fall back to session backend.
+    let backend = run.backend.as_ref().unwrap_or(session_backend);
+    matches!(backend, Backend::Codex | Backend::Opencode)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         inspect_partial_cancelled_run_lines, reconcile_partial_cancelled_payload,
-        resolve_run_window,
+        resolve_run_window, should_use_codex_parser,
     };
-    use crate::chat::types::ToolCall;
+    use crate::chat::types::{Backend, RunEntry, RunStatus, ToolCall};
+
+    fn test_run_with_model(model: Option<&str>) -> RunEntry {
+        RunEntry {
+            run_id: "run-1".to_string(),
+            user_message_id: "user-1".to_string(),
+            user_message: "hello".to_string(),
+            model: model.map(str::to_string),
+            backend: None,
+            execution_mode: Some("plan".to_string()),
+            thinking_level: Some("off".to_string()),
+            effort_level: None,
+            started_at: 1,
+            ended_at: Some(2),
+            status: RunStatus::Completed,
+            assistant_message_id: Some("assistant-1".to_string()),
+            cancelled: false,
+            recovered: false,
+            claude_session_id: None,
+            pid: None,
+            usage: None,
+        }
+    }
 
     #[test]
     fn resolve_run_window_defaults_to_full_history() {
@@ -1748,5 +1775,34 @@ mod tests {
         assert_eq!(missing_tool_results.len(), 1);
         assert_eq!(missing_tool_calls[0].id, "tool-2");
         assert_eq!(missing_tool_results[0].id, "tool-2");
+    }
+
+    #[test]
+    fn should_use_codex_parser_for_custom_model_in_codex_session() {
+        let run = test_run_with_model(Some("openai/kindle-alpha"));
+
+        assert!(should_use_codex_parser(&run, &Backend::Codex));
+    }
+
+    #[test]
+    fn should_use_run_backend_for_custom_model_when_session_backend_changed() {
+        let mut run = test_run_with_model(Some("openai/kindle-alpha"));
+        run.backend = Some(Backend::Codex);
+
+        assert!(should_use_codex_parser(&run, &Backend::Claude));
+    }
+
+    #[test]
+    fn should_not_use_codex_parser_for_custom_model_in_claude_session() {
+        let run = test_run_with_model(Some("anthropic/custom-model"));
+
+        assert!(!should_use_codex_parser(&run, &Backend::Claude));
+    }
+
+    #[test]
+    fn should_use_codex_parser_for_known_codex_model_even_with_stale_backend() {
+        let run = test_run_with_model(Some("gpt-5.2-codex"));
+
+        assert!(should_use_codex_parser(&run, &Backend::Claude));
     }
 }

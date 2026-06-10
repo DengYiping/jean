@@ -82,6 +82,7 @@ export const mockPreferences = {
   custom_cli_profiles: [],
   default_provider: null,
   selected_codex_model: 'gpt-5.5',
+  custom_codex_models: [],
   magic_prompts: {
     investigate_issue: null,
     investigate_pr: null,

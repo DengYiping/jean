@@ -1040,6 +1040,7 @@ mod tests {
             user_message_id: "message-1".to_string(),
             user_message: "message".to_string(),
             model: None,
+            backend: None,
             execution_mode: Some(execution_mode.to_string()),
             thinking_level: None,
             effort_level: None,

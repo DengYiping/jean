@@ -8,6 +8,7 @@ import {
   defaultPreferences,
   normalizeCodexModel,
   normalizeCodexModelProviderOverrides,
+  normalizeCustomCodexModels,
 } from '@/types/preferences'
 import { DEFAULT_KEYBINDINGS, type KeybindingsMap } from '@/types/keybindings'
 
@@ -83,6 +84,9 @@ export function usePreferences() {
           ...preferences,
           selected_codex_model: normalizeCodexModel(
             preferences.selected_codex_model
+          ),
+          custom_codex_models: normalizeCustomCodexModels(
+            preferences.custom_codex_models
           ),
           codex_model_provider_overrides: normalizeCodexModelProviderOverrides(
             preferences.codex_model_provider_overrides

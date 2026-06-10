@@ -92,12 +92,12 @@ import {
   TooltipContent,
 } from '@/components/ui/tooltip'
 import { usePreferences, usePatchPreferences } from '@/services/preferences'
+import { getCodexModelOptions, useModelCatalog } from '@/services/model-catalog'
 import type { AppPreferences } from '@/types/preferences'
 import {
   modelOptions,
   thinkingLevelOptions,
   effortLevelOptions,
-  codexModelOptions,
   codexGoalExecutionModeOptions,
   codexReasoningOptions,
   backendOptions,
@@ -117,6 +117,8 @@ import {
   type EditorApp,
   type CustomEditorConfig,
   type NotificationSound,
+  type CustomCodexModel,
+  normalizeCustomCodexModels,
   openInDefaultOptions,
   type OpenInDefault,
   newSessionKindOptions,
@@ -421,9 +423,167 @@ const CustomEditorsEditor: React.FC<{
   )
 }
 
+const CustomCodexModelsEditor: React.FC<{
+  models: CustomCodexModel[]
+  existingOptions: { value: string; label: string }[]
+  onSave: (models: CustomCodexModel[]) => void
+}> = ({ models, existingOptions, onSave }) => {
+  const [isAdding, setIsAdding] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editModelId, setEditModelId] = useState('')
+  const [error, setError] = useState<string | null>(null)
+
+  const builtInIds = useMemo(() => {
+    const customIds = new Set(models.map(model => model.model_id))
+    return new Set(
+      existingOptions
+        .map(option => option.value)
+        .filter(value => !customIds.has(value))
+    )
+  }, [existingOptions, models])
+
+  const reset = () => {
+    setIsAdding(false)
+    setEditingId(null)
+    setEditName('')
+    setEditModelId('')
+    setError(null)
+  }
+
+  const startAdd = () => {
+    reset()
+    setIsAdding(true)
+  }
+
+  const startEdit = (model: CustomCodexModel) => {
+    setIsAdding(false)
+    setEditingId(model.model_id)
+    setEditName(model.display_name)
+    setEditModelId(model.model_id)
+    setError(null)
+  }
+
+  const deleteModel = (modelId: string) => {
+    onSave(models.filter(model => model.model_id !== modelId))
+    if (editingId === modelId) reset()
+  }
+
+  const validateAndSave = () => {
+    const modelId = editModelId.trim()
+    const displayName = editName.trim() || modelId
+    if (!modelId) {
+      setError('Model ID is required.')
+      return
+    }
+    if (builtInIds.has(modelId)) {
+      setError('Model ID already exists in the Codex model list.')
+      return
+    }
+    if (
+      models.some(
+        model => model.model_id === modelId && model.model_id !== editingId
+      )
+    ) {
+      setError('Model ID already exists in custom models.')
+      return
+    }
+
+    const nextModel = { model_id: modelId, display_name: displayName }
+    const nextModels = editingId
+      ? models.map(model => (model.model_id === editingId ? nextModel : model))
+      : [...models, nextModel]
+    onSave(normalizeCustomCodexModels(nextModels))
+    reset()
+  }
+
+  const isEditing = isAdding || editingId !== null
+
+  return (
+    <div className="space-y-3 rounded-md border border-border/70 p-3">
+      {models.length > 0 && (
+        <div className="space-y-2">
+          {models.map(model => (
+            <div
+              key={model.model_id}
+              className="flex items-center gap-2 rounded-md border border-border/60 px-3 py-2"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-medium">
+                  {model.display_name}
+                </div>
+                <div className="truncate font-mono text-xs text-muted-foreground">
+                  {model.model_id}
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => startEdit(model)}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-destructive hover:text-destructive"
+                onClick={() => deleteModel(model.model_id)}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {isEditing ? (
+        <div className="space-y-3 rounded-md bg-muted/30 p-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1">
+              <Label className="text-xs">Name</Label>
+              <Input
+                value={editName}
+                placeholder="O3"
+                onChange={event => setEditName(event.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Model ID</Label>
+              <Input
+                value={editModelId}
+                placeholder="o3"
+                className="font-mono"
+                onChange={event => setEditModelId(event.target.value)}
+              />
+            </div>
+          </div>
+          {error && <div className="text-xs text-destructive">{error}</div>}
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={reset}>
+              Cancel
+            </Button>
+            <Button type="button" size="sm" onClick={validateAndSave}>
+              Save
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <Button type="button" variant="outline" size="sm" onClick={startAdd}>
+          <Plus className="mr-2 h-3.5 w-3.5" />
+          Add model
+        </Button>
+      )}
+    </div>
+  )
+}
+
 export const GeneralPane: React.FC = () => {
   const queryClient = useQueryClient()
   const { data: preferences } = usePreferences()
+  const { data: modelCatalog } = useModelCatalog()
   const { data: projects = [] } = useProjects()
   const patchPreferences = usePatchPreferences()
   const notificationSoundOptions = getNotificationSoundOptions()
@@ -435,6 +595,16 @@ export const GeneralPane: React.FC = () => {
     useState<LegacyCliTarget | null>(null)
   const [isDeletingCli, setIsDeletingCli] = useState(false)
   const customEditors = preferences?.custom_editors ?? []
+  const customCodexModels = preferences?.custom_codex_models ?? []
+  const codexModelSelectOptions = useMemo(
+    () =>
+      getCodexModelOptions(
+        modelCatalog,
+        customCodexModels,
+        preferences?.selected_codex_model
+      ),
+    [modelCatalog, customCodexModels, preferences?.selected_codex_model]
+  )
   const editorSelectOptions = useMemo(
     () => getEditorOptions(customEditors),
     [customEditors]
@@ -723,6 +893,14 @@ export const GeneralPane: React.FC = () => {
   const handleCodexModelChange = (value: CodexModel) => {
     if (preferences) {
       patchPreferences.mutate({ selected_codex_model: value })
+    }
+  }
+
+  const handleCustomCodexModelsSave = (models: CustomCodexModel[]) => {
+    if (preferences) {
+      patchPreferences.mutate({
+        custom_codex_models: normalizeCustomCodexModels(models),
+      })
     }
   }
 
@@ -1875,7 +2053,7 @@ export const GeneralPane: React.FC = () => {
                     <SelectContent>
                       <SelectItem value="default">Default model</SelectItem>
                       {(effectiveBuildBackend === 'codex'
-                        ? codexModelOptions
+                        ? codexModelSelectOptions
                         : modelOptions
                       ).map(option => (
                         <SelectItem key={option.value} value={option.value}>
@@ -2034,7 +2212,7 @@ export const GeneralPane: React.FC = () => {
                     <SelectContent>
                       <SelectItem value="default">Default model</SelectItem>
                       {(effectiveYoloBackend === 'codex'
-                        ? codexModelOptions
+                        ? codexModelSelectOptions
                         : modelOptions
                       ).map(option => (
                         <SelectItem key={option.value} value={option.value}>
@@ -2189,13 +2367,24 @@ export const GeneralPane: React.FC = () => {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {codexModelOptions.map(option => (
+                {codexModelSelectOptions.map(option => (
                   <SelectItem key={option.value} value={option.value}>
                     {option.label}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+          </InlineField>
+
+          <InlineField
+            label="Custom models"
+            description="Reusable Codex model IDs shown in Codex model pickers"
+          >
+            <CustomCodexModelsEditor
+              models={customCodexModels}
+              existingOptions={codexModelSelectOptions}
+              onSave={handleCustomCodexModelsSave}
+            />
           </InlineField>
 
           <InlineField

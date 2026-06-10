@@ -3439,6 +3439,12 @@ pub async fn send_chat_message(
                         super::is_recap_prompting_enabled(&thread_app),
                     );
 
+                    if let Some(instruction) =
+                        codex_execution_mode_instruction(thread_execution_mode.as_deref())
+                    {
+                        system_prompt_parts.push(instruction.to_string());
+                    }
+
                     // Collect context file paths (issues, PRs, saved contexts)
                     let mut all_context_paths: Vec<std::path::PathBuf> = Vec::new();
 

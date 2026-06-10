@@ -1,3 +1,4 @@
+import { openUrl } from '@tauri-apps/plugin-opener'
 import { isNativeApp } from './environment'
 
 export const isMacOS = navigator.platform.includes('Mac')
@@ -19,14 +20,17 @@ export async function openExternal(
   url: string,
   preOpenedWindow?: Window | null
 ): Promise<void> {
+  if (isNativeApp()) {
+    await openUrl(url)
+    return
+  }
+
   if (preOpenedWindow) {
     preOpenedWindow.location.href = url
-  } else if (isNativeApp()) {
-    const { openUrl } = await import('@tauri-apps/plugin-opener')
-    await openUrl(url)
-  } else {
-    window.open(url, '_blank')
+    return
   }
+
+  window.open(url, '_blank', 'noopener,noreferrer')
 }
 
 /**

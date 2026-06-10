@@ -1,15 +1,16 @@
 import { useMemo } from 'react'
-import {
-  getModelFastInfo,
-  getModelPreferenceKey,
-  type ClaudeModel,
-  type CustomCliProfile,
-} from '@/types/preferences'
+import type { ClaudeModel, CustomCliProfile } from '@/types/preferences'
 import {
   CODEX_MODEL_OPTIONS,
   MODEL_OPTIONS,
   OPENCODE_MODEL_OPTIONS,
 } from '@/components/chat/toolbar/toolbar-options'
+import {
+  getCatalogModelFastInfo,
+  getCatalogModelOptions,
+  getCatalogModelPreferenceKey,
+  useModelCatalog,
+} from '@/services/model-catalog'
 
 export interface DesktopModelPickerOption {
   value: string
@@ -19,6 +20,21 @@ export interface DesktopModelPickerOption {
   supportsFast: boolean
   isFastEnabled: boolean
   searchText: string
+}
+
+function appendMissingModelOptions(
+  primary: { value: string; label: string }[],
+  fallback: { value: string; label: string }[]
+) {
+  const seen = new Set(primary.map(option => option.value))
+  return [
+    ...primary,
+    ...fallback.filter(option => {
+      if (seen.has(option.value)) return false
+      seen.add(option.value)
+      return true
+    }),
+  ]
 }
 
 interface UseToolbarDerivedStateArgs {
@@ -46,6 +62,7 @@ export function useToolbarDerivedState({
 }: UseToolbarDerivedStateArgs) {
   const isCodex = selectedBackend === 'codex'
   const isOpencode = selectedBackend === 'opencode'
+  const { data: modelCatalog } = useModelCatalog()
   const fastModelSelectionEnabled =
     selectedBackend === 'codex' ||
     (selectedBackend === 'claude' &&
@@ -59,11 +76,21 @@ export function useToolbarDerivedState({
   }, [availableMcpServers, enabledMcpServers])
 
   const filteredModelOptions = useMemo(() => {
-    if (isCodex)
-      return CODEX_MODEL_OPTIONS as { value: string; label: string }[]
+    if (isCodex) {
+      return appendMissingModelOptions(
+        getCatalogModelOptions(modelCatalog, 'codex'),
+        CODEX_MODEL_OPTIONS as { value: string; label: string }[]
+      )
+    }
     if (isOpencode) return opencodeModelOptions ?? OPENCODE_MODEL_OPTIONS
     if (!selectedProvider || selectedProvider === '__anthropic__') {
-      return MODEL_OPTIONS
+      return appendMissingModelOptions(
+        getCatalogModelOptions(modelCatalog, 'claude').map(option => ({
+          ...option,
+          label: option.label.replace(/^Claude\s+/, ''),
+        })),
+        MODEL_OPTIONS
+      )
     }
 
     const profile = customCliProfiles.find(p => p.name === selectedProvider)
@@ -96,19 +123,20 @@ export function useToolbarDerivedState({
     customCliProfiles,
     isCodex,
     isOpencode,
+    modelCatalog,
     opencodeModelOptions,
   ])
 
   const selectedFastInfo = useMemo(
     () =>
       fastModelSelectionEnabled
-        ? getModelFastInfo(selectedBackend, selectedModel)
+        ? getCatalogModelFastInfo(modelCatalog, selectedBackend, selectedModel)
         : {
             supportsFast: false,
             isFast: false,
             baseModel: selectedModel,
           },
-    [fastModelSelectionEnabled, selectedBackend, selectedModel]
+    [fastModelSelectionEnabled, modelCatalog, selectedBackend, selectedModel]
   )
 
   const desktopModelOptions = useMemo<DesktopModelPickerOption[]>(() => {
@@ -118,7 +146,7 @@ export function useToolbarDerivedState({
 
     return filteredModelOptions.flatMap(option => {
       const fastInfo = fastModelSelectionEnabled
-        ? getModelFastInfo(selectedBackend, option.value)
+        ? getCatalogModelFastInfo(modelCatalog, selectedBackend, option.value)
         : {
             supportsFast: false,
             isFast: false,
@@ -129,7 +157,11 @@ export function useToolbarDerivedState({
 
       seenModels.add(value)
 
-      const favoriteKey = getModelPreferenceKey(selectedBackend, option.value)
+      const favoriteKey = getCatalogModelPreferenceKey(
+        modelCatalog,
+        selectedBackend,
+        option.value
+      )
       const isSelectedFastModel =
         selectedFastInfo.isFast && selectedFastInfo.baseModel === value
 
@@ -154,6 +186,7 @@ export function useToolbarDerivedState({
     fastModeModels,
     filteredModelOptions,
     fastModelSelectionEnabled,
+    modelCatalog,
     selectedBackend,
     selectedFastInfo.baseModel,
     selectedFastInfo.isFast,

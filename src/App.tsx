@@ -54,6 +54,7 @@ import { useQueueProcessor } from './hooks/useQueueProcessor'
 import { useBackgroundInvestigation } from './hooks/useBackgroundInvestigation'
 import { useAutoArchiveOnMerge } from './hooks/useAutoArchiveOnMerge'
 import { useMagicPromptAutoDefaults } from './hooks/useMagicPromptAutoDefaults'
+import { useExternalLinkInterceptor } from './hooks/useExternalLinkInterceptor'
 import { usePreferences } from './services/preferences'
 import useStreamingEvents from './components/chat/hooks/useStreamingEvents'
 import { hydrateRunningSnapshot } from './lib/hydrate-running-snapshot'
@@ -548,6 +549,9 @@ function App() {
 
   // Apply zoom level from preferences + keyboard shortcuts
   useZoom()
+
+  // Route raw external anchors through the OS/default browser.
+  useExternalLinkInterceptor()
 
   // Save reviewing/waiting state immediately (no debounce) to ensure persistence on reload
   useImmediateSessionStateSave()

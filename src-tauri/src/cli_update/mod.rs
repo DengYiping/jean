@@ -10,8 +10,8 @@ pub struct CliPathUpdateOutput {
     pub exit_code: Option<i32>,
 }
 
-const ALLOWED_CLI_TYPES: &[&str] = &["claude", "codex", "opencode", "gh"];
-const ALLOWED_COMMANDS: &[&str] = &["brew", "npm", "bun", "claude", "opencode"];
+const ALLOWED_CLI_TYPES: &[&str] = &["claude", "codex", "opencode", "gh", "coderabbit"];
+const ALLOWED_COMMANDS: &[&str] = &["brew", "npm", "bun", "claude", "opencode", "coderabbit"];
 
 /// Run a PATH-installed CLI update command without opening a terminal window.
 ///
@@ -108,6 +108,12 @@ mod tests {
         ));
 
         assert_eq!(result.unwrap_err(), "Unknown CLI type: cursor");
+    }
+
+    #[test]
+    fn coderabbit_is_allowed_for_path_updates() {
+        assert!(ALLOWED_CLI_TYPES.contains(&"coderabbit"));
+        assert!(ALLOWED_COMMANDS.contains(&"coderabbit"));
     }
 
     #[test]

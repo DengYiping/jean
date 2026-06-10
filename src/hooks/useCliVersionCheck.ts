@@ -33,7 +33,7 @@ import { useUIStore } from '@/store/ui-store'
 import { isNewerVersion } from '@/lib/version-utils'
 import { shouldSkipInstalledCliVersionCheck } from '@/lib/cli-version-check'
 import { logger } from '@/lib/logger'
-import { isNativeApp } from '@/lib/environment'
+import { hasBackend } from '@/lib/environment'
 import { usePreferences } from '@/services/preferences'
 
 interface CliUpdateInfo {
@@ -71,7 +71,7 @@ const CLI_DISPLAY_NAMES: Record<CliUpdateInfo['type'], string> = {
  * Should be called once in App.tsx.
  */
 export function useCliVersionCheck() {
-  const shouldCheck = isNativeApp()
+  const shouldCheck = hasBackend()
   const { data: preferences } = usePreferences()
   const { data: claudePathInfo } = useClaudePathDetection({
     enabled: shouldCheck,

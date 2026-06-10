@@ -12,12 +12,7 @@ import {
 import { useChatStore } from '@/store/chat-store'
 import { useRemotePicker } from '@/hooks/useRemotePicker'
 import { useAllBackendsMcpHealth } from '@/services/mcp'
-import {
-  getModelFastInfo,
-  getModelPreferenceKey,
-  resolveRememberedFastModel,
-  type ClaudeModel,
-} from '@/types/preferences'
+import type { ClaudeModel } from '@/types/preferences'
 import type { EffortLevel, ThinkingLevel } from '@/types/chat'
 import type { ChatToolbarProps } from '@/components/chat/toolbar/types'
 import { MobileToolbarMenu } from '@/components/chat/toolbar/MobileToolbarMenu'
@@ -47,6 +42,12 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { usePatchPreferences, usePreferences } from '@/services/preferences'
+import {
+  getCatalogModelFastInfo,
+  getCatalogModelPreferenceKey,
+  resolveRememberedCatalogFastModel,
+  useModelCatalog,
+} from '@/services/model-catalog'
 
 // eslint-disable-next-line react-refresh/only-export-components
 export {
@@ -130,6 +131,7 @@ export const ChatToolbar = memo(function ChatToolbar({
   onOpenProjectSettings,
 }: ChatToolbarProps) {
   const { data: preferences } = usePreferences()
+  const { data: modelCatalog } = useModelCatalog()
   const patchPreferences = usePatchPreferences()
   const {
     statuses: mcpStatuses,
@@ -220,7 +222,11 @@ export const ChatToolbar = memo(function ChatToolbar({
 
   const handleModelChange = useCallback(
     (value: string) => {
-      const selectedFastInfo = getModelFastInfo(selectedBackend, selectedModel)
+      const selectedFastInfo = getCatalogModelFastInfo(
+        modelCatalog,
+        selectedBackend,
+        selectedModel
+      )
       const fastModelSelectionEnabled =
         selectedBackend === 'codex' ||
         (selectedBackend === 'claude' &&
@@ -229,7 +235,8 @@ export const ChatToolbar = memo(function ChatToolbar({
         selectedFastInfo.isFast && selectedFastInfo.baseModel === value
           ? selectedModel
           : fastModelSelectionEnabled
-            ? resolveRememberedFastModel(
+            ? resolveRememberedCatalogFastModel(
+                modelCatalog,
                 selectedBackend,
                 value,
                 preferences?.fast_mode_models ?? []
@@ -240,6 +247,7 @@ export const ChatToolbar = memo(function ChatToolbar({
     },
     [
       onModelChange,
+      modelCatalog,
       preferences?.fast_mode_models,
       selectedBackend,
       selectedModel,
@@ -251,7 +259,11 @@ export const ChatToolbar = memo(function ChatToolbar({
     (value: string) => {
       if (!preferences) return
 
-      const favoriteKey = getModelPreferenceKey(selectedBackend, value)
+      const favoriteKey = getCatalogModelPreferenceKey(
+        modelCatalog,
+        selectedBackend,
+        value
+      )
       const favoriteModels = preferences.favorite_models ?? []
       const nextFavoriteModels = favoriteModels.includes(favoriteKey)
         ? favoriteModels.filter(key => key !== favoriteKey)
@@ -259,17 +271,25 @@ export const ChatToolbar = memo(function ChatToolbar({
 
       patchPreferences.mutate({ favorite_models: nextFavoriteModels })
     },
-    [patchPreferences, preferences, selectedBackend]
+    [modelCatalog, patchPreferences, preferences, selectedBackend]
   )
 
   const handleFastModeChange = useCallback(
     (value: string, enabled: boolean) => {
       if (!preferences) return
 
-      const fastInfo = getModelFastInfo(selectedBackend, value)
+      const fastInfo = getCatalogModelFastInfo(
+        modelCatalog,
+        selectedBackend,
+        value
+      )
       if (!fastInfo.supportsFast) return
 
-      const modelKey = getModelPreferenceKey(selectedBackend, value)
+      const modelKey = getCatalogModelPreferenceKey(
+        modelCatalog,
+        selectedBackend,
+        value
+      )
       const fastModeModels = preferences.fast_mode_models ?? []
       const nextFastModeModels = enabled
         ? [...new Set([...fastModeModels, modelKey])]
@@ -277,7 +297,11 @@ export const ChatToolbar = memo(function ChatToolbar({
 
       patchPreferences.mutate({ fast_mode_models: nextFastModeModels })
 
-      const currentFastInfo = getModelFastInfo(selectedBackend, selectedModel)
+      const currentFastInfo = getCatalogModelFastInfo(
+        modelCatalog,
+        selectedBackend,
+        selectedModel
+      )
       if (currentFastInfo.baseModel !== fastInfo.baseModel) return
 
       const nextModel = enabled
@@ -287,6 +311,7 @@ export const ChatToolbar = memo(function ChatToolbar({
     },
     [
       onModelChange,
+      modelCatalog,
       patchPreferences,
       preferences,
       selectedBackend,
@@ -422,7 +447,7 @@ export const ChatToolbar = memo(function ChatToolbar({
           />
           <SessionUsageMeter side="top" align="start" variant="toolbar" />
           <MobileToolbarMenu
-            isDisabled={isSending || hasPendingQuestions}
+            isDisabled={isSending}
             hasOpenPr={hasOpenPr}
             sessionHasMessages={sessionHasMessages}
             providerLocked={providerLocked}

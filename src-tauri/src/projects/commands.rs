@@ -1376,6 +1376,7 @@ pub async fn create_worktree(
     let linear_context_clone = linear_context.clone();
     let copy_uncommitted_from_path_clone = copy_uncommitted_from_path.clone();
     let automation_metadata_clone = automation_metadata.clone();
+    let project_worktrees_dir_clone = project_worktrees_dir.clone();
 
     // Spawn background thread for git operations
     thread::spawn(move || {
@@ -1385,6 +1386,8 @@ pub async fn create_worktree(
         let panic_app = app_clone.clone();
 
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let mut name_clone = name_clone;
+            let mut worktree_path_clone = worktree_path_clone;
             log::trace!("Background: Creating git worktree {name_clone} at {worktree_path_clone}");
 
             // Fetch base branch if enabled, use origin/<base> for up-to-date start point.
@@ -1412,6 +1415,52 @@ pub async fn create_worktree(
             } else {
                 format!("origin/{base_clone}")
             };
+
+            if automation_metadata_clone.is_some() {
+                let mut resolved = false;
+                for _ in 0..10 {
+                    let worktree_path = std::path::Path::new(&worktree_path_clone);
+                    let has_path_conflict = worktree_path.exists();
+                    let has_branch_conflict = pr_context_clone.is_none()
+                        && git::branch_exists(&project_path, &name_clone);
+
+                    if !has_path_conflict && !has_branch_conflict {
+                        resolved = true;
+                        break;
+                    }
+
+                    let data = load_projects_data(&app_clone).ok();
+                    let suggested_name = generate_unique_suffix_name(
+                        &name_clone,
+                        &project_path,
+                        &project_id_clone,
+                        data.as_ref(),
+                    );
+                    log::warn!(
+                        "Background: Automation worktree conflict for {name_clone}; retrying with {suggested_name}"
+                    );
+                    name_clone = suggested_name;
+                    let next_path =
+                        project_worktrees_dir_clone.join(sanitize_folder_name(&name_clone));
+                    let Some(next_path_str) = next_path.to_str() else {
+                        log::error!("Background: Invalid automation worktree path");
+                        break;
+                    };
+                    worktree_path_clone = next_path_str.to_string();
+                }
+
+                if !resolved {
+                    let error_event = WorktreeCreateErrorEvent {
+                        id: worktree_id_clone,
+                        project_id: project_id_clone,
+                        error: "Failed to resolve automation worktree name conflict".to_string(),
+                    };
+                    if let Err(e) = app_clone.emit_all("worktree:error", &error_event) {
+                        log::error!("Failed to emit worktree:error event: {e}");
+                    }
+                    return;
+                }
+            }
 
             // Check if path already exists
             let worktree_path = std::path::Path::new(&worktree_path_clone);

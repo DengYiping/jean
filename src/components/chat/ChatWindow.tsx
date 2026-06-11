@@ -3214,7 +3214,7 @@ export function ChatWindow({
                               executionMode={executionMode}
                               backend={selectedBackend}
                               canSwitchBackendWithTab={
-                                (session?.messages?.length ?? 0) === 0
+                                installedBackends.length > 1
                               }
                               focusChatShortcut={focusChatShortcut}
                               onSubmit={handleSubmit}

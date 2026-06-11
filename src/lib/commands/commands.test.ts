@@ -8,6 +8,7 @@ const { projectCommands } = await import('./project-commands')
 const { githubCommands } = await import('./github-commands')
 const { gitCommands } = await import('./git-commands')
 const { useProjectsStore } = await import('@/store/projects-store')
+const { useUIStore } = await import('@/store/ui-store')
 
 const createMockContext = (): CommandContext => ({
   // Query client - return debug_mode_enabled for notification commands
@@ -195,6 +196,12 @@ describe('Project Commands', () => {
     clearRegistry()
     mockContext = createMockContext()
     registerCommands(projectCommands)
+    useUIStore.setState({
+      featureTourOpen: false,
+      onboardingOpen: false,
+      onboardingManuallyTriggered: false,
+      onboardingDismissed: true,
+    })
   })
 
   it('registers all project commands', () => {
@@ -214,6 +221,15 @@ describe('Project Commands', () => {
     const commands = getAllCommands(mockContext)
     const initCmd = commands.find(c => c.id === 'init-project')
     expect(initCmd).toBeDefined()
+  })
+
+  it('feature tour command replays the product tour directly', async () => {
+    const result = await executeCommand('help.feature-tour', mockContext)
+
+    expect(result.success).toBe(true)
+    expect(useUIStore.getState().featureTourOpen).toBe(true)
+    expect(useUIStore.getState().onboardingOpen).toBe(false)
+    expect(useUIStore.getState().onboardingManuallyTriggered).toBe(false)
   })
 })
 

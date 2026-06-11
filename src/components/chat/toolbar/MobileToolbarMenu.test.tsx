@@ -95,6 +95,25 @@ describe('MobileToolbarMenu', () => {
     expect(onOpenMagicModal).toHaveBeenCalledOnce()
   })
 
+  it('keeps backend switching visible after the session has messages', async () => {
+    const user = userEvent.setup()
+    render(
+      <MobileToolbarMenu
+        {...createProps({
+          sessionHasMessages: true,
+          installedBackends: ['claude', 'codex'],
+        })}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: 'More actions' }))
+    const backendItem = (await screen.findByText('Backend')).closest(
+      '[role="menuitem"]'
+    )
+    expect(backendItem).toBeInTheDocument()
+    expect(backendItem).toHaveTextContent('codex')
+  })
+
   it('shows MCP as a disabled row when no servers can be toggled', async () => {
     const user = userEvent.setup()
     render(<MobileToolbarMenu {...createProps()} />)

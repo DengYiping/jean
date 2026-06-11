@@ -49,6 +49,7 @@ import {
   DEFAULT_CLAUDE_SYSTEM_PROMPT,
   DEFAULT_CODEX_SYSTEM_PROMPT,
   DEFAULT_OPENCODE_SYSTEM_PROMPT,
+  DEFAULT_PROVIDER_SWITCH_HANDOFF_PROMPT,
   DEFAULT_PLAN_APPROVAL_BUILD_PROMPT,
   DEFAULT_PLAN_APPROVAL_YOLO_PROMPT,
   DEFAULT_PLAN_APPROVAL_CODEX_PROMPT,
@@ -531,6 +532,27 @@ const PROMPT_SECTIONS: PromptSection[] = [
           'Appended to OpenCode sessions only. Leave empty to send no global system prompt.',
         variables: [],
         defaultValue: DEFAULT_OPENCODE_SYSTEM_PROMPT,
+      },
+      {
+        key: 'provider_switch_handoff',
+        label: 'Provider Switch Handoff',
+        description:
+          'Hidden prompt prepended when a session switches between AI backends so the new provider uses Jean-local history as context.',
+        variables: [
+          {
+            name: '{previous_backend}',
+            description: 'Backend used by the previous run',
+          },
+          {
+            name: '{current_backend}',
+            description: 'Backend used by the current run',
+          },
+          {
+            name: '{history}',
+            description: 'Bounded Jean-local conversation history',
+          },
+        ],
+        defaultValue: DEFAULT_PROVIDER_SWITCH_HANDOFF_PROMPT,
       },
       {
         key: 'parallel_execution',

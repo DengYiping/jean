@@ -161,7 +161,6 @@ export function DesktopToolbarControls({
   executionMode,
   useAdaptiveThinking,
   hideThinkingLevel,
-  sessionHasMessages,
   providerLocked,
   customCliProfiles,
   desktopModelOptions,
@@ -760,7 +759,7 @@ export function DesktopToolbarControls({
         </>
       )}
 
-      {!sessionHasMessages && (
+      {installedBackends.length > 1 && (
         <>
           <div className="hidden @xl:block h-4 w-px bg-border/50" />
           <DropdownMenu>

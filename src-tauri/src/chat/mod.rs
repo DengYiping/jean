@@ -5,6 +5,7 @@ pub(crate) mod codex_server;
 mod commands;
 pub(crate) mod context_instructions;
 pub mod detached;
+pub(crate) mod handoff;
 pub mod jean_mcp;
 mod naming;
 mod native_history;

@@ -9,6 +9,7 @@ import {
   DEFAULT_MAGIC_PROMPT_MODELS,
   DEFAULT_MAGIC_PROMPT_PROVIDERS,
   DEFAULT_OPENCODE_SYSTEM_PROMPT,
+  DEFAULT_PROVIDER_SWITCH_HANDOFF_PROMPT,
   defaultPreferences,
   getCodexFastInfo,
   magicPromptReasoningOptions,
@@ -198,12 +199,14 @@ describe('backend-specific system prompt defaults', () => {
     expect(DEFAULT_MAGIC_PROMPTS.claude_system_prompt).toBeNull()
     expect(DEFAULT_MAGIC_PROMPTS.codex_system_prompt).toBeNull()
     expect(DEFAULT_MAGIC_PROMPTS.opencode_system_prompt).toBeNull()
+    expect(DEFAULT_MAGIC_PROMPTS.provider_switch_handoff).toBeNull()
   })
 
   it('uses built-in defaults for Claude and Codex only', () => {
     expect(DEFAULT_CLAUDE_SYSTEM_PROMPT).not.toHaveLength(0)
     expect(DEFAULT_CODEX_SYSTEM_PROMPT).toBe(DEFAULT_CLAUDE_SYSTEM_PROMPT)
     expect(DEFAULT_OPENCODE_SYSTEM_PROMPT).toBe('')
+    expect(DEFAULT_PROVIDER_SWITCH_HANDOFF_PROMPT).toContain('{history}')
   })
 })
 

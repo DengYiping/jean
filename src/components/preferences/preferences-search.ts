@@ -624,6 +624,18 @@ const magicPromptDefinitions: {
     keywords: ['opencode system prompt', 'system prompt'],
   },
   {
+    key: 'provider_switch_handoff',
+    title: 'Provider Switch Handoff Prompt',
+    description:
+      'Hidden prompt used to rebuild context when switching AI backends.',
+    keywords: [
+      'provider switch handoff prompt',
+      'backend switch prompt',
+      'cross provider context',
+      'hidden handoff',
+    ],
+  },
+  {
     key: 'parallel_execution',
     title: 'Parallel Execution Prompt',
     description: 'System prompt encouraging sub-agent parallelization.',

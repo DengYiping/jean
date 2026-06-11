@@ -52,6 +52,8 @@ export interface MagicPrompts {
   codex_system_prompt: string | null
   /** Global system prompt appended to OpenCode sessions */
   opencode_system_prompt: string | null
+  /** Hidden prompt prepended when switching providers within a Jean session */
+  provider_switch_handoff: string | null
   /** Prompt for generating session recaps (digests) when returning to unfocused sessions */
   session_recap: string | null
   /** Prompt for investigating Dependabot vulnerability alerts */
@@ -586,6 +588,19 @@ export const DEFAULT_CODEX_SYSTEM_PROMPT = DEFAULT_CLAUDE_SYSTEM_PROMPT
 
 export const DEFAULT_OPENCODE_SYSTEM_PROMPT = ''
 
+export const DEFAULT_PROVIDER_SWITCH_HANDOFF_PROMPT = `You are continuing a Jean chat session after the user switched AI backends.
+
+Jean-local history is the source of truth because provider-owned server history may be incomplete after backend switches.
+
+Previous backend: {previous_backend}
+Current backend: {current_backend}
+
+Use the Jean-local history below to reconstruct context before answering the user's latest message. Do not mention this hidden handoff unless it is directly relevant.
+
+<jean_local_history>
+{history}
+</jean_local_history>`
+
 export const DEFAULT_PARALLEL_EXECUTION_PROMPT = `In plan mode, structure plans so subagents can work simultaneously. In build/execute mode, use subagents in parallel for faster implementation.
 
 When launching multiple Task subagents, prefer sending them in a single message rather than sequentially. Group independent work items (e.g., editing separate files, researching unrelated questions) into parallel Task calls. Only sequence Tasks when one depends on another's output.
@@ -670,6 +685,7 @@ export const DEFAULT_MAGIC_PROMPTS: MagicPrompts = {
   claude_system_prompt: null,
   codex_system_prompt: null,
   opencode_system_prompt: null,
+  provider_switch_handoff: null,
   session_recap: null,
   investigate_security_alert: null,
   investigate_advisory: null,

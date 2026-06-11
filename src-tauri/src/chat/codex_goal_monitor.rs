@@ -13,8 +13,6 @@ use super::storage::{list_all_session_ids, load_metadata};
 use super::types::{Backend, RunStatus, SessionMetadata};
 use crate::http_server::EmitExt;
 
-const SYNTHETIC_GOAL_USER_TEXT: &str = "Continue working toward the active goal";
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct MonitorKey {
     session_id: String,
@@ -336,15 +334,13 @@ fn run_autonomous_turn(
         &metadata.name,
         metadata.order,
         &user_message_id,
-        SYNTHETIC_GOAL_USER_TEXT,
+        "",
         model,
         execution_mode,
         None,
         effort_level,
         Some(Backend::Codex),
     )?;
-    let run_id = writer.run_id().to_string();
-    run_log::write_input_file(app, session_id, &run_id, SYNTHETIC_GOAL_USER_TEXT)?;
     let output_file = writer.output_file_path()?;
 
     if let Some(turn_id) = turn_id_from_started_event(&initial_event) {
@@ -367,7 +363,7 @@ fn run_autonomous_turn(
         &serde_json::json!({
             "session_id": session_id,
             "worktree_id": worktree_id,
-            "user_message": SYNTHETIC_GOAL_USER_TEXT,
+            "user_message": "",
         }),
     );
 
@@ -404,7 +400,6 @@ fn run_autonomous_turn(
         writer.complete(&assistant_message_id, None, response.usage)?;
     }
 
-    let _ = run_log::delete_input_file(app, session_id, &run_id);
     super::commands::emit_sessions_cache_invalidation(app);
     Ok(())
 }

@@ -405,7 +405,6 @@ export function useMessageSending({
         return
       }
 
-      let message = textMessage
       if (
         selectedBackendRef.current === 'codex' &&
         /^\/goal(\s|$)/.test(textMessage)
@@ -443,24 +442,30 @@ export function useMessageSending({
           return
         }
 
+        const goalMode: ExecutionMode =
+          preferences?.codex_goal_execution_mode === 'yolo' ? 'yolo' : 'build'
+
         try {
           await invoke('codex_goal_set', {
             worktreeId,
             worktreePath,
             sessionId,
             objective: arg,
+            executionMode: goalMode,
           })
         } catch (error) {
           toast.error(`/goal failed: ${error}`)
           return
         }
 
-        const goalMode: ExecutionMode =
-          preferences?.codex_goal_execution_mode === 'yolo' ? 'yolo' : 'build'
         setExecutionMode(sessionId, goalMode)
         executionModeRef.current = goalMode
-        message = `Work toward the active goal:\n\n${arg}`
+        clearInputDraft(sessionId)
+        clearChatInputState()
+        return
       }
+
+      const message = textMessage
 
       if (
         images.length > 0 ||

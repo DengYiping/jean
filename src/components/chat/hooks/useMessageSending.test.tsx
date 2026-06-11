@@ -121,19 +121,10 @@ describe('useMessageSending', () => {
       worktreePath: '/tmp/worktree-1',
       sessionId: 'session-1',
       objective: 'Ship the migration',
+      executionMode: 'build',
     })
     expect(useChatStore.getState().executionModes['session-1']).toBe('build')
-    expect(sendMessage.mutate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        sessionId: 'session-1',
-        worktreeId: 'worktree-1',
-        worktreePath: '/tmp/worktree-1',
-        message: 'Work toward the active goal:\n\nShip the migration',
-        executionMode: 'build',
-        backend: 'codex',
-      }),
-      expect.any(Object)
-    )
+    expect(sendMessage.mutate).not.toHaveBeenCalled()
     expect(clearInputDraft).toHaveBeenCalledWith('session-1')
     expect(clearChatInputState).toHaveBeenCalled()
   })
@@ -152,13 +143,11 @@ describe('useMessageSending', () => {
     })
 
     expect(useChatStore.getState().executionModes['session-1']).toBe('yolo')
-    expect(sendMessage.mutate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        executionMode: 'yolo',
-        message: 'Work toward the active goal:\n\nShip the migration',
-      }),
-      expect.any(Object)
+    expect(mockInvoke).toHaveBeenCalledWith(
+      'codex_goal_set',
+      expect.objectContaining({ executionMode: 'yolo' })
     )
+    expect(sendMessage.mutate).not.toHaveBeenCalled()
   })
 
   it('clears a codex goal without sending a chat turn', async () => {

@@ -2215,9 +2215,17 @@ pub async fn dispatch_command(
             let worktree_path: String = field(&args, "worktreePath", "worktree_path")?;
             let session_id: String = field(&args, "sessionId", "session_id")?;
             let objective: String = from_field(&args, "objective")?;
+            let execution_mode: String = field(&args, "executionMode", "execution_mode")?;
             let app = app.clone();
             tokio::task::spawn_blocking(move || {
-                crate::chat::codex_goal_set(app, worktree_id, worktree_path, session_id, objective)
+                crate::chat::codex_goal_set(
+                    app,
+                    worktree_id,
+                    worktree_path,
+                    session_id,
+                    objective,
+                    execution_mode,
+                )
             })
             .await
             .map_err(|error| error.to_string())??;

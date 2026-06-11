@@ -976,7 +976,7 @@ pub fn load_session_messages_window(
         // These have Cancelled status but no assistant_message_id
         let is_undo_send = run.status == RunStatus::Cancelled && run.assistant_message_id.is_none();
 
-        if !is_undo_send {
+        if !is_undo_send && !run.user_message.is_empty() {
             // Add user message
             messages.push(ChatMessage {
                 id: run.user_message_id.clone(),

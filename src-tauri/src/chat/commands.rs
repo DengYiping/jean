@@ -4752,41 +4752,101 @@ pub fn codex_goal_set(
     worktree_path: String,
     session_id: String,
     objective: String,
+    execution_mode: String,
 ) -> Result<(), String> {
     let trimmed = objective.trim();
     if trimmed.is_empty() {
         return Err("Goal objective cannot be empty".to_string());
     }
-
-    let thread_id = codex_thread_id_for_session(&app, &worktree_id, &worktree_path, &session_id)?;
-
-    let monitor_thread_id = thread_id.clone();
-    if let Some(thread_id) = thread_id {
-        super::codex_server::ensure_running(&app)?;
-        let result = super::codex_server::send_request(
-            "thread/goal/set",
-            codex_goal_set_params(&thread_id, trimmed),
-        );
-        super::codex_server::decrement_usage_count();
-        result?;
+    if !matches!(execution_mode.as_str(), "build" | "yolo") {
+        return Err(format!("Invalid goal execution mode: {execution_mode}"));
     }
 
-    persist_codex_goal(
-        &app,
-        &worktree_id,
-        &worktree_path,
-        &session_id,
-        Some(trimmed.to_string()),
-    )?;
-    if let Some(thread_id) = monitor_thread_id {
-        let _ = super::codex_goal_monitor::start_for_session(
+    let existing_thread_id =
+        codex_thread_id_for_session(&app, &worktree_id, &worktree_path, &session_id)?;
+    let metadata = load_metadata(&app, &session_id)?.unwrap_or_else(|| {
+        SessionMetadata::new(
+            session_id.clone(),
+            worktree_id.clone(),
+            "Session".to_string(),
+            0,
+        )
+    });
+    let previous_goal = metadata.codex_goal.clone();
+
+    super::codex_server::ensure_running(&app)?;
+    let mut monitor_thread_id = None;
+    let result = (|| {
+        let thread_id = if let Some(thread_id) = existing_thread_id {
+            super::codex_server::send_request(
+                "thread/resume",
+                serde_json::json!({
+                    "threadId": thread_id,
+                    "persistExtendedHistory": true,
+                }),
+            )?;
+            thread_id
+        } else {
+            super::codex::start_new_thread(
+                std::path::Path::new(&worktree_path),
+                metadata.selected_model.as_deref(),
+                None,
+                Some(&execution_mode),
+                false,
+                None,
+                false,
+                None,
+            )?
+        };
+
+        with_sessions_mut(&app, &worktree_path, &worktree_id, |sessions| {
+            let session = sessions
+                .find_session_mut(&session_id)
+                .ok_or_else(|| format!("Session not found: {session_id}"))?;
+            session.codex_thread_id = Some(thread_id.clone());
+            session.selected_execution_mode = Some(execution_mode.clone());
+            Ok(())
+        })?;
+        with_existing_metadata_mut(&app, &session_id, |metadata| {
+            metadata.codex_thread_id = Some(thread_id.clone());
+            metadata.selected_execution_mode = Some(execution_mode.clone());
+        })?;
+
+        persist_codex_goal(
+            &app,
+            &worktree_id,
+            &worktree_path,
+            &session_id,
+            Some(trimmed.to_string()),
+        )?;
+        if super::codex_goal_monitor::start_for_session(
             &app,
             &session_id,
             &worktree_id,
             &thread_id,
+        )? {
+            monitor_thread_id = Some(thread_id.clone());
+        }
+        super::codex_server::send_request(
+            "thread/goal/set",
+            codex_goal_set_params(&thread_id, trimmed),
+        )?;
+        Ok(())
+    })();
+    super::codex_server::decrement_usage_count();
+    if result.is_err() {
+        if let Some(thread_id) = monitor_thread_id {
+            super::codex_goal_monitor::stop_monitor(&session_id, &thread_id);
+        }
+        let _ = persist_codex_goal(
+            &app,
+            &worktree_id,
+            &worktree_path,
+            &session_id,
+            previous_goal,
         );
     }
-    Ok(())
+    result
 }
 
 #[tauri::command]

@@ -1370,7 +1370,7 @@ pub fn resume_codex_after_crash(
 
 /// Start a new Codex thread via app-server.
 #[allow(clippy::too_many_arguments)]
-fn start_new_thread(
+pub(crate) fn start_new_thread(
     working_dir: &std::path::Path,
     model: Option<&str>,
     model_provider: Option<&str>,

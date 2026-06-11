@@ -23,6 +23,7 @@ import { useWorktree, useProjects } from '@/services/projects'
 import { usePreferences } from '@/services/preferences'
 import { useAvailableOpencodeModels } from '@/services/opencode-cli'
 import { useInstalledBackends } from '@/hooks/useInstalledBackends'
+import { getCodexModelOptions, useModelCatalog } from '@/services/model-catalog'
 import {
   type CliBackend,
   PREDEFINED_CLI_PROFILES,
@@ -30,7 +31,6 @@ import {
   resolveMagicPromptProvider,
 } from '@/types/preferences'
 import {
-  CODEX_MODEL_OPTIONS,
   MODEL_OPTIONS,
   OPENCODE_MODEL_OPTIONS,
 } from '@/components/chat/toolbar/toolbar-options'
@@ -83,6 +83,7 @@ export function ResolveConflictsDialog({
     ? projects?.find(item => item.id === worktree.project_id)
     : null
   const { installedBackends } = useInstalledBackends()
+  const { data: modelCatalog } = useModelCatalog()
   const { data: availableOpencodeModels } = useAvailableOpencodeModels({
     enabled: installedBackends.includes('opencode'),
   })
@@ -102,7 +103,6 @@ export function ResolveConflictsDialog({
       label: formatOpencodeLabel(value),
     }))
   }, [availableOpencodeModels])
-
   const resolveDefaults = useMemo(() => {
     const defaultBackend =
       project?.default_backend ?? preferences?.default_backend ?? 'claude'
@@ -126,6 +126,15 @@ export function ResolveConflictsDialog({
     )
     return { backend, model, provider }
   }, [preferences, project?.default_backend])
+  const codexModelOptions = useMemo(
+    () =>
+      getCodexModelOptions(
+        modelCatalog,
+        preferences?.custom_codex_models ?? [],
+        resolveDefaults.model
+      ),
+    [modelCatalog, preferences?.custom_codex_models, resolveDefaults.model]
+  )
 
   const getClaudeModelOptionsForProvider = useCallback(
     (provider: string | null) => {
@@ -179,14 +188,14 @@ export function ResolveConflictsDialog({
     (backend: CliBackend) => {
       switch (backend) {
         case 'codex':
-          return CODEX_MODEL_OPTIONS
+          return codexModelOptions
         case 'opencode':
           return opencodeModelOptions
         default:
           return resolveClaudeModelOptions
       }
     },
-    [opencodeModelOptions, resolveClaudeModelOptions]
+    [codexModelOptions, opencodeModelOptions, resolveClaudeModelOptions]
   )
 
   const customResolveModelOptions = useMemo(

@@ -319,6 +319,54 @@ describe('useInvestigateHandlers', () => {
     )
   })
 
+  it('uses a custom Codex model for review comments', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    })
+    const createSession = {
+      mutate: vi.fn(),
+      mutateAsync: vi.fn().mockResolvedValue({ id: 'comment-session-1' }),
+    }
+    const preferences: AppPreferences = {
+      ...defaultPreferences,
+      custom_codex_models: [
+        { model_id: 'openai/kindle-alpha', display_name: 'Kindle Alpha' },
+      ],
+      magic_prompt_backends: {
+        ...defaultPreferences.magic_prompt_backends,
+        review_comments_backend: 'codex',
+      },
+      magic_prompt_models: {
+        ...defaultPreferences.magic_prompt_models,
+        review_comments_model: 'openai/kindle-alpha',
+      },
+    }
+    const { params, sendMessage } = createInvestigateHookParams({
+      createSession,
+      preferences,
+    })
+
+    const { result } = renderHook(() => useInvestigateHandlers(params), {
+      wrapper: createWrapper(queryClient),
+    })
+
+    await act(async () => {
+      await result.current.handleReviewComments('fix one')
+    })
+
+    expect(sendMessage.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 'comment-session-1',
+        model: 'openai/kindle-alpha',
+        backend: 'codex',
+      }),
+      expect.any(Object)
+    )
+  })
+
   it.each([
     {
       type: 'issue' as const,

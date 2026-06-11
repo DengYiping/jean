@@ -784,7 +784,8 @@ export function useInvestigateHandlers({
         selectedModelRef.current
       const reviewCommentsModel = isMagicPromptModelCompatibleWithBackend(
         storedReviewCommentsModel,
-        reviewCommentsBackend
+        reviewCommentsBackend,
+        preferences?.custom_codex_models ?? []
       )
         ? storedReviewCommentsModel
         : reviewCommentsBackend === 'codex'

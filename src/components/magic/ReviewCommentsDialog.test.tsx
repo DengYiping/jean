@@ -7,6 +7,21 @@ const hoisted = vi.hoisted(() => {
   const invokeMock = vi.fn()
   const setReviewCommentsModalOpenMock = vi.fn()
   const setPendingMagicCommandMock = vi.fn()
+  const worktrees = {
+    data: [
+      {
+        id: 'wt-1',
+        path: '/tmp/worktree',
+        pr_number: 1083,
+      },
+    ] as
+      | {
+          id: string
+          path: string
+          pr_number: number
+        }[]
+      | undefined,
+  }
 
   const uiStore = {
     reviewCommentsModalOpen: true,
@@ -33,6 +48,7 @@ const hoisted = vi.hoisted(() => {
     uiStore,
     projectsStore,
     chatStore,
+    worktrees,
   }
 })
 
@@ -83,15 +99,7 @@ vi.mock('@/store/chat-store', () => ({
 }))
 
 vi.mock('@/services/projects', () => ({
-  useWorktrees: () => ({
-    data: [
-      {
-        id: 'wt-1',
-        path: '/tmp/worktree',
-        pr_number: 1083,
-      },
-    ],
-  }),
+  useWorktrees: () => hoisted.worktrees,
 }))
 
 vi.mock('@/services/preferences', () => ({
@@ -112,6 +120,13 @@ describe('ReviewCommentsDialog', () => {
     hoisted.uiStore.sessionChatModalWorktreeId = null
     hoisted.chatStore.activeWorktreeId = 'wt-1'
     hoisted.chatStore.activeWorktreePath = '/tmp/worktree'
+    hoisted.worktrees.data = [
+      {
+        id: 'wt-1',
+        path: '/tmp/worktree',
+        pr_number: 1083,
+      },
+    ]
     hoisted.invokeMock.mockImplementation((command: string) => {
       if (command === 'get_pr_review_comments') {
         return Promise.resolve([
@@ -130,6 +145,26 @@ describe('ReviewCommentsDialog', () => {
       }
       return Promise.resolve(null)
     })
+  })
+
+  it('loads comments when worktree data arrives after the first open', async () => {
+    hoisted.worktrees.data = undefined
+    const { rerender } = render(<ReviewCommentsDialog />)
+
+    expect(screen.getByText('Loading comments...')).toBeInTheDocument()
+    expect(hoisted.invokeMock).not.toHaveBeenCalled()
+
+    hoisted.worktrees.data = [
+      {
+        id: 'wt-1',
+        path: '/tmp/worktree',
+        pr_number: 1083,
+      },
+    ]
+    rerender(<ReviewCommentsDialog />)
+
+    expect(await screen.findByText('Please fix this')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /send to chat/i })).toBeEnabled()
   })
 
   it('queues selected PR comments for the active chat', async () => {

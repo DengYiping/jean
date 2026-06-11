@@ -179,7 +179,6 @@ export function ReviewCommentsDialog() {
   // Shared state
   const [phase, setPhase] = useState<Phase>('loading')
   const [error, setError] = useState<string | null>(null)
-  const [isSending, setIsSending] = useState(false)
   const [tab, setTab] = useState<CommentTab>('inline')
 
   // Inline code comments state
@@ -260,7 +259,7 @@ export function ReviewCommentsDialog() {
     if (reviewCommentsModalOpen && worktreePath && prNumber) {
       fetchComments()
     }
-  }, [reviewCommentsModalOpen]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [reviewCommentsModalOpen, worktreePath, prNumber, fetchComments])
 
   const handleOpenChange = useCallback(
     (open: boolean) => {
@@ -274,7 +273,6 @@ export function ReviewCommentsDialog() {
         setConversationSelected(new Set())
         setConversationExpanded(new Set())
         setError(null)
-        setIsSending(false)
         setTab('inline')
       }
       setReviewCommentsModalOpen(open)
@@ -359,8 +357,6 @@ export function ReviewCommentsDialog() {
       const currentSelected = tab === 'inline' ? selected : conversationSelected
       if (currentSelected.size === 0) return
 
-      setIsSending(true)
-
       let formattedComments: string[]
 
       if (tab === 'inline') {
@@ -414,7 +410,6 @@ ${c.body}`
       const targetWorktreePath = worktree?.path
       if (!targetWorktreeId || !targetWorktreePath) {
         setError('No worktree selected for these PR comments')
-        setIsSending(false)
         return
       }
 
@@ -734,27 +729,19 @@ ${c.body}`
               </Button>
               <Button
                 size="sm"
-                disabled={activeSelected.size === 0 || isSending}
+                disabled={activeSelected.size === 0}
                 onClick={() => handleSendToChat(false)}
               >
-                {isSending ? (
-                  <Loader2 className="size-3.5 mr-1.5 animate-spin" />
-                ) : (
-                  <MessageSquare className="size-3.5 mr-1.5" />
-                )}
+                <MessageSquare className="size-3.5 mr-1.5" />
                 Send to Chat ({activeSelected.size})
               </Button>
               <Button
                 size="sm"
                 variant="outline"
-                disabled={activeSelected.size === 0 || isSending}
+                disabled={activeSelected.size === 0}
                 onClick={() => handleSendToChat(true)}
               >
-                {isSending ? (
-                  <Loader2 className="size-3.5 mr-1.5 animate-spin" />
-                ) : (
-                  <MessagesSquare className="size-3.5 mr-1.5" />
-                )}
+                <MessagesSquare className="size-3.5 mr-1.5" />
                 Send Separately ({activeSelected.size})
               </Button>
             </div>

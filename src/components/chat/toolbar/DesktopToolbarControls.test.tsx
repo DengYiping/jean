@@ -182,6 +182,25 @@ describe('DesktopToolbarControls', () => {
     expect(screen.getByRole('button', { name: /magic/i })).toBeDisabled()
   })
 
+  it('keeps the backend selector available after the session has messages', async () => {
+    const user = userEvent.setup()
+    const onBackendChange = vi.fn()
+
+    renderDesktopToolbarControls({
+      sessionHasMessages: true,
+      selectedBackend: 'codex',
+      installedBackends: ['claude', 'codex'],
+      onBackendChange,
+    })
+
+    await user.click(screen.getByRole('button', { name: /^codex$/i }))
+    await user.click(
+      await screen.findByRole('menuitemradio', { name: /claude/i })
+    )
+
+    expect(onBackendChange).toHaveBeenCalledWith('claude')
+  })
+
   it('keeps the fork Max effort option available for Codex', () => {
     renderDesktopToolbarControls({
       isCodex: true,

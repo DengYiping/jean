@@ -139,7 +139,6 @@ interface MobileToolbarMenuProps {
 export function MobileToolbarMenu({
   isDisabled,
   hasOpenPr,
-  sessionHasMessages,
   providerLocked,
   selectedBackend,
   selectedProvider,
@@ -510,7 +509,7 @@ export function MobileToolbarMenu({
 
           <DropdownMenuSeparator />
 
-          {!sessionHasMessages && (
+          {installedBackends.length > 1 && (
             <DropdownMenuSub>
               <DropdownMenuSubTrigger className="[&>svg:last-child]:!ml-2">
                 <Sparkles className="mr-2 h-4 w-4" />

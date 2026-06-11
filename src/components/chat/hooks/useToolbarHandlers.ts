@@ -64,7 +64,6 @@ export function useToolbarHandlers({
   enabledMcpServersRef,
   selectedBackend,
   installedBackends,
-  session,
   preferences,
   queryClient,
   worktreeProjectId,
@@ -176,18 +175,12 @@ export function useToolbarHandlers({
   )
 
   const handleTabBackendSwitch = useCallback(() => {
-    if ((session?.messages?.length ?? 0) > 0) return
     if (installedBackends.length <= 1) return
     const currentIndex = installedBackends.indexOf(selectedBackend)
     const nextIndex = (currentIndex + 1) % installedBackends.length
     const nextBackend = installedBackends[nextIndex]
     if (nextBackend) handleToolbarBackendChange(nextBackend)
-  }, [
-    session?.messages?.length,
-    selectedBackend,
-    installedBackends,
-    handleToolbarBackendChange,
-  ])
+  }, [selectedBackend, installedBackends, handleToolbarBackendChange])
 
   const handleToolbarProviderChange = useCallback(
     (provider: string | null) => {

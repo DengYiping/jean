@@ -577,9 +577,10 @@ fn resolve_http_server_bind_host(prefs: &AppPreferences) -> String {
 mod tests {
     use super::{
         default_automation_run_prompt, default_claude_system_prompt, default_codex_system_prompt,
-        default_pr_content_prompt, legacy_pr_content_prompt_without_session_recap,
-        migrate_loaded_preferences, resolve_http_server_bind_host, try_parse_cli_args,
-        AppPreferences, CliArgs, CliCommand, MagicPrompts,
+        default_pr_content_prompt, default_provider_switch_handoff_prompt,
+        legacy_pr_content_prompt_without_session_recap, migrate_loaded_preferences,
+        resolve_http_server_bind_host, try_parse_cli_args, AppPreferences, CliArgs, CliCommand,
+        MagicPrompts,
     };
     use serde_json::json;
 
@@ -862,12 +863,15 @@ mod tests {
         prefs.magic_prompts.claude_system_prompt = Some(default_claude_system_prompt());
         prefs.magic_prompts.codex_system_prompt = Some(default_codex_system_prompt());
         prefs.magic_prompts.automation_run = Some(default_automation_run_prompt());
+        prefs.magic_prompts.provider_switch_handoff =
+            Some(default_provider_switch_handoff_prompt());
 
         migrate_loaded_preferences(&mut prefs);
         assert!(prefs.magic_prompts.claude_system_prompt.is_none());
         assert!(prefs.magic_prompts.codex_system_prompt.is_none());
         assert!(prefs.magic_prompts.opencode_system_prompt.is_none());
         assert!(prefs.magic_prompts.automation_run.is_none());
+        assert!(prefs.magic_prompts.provider_switch_handoff.is_none());
     }
 
     #[test]
@@ -1109,6 +1113,8 @@ pub struct MagicPrompts {
     pub opencode_system_prompt: Option<String>,
     #[serde(default, rename = "global_system_prompt", skip_serializing)]
     pub legacy_global_system_prompt: Option<String>,
+    #[serde(default)]
+    pub provider_switch_handoff: Option<String>,
     #[serde(default)]
     pub session_recap: Option<String>,
     #[serde(default)]
@@ -1589,6 +1595,22 @@ fn default_codex_system_prompt() -> String {
     crate::chat::codex::default_codex_system_prompt().to_string()
 }
 
+pub(crate) fn default_provider_switch_handoff_prompt() -> String {
+    r#"You are continuing a Jean chat session after the user switched AI backends.
+
+Jean-local history is the source of truth because provider-owned server history may be incomplete after backend switches.
+
+Previous backend: {previous_backend}
+Current backend: {current_backend}
+
+Use the Jean-local history below to reconstruct context before answering the user's latest message. Do not mention this hidden handoff unless it is directly relevant.
+
+<jean_local_history>
+{history}
+</jean_local_history>"#
+        .to_string()
+}
+
 /// Per-prompt model overrides for magic prompts
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MagicPromptModels {
@@ -1835,7 +1857,7 @@ impl MagicPrompts {
     /// This ensures users who never customized a prompt get auto-updated defaults.
     fn migrate_defaults(&mut self) -> bool {
         type DefaultEntry<'a> = (fn() -> String, &'a mut Option<String>);
-        let defaults: [DefaultEntry; 17] = [
+        let defaults: [DefaultEntry; 18] = [
             (
                 default_investigate_issue_prompt,
                 &mut self.investigate_issue,
@@ -1858,6 +1880,10 @@ impl MagicPrompts {
             ),
             (default_claude_system_prompt, &mut self.claude_system_prompt),
             (default_codex_system_prompt, &mut self.codex_system_prompt),
+            (
+                default_provider_switch_handoff_prompt,
+                &mut self.provider_switch_handoff,
+            ),
             (
                 default_investigate_security_alert_prompt,
                 &mut self.investigate_security_alert,
@@ -3701,6 +3727,8 @@ pub fn run() {
         }
         return;
     }
+
+    crate::platform::raise_fd_limit();
 
     let cli_args = parse_cli_args();
     if let Some(command) = cli_args.command.clone() {

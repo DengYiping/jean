@@ -86,13 +86,13 @@ export const FloatingButtons = memo(function FloatingButtons({
                 <Button
                   size="sm"
                   className="h-8 gap-1.5 rounded-r-none text-sm"
-                  onClick={withScroll(onApprove)}
+                  onClick={withScroll(onYoloApprove)}
                 >
                   <Check className="h-3.5 w-3.5" />
-                  Approve
+                  YOLO
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Approve plan ({approveShortcut})</TooltipContent>
+              <TooltipContent>Approve with yolo mode</TooltipContent>
             </Tooltip>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -104,19 +104,15 @@ export const FloatingButtons = memo(function FloatingButtons({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={withScroll(onApprove)}>
+                  Approve
+                  <DropdownMenuShortcut>{approveShortcut}</DropdownMenuShortcut>
+                </DropdownMenuItem>
                 {onCustomBuildPrompt && (
                   <DropdownMenuItem onClick={withScroll(onCustomBuildPrompt)}>
                     Custom Prompt...
                   </DropdownMenuItem>
                 )}
-                <DropdownMenuItem onClick={withScroll(onYoloApprove)}>
-                  YOLO
-                  <DropdownMenuShortcut>
-                    {formatShortcutDisplay(
-                      DEFAULT_KEYBINDINGS.approve_plan_yolo
-                    )}
-                  </DropdownMenuShortcut>
-                </DropdownMenuItem>
                 {onClearContextBuildApprove && (
                   <DropdownMenuItem
                     onClick={withScroll(onClearContextBuildApprove)}

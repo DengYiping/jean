@@ -1,24 +1,19 @@
 import { memo, useMemo, useState } from 'react'
-import type { ToolCall } from '@/types/chat'
+import { diffLines } from 'diff'
+import type { ToolCall, ChatMessage } from '@/types/chat'
 import { Badge } from '@/components/ui/badge'
 import { getFilename } from '@/lib/path-utils'
-import { formatWorktreeRelativePath } from './file-change-utils'
 import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
 } from '@/components/ui/tooltip'
-import { FileEditsDiffModal, type FileEdit } from './FileEditsDiffModal'
-
-interface EditInput {
-  file_path: string
-  old_string?: string
-  new_string?: string
-}
+import { MessageDiffModal } from './MessageDiffModal'
+import type { EditTool } from './MessageDiffModal'
 
 function isEditTool(
   toolCall: ToolCall
-): toolCall is ToolCall & { input: EditInput } {
+): toolCall is ToolCall & { input: EditTool['input'] } {
   return (
     toolCall.name === 'Edit' &&
     typeof toolCall.input === 'object' &&
@@ -28,89 +23,138 @@ function isEditTool(
   )
 }
 
-interface EditedFilesDisplayProps {
-  toolCalls: ToolCall[] | undefined
-  onFileClick: (path: string) => void
-  worktreePath?: string | null
+function computeEditStats(
+  oldStr: string | undefined,
+  newStr: string | undefined
+): { additions: number; deletions: number } {
+  const changes = diffLines(oldStr ?? '', newStr ?? '')
+  let additions = 0
+  let deletions = 0
+  for (const part of changes) {
+    const count = part.count ?? 0
+    if (part.added) additions += count
+    else if (part.removed) deletions += count
+  }
+  return { additions, deletions }
 }
 
-/**
- * Display edited files at the bottom of assistant messages
- * Collects all Edit tool calls and shows unique file paths
- * Clicking a file opens it in the file content modal
- * Memoized to prevent re-renders when parent state changes
- */
+interface EditedFilesDisplayProps {
+  toolCalls: ToolCall[] | undefined
+  worktreePath?: string
+  /**
+   * Stable accessor for the full session message list. Used to compute
+   * "subsequent edits" lazily when the user opens a diff. Passing a stable
+   * function (rather than the `messages` array itself) keeps the memoized
+   * row from re-rendering whenever the session's message array identity
+   * changes — avoiding a per-row render cascade while scrolling.
+   */
+  getMessages?: () => ChatMessage[]
+  messageIndex?: number
+}
+
 export const EditedFilesDisplay = memo(function EditedFilesDisplay({
   toolCalls,
-  onFileClick,
   worktreePath,
+  getMessages,
+  messageIndex,
 }: EditedFilesDisplayProps) {
-  const [selectedDiff, setSelectedDiff] = useState<{
-    filePath: string
-    edits: FileEdit[]
-  } | null>(null)
+  const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null)
 
-  const editsByPath = useMemo(() => {
-    const edits = new Map<string, FileEdit[]>()
-    if (!toolCalls) return edits
+  const editTools = useMemo(
+    () => (toolCalls ?? []).filter(isEditTool),
+    [toolCalls]
+  )
 
-    for (const toolCall of toolCalls) {
-      if (!isEditTool(toolCall)) continue
+  const uniqueFilePaths = useMemo(
+    () => Array.from(new Set(editTools.map(t => t.input.file_path))),
+    [editTools]
+  )
 
-      const existing = edits.get(toolCall.input.file_path) ?? []
-      existing.push({
-        oldString: toolCall.input.old_string ?? '',
-        newString: toolCall.input.new_string ?? '',
+  const fileStats = useMemo(() => {
+    const map = new Map<string, { additions: number; deletions: number }>()
+    for (const tool of editTools) {
+      const prev = map.get(tool.input.file_path) ?? {
+        additions: 0,
+        deletions: 0,
+      }
+      const delta = computeEditStats(
+        tool.input.old_string,
+        tool.input.new_string
+      )
+      map.set(tool.input.file_path, {
+        additions: prev.additions + delta.additions,
+        deletions: prev.deletions + delta.deletions,
       })
-      edits.set(toolCall.input.file_path, existing)
     }
+    return map
+  }, [editTools])
 
-    return edits
-  }, [toolCalls])
+  const selectedEdits = useMemo(
+    () =>
+      selectedFilePath
+        ? editTools.filter(t => t.input.file_path === selectedFilePath)
+        : [],
+    [editTools, selectedFilePath]
+  )
 
-  if (editsByPath.size === 0) return null
+  // All Edit tool calls on selectedFilePath from messages AFTER this one.
+  // Computed lazily — only once the user opens a diff — by pulling the
+  // current message list through the stable `getMessages` accessor.
+  const subsequentEdits = useMemo(() => {
+    if (!selectedFilePath || !getMessages || messageIndex == null) return []
+    return getMessages()
+      .slice(messageIndex + 1)
+      .flatMap(msg => (msg.tool_calls ?? []).filter(isEditTool))
+      .filter(t => t.input.file_path === selectedFilePath)
+  }, [selectedFilePath, getMessages, messageIndex])
 
-  const uniqueFilePaths = Array.from(editsByPath.keys())
+  if (editTools.length === 0) return null
 
   return (
-    <>
-      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground/70">
-        <span>
-          Edited {uniqueFilePaths.length} file
-          {uniqueFilePaths.length === 1 ? '' : 's'}:
-        </span>
-        {uniqueFilePaths.map(filePath => {
-          const displayPath = formatWorktreeRelativePath(filePath, worktreePath)
-          return (
-            <Tooltip key={filePath}>
-              <TooltipTrigger asChild>
-                <Badge
-                  variant="outline"
-                  title={displayPath}
-                  className="cursor-pointer"
-                  onClick={() => {
-                    const edits = editsByPath.get(filePath) ?? []
-                    if (edits.length === 0) {
-                      onFileClick(filePath)
-                      return
-                    }
-                    setSelectedDiff({ filePath, edits })
-                  }}
-                >
-                  {getFilename(displayPath)}
-                </Badge>
-              </TooltipTrigger>
-              <TooltipContent>{displayPath}</TooltipContent>
-            </Tooltip>
-          )
-        })}
-      </div>
+    <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground/70">
+      <span>
+        Edited {uniqueFilePaths.length} file
+        {uniqueFilePaths.length === 1 ? '' : 's'}:
+      </span>
 
-      <FileEditsDiffModal
-        filePath={selectedDiff?.filePath ?? null}
-        edits={selectedDiff?.edits ?? []}
-        onClose={() => setSelectedDiff(null)}
-      />
-    </>
+      {uniqueFilePaths.map(filePath => {
+        const stats = fileStats.get(filePath)
+        return (
+          <Tooltip key={filePath}>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={() => setSelectedFilePath(filePath)}
+                aria-label={`View changes to ${getFilename(filePath)}`}
+                className="inline-flex rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Badge variant="outline" className="cursor-pointer gap-1.5">
+                  {getFilename(filePath)}
+                  {stats && (stats.additions > 0 || stats.deletions > 0) && (
+                    <span className="flex items-center font-mono text-xs opacity-80">
+                      <span className="text-green-500">+{stats.additions}</span>
+                      <span className="text-muted-foreground mx-0.5">/</span>
+                      <span className="text-red-500">-{stats.deletions}</span>
+                    </span>
+                  )}
+                </Badge>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>{filePath}</TooltipContent>
+          </Tooltip>
+        )
+      })}
+
+      {selectedFilePath && (
+        <MessageDiffModal
+          isOpen={true}
+          onClose={() => setSelectedFilePath(null)}
+          filePath={selectedFilePath}
+          edits={selectedEdits}
+          subsequentEdits={subsequentEdits}
+          worktreePath={worktreePath}
+        />
+      )}
+    </div>
   )
 })

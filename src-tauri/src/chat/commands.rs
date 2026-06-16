@@ -150,6 +150,29 @@ pub(crate) fn resolve_magic_prompt_backend(
     resolve_default_backend(app, worktree_id)
 }
 
+fn resume_id_for_persisted_claude_run<'a>(
+    backend: &Backend,
+    resume_id: &'a str,
+    has_assistant_payload: bool,
+) -> Option<&'a str> {
+    if *backend == Backend::Claude && !resume_id.is_empty() && has_assistant_payload {
+        Some(resume_id)
+    } else {
+        None
+    }
+}
+
+fn should_clear_stale_resumed_claude_session(
+    was_resuming: bool,
+    has_content: bool,
+    has_tool_calls: bool,
+    has_content_blocks: bool,
+    has_usage: bool,
+    _was_cancelled: bool,
+) -> bool {
+    was_resuming && !has_content && !has_tool_calls && !has_content_blocks && !has_usage
+}
+
 /// Get current Unix timestamp in seconds
 fn now() -> u64 {
     SystemTime::now()
@@ -3210,11 +3233,14 @@ pub async fn send_chat_message(
                         Ok((pid, response)) => {
                             log::trace!("execute_claude_detached succeeded (PID: {pid})");
 
-                            if response.content.is_empty()
-                                && response.usage.is_none()
-                                && !response.cancelled
-                                && claude_session_id_for_call.is_some()
-                            {
+                            if should_clear_stale_resumed_claude_session(
+                                claude_session_id_for_call.is_some(),
+                                !response.content.is_empty(),
+                                !response.tool_calls.is_empty(),
+                                !response.content_blocks.is_empty(),
+                                response.usage.is_some(),
+                                response.cancelled,
+                            ) {
                                 log::warn!(
                                     "Empty response while resuming session {}, clearing stale session ID",
                                     claude_session_id_for_call.as_deref().unwrap_or("")
@@ -4235,6 +4261,9 @@ pub async fn send_chat_message(
     // This avoids cluttering history with empty cancelled messages from instant cancellations
     let has_meaningful_content = unified_response.content.len() >= 10;
     let has_tool_calls = !unified_response.tool_calls.is_empty();
+    let has_content_blocks = !unified_response.content_blocks.is_empty();
+    let has_assistant_payload =
+        !unified_response.content.is_empty() || has_tool_calls || has_content_blocks;
     let resume_id_for_log = unified_response.resume_id.clone();
     let response_backend = unified_response.backend.clone();
 
@@ -4276,13 +4305,17 @@ pub async fn send_chat_message(
         });
     }
 
-    if unified_response.cancelled && !has_meaningful_content && !has_tool_calls {
+    if unified_response.cancelled
+        && !has_meaningful_content
+        && !has_tool_calls
+        && !has_content_blocks
+    {
         // Instant cancellation with no content
-        let resume_sid = if response_backend != Backend::Claude || resume_id_for_log.is_empty() {
-            None
-        } else {
-            Some(resume_id_for_log.as_str())
-        };
+        let resume_sid = resume_id_for_persisted_claude_run(
+            &response_backend,
+            &resume_id_for_log,
+            has_assistant_payload,
+        );
         // Cancel the run log, persisting session ID if available so next run can --resume
         if let Err(e) = run_log_writer.cancel(None, resume_sid) {
             log::warn!("Failed to cancel run log: {e}");
@@ -4292,7 +4325,9 @@ pub async fn send_chat_message(
         with_sessions_mut(&app, &worktree_path, &worktree_id, |sessions| {
             if let Some(session) = sessions.find_session_mut(&session_id) {
                 // Persist resume ID so next run can resume context even after cancellation
-                if !resume_id_for_log.is_empty() {
+                if !resume_id_for_log.is_empty()
+                    && (response_backend != Backend::Claude || has_assistant_payload)
+                {
                     match response_backend {
                         Backend::Claude => {
                             session.claude_session_id = Some(resume_id_for_log.clone());
@@ -4390,21 +4425,20 @@ pub async fn send_chat_message(
 
     // Finalize run log (complete or cancel based on response status)
     if was_cancelled {
-        let cancel_resume_sid =
-            if response_backend != Backend::Claude || resume_id_for_log.is_empty() {
-                None
-            } else {
-                Some(resume_id_for_log.as_str())
-            };
+        let cancel_resume_sid = resume_id_for_persisted_claude_run(
+            &response_backend,
+            &resume_id_for_log,
+            has_assistant_payload,
+        );
         if let Err(e) = run_log_writer.cancel(Some(&assistant_msg_id), cancel_resume_sid) {
             log::warn!("Failed to cancel run log: {e}");
         }
     } else {
-        let resume_sid = if response_backend != Backend::Claude || resume_id_for_log.is_empty() {
-            None
-        } else {
-            Some(resume_id_for_log.as_str())
-        };
+        let resume_sid = resume_id_for_persisted_claude_run(
+            &response_backend,
+            &resume_id_for_log,
+            has_assistant_payload,
+        );
         if let Err(e) =
             run_log_writer.complete(&assistant_msg_id, resume_sid, unified_response.usage)
         {
@@ -4422,7 +4456,7 @@ pub async fn send_chat_message(
     // back the conversation cache even though the CLI ran successfully (#209).
     if let Err(e) = with_sessions_mut(&app, &worktree_path, &worktree_id, |sessions| {
         if let Some(session) = sessions.find_session_mut(&session_id) {
-            if !resume_id_for_log.is_empty() && has_content {
+            if !resume_id_for_log.is_empty() && has_assistant_payload {
                 match response_backend {
                     Backend::Claude => {
                         session.claude_session_id = Some(resume_id_for_log.clone());
@@ -8348,6 +8382,45 @@ mod tests {
         assert_eq!(agent.sender_thread_id.as_deref(), Some("parent-thread"));
         assert_eq!(agent.receiver_thread_ids, vec!["agent-1".to_string()]);
         assert_eq!(agent.events.len(), 2);
+    }
+
+    #[test]
+    fn claude_resume_id_requires_assistant_payload() {
+        assert_eq!(
+            resume_id_for_persisted_claude_run(&Backend::Claude, "claude-session-1", false),
+            None
+        );
+        assert_eq!(
+            resume_id_for_persisted_claude_run(&Backend::Claude, "claude-session-1", true),
+            Some("claude-session-1")
+        );
+    }
+
+    #[test]
+    fn stale_resumed_claude_session_is_cleared_for_empty_cancelled_response() {
+        assert!(should_clear_stale_resumed_claude_session(
+            true, false, false, false, false, false
+        ));
+    }
+
+    #[test]
+    fn stale_resumed_claude_session_is_not_cleared_when_payload_exists() {
+        assert!(!should_clear_stale_resumed_claude_session(
+            true, true, false, false, false, true
+        ));
+        assert!(!should_clear_stale_resumed_claude_session(
+            true, false, true, false, false, true
+        ));
+        assert!(!should_clear_stale_resumed_claude_session(
+            true, false, false, true, false, true
+        ));
+    }
+
+    #[test]
+    fn stale_resumed_claude_session_is_kept_for_cancelled_content_block_only_response() {
+        assert!(!should_clear_stale_resumed_claude_session(
+            true, false, false, true, false, true
+        ));
     }
 
     #[test]

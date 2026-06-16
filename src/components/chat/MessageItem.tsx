@@ -97,6 +97,8 @@ interface MessageItemProps {
   sessionId: string
   /** Worktree path for resolving file mentions */
   worktreePath: string
+  /** Stable accessor for the full message list, used lazily by edited-file diffs */
+  getMessages?: () => ChatMessage[]
   /** Keyboard shortcut to display on approve button */
   approveShortcut: string
   /** Keyboard shortcut to display on approve yolo button */
@@ -137,8 +139,6 @@ interface MessageItemProps {
   onFileClick: (path: string) => void
   /** Chat viewport for preserving inline expansion position */
   scrollViewportRef?: React.RefObject<HTMLDivElement | null>
-  /** Callback when user clicks an edited file badge (opens diff modal) */
-  onEditedFileClick: (path: string) => void
   /** Callback when user fixes a finding */
   onFixFinding: (finding: ReviewFinding, suggestion?: string) => Promise<void>
   /** Callback when user fixes all findings */
@@ -160,6 +160,8 @@ interface MessageItemProps {
   onCopyToInput?: (message: ChatMessage) => void
   /** Hide approve buttons (e.g. for Codex which has no native approval flow) */
   hideApproveButtons?: boolean
+  /** Hide the built-in cancelled marker when a parent compact row renders it externally */
+  hideCancelledIndicator?: boolean
   /** Duration of this assistant message in ms (computed from user→assistant timestamp delta) */
   durationMs?: number | null
 }
@@ -176,6 +178,7 @@ export const MessageItem = memo(function MessageItem({
   hasFollowUpMessage,
   sessionId,
   worktreePath,
+  getMessages,
   approveShortcut,
   approveShortcutYolo,
   approveShortcutClearContext,
@@ -194,7 +197,6 @@ export const MessageItem = memo(function MessageItem({
   onQuestionSkip,
   onFileClick,
   scrollViewportRef,
-  onEditedFileClick,
   onFixFinding,
   onFixAllFindings,
   isQuestionAnswered,
@@ -203,6 +205,7 @@ export const MessageItem = memo(function MessageItem({
   isFindingFixed,
   onCopyToInput,
   hideApproveButtons,
+  hideCancelledIndicator,
   durationMs,
 }: MessageItemProps) {
   // Only show Approve button for the last message with ExitPlanMode
@@ -797,12 +800,13 @@ export const MessageItem = memo(function MessageItem({
         (message.tool_calls?.length ?? 0) > 0 && (
           <EditedFilesDisplay
             toolCalls={message.tool_calls}
-            onFileClick={onEditedFileClick}
             worktreePath={worktreePath}
+            getMessages={getMessages}
+            messageIndex={messageIndex}
           />
         )}
 
-      {message.cancelled && (
+      {message.cancelled && !hideCancelledIndicator && (
         <span className="text-xs text-muted-foreground/50 italic">
           (cancelled)
         </span>

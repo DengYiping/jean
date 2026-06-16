@@ -56,8 +56,6 @@ interface StreamingMessageProps {
   onFileClick: (path: string) => void
   /** Chat viewport for preserving inline expansion position */
   scrollViewportRef?: RefObject<HTMLDivElement | null>
-  /** Callback when user clicks an edited file badge (opens diff modal) */
-  onEditedFileClick: (path: string) => void
   /** Check if a question has been answered */
   isQuestionAnswered: (sessionId: string, toolCallId: string) => boolean
   /** Get submitted answers for a question */
@@ -106,7 +104,6 @@ export const StreamingMessage = memo(function StreamingMessage({
   onQuestionSkip,
   onFileClick,
   scrollViewportRef,
-  onEditedFileClick,
   isQuestionAnswered,
   getSubmittedAnswers,
   areQuestionsSkipped,
@@ -405,11 +402,7 @@ export const StreamingMessage = memo(function StreamingMessage({
       <FileChangeCard toolCalls={toolCalls} worktreePath={worktreePath} />
 
       {/* Show edited files during streaming */}
-      <EditedFilesDisplay
-        toolCalls={toolCalls}
-        onFileClick={onEditedFileClick}
-        worktreePath={worktreePath}
-      />
+      <EditedFilesDisplay toolCalls={toolCalls} worktreePath={worktreePath} />
     </div>
   )
 })

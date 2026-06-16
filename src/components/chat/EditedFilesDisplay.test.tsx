@@ -2,9 +2,11 @@ import { fireEvent, render, screen } from '@/test/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import { EditedFilesDisplay } from './EditedFilesDisplay'
 
-vi.mock('./InlineFileDiff', () => ({
-  InlineFileDiff: ({ filePath }: { filePath?: string }) => (
-    <div data-testid="inline-file-diff">{filePath ?? 'no-file'}</div>
+vi.mock('./MessageDiffModal', () => ({
+  MessageDiffModal: ({ filePath }: { filePath: string }) => (
+    <div role="dialog" data-testid="message-diff-modal">
+      {filePath}
+    </div>
   ),
 }))
 
@@ -13,7 +15,6 @@ describe('EditedFilesDisplay', () => {
     render(
       <EditedFilesDisplay
         worktreePath="/tmp/worktree"
-        onFileClick={vi.fn()}
         toolCalls={[
           {
             id: 'edit-1',
@@ -26,9 +27,7 @@ describe('EditedFilesDisplay', () => {
       />
     )
 
-    expect(
-      screen.getByTitle('src/components/ChatWindow.tsx')
-    ).toBeInTheDocument()
+    expect(screen.getByText('ChatWindow.tsx')).toBeInTheDocument()
     expect(
       screen.queryByText('/tmp/worktree/src/components/ChatWindow.tsx')
     ).not.toBeInTheDocument()
@@ -38,7 +37,6 @@ describe('EditedFilesDisplay', () => {
     render(
       <EditedFilesDisplay
         worktreePath="/tmp/worktree"
-        onFileClick={vi.fn()}
         toolCalls={[
           {
             id: 'edit-with-diff',
@@ -56,7 +54,7 @@ describe('EditedFilesDisplay', () => {
     fireEvent.click(screen.getByText('ChatWindow.tsx'))
 
     expect(screen.getByRole('dialog')).toBeInTheDocument()
-    expect(screen.getByTestId('inline-file-diff')).toHaveTextContent(
+    expect(screen.getByTestId('message-diff-modal')).toHaveTextContent(
       '/tmp/worktree/src/components/ChatWindow.tsx'
     )
   })

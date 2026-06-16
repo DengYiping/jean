@@ -88,8 +88,6 @@ interface VirtualizedMessageListProps {
   onQuestionSkip: (toolCallId: string) => void
   /** Callback when user clicks a file path */
   onFileClick: (path: string) => void
-  /** Callback when user clicks an edited file badge (opens diff modal) */
-  onEditedFileClick: (path: string) => void
   /** Callback when user fixes a finding */
   onFixFinding: (finding: ReviewFinding, suggestion?: string) => Promise<void>
   /** Callback when user fixes all findings */
@@ -151,7 +149,6 @@ export const VirtualizedMessageList = memo(
         onQuestionAnswer,
         onQuestionSkip,
         onFileClick,
-        onEditedFileClick,
         onFixFinding,
         onFixAllFindings,
         isQuestionAnswered,
@@ -168,6 +165,13 @@ export const VirtualizedMessageList = memo(
     ) {
       const messageRefs = useRef<Map<number, HTMLDivElement>>(new Map())
       const isLoadingMoreRef = useRef(false)
+      const messagesRef = useRef(messages)
+
+      useEffect(() => {
+        messagesRef.current = messages
+      }, [messages])
+
+      const getMessages = useCallback(() => messagesRef.current, [])
 
       // Track how many messages to render (from the end)
       const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_COUNT)
@@ -331,6 +335,7 @@ export const VirtualizedMessageList = memo(
               >
                 <MessageItem
                   message={message}
+                  getMessages={getMessages}
                   messageIndex={globalIndex}
                   totalMessages={totalMessages}
                   pendingPlanMessageId={pendingPlanMessageId}
@@ -361,7 +366,6 @@ export const VirtualizedMessageList = memo(
                   onQuestionSkip={onQuestionSkip}
                   onFileClick={onFileClick}
                   scrollViewportRef={scrollContainerRef}
-                  onEditedFileClick={onEditedFileClick}
                   onFixFinding={onFixFinding}
                   onFixAllFindings={onFixAllFindings}
                   isQuestionAnswered={isQuestionAnswered}

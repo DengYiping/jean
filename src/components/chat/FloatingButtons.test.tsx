@@ -17,7 +17,7 @@ describe('FloatingButtons', () => {
       />
     )
 
-    expect(screen.getByRole('button', { name: 'Approve' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'YOLO' })).toBeVisible()
     expect(
       screen.queryByRole('button', { name: 'Bottom' })
     ).not.toBeInTheDocument()

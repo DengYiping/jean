@@ -425,8 +425,56 @@ export function PlanDialog({
               ) : (
                 <>
                   <SplitButton
+                    label="YOLO"
+                    tooltip={`Approve with yolo mode (${formatShortcutDisplay(DEFAULT_KEYBINDINGS.approve_plan_yolo)})`}
+                    onClick={handleApproveYolo}
+                    disabled={!canApprove}
+                  >
+                    {onClearContextApprove && (
+                      <DropdownMenuItem
+                        onClick={handleClearContextApprove}
+                        disabled={!canApprove}
+                      >
+                        <span className="flex flex-col">
+                          <span>New Session (YOLO)</span>
+                          {yoloLabel && (
+                            <span className="text-[10px] text-muted-foreground">
+                              {yoloLabel}
+                            </span>
+                          )}
+                        </span>
+                        <DropdownMenuShortcut>
+                          {formatShortcutDisplay(
+                            DEFAULT_KEYBINDINGS.approve_plan_clear_context
+                          )}
+                        </DropdownMenuShortcut>
+                      </DropdownMenuItem>
+                    )}
+                    {onWorktreeYoloApprove && (
+                      <DropdownMenuItem
+                        onClick={handleWorktreeYoloApprove}
+                        disabled={!canApprove}
+                      >
+                        <span className="flex flex-col">
+                          <span>New Worktree (YOLO)</span>
+                          {yoloLabel && (
+                            <span className="text-[10px] text-muted-foreground">
+                              {yoloLabel}
+                            </span>
+                          )}
+                        </span>
+                        <DropdownMenuShortcut>
+                          {formatShortcutDisplay(
+                            DEFAULT_KEYBINDINGS.approve_plan_worktree_yolo
+                          )}
+                        </DropdownMenuShortcut>
+                      </DropdownMenuItem>
+                    )}
+                  </SplitButton>
+                  <SplitButton
                     label="Approve"
                     tooltip={`Approve plan (${formatShortcutDisplay(DEFAULT_KEYBINDINGS.approve_plan)})`}
+                    variant="outline"
                     onClick={handleApprove}
                     disabled={!canApprove}
                   >
@@ -474,54 +522,6 @@ export function PlanDialog({
                         <DropdownMenuShortcut>
                           {formatShortcutDisplay(
                             DEFAULT_KEYBINDINGS.approve_plan_worktree_build
-                          )}
-                        </DropdownMenuShortcut>
-                      </DropdownMenuItem>
-                    )}
-                  </SplitButton>
-                  <SplitButton
-                    label="YOLO"
-                    tooltip={`Approve with yolo mode (${formatShortcutDisplay(DEFAULT_KEYBINDINGS.approve_plan_yolo)})`}
-                    variant="outline"
-                    onClick={handleApproveYolo}
-                    disabled={!canApprove}
-                  >
-                    {onClearContextApprove && (
-                      <DropdownMenuItem
-                        onClick={handleClearContextApprove}
-                        disabled={!canApprove}
-                      >
-                        <span className="flex flex-col">
-                          <span>New Session (YOLO)</span>
-                          {yoloLabel && (
-                            <span className="text-[10px] text-muted-foreground">
-                              {yoloLabel}
-                            </span>
-                          )}
-                        </span>
-                        <DropdownMenuShortcut>
-                          {formatShortcutDisplay(
-                            DEFAULT_KEYBINDINGS.approve_plan_clear_context
-                          )}
-                        </DropdownMenuShortcut>
-                      </DropdownMenuItem>
-                    )}
-                    {onWorktreeYoloApprove && (
-                      <DropdownMenuItem
-                        onClick={handleWorktreeYoloApprove}
-                        disabled={!canApprove}
-                      >
-                        <span className="flex flex-col">
-                          <span>New Worktree (YOLO)</span>
-                          {yoloLabel && (
-                            <span className="text-[10px] text-muted-foreground">
-                              {yoloLabel}
-                            </span>
-                          )}
-                        </span>
-                        <DropdownMenuShortcut>
-                          {formatShortcutDisplay(
-                            DEFAULT_KEYBINDINGS.approve_plan_worktree_yolo
                           )}
                         </DropdownMenuShortcut>
                       </DropdownMenuItem>

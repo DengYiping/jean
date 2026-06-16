@@ -2803,7 +2803,6 @@ export function ChatWindow({
                               onQuestionAnswer={handleQuestionAnswer}
                               onQuestionSkip={handleSkipQuestion}
                               onFileClick={setViewingFilePath}
-                              onEditedFileClick={setViewingFilePath}
                               onFixFinding={handleFixFinding}
                               onFixAllFindings={handleFixAllFindings}
                               isQuestionAnswered={isQuestionAnswered}
@@ -2861,7 +2860,6 @@ export function ChatWindow({
                               onQuestionAnswer={handleQuestionAnswer}
                               onQuestionSkip={handleSkipQuestion}
                               onFileClick={setViewingFilePath}
-                              onEditedFileClick={setViewingFilePath}
                               onFixFinding={handleFixFinding}
                               onFixAllFindings={handleFixAllFindings}
                               isQuestionAnswered={isQuestionAnswered}
@@ -2899,7 +2897,6 @@ export function ChatWindow({
                                 onQuestionSkip={handleSkipQuestion}
                                 onFileClick={setViewingFilePath}
                                 scrollViewportRef={scrollViewportRef}
-                                onEditedFileClick={setViewingFilePath}
                                 isQuestionAnswered={isQuestionAnswered}
                                 getSubmittedAnswers={getSubmittedAnswers}
                                 areQuestionsSkipped={areQuestionsSkipped}
@@ -2953,7 +2950,6 @@ export function ChatWindow({
                                 onQuestionSkip={handleSkipQuestion}
                                 onFileClick={setViewingFilePath}
                                 scrollViewportRef={scrollViewportRef}
-                                onEditedFileClick={setViewingFilePath}
                                 isQuestionAnswered={isQuestionAnswered}
                                 getSubmittedAnswers={getSubmittedAnswers}
                                 areQuestionsSkipped={areQuestionsSkipped}

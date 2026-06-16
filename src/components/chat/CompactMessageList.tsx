@@ -65,7 +65,6 @@ interface CompactMessageListProps {
   ) => void
   onQuestionSkip: (toolCallId: string) => void
   onFileClick: (path: string) => void
-  onEditedFileClick: (path: string) => void
   onFixFinding: (finding: ReviewFinding, suggestion?: string) => Promise<void>
   onFixAllFindings: (
     findings: { finding: ReviewFinding; suggestion?: string }[]
@@ -462,7 +461,6 @@ export const CompactMessageList = memo(
         onQuestionAnswer,
         onQuestionSkip,
         onFileClick,
-        onEditedFileClick,
         onFixFinding,
         onFixAllFindings,
         isQuestionAnswered,
@@ -484,6 +482,13 @@ export const CompactMessageList = memo(
       const messageRefs = useRef<Map<number, HTMLDivElement>>(new Map())
       const pendingPrependScrollHeightRef = useRef<number | null>(null)
       const pendingPrependMessagesLengthRef = useRef<number | null>(null)
+      const messagesRef = useRef(messages)
+
+      useEffect(() => {
+        messagesRef.current = messages
+      }, [messages])
+
+      const getMessages = useCallback(() => messagesRef.current, [])
 
       const lastIndex = messages.length - 1
 
@@ -574,6 +579,7 @@ export const CompactMessageList = memo(
         ) => (
           <MessageItem
             message={item.message}
+            getMessages={getMessages}
             messageIndex={item.globalIndex}
             totalMessages={totalMessages}
             pendingPlanMessageId={pendingPlanMessageId}
@@ -601,7 +607,6 @@ export const CompactMessageList = memo(
             onQuestionAnswer={onQuestionAnswer}
             onQuestionSkip={onQuestionSkip}
             onFileClick={onFileClick}
-            onEditedFileClick={onEditedFileClick}
             onFixFinding={onFixFinding}
             onFixAllFindings={onFixAllFindings}
             isQuestionAnswered={isQuestionAnswered}
@@ -635,7 +640,6 @@ export const CompactMessageList = memo(
           onQuestionAnswer,
           onQuestionSkip,
           onFileClick,
-          onEditedFileClick,
           onFixFinding,
           onFixAllFindings,
           isQuestionAnswered,

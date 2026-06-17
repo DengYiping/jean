@@ -215,11 +215,14 @@ describe('ChatToolbar', () => {
     expect(onParallelExecutionPromptChange).toHaveBeenCalledWith(true)
   })
 
-  it('keeps the send action outside the scrollable toolbar controls', () => {
-    render(<ChatToolbar {...createProps()} />)
+  it('keeps send and parallel prompting outside the scrollable toolbar controls', () => {
+    render(<ChatToolbar {...createProps({ isSending: true })} />)
 
     const scrollArea = screen.getByTestId('chat-toolbar-scroll-controls')
     const pinnedActions = screen.getByTestId('chat-toolbar-pinned-actions')
+    const parallelPromptButton = screen.getByRole('button', {
+      name: 'Parallel execution prompting',
+    })
 
     expect(scrollArea).toContainElement(screen.getByTestId('desktop-controls'))
     expect(scrollArea).toContainElement(
@@ -231,6 +234,8 @@ describe('ChatToolbar', () => {
     expect(pinnedActions).toContainElement(
       screen.getByTestId('send-cancel-button')
     )
+    expect(scrollArea).not.toContainElement(parallelPromptButton)
+    expect(pinnedActions).toContainElement(parallelPromptButton)
   })
 
   it('shows Codex context usage from the toolbar while the floating dock is hidden', () => {

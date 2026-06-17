@@ -587,41 +587,41 @@ export const ChatToolbar = memo(function ChatToolbar({
               disabled={!activeSessionId}
               onChange={onSupervisorActionChange}
             />
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  disabled={isSending}
-                  aria-label="Parallel execution prompting"
-                  aria-pressed={parallelExecutionPromptEnabled}
-                  onClick={() =>
-                    onParallelExecutionPromptChange(
-                      !parallelExecutionPromptEnabled
-                    )
-                  }
-                  className={cn(
-                    'flex h-7 w-7 items-center justify-center rounded-md transition-colors disabled:pointer-events-none disabled:opacity-50',
-                    parallelExecutionPromptEnabled
-                      ? 'bg-primary/15 text-primary'
-                      : 'text-muted-foreground hover:bg-muted/80 hover:text-foreground'
-                  )}
-                >
-                  <Workflow className="h-3.5 w-3.5" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>
-                {`Parallel execution prompting (${parallelPromptShortcut})`}
-              </TooltipContent>
-            </Tooltip>
           </div>
         </div>
 
         <div className="h-4 w-px shrink-0 bg-border/50" />
 
         <div
-          className="shrink-0 pr-1"
+          className="flex h-8 shrink-0 items-center gap-1 pl-2 pr-1"
           data-testid="chat-toolbar-pinned-actions"
         >
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                disabled={isSending}
+                aria-label="Parallel execution prompting"
+                aria-pressed={parallelExecutionPromptEnabled}
+                onClick={() =>
+                  onParallelExecutionPromptChange(
+                    !parallelExecutionPromptEnabled
+                  )
+                }
+                className={cn(
+                  'flex h-7 w-7 items-center justify-center rounded-md transition-colors disabled:pointer-events-none disabled:opacity-50',
+                  parallelExecutionPromptEnabled
+                    ? 'bg-primary/15 text-primary'
+                    : 'text-muted-foreground hover:bg-muted/80 hover:text-foreground'
+                )}
+              >
+                <Workflow className="h-3.5 w-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {`Parallel execution prompting (${parallelPromptShortcut})`}
+            </TooltipContent>
+          </Tooltip>
           <SendCancelButton
             isSending={isSending}
             canSend={canSend}

@@ -1,4 +1,5 @@
 import { test, expect, activateWorktree } from '../fixtures/tauri-mock'
+import { mockPreferences } from '../fixtures/mock-data'
 
 test.describe('Session Management', () => {
   test('create new session via + button', async ({ mockPage }) => {
@@ -74,5 +75,81 @@ test.describe('Session Management', () => {
 
     // Tab should show the new name
     await expect(sessionTab).toContainText('My Renamed Session')
+  })
+
+  test.describe('default new session execution mode', () => {
+    test.use({
+      responseOverrides: {
+        load_preferences: {
+          ...mockPreferences,
+          default_execution_mode: 'build',
+          default_new_session_kind: 'chat',
+        },
+      },
+    })
+
+    test('Cmd+T creates a chat in the configured mode', async ({
+      mockPage,
+    }) => {
+      await activateWorktree(mockPage, 'fuzzy-tiger')
+
+      await mockPage.keyboard.press('Meta+t')
+
+      await expect(
+        mockPage
+          .getByTestId('chat-toolbar-pinned-actions')
+          .getByRole('button', { name: 'Build' })
+      ).toBeVisible({ timeout: 3000 })
+    })
+  })
+
+  test.describe('persisted session execution mode', () => {
+    test.use({
+      responseOverrides: {
+        load_preferences: {
+          ...mockPreferences,
+          default_execution_mode: 'build',
+          default_new_session_kind: 'chat',
+        },
+      },
+    })
+
+    test('keeps the saved mode instead of applying the global default', async ({
+      mockPage,
+    }) => {
+      await mockPage.evaluate(() => {
+        const handlers = (
+          window as Window & {
+            __JEAN_E2E_MOCK__?: {
+              invokeHandlers?: Record<
+                string,
+                (args?: Record<string, unknown>) => unknown
+              >
+            }
+          }
+        ).__JEAN_E2E_MOCK__?.invokeHandlers
+        const worktree = handlers?.list_worktrees?.()?.[0]
+        if (!worktree) throw new Error('Missing worktree fixture')
+        const session = handlers?.create_session?.({
+          worktreeId: worktree.id,
+          worktreePath: worktree.path,
+        })
+        if (!session) throw new Error('Failed to seed session fixture')
+        handlers?.update_session_state?.({
+          worktreeId: worktree.id,
+          worktreePath: worktree.path,
+          sessionId: session.id,
+          selectedExecutionMode: 'plan',
+        })
+      })
+
+      await activateWorktree(mockPage, 'fuzzy-tiger')
+
+      await expect(
+        mockPage
+          .getByTestId('chat-toolbar-pinned-actions')
+          .getByRole('button', { name: 'Plan' })
+      ).toBeVisible({ timeout: 3000 })
+    })
   })
 })

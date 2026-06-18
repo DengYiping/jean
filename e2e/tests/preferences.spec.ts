@@ -158,4 +158,35 @@ test.describe('Preferences', () => {
       },
     })
   })
+
+  test('saves the default execution mode for new sessions', async ({
+    mockPage,
+  }) => {
+    const dialog = await openDialog(mockPage)
+    const defaultsSection = dialog.locator('#pref-general-section-defaults')
+
+    await defaultsSection.getByRole('combobox').nth(1).click()
+    await mockPage.getByRole('option', { name: 'Yolo' }).click()
+
+    const patchCall = await mockPage.evaluate(() => {
+      const calls =
+        (
+          window as Window & {
+            __JEAN_E2E_MOCK__?: {
+              invokeCalls?: Array<{ command: string; args?: unknown }>
+            }
+          }
+        ).__JEAN_E2E_MOCK__?.invokeCalls ?? []
+      return calls.findLast(call => call.command === 'patch_preferences')
+    })
+
+    expect(patchCall).toMatchObject({
+      command: 'patch_preferences',
+      args: {
+        patch: {
+          default_execution_mode: 'yolo',
+        },
+      },
+    })
+  })
 })

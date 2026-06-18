@@ -1923,6 +1923,27 @@ export const GeneralPane: React.FC = () => {
           </InlineField>
 
           <InlineField
+            label="Default mode"
+            description="Permission mode for new sessions"
+          >
+            <Select
+              value={preferences?.default_execution_mode ?? 'plan'}
+              onValueChange={(value: 'plan' | 'build' | 'yolo') => {
+                patchPreferences.mutate({ default_execution_mode: value })
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="plan">Plan</SelectItem>
+                <SelectItem value="build">Build</SelectItem>
+                <SelectItem value="yolo">Yolo</SelectItem>
+              </SelectContent>
+            </Select>
+          </InlineField>
+
+          <InlineField
             label="Default repo for CLI yolo"
             description="Desktop `jean yolo` requests open a new base-session thread in this repo"
           >

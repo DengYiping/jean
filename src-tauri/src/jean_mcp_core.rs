@@ -25,6 +25,7 @@ const RATE_LIMITED_TOOLS: &[&str] = &[
     "create_session",
     "send_chat_message",
     "create_worktree",
+    "link_pr_to_worktree",
 ];
 const DEFAULT_MCP_DIFF_MAX_BYTES: usize = 60_000;
 const MAX_MCP_DIFF_BYTES: usize = 200_000;
@@ -130,6 +131,7 @@ pub fn tool_registry() -> Value {
         {"name":"list_projects","description":"List all Jean projects (id, name, path, default_branch).","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},
         {"name":"list_worktrees","description":"List all worktrees for a project.","inputSchema":{"type":"object","properties":{"projectId":{"type":"string"}},"required":["projectId"],"additionalProperties":false}},
         {"name":"get_worktree","description":"Get a single worktree by id (path, branch, status, etc.).","inputSchema":{"type":"object","properties":{"worktreeId":{"type":"string"}},"required":["worktreeId"],"additionalProperties":false}},
+        {"name":"link_pr_to_worktree","description":"Detect the GitHub pull request for a worktree's current branch and link it in Jean. Pass worktreeId; Jean resolves the stored worktree path and runs gh pr view.","inputSchema":{"type":"object","properties":{"worktreeId":{"type":"string"}},"required":["worktreeId"],"additionalProperties":false}},
         {"name":"get_project_context","description":"Get project-level context needed by orchestration agents: project settings, linked projects, default branch/backend, and worktree counts. Does not read arbitrary repo files.","inputSchema":{"type":"object","properties":{"projectId":{"type":"string"}},"required":["projectId"],"additionalProperties":false}},
         {"name":"list_github_issues","description":"List GitHub issues for a project. Pass projectId; the server resolves the repo path.","inputSchema":{"type":"object","properties":{"projectId":{"type":"string"},"state":{"type":"string","enum":["open","closed","all"],"default":"open"}},"required":["projectId"],"additionalProperties":false}},
         {"name":"list_github_prs","description":"List GitHub pull requests for a project. Pass projectId; the server resolves the repo path.","inputSchema":{"type":"object","properties":{"projectId":{"type":"string"},"state":{"type":"string","enum":["open","closed","merged","all"],"default":"open"}},"required":["projectId"],"additionalProperties":false}},
@@ -211,6 +213,32 @@ async fn run_tool(
             dispatch_command(app, "get_worktree", json!({ "worktreeId": worktree_id }))
                 .await
                 .map_err(ToolError::internal)
+        }
+        "link_pr_to_worktree" => {
+            let worktree_id = require_str(&args, "worktreeId")?;
+            let worktree_path = resolve_worktree_path(app, &worktree_id)?;
+            let result = dispatch_command(
+                app,
+                "detect_and_link_pr",
+                json!({
+                    "worktreeId": worktree_id,
+                    "worktreePath": worktree_path,
+                }),
+            )
+            .await
+            .map_err(|error| {
+                ToolError::internal(format!(
+                    "Failed to detect a pull request for worktree {worktree_id}: {error}"
+                ))
+            })?;
+
+            if result.is_null() {
+                return Err(ToolError::internal(format!(
+                    "No pull request could be detected for worktree {worktree_id}. Ensure the branch is pushed, a pull request exists for it, and gh is authenticated, then retry."
+                )));
+            }
+
+            Ok(result)
         }
         "get_project_context" => {
             let project_id = require_str(&args, "projectId")?;
@@ -1148,6 +1176,19 @@ mod tests {
         });
 
         assert!(has_pr_list);
+    }
+
+    #[test]
+    fn link_pr_to_worktree_schema_requires_only_worktree_id() {
+        let tools = tool_registry();
+        let link_pr = find_tool(&tools, "link_pr_to_worktree");
+
+        assert_eq!(link_pr["inputSchema"]["required"], json!(["worktreeId"]));
+        assert_eq!(
+            link_pr["inputSchema"]["properties"],
+            json!({ "worktreeId": { "type": "string" } })
+        );
+        assert_eq!(link_pr["inputSchema"]["additionalProperties"], false);
     }
 
     #[test]

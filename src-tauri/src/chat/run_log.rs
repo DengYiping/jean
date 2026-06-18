@@ -1003,9 +1003,10 @@ pub fn load_session_messages_window(
             let lines = read_run_log(app, session_id, &run.run_id)?;
 
             // Parse JSONL content with the protocol that produced it.
-            // Known model prefixes identify Codex/OpenCode directly; custom
-            // model IDs use the per-run backend, with session backend as a
-            // legacy fallback for older run entries.
+            // Known model prefixes identify Codex directly; custom model IDs
+            // use the per-run backend, with session backend as a legacy
+            // fallback for older run entries. OpenCode persists Claude-style
+            // assistant records, so it must use parse_run_to_message.
             let use_codex_parser = should_use_codex_parser(run, &metadata.backend);
             let mut assistant_msg = if use_codex_parser {
                 super::codex::parse_codex_run_to_message(&lines, run)?
@@ -1650,22 +1651,26 @@ fn now_timestamp() -> u64 {
 }
 
 fn should_use_codex_parser(run: &RunEntry, session_backend: &Backend) -> bool {
+    if let Some(backend) = run.backend.as_ref() {
+        return *backend == Backend::Codex;
+    }
+
     if let Some(model) = run.model.as_deref() {
-        if crate::is_opencode_model(model) || crate::is_codex_model(model) {
+        if crate::is_opencode_model(model) {
+            return false;
+        }
+        if crate::is_codex_model(model) {
             return true;
         }
 
         // Custom Codex model IDs are arbitrary provider/model strings, so they
-        // often do not match the built-in Codex heuristic. In that case the
-        // run backend is the source of truth; session backend is only a legacy
-        // fallback for run entries created before backend was stored per run.
-        let backend = run.backend.as_ref().unwrap_or(session_backend);
-        return matches!(backend, Backend::Codex | Backend::Opencode);
+        // often do not match the built-in Codex heuristic. Session backend is
+        // the legacy fallback for runs created before backend was stored.
+        return *session_backend == Backend::Codex;
     }
 
     // Legacy run without model field: fall back to session backend.
-    let backend = run.backend.as_ref().unwrap_or(session_backend);
-    matches!(backend, Backend::Codex | Backend::Opencode)
+    *session_backend == Backend::Codex
 }
 
 #[cfg(test)]
@@ -1804,5 +1809,28 @@ mod tests {
         let run = test_run_with_model(Some("gpt-5.2-codex"));
 
         assert!(should_use_codex_parser(&run, &Backend::Claude));
+    }
+
+    #[test]
+    fn should_not_use_codex_parser_for_opencode_provider_model() {
+        let run = test_run_with_model(Some("litellm_hubspot/glm-5.2"));
+
+        assert!(!should_use_codex_parser(&run, &Backend::Opencode));
+    }
+
+    #[test]
+    fn should_not_use_codex_parser_for_custom_model_in_opencode_run() {
+        let mut run = test_run_with_model(Some("custom-provider/custom-model"));
+        run.backend = Some(Backend::Opencode);
+
+        assert!(!should_use_codex_parser(&run, &Backend::Codex));
+    }
+
+    #[test]
+    fn should_not_use_codex_parser_for_codex_named_model_in_opencode_run() {
+        let mut run = test_run_with_model(Some("openai/gpt-5.2-codex"));
+        run.backend = Some(Backend::Opencode);
+
+        assert!(!should_use_codex_parser(&run, &Backend::Codex));
     }
 }

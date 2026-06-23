@@ -90,6 +90,7 @@ function mapCodexReasoningToEffort(
     case 'high':
       return 'high'
     case 'xhigh':
+      return 'xhigh'
     case 'max':
       return 'max'
     default:

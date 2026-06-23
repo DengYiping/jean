@@ -3328,7 +3328,7 @@ pub async fn send_chat_message(
                         super::types::EffortLevel::Medium => Some("medium".to_string()),
                         super::types::EffortLevel::High => Some("high".to_string()),
                         super::types::EffortLevel::Xhigh => Some("xhigh".to_string()),
-                        super::types::EffortLevel::Max => Some("xhigh".to_string()),
+                        super::types::EffortLevel::Max => Some("max".to_string()),
                         super::types::EffortLevel::Ultracode => Some("xhigh".to_string()),
                         super::types::EffortLevel::Off => None,
                     });

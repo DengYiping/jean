@@ -112,7 +112,7 @@ export function resolveCliYoloExecutionConfig({
             low: 'low',
             medium: 'medium',
             high: 'high',
-            xhigh: 'max',
+            xhigh: 'xhigh',
             max: 'max',
           } as Record<string, EffortLevel>
         )[

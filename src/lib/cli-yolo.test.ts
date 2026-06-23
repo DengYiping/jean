@@ -206,6 +206,19 @@ describe('cli yolo helpers', () => {
     expect(config.model).toBe('gpt-5.4-mini')
     expect(config.provider).toBe('OpenRouter')
     expect(config.thinkingLevel).toBe('off')
+    expect(config.effortLevel).toBe('xhigh')
+  })
+
+  it('preserves max effort for Codex yolo sessions', () => {
+    const config = resolveCliYoloExecutionConfig({
+      sessionBackend: 'codex',
+      preferences: {
+        ...defaultPreferences,
+        default_codex_reasoning_effort: 'max',
+      },
+      projectDefaultProvider: null,
+    })
+
     expect(config.effortLevel).toBe('max')
   })
 

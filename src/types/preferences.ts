@@ -1061,7 +1061,7 @@ export interface AppPreferences {
   claude_update_command: string | null // Optional Claude install/update command, e.g. "pnpm install -g @anthropic-ai/claude-code"
   codex_update_command: string | null // Optional Codex install/update command, e.g. "npm install -g @openai/codex"
   opencode_launch_command: string | null // Optional OpenCode launcher command, e.g. "dvx opencode"
-  default_codex_reasoning_effort: CodexReasoningEffort // Default reasoning effort for Codex: 'low' | 'medium' | 'high' | 'xhigh'
+  default_codex_reasoning_effort: CodexReasoningEffort // Default reasoning effort for Codex: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
   codex_goal_execution_mode: CodexGoalExecutionMode // Execution mode used when starting a Codex /goal
   codex_multi_agent_enabled: boolean // Enable Codex multi-agent collaboration (experimental)
   codex_max_agent_threads: number // Max concurrent agent threads (1-8) when multi-agent is enabled
@@ -1430,7 +1430,7 @@ export function normalizeCustomCodexModels(
   return normalized
 }
 
-export type CodexReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh'
+export type CodexReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
 export type MagicPromptReasoningEffort =
   | 'low'
@@ -1466,6 +1466,7 @@ export const codexReasoningOptions: {
   { value: 'medium', label: 'Medium' },
   { value: 'high', label: 'High' },
   { value: 'xhigh', label: 'Extra High' },
+  { value: 'max', label: 'Max' },
 ]
 
 export const codexGoalExecutionModeOptions: {

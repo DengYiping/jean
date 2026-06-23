@@ -243,7 +243,7 @@ pub struct AppPreferences {
     #[serde(default)]
     pub opencode_launch_command: Option<String>, // Optional OpenCode launcher command, e.g. "dvx opencode"
     #[serde(default = "default_codex_reasoning_effort")]
-    pub default_codex_reasoning_effort: String, // Codex reasoning effort: low, medium, high, xhigh
+    pub default_codex_reasoning_effort: String, // Codex reasoning effort: low, medium, high, xhigh, max
     #[serde(default = "default_codex_goal_execution_mode")]
     pub codex_goal_execution_mode: String, // Codex /goal execution mode: build or yolo
     #[serde(default)]

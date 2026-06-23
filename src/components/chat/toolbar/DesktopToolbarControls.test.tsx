@@ -201,7 +201,7 @@ describe('DesktopToolbarControls', () => {
     expect(onBackendChange).toHaveBeenCalledWith('claude')
   })
 
-  it('keeps the fork Max effort option available for Codex', () => {
+  it('keeps the Max effort option available for Codex', () => {
     renderDesktopToolbarControls({
       isCodex: true,
       selectedBackend: 'codex',

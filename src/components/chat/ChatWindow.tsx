@@ -662,7 +662,8 @@ export function ChatWindow({
           low: 'low',
           medium: 'medium',
           high: 'high',
-          xhigh: 'max',
+          xhigh: 'xhigh',
+          max: 'max',
         } as Record<string, EffortLevel>
       )[preferences?.default_codex_reasoning_effort ?? 'high'] ?? 'high')
     : ((preferences?.default_effort_level as EffortLevel) ?? 'high')
@@ -1729,7 +1730,7 @@ export function ChatWindow({
                 low: 'low',
                 medium: 'medium',
                 high: 'high',
-                xhigh: 'max',
+                xhigh: 'xhigh',
                 max: 'max',
               } as Record<string, EffortLevel>
             )[modeThinkingOverride ?? ''] ?? selectedEffortLevelRef.current)

@@ -45,6 +45,7 @@ import type {
   WakeupCancelledEvent,
   PendingWakeupEntry,
   QueuedMessage,
+  EffortLevel,
 } from '@/types/chat'
 import { persistEnqueue } from '@/services/chat'
 import {
@@ -2420,10 +2421,7 @@ export default function useStreamingEvents({
           )
           break
         case 'effortLevel':
-          store.setEffortLevel(
-            session_id,
-            value as 'low' | 'medium' | 'high' | 'max'
-          )
+          store.setEffortLevel(session_id, value as EffortLevel)
           break
         case 'executionMode':
           store.setExecutionMode(session_id, value as 'plan' | 'build' | 'yolo')

@@ -97,7 +97,7 @@ describe('resolveApprovedPlanContinuation', () => {
     )
   })
 
-  it('forces codex thinking off and falls back to default codex effort', () => {
+  it('forces codex thinking off and preserves the default codex effort', () => {
     const continuation = resolveApprovedPlanContinuation({
       mode: 'build',
       planContent: 'Implement API',
@@ -115,8 +115,24 @@ describe('resolveApprovedPlanContinuation', () => {
       backend: 'codex',
       model: 'gpt-5.4',
       thinkingLevel: 'off',
-      effortLevel: 'max',
+      effortLevel: 'xhigh',
     })
+  })
+
+  it('preserves max as the default codex effort', () => {
+    const continuation = resolveApprovedPlanContinuation({
+      mode: 'build',
+      planContent: 'Implement API',
+      originalBackend: 'claude',
+      originalModel: 'claude-opus-4-8[1m]',
+      preferences: {
+        ...basePreferences,
+        build_backend: 'codex',
+        default_codex_reasoning_effort: 'max',
+      },
+    })
+
+    expect(continuation.effortLevel).toBe('max')
   })
 
   it('can use the original backend for reasoning without returning it as a send override', () => {

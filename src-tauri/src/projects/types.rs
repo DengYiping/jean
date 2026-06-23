@@ -36,6 +36,8 @@ pub struct AutomationWorktreeMetadata {
 pub struct PortEntry {
     pub port: u16,
     pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
 }
 
 /// Jean configuration from jean.json

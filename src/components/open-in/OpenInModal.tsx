@@ -41,6 +41,7 @@ import { notify } from '@/lib/notifications'
 import { openExternal } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 import { isNativeApp } from '@/lib/environment'
+import { resolvePortUrl } from '@/components/browser/default-tab-url'
 
 interface ModalOption {
   id: string
@@ -234,14 +235,17 @@ export function OpenInModal() {
 
   const portOptions: ModalOption[] = useMemo(() => {
     if (!ports || ports.length === 0) return []
-    return ports.map((p, i) => ({
-      id: `port-${p.port}`,
-      label: `${p.label} (:${p.port})`,
-      icon: Globe,
-      key: i < 9 ? String(i + 1) : undefined,
-      metaKey: true,
-      url: `http://localhost:${p.port}`,
-    }))
+    return ports.map((p, i) => {
+      const host = p.host?.trim() || 'localhost'
+      return {
+        id: `port-${host}-${p.port}`,
+        label: `${p.label} (${host}:${p.port})`,
+        icon: Globe,
+        key: i < 9 ? String(i + 1) : undefined,
+        metaKey: true,
+        url: resolvePortUrl(p),
+      }
+    })
   }, [ports])
 
   const allOptions = useMemo(

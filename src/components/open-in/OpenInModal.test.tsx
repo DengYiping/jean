@@ -4,8 +4,10 @@ import { OpenInModal } from './OpenInModal'
 import { useChatStore } from '@/store/chat-store'
 import { useProjectsStore } from '@/store/projects-store'
 import { useUIStore } from '@/store/ui-store'
+import { openExternal } from '@/lib/platform'
 
 const openInEditorMutate = vi.fn()
+let mockPorts: { port: number; label: string; host?: string | null }[] = []
 
 vi.mock('@/services/preferences', () => ({
   usePreferences: () => ({
@@ -49,7 +51,7 @@ vi.mock('@/services/projects', () => ({
     },
   }),
   usePorts: () => ({
-    data: [],
+    data: mockPorts,
   }),
 }))
 
@@ -79,6 +81,7 @@ vi.mock('@/lib/transport', () => ({
 describe('OpenInModal', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockPorts = []
     useProjectsStore.setState({
       selectedWorktreeId: 'worktree-1',
       selectedProjectId: null,
@@ -116,5 +119,30 @@ describe('OpenInModal', () => {
       worktreePath: '/tmp/worktree',
       editor: undefined,
     })
+  })
+
+  it('opens configured ports with custom hosts', () => {
+    mockPorts = [{ port: 5173, label: 'Vite', host: '192.168.1.42' }]
+
+    render(<OpenInModal />)
+
+    fireEvent.click(
+      screen.getByRole('button', { name: /192\.168\.1\.42:5173/ })
+    )
+
+    expect(openExternal).toHaveBeenCalledWith('http://192.168.1.42:5173')
+  })
+
+  it('opens the selected host when multiple configured ports share a port number', () => {
+    mockPorts = [
+      { port: 5173, label: 'Local App' },
+      { port: 5173, label: 'Remote App', host: '192.168.1.42' },
+    ]
+
+    render(<OpenInModal />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Remote App/ }))
+
+    expect(openExternal).toHaveBeenCalledWith('http://192.168.1.42:5173')
   })
 })

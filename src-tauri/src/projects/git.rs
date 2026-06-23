@@ -2906,6 +2906,36 @@ mod tests {
     }
 
     #[test]
+    fn test_read_jean_config_for_worktree_preserves_port_host() {
+        let temp = TempDir::new().unwrap();
+        let project = temp.path().join("project");
+        let worktree = temp.path().join("worktree");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::create_dir_all(&worktree).unwrap();
+        std::fs::write(
+            worktree.join("jean.json"),
+            r#"{
+  "scripts": {
+    "run": "bun run dev"
+  },
+  "ports": [{ "port": 5173, "label": "Vite", "host": "192.168.1.42" }]
+}"#,
+        )
+        .unwrap();
+
+        let config = read_jean_config_for_worktree(
+            worktree.to_str().unwrap(),
+            Some(project.to_str().unwrap()),
+        )
+        .unwrap();
+        let port = &config.ports.unwrap()[0];
+
+        assert_eq!(port.port, 5173);
+        assert_eq!(port.label, "Vite");
+        assert_eq!(port.host.as_deref(), Some("192.168.1.42"));
+    }
+
+    #[test]
     fn test_read_jean_config_for_worktree_returns_none_when_no_config_exists() {
         let temp = TempDir::new().unwrap();
         let project = temp.path().join("project");

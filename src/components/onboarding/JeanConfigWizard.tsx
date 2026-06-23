@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { FileCode2 } from 'lucide-react'
+import { FileCode2, Plus, X } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -37,6 +37,9 @@ function JeanConfigWizardContent() {
   const [teardownScript, setTeardownScript] = useState('')
   const [runScript, setRunScript] = useState('')
   const [buildScript, setBuildScript] = useState('')
+  const [ports, setPorts] = useState<
+    { port: string; label: string; host: string }[]
+  >([])
 
   const markSeen = () => {
     if (preferences && !preferences.has_seen_jean_config_wizard) {
@@ -47,6 +50,15 @@ function JeanConfigWizardContent() {
   const handleSave = async () => {
     if (!project?.path) return
 
+    const validPorts = ports
+      .filter(p => p.port.trim() && p.label.trim())
+      .map(p => ({
+        port: Number(p.port),
+        label: p.label.trim(),
+        host: p.host.trim() || undefined,
+      }))
+      .filter(p => !isNaN(p.port) && p.port > 0 && p.port <= 65535)
+
     await saveConfig.mutateAsync({
       projectPath: project.path,
       config: {
@@ -56,6 +68,7 @@ function JeanConfigWizardContent() {
           run: runScript.trim() || null,
           build: buildScript.trim() || null,
         },
+        ports: validPorts.length > 0 ? validPorts : null,
       },
     })
 
@@ -72,7 +85,8 @@ function JeanConfigWizardContent() {
     setupScript.trim() ||
     teardownScript.trim() ||
     runScript.trim() ||
-    buildScript.trim()
+    buildScript.trim() ||
+    ports.some(p => p.port.trim() && p.label.trim())
 
   return (
     <Dialog
@@ -202,6 +216,71 @@ function JeanConfigWizardContent() {
             />
             <p className="text-xs text-muted-foreground">
               Launches your build command in the terminal
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-sm">Ports</Label>
+            {ports.map((entry, i) => (
+              <div
+                key={i}
+                className="flex flex-col gap-1 sm:flex-row sm:items-center"
+              >
+                <Input
+                  placeholder="Port"
+                  type="number"
+                  value={entry.port}
+                  onChange={e => {
+                    const next = [...ports]
+                    next[i] = { ...entry, port: e.target.value }
+                    setPorts(next)
+                  }}
+                  className="font-mono text-sm sm:w-24"
+                />
+                <Input
+                  placeholder="Host (optional)"
+                  value={entry.host}
+                  onChange={e => {
+                    const next = [...ports]
+                    next[i] = { ...entry, host: e.target.value }
+                    setPorts(next)
+                  }}
+                  className="font-mono text-sm sm:w-40"
+                />
+                <Input
+                  placeholder="Label"
+                  value={entry.label}
+                  onChange={e => {
+                    const next = [...ports]
+                    next[i] = { ...entry, label: e.target.value }
+                    setPorts(next)
+                  }}
+                  className="text-sm"
+                />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0"
+                  onClick={() => setPorts(ports.filter((_, j) => j !== i))}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            ))}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() =>
+                setPorts([...ports, { port: '', label: '', host: '' }])
+              }
+            >
+              <Plus className="mr-1 h-3 w-3" />
+              Add port
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              Open configured ports in browser via CMD+O. Host defaults to
+              localhost.
             </p>
           </div>
         </div>

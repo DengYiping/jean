@@ -909,6 +909,7 @@ mod tests {
         assert_eq!(prefs.magic_prompt_models.pr_content_model, "sonnet");
         assert_eq!(prefs.magic_prompt_models.commit_message_model, "sonnet");
         assert_eq!(prefs.magic_prompt_models.release_notes_model, "sonnet");
+        assert_eq!(prefs.magic_prompt_models.release_post_model, "sonnet");
         assert_eq!(prefs.magic_prompt_models.session_naming_model, "sonnet");
         assert_eq!(prefs.magic_prompt_models.session_recap_model, "sonnet");
     }
@@ -1040,6 +1041,7 @@ mod tests {
         prefs.magic_prompt_models.pr_content_model = "haiku".to_string();
         prefs.magic_prompt_models.commit_message_model = "haiku".to_string();
         prefs.magic_prompt_models.release_notes_model = "haiku".to_string();
+        prefs.magic_prompt_models.release_post_model = "haiku".to_string();
         prefs.magic_prompt_models.session_naming_model = "haiku".to_string();
         prefs.magic_prompt_models.session_recap_model = "haiku".to_string();
 
@@ -1049,6 +1051,7 @@ mod tests {
         assert_eq!(prefs.magic_prompt_models.pr_content_model, "sonnet");
         assert_eq!(prefs.magic_prompt_models.commit_message_model, "sonnet");
         assert_eq!(prefs.magic_prompt_models.release_notes_model, "sonnet");
+        assert_eq!(prefs.magic_prompt_models.release_post_model, "sonnet");
         assert_eq!(prefs.magic_prompt_models.session_naming_model, "sonnet");
         assert_eq!(prefs.magic_prompt_models.session_recap_model, "sonnet");
     }
@@ -1101,6 +1104,8 @@ pub struct MagicPrompts {
     pub investigate_workflow_run: Option<String>,
     #[serde(default)]
     pub release_notes: Option<String>,
+    #[serde(default)]
+    pub release_post: Option<String>,
     #[serde(default)]
     pub session_naming: Option<String>,
     #[serde(default)]
@@ -1563,6 +1568,26 @@ When specifying subagent_type for Task tool calls, always use the fully qualifie
         .to_string()
 }
 
+fn default_release_post_prompt() -> String {
+    r#"Write one short release announcement for Twitter/X, Mastodon, Bluesky, LinkedIn, and similar platforms.
+
+Release: {release_name}
+Tag: {tag}
+GitHub release link: {release_url}
+
+Release notes:
+{release_body}
+
+Instructions:
+- Be a bit more generous than a terse tweet, but keep the full post under 280 characters including the GitHub release link.
+- Include the exact GitHub release link.
+- Put each feature, fix, or improvement on its own line.
+- Mention the most user-facing changes or theme.
+- Keep it clear, upbeat, and not hype-heavy.
+- Do not use markdown headings."#
+        .to_string()
+}
+
 pub(crate) fn default_automation_run_prompt() -> String {
     r#"Automation: {automationName}
 Automation ID: {automationId}
@@ -1633,6 +1658,8 @@ pub struct MagicPromptModels {
     #[serde(default = "default_lightweight_model")]
     pub release_notes_model: String,
     #[serde(default = "default_lightweight_model")]
+    pub release_post_model: String,
+    #[serde(default = "default_lightweight_model")]
     pub session_naming_model: String,
     #[serde(default = "default_lightweight_model")]
     pub session_recap_model: String,
@@ -1662,6 +1689,7 @@ impl Default for MagicPromptModels {
             context_summary_model: default_model(),
             resolve_conflicts_model: default_model(),
             release_notes_model: default_lightweight_model(),
+            release_post_model: default_lightweight_model(),
             session_naming_model: default_lightweight_model(),
             session_recap_model: default_lightweight_model(),
             investigate_security_alert_model: default_model(),
@@ -1701,10 +1729,11 @@ impl MagicPromptModels {
                 changed = true;
             }
         }
-        let lightweight_fields: [&mut String; 5] = [
+        let lightweight_fields: [&mut String; 6] = [
             &mut self.pr_content_model,
             &mut self.commit_message_model,
             &mut self.release_notes_model,
+            &mut self.release_post_model,
             &mut self.session_naming_model,
             &mut self.session_recap_model,
         ];
@@ -1752,6 +1781,8 @@ pub struct MagicPromptProviders {
     #[serde(default)]
     pub release_notes_provider: Option<String>,
     #[serde(default)]
+    pub release_post_provider: Option<String>,
+    #[serde(default)]
     pub session_naming_provider: Option<String>,
     #[serde(default)]
     pub session_recap_provider: Option<String>,
@@ -1786,6 +1817,8 @@ pub struct MagicPromptBackends {
     pub resolve_conflicts_backend: Option<String>,
     #[serde(default)]
     pub release_notes_backend: Option<String>,
+    #[serde(default)]
+    pub release_post_backend: Option<String>,
     #[serde(default)]
     pub session_naming_backend: Option<String>,
     #[serde(default)]
@@ -1822,6 +1855,8 @@ pub struct MagicPromptReasoningEfforts {
     #[serde(default)]
     pub release_notes_effort: Option<String>,
     #[serde(default)]
+    pub release_post_effort: Option<String>,
+    #[serde(default)]
     pub session_naming_effort: Option<String>,
     #[serde(default)]
     pub session_recap_effort: Option<String>,
@@ -1857,7 +1892,7 @@ impl MagicPrompts {
     /// This ensures users who never customized a prompt get auto-updated defaults.
     fn migrate_defaults(&mut self) -> bool {
         type DefaultEntry<'a> = (fn() -> String, &'a mut Option<String>);
-        let defaults: [DefaultEntry; 18] = [
+        let defaults: [DefaultEntry; 19] = [
             (
                 default_investigate_issue_prompt,
                 &mut self.investigate_issue,
@@ -1878,6 +1913,7 @@ impl MagicPrompts {
                 default_parallel_execution_prompt,
                 &mut self.parallel_execution,
             ),
+            (default_release_post_prompt, &mut self.release_post),
             (default_claude_system_prompt, &mut self.claude_system_prompt),
             (default_codex_system_prompt, &mut self.codex_system_prompt),
             (
@@ -4324,6 +4360,7 @@ pub fn run() {
             projects::cancel_review_with_ai,
             projects::list_github_releases,
             projects::generate_release_notes,
+            projects::generate_release_post,
             projects::commit_changes,
             projects::open_project_on_github,
             projects::open_branch_on_github,

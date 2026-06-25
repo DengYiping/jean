@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  CODEX_DEFAULT_MAGIC_PROMPT_MODELS,
   CODEX_DEFAULT_MAGIC_PROMPT_EFFORTS,
   DEFAULT_AUTOMATION_RUN_PROMPT,
   DEFAULT_CLAUDE_SYSTEM_PROMPT,
@@ -17,6 +18,7 @@ import {
   normalizeCodexModelProviderOverrides,
   normalizeCodexModel,
   normalizeCustomCodexModels,
+  OPENCODE_DEFAULT_MAGIC_PROMPT_MODELS,
   OPENCODE_DEFAULT_MAGIC_PROMPT_EFFORTS,
   resolveMagicPromptBackend,
   type MagicPromptBackends,
@@ -191,6 +193,22 @@ describe('magic prompt review comments defaults', () => {
     expect(OPENCODE_DEFAULT_MAGIC_PROMPT_EFFORTS.review_comments_effort).toBe(
       'medium'
     )
+  })
+})
+
+describe('magic release post defaults', () => {
+  it('includes release post overrides in shared backend presets', () => {
+    expect(DEFAULT_MAGIC_PROMPTS.release_post).toBeNull()
+    expect(DEFAULT_MAGIC_PROMPT_MODELS.release_post_model).toBe('sonnet')
+    expect(CODEX_DEFAULT_MAGIC_PROMPT_MODELS.release_post_model).toBe(
+      'gpt-5.3-codex'
+    )
+    expect(OPENCODE_DEFAULT_MAGIC_PROMPT_MODELS.release_post_model).toBe(
+      'opencode/gpt-5.3-codex'
+    )
+    expect(DEFAULT_MAGIC_PROMPT_PROVIDERS.release_post_provider).toBeNull()
+    expect(DEFAULT_MAGIC_PROMPT_EFFORTS.release_post_effort).toBeNull()
+    expect(CODEX_DEFAULT_MAGIC_PROMPT_EFFORTS.release_post_effort).toBe('low')
   })
 })
 

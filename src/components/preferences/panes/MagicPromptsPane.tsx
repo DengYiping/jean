@@ -41,6 +41,7 @@ import {
   DEFAULT_INVESTIGATE_ADVISORY_PROMPT,
   DEFAULT_INVESTIGATE_LINEAR_ISSUE_PROMPT,
   DEFAULT_RELEASE_NOTES_PROMPT,
+  DEFAULT_RELEASE_POST_PROMPT,
   DEFAULT_REVIEW_COMMENTS_PROMPT,
   DEFAULT_AUTOMATION_RUN_PROMPT,
   DEFAULT_SESSION_NAMING_PROMPT,
@@ -404,6 +405,30 @@ const PROMPT_SECTIONS: PromptSection[] = [
           },
         ],
         defaultValue: DEFAULT_RELEASE_NOTES_PROMPT,
+        defaultModel: 'sonnet',
+      },
+      {
+        key: 'release_post',
+        modelKey: 'release_post_model',
+        providerKey: 'release_post_provider',
+        backendKey: 'release_post_backend',
+        effortKey: 'release_post_effort',
+        label: 'Release Post',
+        description:
+          'Prompt for generating short social release posts with a GitHub release link.',
+        variables: [
+          { name: '{tag}', description: 'Tag of the selected release' },
+          {
+            name: '{release_name}',
+            description: 'Name of the selected release',
+          },
+          { name: '{release_url}', description: 'GitHub release URL' },
+          {
+            name: '{release_body}',
+            description: 'Release notes body from GitHub',
+          },
+        ],
+        defaultValue: DEFAULT_RELEASE_POST_PROMPT,
         defaultModel: 'sonnet',
       },
     ],

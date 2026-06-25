@@ -298,6 +298,24 @@ export const defaultResponses: Record<string, unknown> = {
   list_github_prs: [],
   search_github_prs: [],
   get_github_pr_by_number: null,
+  list_github_releases: [
+    {
+      tagName: 'v1.0.0',
+      name: 'v1.0.0',
+      publishedAt: '2026-01-01T00:00:00Z',
+      isLatest: true,
+      isDraft: false,
+      isPrerelease: false,
+    },
+  ],
+  generate_release_notes: {
+    title: 'v1.0.0',
+    body: 'Test release notes',
+  },
+  generate_release_post: {
+    post: 'Jean v1.0.0 is out. https://github.com/test/repo/releases/tag/v1.0.0',
+    release_url: 'https://github.com/test/repo/releases/tag/v1.0.0',
+  },
   list_dependabot_alerts: [],
   get_dependabot_alert: null,
   list_repository_advisories: [],

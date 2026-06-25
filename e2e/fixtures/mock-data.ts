@@ -93,6 +93,7 @@ export const mockPreferences = {
     resolve_conflicts: null,
     investigate_workflow_run: null,
     release_notes: null,
+    release_post: null,
     session_naming: null,
     parallel_execution: null,
     claude_system_prompt: null,

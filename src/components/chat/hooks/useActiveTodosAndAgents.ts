@@ -44,6 +44,8 @@ function normalizeAgentStatus(status?: string | null): {
       return { status: 'completed', label: 'Completed' }
     case 'shutdown':
       return { status: 'completed', label: 'Closed' }
+    case 'interrupted':
+      return { status: 'interrupted', label: 'Interrupted' }
     case 'errored':
       return { status: 'errored', label: 'Errored' }
     case 'notFound':

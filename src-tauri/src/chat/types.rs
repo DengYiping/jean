@@ -744,6 +744,7 @@ pub struct LoadedMessages {
 pub enum CodexSubAgentStatus {
     Starting,
     Running,
+    Interrupted,
     Completed,
     Errored,
     Closed,

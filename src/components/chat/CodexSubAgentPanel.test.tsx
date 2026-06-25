@@ -132,4 +132,26 @@ describe('CodexSubAgentPanel', () => {
     expect(screen.getByText('Agent spawn-1')).toBeInTheDocument()
     expect(screen.getByText('Starting')).toBeInTheDocument()
   })
+
+  it('renders interrupted agents without an active spinner', () => {
+    render(
+      <CodexSubAgentPanel
+        defaultOpen
+        agents={[
+          {
+            id: 'agent-1',
+            name: 'auth scout',
+            status: 'interrupted',
+            latestMessage: 'Stopped by user',
+            receiverThreadIds: ['agent-1'],
+            events: [],
+          },
+        ]}
+      />
+    )
+
+    expect(screen.getByText('Interrupted')).toBeInTheDocument()
+    expect(screen.getByText('Stopped by user')).toBeInTheDocument()
+    expect(document.querySelector('.animate-spin')).not.toBeInTheDocument()
+  })
 })

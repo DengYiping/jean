@@ -646,28 +646,8 @@ fn normalize_codex_sub_agent_status(status: Option<&str>) -> CodexSubAgentStatus
         Some("notFound") | Some("not_found") => CodexSubAgentStatus::NotFound,
         Some("pendingInit") | Some("pending_init") => CodexSubAgentStatus::Starting,
         Some("running") | Some("inProgress") | Some("in_progress") => CodexSubAgentStatus::Running,
+        Some("interrupted") => CodexSubAgentStatus::Interrupted,
         _ => CodexSubAgentStatus::Running,
-    }
-}
-
-fn codex_sub_agent_status_rank(status: &CodexSubAgentStatus) -> u8 {
-    match status {
-        CodexSubAgentStatus::Errored | CodexSubAgentStatus::NotFound => 5,
-        CodexSubAgentStatus::Closed => 4,
-        CodexSubAgentStatus::Completed => 3,
-        CodexSubAgentStatus::Running => 2,
-        CodexSubAgentStatus::Starting => 1,
-    }
-}
-
-fn merge_codex_sub_agent_status(
-    current: &CodexSubAgentStatus,
-    next: CodexSubAgentStatus,
-) -> CodexSubAgentStatus {
-    if codex_sub_agent_status_rank(&next) >= codex_sub_agent_status_rank(current) {
-        next
-    } else {
-        current.clone()
     }
 }
 
@@ -760,7 +740,7 @@ fn upsert_codex_sub_agent(
             entry.receiver_thread_ids.push(receiver_thread_id);
         }
     }
-    entry.status = merge_codex_sub_agent_status(&entry.status, patch.status);
+    entry.status = patch.status;
     entry.events.push(patch.event);
 }
 
@@ -8382,6 +8362,62 @@ mod tests {
         assert_eq!(agent.sender_thread_id.as_deref(), Some("parent-thread"));
         assert_eq!(agent.receiver_thread_ids, vec!["agent-1".to_string()]);
         assert_eq!(agent.events.len(), 2);
+    }
+
+    #[test]
+    fn codex_sub_agent_introspection_preserves_interrupted_status() {
+        let session = codex_test_session(vec![collab_tool(
+            "wait-1",
+            "WaitForAgents",
+            serde_json::json!({
+                "status": "completed",
+                "receiverThreadIds": ["agent-1"],
+                "agentsStates": {
+                    "agent-1": {
+                        "status": "interrupted",
+                        "message": "Stopped by user"
+                    }
+                }
+            }),
+        )]);
+
+        let response = build_codex_sub_agent_introspection(&session);
+
+        assert_eq!(response.agents.len(), 1);
+        assert_eq!(response.agents[0].status, CodexSubAgentStatus::Interrupted);
+    }
+
+    #[test]
+    fn codex_sub_agent_introspection_allows_resumed_agent_to_run_again() {
+        let session = codex_test_session(vec![
+            collab_tool(
+                "close-1",
+                "CloseAgent",
+                serde_json::json!({
+                    "status": "completed",
+                    "receiverThreadIds": ["agent-1"],
+                    "agentsStates": {
+                        "agent-1": { "status": "shutdown" }
+                    }
+                }),
+            ),
+            collab_tool(
+                "resume-1",
+                "ResumeAgent",
+                serde_json::json!({
+                    "status": "completed",
+                    "receiverThreadIds": ["agent-1"],
+                    "agentsStates": {
+                        "agent-1": { "status": "running" }
+                    }
+                }),
+            ),
+        ]);
+
+        let response = build_codex_sub_agent_introspection(&session);
+
+        assert_eq!(response.agents.len(), 1);
+        assert_eq!(response.agents[0].status, CodexSubAgentStatus::Running);
     }
 
     #[test]

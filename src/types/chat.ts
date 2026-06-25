@@ -915,7 +915,7 @@ export interface CodexAgent {
   /** The task prompt or best available label for this agent */
   prompt: string
   /** Agent lifecycle status */
-  status: 'in_progress' | 'completed' | 'errored'
+  status: 'in_progress' | 'interrupted' | 'completed' | 'errored'
   /** Current progress text derived from agents_states / collab lifecycle */
   message?: string
 }
@@ -923,6 +923,7 @@ export interface CodexAgent {
 export type CodexSubAgentStatus =
   | 'starting'
   | 'running'
+  | 'interrupted'
   | 'completed'
   | 'errored'
   | 'closed'

@@ -165,4 +165,42 @@ describe('useActiveTodosAndAgents', () => {
       },
     ])
   })
+
+  it('preserves interrupted agent status from Codex', () => {
+    const currentToolCalls: ToolCall[] = [
+      {
+        id: 'wait-1',
+        name: 'WaitForAgents',
+        input: {
+          status: 'completed',
+          receiverThreadIds: ['agent-1'],
+          agentsStates: {
+            'agent-1': {
+              status: 'interrupted',
+              message: 'Stopped by user',
+            },
+          },
+        },
+      },
+    ]
+
+    const { result } = renderHook(() =>
+      useActiveTodosAndAgents({
+        activeSessionId: 'session-1',
+        isSending: true,
+        currentToolCalls,
+        lastAssistantMessage: undefined,
+      })
+    )
+
+    expect(result.current.activeAgents).toEqual([
+      {
+        id: 'agent-1',
+        name: 'Agent agent-1',
+        prompt: 'Sub-agent',
+        status: 'interrupted',
+        message: 'Interrupted: Stopped by user',
+      },
+    ])
+  })
 })

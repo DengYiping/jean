@@ -68,6 +68,8 @@ function fallbackStatus(status: CodexAgent['status']): CodexSubAgentStatus {
       return 'completed'
     case 'errored':
       return 'errored'
+    case 'interrupted':
+      return 'interrupted'
     default:
       return 'running'
   }
@@ -108,6 +110,8 @@ function statusLabel(status: CodexSubAgentStatus) {
       return 'Starting'
     case 'running':
       return 'Running'
+    case 'interrupted':
+      return 'Interrupted'
     case 'completed':
       return 'Completed'
     case 'errored':
@@ -125,6 +129,7 @@ function statusClassName(status: CodexSubAgentStatus) {
       return 'bg-green-500/15 text-green-600 dark:text-green-400'
     case 'errored':
     case 'not_found':
+    case 'interrupted':
       return 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
     case 'closed':
       return 'bg-muted text-muted-foreground'
@@ -140,6 +145,9 @@ function StatusIcon({ status }: { status: CodexSubAgentStatus }) {
   }
   if (status === 'errored' || status === 'not_found') {
     return <XCircle className="h-4 w-4 text-amber-500" />
+  }
+  if (status === 'interrupted') {
+    return <CircleDot className="h-4 w-4 text-amber-500" />
   }
   if (status === 'closed') {
     return <CircleDot className="h-4 w-4 text-muted-foreground" />
@@ -162,14 +170,20 @@ export function CodexSubAgentPanel({
     [agents, fallbackAgents]
   )
 
-  const completedCount = displayAgents.filter(
-    agent => agent.status === 'completed' || agent.status === 'closed'
+  const resolvedCount = displayAgents.filter(
+    agent =>
+      agent.status === 'completed' ||
+      agent.status === 'closed' ||
+      agent.status === 'interrupted'
   ).length
   const runningCount = displayAgents.filter(
     agent => agent.status === 'running' || agent.status === 'starting'
   ).length
-  const errorCount = displayAgents.filter(
-    agent => agent.status === 'errored' || agent.status === 'not_found'
+  const warningCount = displayAgents.filter(
+    agent =>
+      agent.status === 'errored' ||
+      agent.status === 'not_found' ||
+      agent.status === 'interrupted'
   ).length
   const totalCount = displayAgents.length
 
@@ -199,14 +213,14 @@ export function CodexSubAgentPanel({
               className={cn(
                 'rounded bg-muted/50 px-1.5 py-0.5 text-xs',
                 totalCount > 0 &&
-                  completedCount === totalCount &&
-                  errorCount === 0 &&
+                  resolvedCount === totalCount &&
+                  warningCount === 0 &&
                   'bg-green-500/20 text-green-600 dark:text-green-400',
-                errorCount > 0 &&
+                warningCount > 0 &&
                   'bg-amber-500/20 text-amber-600 dark:text-amber-400'
               )}
             >
-              {completedCount}/{totalCount}
+              {resolvedCount}/{totalCount}
             </span>
             {runningCount > 0 && (
               <span className="rounded bg-blue-500/15 px-1.5 py-0.5 text-blue-600 dark:text-blue-400">

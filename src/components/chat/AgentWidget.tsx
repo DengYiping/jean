@@ -6,6 +6,7 @@ import {
   Users,
   XCircle,
   X,
+  CircleDot,
 } from 'lucide-react'
 import type { CodexAgent } from '@/types/chat'
 import { cn } from '@/lib/utils'
@@ -47,7 +48,9 @@ export function AgentWidget({
   const resolvedCount = agents.filter(a => a.status !== 'in_progress').length
   const totalCount = agents.length
   const allResolved = resolvedCount === totalCount && totalCount > 0
-  const hasErrors = agents.some(a => a.status === 'errored')
+  const hasWarnings = agents.some(
+    a => a.status === 'errored' || a.status === 'interrupted'
+  )
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen} className={className}>
@@ -77,9 +80,9 @@ export function AgentWidget({
               className={cn(
                 'rounded bg-muted/50 px-1.5 py-0.5 text-xs',
                 allResolved &&
-                  !hasErrors &&
+                  !hasWarnings &&
                   'bg-green-500/20 text-green-600 dark:text-green-400',
-                hasErrors &&
+                hasWarnings &&
                   'bg-amber-500/20 text-amber-600 dark:text-amber-400'
               )}
             >
@@ -121,7 +124,8 @@ function AgentItem({ agent }: AgentItemProps) {
       className={cn(
         'block min-w-0 truncate text-muted-foreground',
         agent.status === 'completed' && 'line-through text-muted-foreground/60',
-        agent.status === 'errored' && 'text-muted-foreground/60'
+        (agent.status === 'errored' || agent.status === 'interrupted') &&
+          'text-muted-foreground/60'
       )}
     >
       {agent.name}
@@ -135,6 +139,8 @@ function AgentItem({ agent }: AgentItemProps) {
           <CheckCircle2 className="h-4 w-4 text-green-500" />
         ) : agent.status === 'errored' ? (
           <XCircle className="h-4 w-4 text-amber-500" />
+        ) : agent.status === 'interrupted' ? (
+          <CircleDot className="h-4 w-4 text-amber-500" />
         ) : (
           <Loader2 className="h-4 w-4 animate-spin text-primary" />
         )}

@@ -7135,6 +7135,18 @@ fn format_repo_slug(repo: &git::RepoIdentifier) -> String {
     format!("{}/{}", repo.owner, repo.repo)
 }
 
+fn existing_pr_view_args<'a>(repo: &'a str, branch: &'a str) -> [&'a str; 7] {
+    [
+        "pr",
+        "view",
+        branch,
+        "--repo",
+        repo,
+        "--json",
+        "number,url,title,isDraft",
+    ]
+}
+
 fn parse_existing_pr_view(stdout: &[u8]) -> Option<ExistingPrViewResponse> {
     let view = serde_json::from_slice::<ExistingPrViewResponse>(stdout).ok()?;
     if view.number == 0 || view.url.is_empty() {
@@ -7283,14 +7295,7 @@ pub async fn create_pr_with_ai_content(
 
     // Check if a PR already exists for this branch before spending time/tokens on AI generation
     let view_output = build_gh_command(&app, Some(&worktree_path))
-        .args([
-            "pr",
-            "view",
-            "--repo",
-            &target_repo_slug,
-            "--json",
-            "number,url,title,isDraft",
-        ])
+        .args(existing_pr_view_args(&target_repo_slug, &current_branch))
         .current_dir(&worktree_path)
         .output();
 
@@ -7461,14 +7466,7 @@ pub async fn create_pr_with_ai_content(
         if stderr.contains("already exists") {
             // Try to look up the existing PR and link it to the worktree
             let view_output = build_gh_command(&app, Some(&worktree_path))
-                .args([
-                    "pr",
-                    "view",
-                    "--repo",
-                    &target_repo_slug,
-                    "--json",
-                    "number,url,title,isDraft",
-                ])
+                .args(existing_pr_view_args(&target_repo_slug, &current_branch))
                 .current_dir(&worktree_path)
                 .output();
 
@@ -12422,6 +12420,22 @@ Body
 
         assert_eq!(parsed.number, 99);
         assert!(!parsed.is_draft);
+    }
+
+    #[test]
+    fn test_existing_pr_view_args_include_current_branch() {
+        assert_eq!(
+            existing_pr_view_args("owner/repo", "feature/test"),
+            [
+                "pr",
+                "view",
+                "feature/test",
+                "--repo",
+                "owner/repo",
+                "--json",
+                "number,url,title,isDraft",
+            ]
+        );
     }
 
     #[test]

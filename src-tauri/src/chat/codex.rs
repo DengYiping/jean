@@ -4223,6 +4223,14 @@ pub fn parse_codex_run_to_message(
 // One-shot Codex execution (for magic prompts with --output-schema)
 // =============================================================================
 
+fn one_shot_codex_model(model: &str) -> &str {
+    if model == "gpt-5.4-nano" {
+        "gpt-5.4-mini"
+    } else {
+        model
+    }
+}
+
 /// Execute a one-shot Codex CLI call with `--output-schema` for structured JSON output.
 ///
 /// Equivalent to Claude's `--json-schema` pattern but for Codex:
@@ -4245,6 +4253,7 @@ pub fn execute_one_shot_codex(
 
     // Split fast suffix: "gpt-5.4-fast" → model="gpt-5.4" + service_tier="fast"
     let (actual_model, is_fast) = split_fast_model(model);
+    let actual_model = one_shot_codex_model(actual_model);
 
     log::info!(
         "Executing one-shot Codex CLI: model={actual_model}, fast={is_fast}, working_dir={:?}, reasoning_effort={:?}",
@@ -4486,6 +4495,12 @@ mod tests {
         assert!(args.contains(&"mcp_servers={}".to_string()));
         assert!(args.contains(&"web_search=\"disabled\"".to_string()));
         assert!(!args.contains(&"--full-auto".to_string()));
+    }
+
+    #[test]
+    fn one_shot_codex_uses_mini_when_nano_cannot_accept_tool_search() {
+        assert_eq!(one_shot_codex_model("gpt-5.4-nano"), "gpt-5.4-mini");
+        assert_eq!(one_shot_codex_model("gpt-5.4-mini"), "gpt-5.4-mini");
     }
 
     #[test]

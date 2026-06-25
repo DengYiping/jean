@@ -658,6 +658,8 @@ export const MagicPromptsPane: React.FC<MagicPromptsPaneProps> = ({
   const [modelPopoverOpen, setModelPopoverOpen] = useState(false)
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const highlightTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const syncedSelectedKeyRef = useRef(selectedKey)
 
   const { data: availableOpencodeModels } = useAvailableOpencodeModels()
   const { installedBackends } = useInstalledBackends()
@@ -779,6 +781,11 @@ export const MagicPromptsPane: React.FC<MagicPromptsPaneProps> = ({
 
   // Sync local value when selection changes or external value updates
   useEffect(() => {
+    const selectionChanged = syncedSelectedKeyRef.current !== selectedKey
+    syncedSelectedKeyRef.current = selectedKey
+    if (!selectionChanged && document.activeElement === textareaRef.current) {
+      return
+    }
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLocalValue(currentValue)
   }, [currentValue, selectedKey])
@@ -1347,6 +1354,7 @@ export const MagicPromptsPane: React.FC<MagicPromptsPaneProps> = ({
 
           {/* Textarea - fills remaining space */}
           <Textarea
+            ref={textareaRef}
             value={localValue}
             onChange={e => handleChange(e.target.value)}
             onBlur={handleBlur}

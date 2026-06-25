@@ -104,4 +104,10 @@ describe('MagicPromptsPane', () => {
     expect(textarea).toHaveFocus()
     expect(textarea.selectionStart).toBe(12)
   })
+
+  it('includes release post as an editable magic prompt', () => {
+    render(<MagicPromptsPane />)
+
+    expect(screen.getByText('Release Post')).toBeInTheDocument()
+  })
 })

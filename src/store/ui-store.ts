@@ -29,6 +29,7 @@ export type CliLoginModalType =
   | null
 export type MainView = 'workspace' | 'agent_board'
 export type SessionPrimarySurface = 'chat' | 'terminal'
+export type ReleaseNotesModalMode = 'notes' | 'post'
 export type NewSessionModeOrigin = 'chat' | 'modal' | 'canvas'
 export type NewSessionModeIntent = 'picker' | 'default'
 
@@ -63,6 +64,7 @@ interface UIState {
   newWorktreeModalOpen: boolean
   newWorktreeModalDefaultTab: 'quick' | 'issues' | 'prs' | 'security' | null
   releaseNotesModalOpen: boolean
+  releaseNotesModalMode: ReleaseNotesModalMode
   updatePrModalOpen: boolean
   reviewCommentsModalOpen: boolean
   pullRequestReviewDialog: PullRequestReviewDialogRequest | null
@@ -153,6 +155,7 @@ interface UIState {
     tab: 'quick' | 'issues' | 'prs' | 'security' | null
   ) => void
   setReleaseNotesModalOpen: (open: boolean) => void
+  setReleaseNotesModalMode: (mode: ReleaseNotesModalMode) => void
   setUpdatePrModalOpen: (open: boolean) => void
   setReviewCommentsModalOpen: (open: boolean) => void
   openPullRequestReviewDialog: (request: PullRequestReviewDialogRequest) => void
@@ -253,6 +256,7 @@ export const useUIStore = create<UIState>()(
       newWorktreeModalOpen: false,
       newWorktreeModalDefaultTab: null,
       releaseNotesModalOpen: false,
+      releaseNotesModalMode: 'notes',
       updatePrModalOpen: false,
       reviewCommentsModalOpen: false,
       pullRequestReviewDialog: null,
@@ -441,6 +445,16 @@ export const useUIStore = create<UIState>()(
           { releaseNotesModalOpen: open },
           undefined,
           'setReleaseNotesModalOpen'
+        ),
+
+      setReleaseNotesModalMode: mode =>
+        set(
+          state =>
+            state.releaseNotesModalMode === mode
+              ? state
+              : { releaseNotesModalMode: mode },
+          undefined,
+          'setReleaseNotesModalMode'
         ),
 
       setUpdatePrModalOpen: open =>

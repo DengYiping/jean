@@ -17,6 +17,7 @@ import {
   Sparkles,
   Undo2,
   Link2,
+  Megaphone,
 } from 'lucide-react'
 import {
   Dialog,
@@ -85,6 +86,7 @@ type MagicOption =
   | 'merge'
   | 'resolve-conflicts'
   | 'release-notes'
+  | 'release-post'
   | 'investigate-issue'
   | 'investigate-pr'
   | 'merge-pr'
@@ -114,6 +116,7 @@ const CANVAS_ALLOWED_OPTIONS = new Set<MagicOption>([
   'review',
   'review-comments',
   'release-notes',
+  'release-post',
   'merge',
   'merge-pr',
   'ready-for-review',
@@ -259,6 +262,12 @@ function buildMagicColumns(
           key: 'G',
         },
         {
+          id: 'release-post',
+          label: 'Generate Release Post',
+          icon: Megaphone,
+          key: 'X',
+        },
+        {
           id: 'update-pr',
           label: 'Generate PR Description',
           icon: RefreshCw,
@@ -315,6 +324,7 @@ const KEY_TO_OPTION: Record<string, MagicOption> = {
   m: 'merge',
   f: 'resolve-conflicts',
   g: 'release-notes',
+  x: 'release-post',
   i: 'investigate-issue',
   a: 'investigate-pr',
   n: 'merge-pr',
@@ -786,13 +796,41 @@ export function MagicModal() {
               { worktreeId: selectedWorktreeId }
             )
 
-            if (!result.has_conflicts) {
+            let conflictsResult = result
+            let sessionName = 'Resolve conflicts'
+            let promptIntro = 'I have merge conflicts that need to be resolved.'
+
+            if (
+              !conflictsResult.has_conflicts &&
+              (worktree.pr_number || worktree.pr_url)
+            ) {
+              const prResult = await invoke<MergeConflictsResponse>(
+                'fetch_and_merge_base',
+                { worktreeId: selectedWorktreeId }
+              )
+
+              if (!prResult.has_conflicts) {
+                toast.success('No conflicts - base branch merged cleanly', {
+                  id: toastId,
+                })
+                triggerImmediateGitPoll()
+                return
+              }
+
+              conflictsResult = prResult
+              sessionName = 'PR: resolve conflicts'
+              const baseBranch =
+                worktree.base_branch ?? project?.default_branch ?? 'main'
+              promptIntro = `I merged \`origin/${baseBranch}\` into this branch to resolve PR conflicts, but there are merge conflicts.`
+            }
+
+            if (!conflictsResult.has_conflicts) {
               toast.info('No merge conflicts detected', { id: toastId })
               return
             }
 
             toast.warning(
-              `Found conflicts in ${result.conflicts.length} file(s)`,
+              `Found conflicts in ${conflictsResult.conflicts.length} file(s)`,
               {
                 id: toastId,
                 description: 'Opening conflict resolution session...',
@@ -811,7 +849,7 @@ export function MagicModal() {
             const newSession = await invoke<Session>('create_session', {
               worktreeId: selectedWorktreeId,
               worktreePath: worktree.path,
-              name: 'Resolve conflicts',
+              name: sessionName,
             })
 
             // Inherit model/mode/thinking settings from current session
@@ -831,15 +869,15 @@ export function MagicModal() {
             )
 
             // Build conflict resolution prompt
-            const conflictFiles = result.conflicts.join('\n- ')
-            const diffSection = result.conflict_diff
-              ? `\n\nHere is the diff showing the conflict details:\n\n\`\`\`diff\n${result.conflict_diff}\n\`\`\``
+            const conflictFiles = conflictsResult.conflicts.join('\n- ')
+            const diffSection = conflictsResult.conflict_diff
+              ? `\n\nHere is the diff showing the conflict details:\n\n\`\`\`diff\n${conflictsResult.conflict_diff}\n\`\`\``
               : ''
             const resolveInstructions =
               preferences?.magic_prompts?.resolve_conflicts ??
               DEFAULT_RESOLVE_CONFLICTS_PROMPT
 
-            const conflictPrompt = `I have merge conflicts that need to be resolved.
+            const conflictPrompt = `${promptIntro}
 
 Conflicts in these files:
 - ${conflictFiles}${diffSection}
@@ -1128,13 +1166,18 @@ ${resolveInstructions}`
         return
       }
 
-      // release-notes only needs a project selected, not a worktree
-      if (option === 'release-notes') {
+      // Release generation only needs a project selected, not a worktree
+      if (option === 'release-notes' || option === 'release-post') {
         if (!selectedProjectId) {
           notify('No project selected', undefined, { type: 'error' })
           setMagicModalOpen(false)
           return
         }
+        useUIStore
+          .getState()
+          .setReleaseNotesModalMode(
+            option === 'release-post' ? 'post' : 'notes'
+          )
         useUIStore.getState().setReleaseNotesModalOpen(true)
         setMagicModalOpen(false)
         return

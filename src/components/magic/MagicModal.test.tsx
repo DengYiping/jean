@@ -17,6 +17,7 @@ const hoisted = vi.hoisted(() => {
   const invokeMock = vi.fn()
   const openExternalMock = vi.fn()
   const setMagicModalOpenMock = vi.fn()
+  const setReleaseNotesModalModeMock = vi.fn()
   const setWorktreeLoadingMock = vi.fn()
   const clearWorktreeLoadingMock = vi.fn()
   const triggerImmediateGitPollMock = vi.fn()
@@ -31,6 +32,7 @@ const hoisted = vi.hoisted(() => {
     setReviewCommentsModalOpen: vi.fn(),
     setLinkedProjectsModalOpen: vi.fn(),
     setReleaseNotesModalOpen: vi.fn(),
+    setReleaseNotesModalMode: setReleaseNotesModalModeMock,
   }
 
   const projectsStore = {
@@ -53,6 +55,7 @@ const hoisted = vi.hoisted(() => {
     invokeMock,
     openExternalMock,
     setMagicModalOpenMock,
+    setReleaseNotesModalModeMock,
     setWorktreeLoadingMock,
     clearWorktreeLoadingMock,
     triggerImmediateGitPollMock,
@@ -216,6 +219,7 @@ describe('MagicModal', () => {
     hoisted.invokeMock.mockReset()
     hoisted.openExternalMock.mockReset()
     hoisted.setMagicModalOpenMock.mockReset()
+    hoisted.setReleaseNotesModalModeMock.mockReset()
     hoisted.setWorktreeLoadingMock.mockReset()
     hoisted.clearWorktreeLoadingMock.mockReset()
     hoisted.triggerImmediateGitPollMock.mockReset()
@@ -325,5 +329,14 @@ describe('MagicModal', () => {
         }
       )
     })
+  })
+
+  it('opens release post generation from the magic release section', () => {
+    render(<MagicModal />)
+
+    fireEvent.keyDown(getDialogContent(), { key: 'x' })
+
+    expect(hoisted.setReleaseNotesModalModeMock).toHaveBeenCalledWith('post')
+    expect(hoisted.setMagicModalOpenMock).toHaveBeenCalledWith(false)
   })
 })

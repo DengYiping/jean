@@ -439,7 +439,7 @@ export function ReleaseNotesDialog() {
               />
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <Button
                 variant="outline"
                 size="sm"
@@ -454,7 +454,7 @@ export function ReleaseNotesDialog() {
                 />
                 Regenerate
               </Button>
-              <div className="flex-1" />
+              <div className="hidden flex-1 sm:block" />
               {releaseNotesModalMode === 'post' && releaseUrl && (
                 <Button
                   variant="outline"

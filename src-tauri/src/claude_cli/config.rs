@@ -12,12 +12,6 @@ pub struct ResolvedClaudeCommand {
     pub display: String,
 }
 
-/// Name of the Claude CLI binary
-#[cfg(windows)]
-pub const CLI_BINARY_NAME: &str = "claude.exe";
-#[cfg(not(windows))]
-pub const CLI_BINARY_NAME: &str = "claude";
-
 fn expand_home_path(path: &str) -> PathBuf {
     if path == "~" {
         return dirs::home_dir().unwrap_or_else(|| PathBuf::from(path));
@@ -58,9 +52,8 @@ fn resolve_program_path(program: &str) -> Result<PathBuf, String> {
 
 /// Get the full path to the Claude CLI binary from the host system.
 pub fn get_cli_binary_path(_app: &AppHandle) -> Result<PathBuf, String> {
-    which::which(CLI_BINARY_NAME)
-        .or_else(|_| which::which("claude"))
-        .map_err(|e| format!("Failed to resolve Claude CLI from PATH: {e}"))
+    crate::platform::find_cli_in_host_path("claude", None)
+        .ok_or_else(|| "Failed to resolve Claude CLI from PATH".to_string())
 }
 
 /// Legacy managed CLI directory. Bundled installs are no longer used.

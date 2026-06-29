@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback, memo } from 'react'
 import { Plus, X, Minus, Terminal, ChevronUp } from 'lucide-react'
 import { invoke } from '@/lib/transport'
+import { middleClickClose } from '@/lib/middle-click'
 import { useTerminal } from '@/hooks/useTerminal'
 import {
   isPanelTerminal,
@@ -284,6 +285,9 @@ export function TerminalView({
                 key={terminal.id}
                 type="button"
                 onClick={() => handleSelectTerminal(terminal.id)}
+                {...middleClickClose(
+                  e => void handleCloseTerminal(e, terminal.id)
+                )}
                 className={cn(
                   'group flex shrink-0 items-center gap-1.5 border-r border-neutral-700 px-3 py-1.5 text-xs transition-colors',
                   isActive

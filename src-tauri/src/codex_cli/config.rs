@@ -1,6 +1,5 @@
 //! Configuration and path management for the Codex CLI.
 
-use crate::platform::silent_command;
 use serde::Serialize;
 use std::path::Path;
 use std::path::PathBuf;
@@ -90,27 +89,8 @@ pub fn get_cli_binary_path(app: &AppHandle) -> Result<PathBuf, String> {
 /// name.
 pub fn resolve_cli_binary(app: &AppHandle) -> PathBuf {
     let _ = app;
-    let which_cmd = if cfg!(target_os = "windows") {
-        "where"
-    } else {
-        "which"
-    };
-
-    if let Ok(output) = silent_command(which_cmd).arg("codex").output() {
-        if output.status.success() {
-            let path_str = String::from_utf8_lossy(&output.stdout)
-                .lines()
-                .next()
-                .unwrap_or("")
-                .trim()
-                .to_string();
-            if !path_str.is_empty() {
-                let path = PathBuf::from(&path_str);
-                if path.exists() {
-                    return path;
-                }
-            }
-        }
+    if let Some(path) = crate::platform::find_cli_in_host_path("codex", None) {
+        return path;
     }
 
     PathBuf::from("codex")

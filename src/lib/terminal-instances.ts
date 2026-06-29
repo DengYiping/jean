@@ -12,6 +12,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { openExternal } from '@/lib/platform'
+import { attachOrphanCompositionEndGuard } from '@/lib/terminal-composition-guard'
 import {
   invoke,
   isTransportConnected,
@@ -37,6 +38,7 @@ interface PersistentTerminal {
   command: string | null
   commandArgs: string[] | null
   initialized: boolean // PTY has been started
+  compositionGuardCleanup: (() => void) | null
   onStopped?: (exitCode: number | null, signal: string | null) => void
 }
 
@@ -295,6 +297,7 @@ export function getOrCreateTerminal(
     command,
     commandArgs,
     initialized: false,
+    compositionGuardCleanup: null,
   }
 
   // Apply any pending onStopped callback registered before creation
@@ -354,6 +357,17 @@ export async function attachToContainer(
     // Re-attach - move DOM element to new container
     container.appendChild(terminalElement)
   }
+
+  instance.compositionGuardCleanup?.()
+  instance.compositionGuardCleanup = attachOrphanCompositionEndGuard(
+    container,
+    data =>
+      (
+        terminal as unknown as {
+          input(data: string, wasUserInput?: boolean): void
+        }
+      ).input(data, true)
+  )
 
   // Fit terminal to container and start/reconnect PTY
   requestAnimationFrame(async () => {
@@ -450,6 +464,8 @@ export function detachFromContainer(terminalId: string): void {
   if (terminalElement?.parentNode) {
     terminalElement.parentNode.removeChild(terminalElement)
   }
+  instance.compositionGuardCleanup?.()
+  instance.compositionGuardCleanup = null
 }
 
 /**
@@ -502,6 +518,8 @@ export async function disposeTerminal(terminalId: string): Promise<void> {
   }
 
   // Dispose xterm.js (clears buffer, removes DOM)
+  instance.compositionGuardCleanup?.()
+  instance.compositionGuardCleanup = null
   instance.terminal.dispose()
 }
 

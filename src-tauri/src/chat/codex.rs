@@ -1855,6 +1855,14 @@ fn notification_to_history_line(
             let line = serde_json::json!({ "type": "item.updated", "item": normalized });
             return serde_json::to_string(&line).ok();
         }
+        "item/fileChange/patchUpdated" => {
+            let line = serde_json::json!({
+                "type": "item.file_change.patch_updated",
+                "item_id": params.get("itemId").cloned().unwrap_or(serde_json::Value::Null),
+                "changes": params.get("changes").cloned().unwrap_or(serde_json::json!([])),
+            });
+            return serde_json::to_string(&line).ok();
+        }
         "item/agentMessage/delta" => {
             // Delta events don't have a direct old-format equivalent; skip for history
             return None;
@@ -2045,6 +2053,31 @@ fn process_server_notification(
         "item/commandExecution/outputDelta" | "item/fileChange/outputDelta" => {
             // Streaming tool output — we could stream this but for now
             // we let item/completed handle it with the final aggregated output
+        }
+        "item/fileChange/patchUpdated" => {
+            let item_id = params.get("itemId").and_then(|v| v.as_str()).unwrap_or("");
+            let changes = params
+                .get("changes")
+                .cloned()
+                .unwrap_or_else(|| serde_json::json!([]));
+            let tool_id = upsert_file_change_tool_call(
+                tool_calls,
+                content_blocks,
+                pending_tool_ids,
+                item_id,
+                changes.clone(),
+            );
+            let _ = app.emit_all(
+                "chat:tool_use",
+                &ToolUseEvent {
+                    session_id: session_id.to_string(),
+                    worktree_id: worktree_id.to_string(),
+                    id: tool_id,
+                    name: "FileChange".to_string(),
+                    input: changes,
+                    parent_tool_use_id: None,
+                },
+            );
         }
         "turn/completed" => {
             // Extract usage from the turn object
@@ -3014,6 +3047,42 @@ fn upsert_codex_plan_tool(
     );
 }
 
+fn upsert_file_change_tool_call(
+    tool_calls: &mut Vec<ToolCall>,
+    content_blocks: &mut Vec<ContentBlock>,
+    pending_tool_ids: &mut HashMap<String, String>,
+    item_id: &str,
+    changes: serde_json::Value,
+) -> String {
+    let tool_id = if item_id.is_empty() {
+        uuid::Uuid::new_v4().to_string()
+    } else {
+        item_id.to_string()
+    };
+
+    if let Some(tool) = tool_calls.iter_mut().find(|tool| tool.id == tool_id) {
+        tool.name = "FileChange".to_string();
+        tool.input = changes;
+    } else {
+        tool_calls.push(ToolCall {
+            id: tool_id.clone(),
+            name: "FileChange".to_string(),
+            input: changes,
+            output: None,
+            parent_tool_use_id: None,
+        });
+        content_blocks.push(ContentBlock::ToolUse {
+            tool_call_id: tool_id.clone(),
+        });
+    }
+
+    if !item_id.is_empty() {
+        pending_tool_ids.insert(item_id.to_string(), tool_id.clone());
+    }
+
+    tool_id
+}
+
 /// Process a single Codex JSONL event. Shared between attached and detached tailers.
 #[allow(clippy::too_many_arguments)]
 fn process_codex_event(
@@ -3087,28 +3156,17 @@ fn process_codex_event(
                     );
                 }
                 "file_change" => {
-                    let tool_id = if item_id.is_empty() {
-                        uuid::Uuid::new_v4().to_string()
-                    } else {
-                        item_id.to_string()
-                    };
                     let changes = item
                         .get("changes")
                         .cloned()
-                        .unwrap_or(serde_json::Value::Null);
-                    tool_calls.push(ToolCall {
-                        id: tool_id.clone(),
-                        name: "FileChange".to_string(),
-                        input: changes.clone(),
-                        output: None,
-                        parent_tool_use_id: None,
-                    });
-                    content_blocks.push(ContentBlock::ToolUse {
-                        tool_call_id: tool_id.clone(),
-                    });
-                    if !item_id.is_empty() {
-                        pending_tool_ids.insert(item_id.to_string(), tool_id.clone());
-                    }
+                        .unwrap_or_else(|| serde_json::json!([]));
+                    let tool_id = upsert_file_change_tool_call(
+                        tool_calls,
+                        content_blocks,
+                        pending_tool_ids,
+                        item_id,
+                        changes.clone(),
+                    );
                     let _ = app.emit_all(
                         "chat:tool_use",
                         &ToolUseEvent {
@@ -3861,26 +3919,14 @@ pub fn parse_codex_run_to_message(
                         let changes = item
                             .get("changes")
                             .cloned()
-                            .unwrap_or(serde_json::Value::Null);
-                        let tool_id = if item_id.is_empty() {
-                            Uuid::new_v4().to_string()
-                        } else {
-                            item_id.to_string()
-                        };
-
-                        tool_calls.push(ToolCall {
-                            id: tool_id.clone(),
-                            name: "FileChange".to_string(),
-                            input: changes,
-                            output: None,
-                            parent_tool_use_id: None,
-                        });
-                        content_blocks.push(ContentBlock::ToolUse {
-                            tool_call_id: tool_id.clone(),
-                        });
-                        if !item_id.is_empty() {
-                            pending_tool_ids.insert(item_id.to_string(), tool_id);
-                        }
+                            .unwrap_or_else(|| serde_json::json!([]));
+                        upsert_file_change_tool_call(
+                            &mut tool_calls,
+                            &mut content_blocks,
+                            &mut pending_tool_ids,
+                            item_id,
+                            changes,
+                        );
                     }
                     "plan" => {
                         let plan_text = item
@@ -4000,6 +4046,20 @@ pub fn parse_codex_run_to_message(
                     }
                     _ => {}
                 }
+            }
+            "item.file_change.patch_updated" => {
+                let item_id = msg.get("item_id").and_then(|v| v.as_str()).unwrap_or("");
+                let changes = msg
+                    .get("changes")
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!([]));
+                upsert_file_change_tool_call(
+                    &mut tool_calls,
+                    &mut content_blocks,
+                    &mut pending_tool_ids,
+                    item_id,
+                    changes,
+                );
             }
             "item.completed" => {
                 let normalized_item = msg
@@ -5101,6 +5161,60 @@ mod tests {
             .expect("plan tool should be restored");
 
         assert_eq!(plan_tool.input["plan"], "# Plan\n- one\n");
+    }
+
+    #[test]
+    fn parse_codex_run_updates_file_change_from_patch_updated() {
+        let run = crate::chat::types::RunEntry {
+            run_id: "run-1".to_string(),
+            started_at: 1,
+            ended_at: Some(2),
+            status: crate::chat::types::RunStatus::Completed,
+            user_message_id: "user-1".to_string(),
+            assistant_message_id: Some("assistant-1".to_string()),
+            user_message: "Change a file".to_string(),
+            model: None,
+            backend: None,
+            execution_mode: Some("build".to_string()),
+            thinking_level: None,
+            effort_level: None,
+            claude_session_id: None,
+            pid: None,
+            cancelled: false,
+            recovered: false,
+            usage: None,
+        };
+
+        let lines = vec![
+            serde_json::json!({
+                "type": "item.started",
+                "item": { "type": "file_change", "id": "fc-1", "changes": [] }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "item.file_change.patch_updated",
+                "item_id": "fc-1",
+                "changes": [{
+                    "path": "src/lib.rs",
+                    "kind": { "type": "update" },
+                    "diff": "@@ -1 +1 @@\n-old\n+new\n"
+                }]
+            })
+            .to_string(),
+        ];
+
+        let message = parse_codex_run_to_message(&lines, &run).expect("message should parse");
+        let file_change = message
+            .tool_calls
+            .iter()
+            .find(|tool| tool.name == "FileChange")
+            .expect("file change tool should be restored");
+
+        assert_eq!(file_change.input[0]["path"], "src/lib.rs");
+        assert!(file_change.input[0]["diff"]
+            .as_str()
+            .expect("diff should be a string")
+            .contains("+new"));
     }
 
     #[test]

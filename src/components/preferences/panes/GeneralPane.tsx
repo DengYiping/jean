@@ -1062,6 +1062,12 @@ export const GeneralPane: React.FC = () => {
     }
   }
 
+  const handleDesktopNotificationsEnabledChange = (checked: boolean) => {
+    if (preferences) {
+      patchPreferences.mutate({ desktop_notifications_enabled: checked })
+    }
+  }
+
   const handleClaudeLogin = useCallback(async () => {
     if (!cliStatus?.path) return
 
@@ -2757,6 +2763,16 @@ export const GeneralPane: React.FC = () => {
         anchorId="pref-general-section-notifications"
       >
         <div className="space-y-4">
+          <InlineField
+            label="Desktop notifications"
+            description="Show a native system banner when a session needs your input or finishes while Jean is in the background."
+          >
+            <Switch
+              checked={preferences?.desktop_notifications_enabled ?? true}
+              onCheckedChange={handleDesktopNotificationsEnabledChange}
+            />
+          </InlineField>
+
           <InlineField
             label="Waiting sound"
             description="Play when session needs your input"

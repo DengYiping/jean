@@ -10,12 +10,6 @@ pub struct ResolvedCliCommand {
     pub display: String,
 }
 
-/// Name of the OpenCode CLI binary
-#[cfg(windows)]
-pub const CLI_BINARY_NAME: &str = "opencode.exe";
-#[cfg(not(windows))]
-pub const CLI_BINARY_NAME: &str = "opencode";
-
 fn expand_home_path(path: &str) -> PathBuf {
     if path == "~" {
         return dirs::home_dir().unwrap_or_else(|| PathBuf::from(path));
@@ -73,9 +67,8 @@ pub fn resolve_cli_command(app: &AppHandle) -> Result<ResolvedCliCommand, String
         }
     }
 
-    let program = which::which(CLI_BINARY_NAME)
-        .or_else(|_| which::which("opencode"))
-        .map_err(|e| format!("Failed to resolve OpenCode CLI from PATH: {e}"))?;
+    let program = crate::platform::find_cli_in_host_path("opencode", None)
+        .ok_or_else(|| "Failed to resolve OpenCode CLI from PATH".to_string())?;
 
     Ok(ResolvedCliCommand {
         display: program.to_string_lossy().to_string(),

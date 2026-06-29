@@ -113,6 +113,13 @@ describe('NewSessionModeModal', () => {
     expect(useUIStore.getState().sessionPrimarySurface['session-1']).toBe(
       'chat'
     )
+    expect(useChatStore.getState().executionModes['session-1']).toBe('plan')
+    expect(invoke).toHaveBeenCalledWith('update_session_state', {
+      worktreeId: 'worktree-1',
+      worktreePath: '/tmp/worktree-1',
+      sessionId: 'session-1',
+      selectedExecutionMode: 'plan',
+    })
   })
 
   it('auto-opens the default Jean chat session without showing the picker', async () => {

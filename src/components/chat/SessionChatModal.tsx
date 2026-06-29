@@ -1263,8 +1263,7 @@ export function SessionChatModal({
                       const isActive = session.id === currentSessionId
                       const status = getSessionStatus(session, storeState)
                       const config = statusConfig[status]
-                      const chatState = useChatStore.getState()
-                      const sessionLabel = chatState.sessionLabels[session.id]
+                      const sessionLabel = sessionLabels[session.id]
                       const sessionHasPlan =
                         !!planFilePaths[session.id] || !!session.plan_file_path
                       const sessionHasRecap =
@@ -1277,6 +1276,9 @@ export function SessionChatModal({
                             <button
                               data-session-id={session.id}
                               onClick={() => handleTabClick(session.id)}
+                              onMouseDown={e => {
+                                if (e.button === 1) e.preventDefault()
+                              }}
                               onAuxClick={e => handleTabAuxClick(e, session)}
                               onDoubleClick={() =>
                                 handleStartRenameImmediate(
@@ -1347,6 +1349,9 @@ export function SessionChatModal({
                               Rename
                             </ContextMenuItem>
                             <ContextMenuItem
+                              disabled={
+                                status === 'review' && !!session.review_results
+                              }
                               onSelect={() => {
                                 setLabelTargetSessionId(session.id)
                                 setLabelModalOpen(true)

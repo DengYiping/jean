@@ -45,6 +45,7 @@ type ResolveSelectionMode = 'settings-default' | 'custom'
 export interface ResolveConflictsOverride {
   backend: CliBackend
   model: string
+  provider?: string | null
 }
 
 interface ResolveConflictsDialogProps {
@@ -295,13 +296,18 @@ export function ResolveConflictsDialog({
             backend: customResolveBackend,
             model: effectiveCustomResolveModel,
           }
-        : undefined
+        : {
+            backend: resolveDefaults.backend,
+            model: resolveDefaults.model,
+            provider: resolveDefaults.provider ?? null,
+          }
     onConfirm(override)
     onOpenChange(false)
   }, [
     resolveSelectionMode,
     customResolveBackend,
     effectiveCustomResolveModel,
+    resolveDefaults,
     onConfirm,
     onOpenChange,
   ])

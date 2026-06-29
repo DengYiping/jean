@@ -814,81 +814,108 @@ export function useGitOperations({
   }, [activeWorktreeId, worktree, preferences?.removal_behavior, queryClient])
 
   // Handle Resolve Conflicts - detects existing merge conflicts and opens resolution session
-  const handleResolveConflicts = useCallback(async () => {
-    if (!activeWorktreeId || !worktree) return
+  const handleResolveConflicts = useCallback(
+    async (override?: ResolveConflictsOverride) => {
+      if (!activeWorktreeId || !worktree) return
 
-    const toastId = toast.loading('Checking for merge conflicts...')
+      const toastId = toast.loading('Checking for merge conflicts...')
 
-    try {
-      const result = await invoke<MergeConflictsResponse>(
-        'get_merge_conflicts',
-        { worktreeId: activeWorktreeId }
-      )
+      try {
+        const result = await invoke<MergeConflictsResponse>(
+          'get_merge_conflicts',
+          { worktreeId: activeWorktreeId }
+        )
 
-      if (!result.has_conflicts) {
-        toast.info('No merge conflicts detected', { id: toastId })
-        return
-      }
+        if (!result.has_conflicts) {
+          toast.info('No merge conflicts detected', { id: toastId })
+          return
+        }
 
-      toast.warning(`Found conflicts in ${result.conflicts.length} file(s)`, {
-        id: toastId,
-        description: 'Opening conflict resolution session...',
-      })
+        toast.warning(`Found conflicts in ${result.conflicts.length} file(s)`, {
+          id: toastId,
+          description: 'Opening conflict resolution session...',
+        })
 
-      const {
-        setActiveSession,
-        setInputDraft,
-        copySessionSettings,
-        activeSessionIds,
-      } = useChatStore.getState()
-      const currentSessionId = activeSessionIds[activeWorktreeId]
+        const {
+          setActiveSession,
+          setInputDraft,
+          copySessionSettings,
+          activeSessionIds,
+        } = useChatStore.getState()
+        const currentSessionId = activeSessionIds[activeWorktreeId]
 
-      // Create a NEW session tab for conflict resolution
-      const newSession = await invoke<Session>('create_session', {
-        worktreeId: activeWorktreeId,
-        worktreePath: worktree.path,
-        name: 'Resolve conflicts',
-      })
+        // Create a NEW session tab for conflict resolution
+        const newSession = await invoke<Session>('create_session', {
+          worktreeId: activeWorktreeId,
+          worktreePath: worktree.path,
+          name: 'Resolve conflicts',
+        })
 
-      // Inherit model/mode/thinking settings from current session
-      if (currentSessionId) copySessionSettings(currentSessionId, newSession.id)
+        // Inherit model/mode/thinking settings from current session
+        if (currentSessionId)
+          copySessionSettings(currentSessionId, newSession.id)
 
-      // Set the new session as active
-      setActiveSession(activeWorktreeId, newSession.id)
+        if (override) {
+          await invoke('set_session_backend', {
+            worktreeId: activeWorktreeId,
+            worktreePath: worktree.path,
+            sessionId: newSession.id,
+            backend: override.backend,
+          })
+          if (override.provider !== undefined) {
+            await invoke('set_session_provider', {
+              worktreeId: activeWorktreeId,
+              worktreePath: worktree.path,
+              sessionId: newSession.id,
+              provider: override.provider,
+            })
+          }
+          await invoke('set_session_model', {
+            worktreeId: activeWorktreeId,
+            worktreePath: worktree.path,
+            sessionId: newSession.id,
+            model: override.model,
+          })
+        }
 
-      // Build conflict resolution prompt with diff details
-      const conflictFiles = result.conflicts.join('\n- ')
-      const diffSection = result.conflict_diff
-        ? `\n\nHere is the diff showing the conflict details:\n\n\`\`\`diff\n${result.conflict_diff}\n\`\`\``
-        : ''
+        // Set the new session as active
+        setActiveSession(activeWorktreeId, newSession.id)
 
-      const resolveInstructions =
-        preferences?.magic_prompts?.resolve_conflicts ??
-        DEFAULT_RESOLVE_CONFLICTS_PROMPT
+        // Build conflict resolution prompt with diff details
+        const conflictFiles = result.conflicts.join('\n- ')
+        const diffSection = result.conflict_diff
+          ? `\n\nHere is the diff showing the conflict details:\n\n\`\`\`diff\n${result.conflict_diff}\n\`\`\``
+          : ''
 
-      const conflictPrompt = `I have merge conflicts that need to be resolved.
+        const resolveInstructions =
+          preferences?.magic_prompts?.resolve_conflicts ??
+          DEFAULT_RESOLVE_CONFLICTS_PROMPT
+
+        const conflictPrompt = `I have merge conflicts that need to be resolved.
 
 Conflicts in these files:
 - ${conflictFiles}${diffSection}
 
 ${resolveInstructions}`
 
-      // Set the input draft for the new session
-      setInputDraft(newSession.id, conflictPrompt)
+        // Set the input draft for the new session
+        setInputDraft(newSession.id, conflictPrompt)
 
-      // Invalidate queries to refresh session list in tab bar
-      queryClient.invalidateQueries({
-        queryKey: chatQueryKeys.sessions(activeWorktreeId),
-      })
+        // Invalidate queries to refresh session list in tab bar
+        queryClient.invalidateQueries({
+          queryKey: chatQueryKeys.sessions(activeWorktreeId),
+        })
 
-      // Focus input after a short delay to allow UI to update
-      setTimeout(() => {
-        inputRef.current?.focus()
-      }, 100)
-    } catch (error) {
-      toast.error(`Failed to check conflicts: ${error}`, { id: toastId })
-    }
-  }, [activeWorktreeId, worktree, preferences, queryClient, inputRef])
+        // Focus input after a short delay to allow UI to update
+        setTimeout(() => {
+          inputRef.current?.focus()
+        }, 100)
+      } catch (error) {
+        toast.error(`Failed to check conflicts: ${error}`, { id: toastId })
+      }
+    },
+    [activeWorktreeId, worktree, preferences, queryClient, inputRef]
+  )
 
   // Handle PR Conflicts - fetches base branch, merges locally to create conflict state
   const handleResolvePrConflicts = useCallback(async () => {

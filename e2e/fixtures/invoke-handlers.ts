@@ -43,6 +43,22 @@ export const defaultResponses: Record<string, unknown> = {
   list_worktree_slots: [],
   reset_worktree_slot: null,
   reset_idle_worktree_slots: null,
+  get_merge_conflicts: {
+    has_conflicts: false,
+    conflicts: [],
+    conflict_diff: '',
+  },
+  fetch_and_merge_base: {
+    has_conflicts: false,
+    conflicts: [],
+    conflict_diff: '',
+  },
+  merge_worktree_to_base: {
+    success: true,
+    commit_hash: 'abc1234',
+    conflicts: null,
+    conflict_diff: null,
+  },
   add_project: project,
   create_worktree: createWorktree(project.id, {
     name: 'new-worktree',

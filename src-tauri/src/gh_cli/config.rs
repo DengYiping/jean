@@ -36,21 +36,21 @@ pub fn get_gh_cli_binary_path(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 fn select_host_gh_path(output: &str, jean_managed_path: Option<&Path>) -> Option<PathBuf> {
-    let jean_managed_path = jean_managed_path.and_then(|path| std::fs::canonicalize(path).ok());
-
-    output
+    let existing_output = output
         .lines()
         .map(str::trim)
-        .filter(|path| !path.is_empty())
+        .filter(|line| !line.is_empty())
         .map(PathBuf::from)
         .filter(|path| path.exists())
-        .find(|path| {
-            let Some(jean_managed_path) = &jean_managed_path else {
-                return true;
-            };
+        .map(|path| path.to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join("\n");
 
-            std::fs::canonicalize(path).map_or(true, |canonical| canonical != *jean_managed_path)
-        })
+    crate::platform::select_cli_candidate(
+        &existing_output,
+        cfg!(target_os = "windows"),
+        jean_managed_path,
+    )
 }
 
 /// Find a host-system GitHub CLI in PATH, ignoring Jean-managed binaries.

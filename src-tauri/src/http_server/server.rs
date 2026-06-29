@@ -318,6 +318,16 @@ async fn version_handler(Query(params): Query<WsAuth>, State(state): State<AppSt
 const INIT_REPLAY_EVENT_CAP: usize = 200;
 const INIT_MESSAGE_WINDOW: usize = 50;
 
+fn server_platform_name() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "windows"
+    } else if cfg!(target_os = "macos") {
+        "mac"
+    } else {
+        "linux"
+    }
+}
+
 /// Initial data endpoint. Returns only the data needed to render the view the
 /// user lands on (project list + currently-selected project's worktrees +
 /// windowed messages for the focused session). Additional data is lazy-loaded
@@ -342,6 +352,7 @@ async fn init_handler(Query(params): Query<WsAuth>, State(state): State<AppState
     let build_info = read_web_build_info(&state.dist_path).await;
     response["webBuildId"] = Value::String(build_info.web_build_id.clone());
     response["appVersion"] = Value::String(build_info.app_version.clone());
+    response["serverPlatform"] = Value::String(server_platform_name().to_string());
 
     let projects = match projects_result {
         Ok(projects) => projects,
@@ -1160,8 +1171,8 @@ mod tests {
     use super::{
         bind_host_option_label, bind_host_option_rank, display_host_for_bind_ip,
         display_ip_for_bind_ip_with_candidates, format_http_url, is_tailscale_ipv4, parse_bind_ip,
-        path_is_in_known_roots, read_web_build_info, static_mime_from_extension,
-        validate_bind_host,
+        path_is_in_known_roots, read_web_build_info, server_platform_name,
+        static_mime_from_extension, validate_bind_host,
     };
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
     use std::path::PathBuf;
@@ -1189,6 +1200,14 @@ mod tests {
             parse_bind_ip("::1").unwrap(),
             IpAddr::V6(Ipv6Addr::LOCALHOST)
         );
+    }
+
+    #[test]
+    fn server_platform_name_matches_supported_frontend_values() {
+        assert!(matches!(
+            server_platform_name(),
+            "mac" | "windows" | "linux"
+        ));
     }
 
     #[test]

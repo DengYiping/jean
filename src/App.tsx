@@ -14,6 +14,7 @@ import {
   type InitialData,
 } from '@/lib/transport'
 import { isNativeApp } from '@/lib/environment'
+import { setServerPlatform } from '@/lib/platform'
 import { projectsQueryKeys } from '@/services/projects'
 import { chatQueryKeys } from '@/services/chat'
 import type {
@@ -235,6 +236,10 @@ function App() {
         sessionId: string
         message: Session['messages'][number]
       }[] = []
+
+      if (data.serverPlatform) {
+        setServerPlatform(data.serverPlatform)
+      }
 
       // Seed projects into TanStack Query cache
       if (data.projects) {

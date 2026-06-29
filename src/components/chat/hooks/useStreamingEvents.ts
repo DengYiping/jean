@@ -16,6 +16,7 @@ import type { AppPreferences, NotificationSound } from '@/types/preferences'
 import { triggerImmediateGitPoll } from '@/services/git-status'
 import { isAskUserQuestion, isExitPlanMode } from '@/types/chat'
 import { playNotificationSound } from '@/lib/sounds'
+import { notifyIfBackground } from '@/lib/session-notifications'
 import { findPlanFilePath } from '@/components/chat/tool-call-utils'
 import { lookupSessionLabel } from '@/components/chat/hooks/session-label-utils'
 import { generateId } from '@/lib/uuid'
@@ -157,6 +158,21 @@ function getReviewSoundPreference(queryClient: QueryClient): NotificationSound {
   return (queryClient.getQueryData<AppPreferences>(
     preferencesQueryKeys.preferences()
   )?.review_sound ?? 'none') as NotificationSound
+}
+
+function notifySession(
+  queryClient: QueryClient,
+  sessionId: string,
+  title: string
+): void {
+  const preferences = queryClient.getQueryData<AppPreferences>(
+    preferencesQueryKeys.preferences()
+  )
+  if (preferences?.desktop_notifications_enabled === false) return
+  const session = queryClient.getQueryData<Session>(
+    chatQueryKeys.session(sessionId)
+  )
+  notifyIfBackground(title, session?.name)
 }
 
 function updateAllSessionsCache(
@@ -633,6 +649,7 @@ export default function useStreamingEvents({
           })
         ) {
           playNotificationSound(getWaitingSoundPreference(queryClient))
+          notifySession(queryClient, session_id, 'Needs your input')
         }
       }
     })
@@ -765,6 +782,7 @@ export default function useStreamingEvents({
           })
         ) {
           playNotificationSound(getWaitingSoundPreference(queryClient))
+          notifySession(queryClient, session_id, 'Needs your input')
         }
 
         // Codex keeps the turn open while waiting for approval, so surface the
@@ -902,6 +920,7 @@ export default function useStreamingEvents({
           shouldPlayCodexMcpElicitationSound(currentElicitations, [elicitation])
         ) {
           playNotificationSound(getWaitingSoundPreference(queryClient))
+          notifySession(queryClient, session_id, 'Needs your input')
         }
 
         let attentionUpdatedAt: number | undefined
@@ -1342,6 +1361,7 @@ export default function useStreamingEvents({
             })
           ) {
             playNotificationSound(getWaitingSoundPreference(queryClient))
+            notifySession(queryClient, sessionId, 'Needs your input')
           }
         }
       } else if (hasPendingPermissionDenials) {
@@ -1420,6 +1440,7 @@ export default function useStreamingEvents({
           })
         ) {
           playNotificationSound(getWaitingSoundPreference(queryClient))
+          notifySession(queryClient, sessionId, 'Needs your input')
         }
       } else if (hasPendingCodexMcpElicitations) {
         pauseSession(sessionId)
@@ -1497,6 +1518,7 @@ export default function useStreamingEvents({
           })
         ) {
           playNotificationSound(getWaitingSoundPreference(queryClient))
+          notifySession(queryClient, sessionId, 'Needs your input')
         }
       } else if (event.payload.waiting_for_plan && !isCurrentlyViewing) {
         // Codex/Opencode plan-mode run completed with content — enter plan-waiting state.
@@ -1619,6 +1641,7 @@ export default function useStreamingEvents({
           })
         ) {
           playNotificationSound(getWaitingSoundPreference(queryClient))
+          notifySession(queryClient, sessionId, 'Needs your input')
         }
       } else {
         // No blocking tools — add optimistic message FIRST, then batch-clear state.
@@ -1738,6 +1761,7 @@ export default function useStreamingEvents({
         }
 
         playNotificationSound(getReviewSoundPreference(queryClient))
+        notifySession(queryClient, sessionId, 'Session finished')
       }
 
       // Update last_run_status + waiting state for sessions with blocking tools.
@@ -1981,6 +2005,7 @@ export default function useStreamingEvents({
       useChatStore.getState().failSession(session_id)
 
       playNotificationSound(getWaitingSoundPreference(queryClient))
+      notifySession(queryClient, session_id, 'Needs your input')
 
       // Invalidate sessions list to update last_run_status in tab bar
       if (sessionWorktreeId) {

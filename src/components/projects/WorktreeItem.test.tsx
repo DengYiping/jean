@@ -24,10 +24,26 @@ const mockUseSessions = vi.hoisted(() =>
 
 vi.mock('@/services/chat', () => ({
   useSessions: mockUseSessions,
+  useArchiveSession: () => ({ mutate: vi.fn() }),
+  useCloseSession: () => ({ mutate: vi.fn() }),
 }))
 
 vi.mock('@/services/projects', () => ({
+  useProjects: () => ({ data: [] }),
   useRenameWorktree: () => ({ mutate: vi.fn() }),
+  useArchiveWorktree: () => ({ mutate: vi.fn() }),
+  useCloseBaseSession: () => ({ mutate: vi.fn() }),
+  useDeleteWorktree: () => ({ mutate: vi.fn() }),
+  useOpenWorktreeInFinder: () => ({ mutate: vi.fn() }),
+  useOpenWorktreeInTerminal: () => ({ mutate: vi.fn() }),
+  useOpenWorktreeInEditor: () => ({ mutate: vi.fn() }),
+  useBuildScript: () => ({ data: null }),
+  useRunScript: () => ({ data: null }),
+  useRunScripts: () => ({ data: [] }),
+}))
+
+vi.mock('@/services/preferences', () => ({
+  usePreferences: () => ({ data: { removal_behavior: 'archive' } }),
 }))
 
 vi.mock('@/services/git-status', () => ({

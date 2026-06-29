@@ -162,6 +162,7 @@ export interface InitialData {
   preferences: unknown
   uiState: unknown
   appDataDir?: string
+  serverPlatform?: 'mac' | 'windows' | 'linux'
 }
 
 let initialDataPromise: Promise<InitialData | null> | null = null

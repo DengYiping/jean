@@ -170,6 +170,8 @@ pub struct AppPreferences {
     pub waiting_sound: String, // Sound id when session is waiting for input (none disables playback)
     #[serde(default = "default_review_sound")]
     pub review_sound: String, // Sound id when session finishes reviewing (none disables playback)
+    #[serde(default = "default_desktop_notifications_enabled")]
+    pub desktop_notifications_enabled: bool, // Show native OS banner for session lifecycle events while backgrounded
     #[serde(default)]
     pub http_server_enabled: bool, // Whether HTTP server is enabled
     #[serde(default)]
@@ -546,6 +548,10 @@ fn default_waiting_sound() -> String {
 
 fn default_review_sound() -> String {
     "none".to_string()
+}
+
+fn default_desktop_notifications_enabled() -> bool {
+    true
 }
 
 fn default_http_server_port() -> u16 {
@@ -1503,7 +1509,7 @@ Investigate the loaded security {advisoryWord} ({advisoryRefs})
         .to_string()
 }
 
-fn default_investigate_linear_issue_prompt() -> String {
+pub(crate) fn default_investigate_linear_issue_prompt() -> String {
     r#"<task>
 
 Investigate the loaded Linear {linearWord} ({linearRefs})
@@ -2024,6 +2030,7 @@ impl Default for AppPreferences {
             allow_web_tools_in_plan_mode: default_allow_web_tools_in_plan_mode(),
             waiting_sound: default_waiting_sound(),
             review_sound: default_review_sound(),
+            desktop_notifications_enabled: default_desktop_notifications_enabled(),
             http_server_enabled: false,
             http_server_auto_start: false,
             http_server_port: default_http_server_port(),

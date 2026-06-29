@@ -14,6 +14,14 @@ import { useChatStore } from '@/store/chat-store'
 import { useUIStore } from '@/store/ui-store'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { WorktreeContextMenu } from './WorktreeContextMenu'
+import { useWorktreeMenuActions } from './useWorktreeMenuActions'
+import { CloseWorktreeDialog } from '@/components/chat/CloseWorktreeDialog'
+import { useSessionArchive } from '@/components/chat/hooks/useSessionArchive'
+import { middleClickClose } from '@/lib/middle-click'
+import {
+  decideSessionMiddleClose,
+  decideWorktreeMiddleClose,
+} from './worktree-close-decision'
 import { useRenameWorktree } from '@/services/projects'
 import { useSessions } from '@/services/chat'
 import { isAskUserQuestion, isExitPlanMode, type Session } from '@/types/chat'
@@ -89,6 +97,17 @@ export function WorktreeItem({
 
   // Fetch sessions to check for persisted unanswered questions
   const { data: sessionsData } = useSessions(worktree.id, worktree.path)
+  const menuActions = useWorktreeMenuActions({ worktree, projectId })
+  const { handleArchiveOrClose, preferences } = menuActions
+  const { handleDeleteSession } = useSessionArchive({
+    worktreeId: worktree.id,
+    worktreePath: worktree.path,
+    removalBehavior: preferences?.removal_behavior,
+  })
+  const [closeConfirm, setCloseConfirm] = useState<{
+    mode: 'worktree' | 'session'
+    sessionId?: string
+  } | null>(null)
 
   // Check if any session has streaming AskUserQuestion waiting (blinks)
   const isStreamingWaitingQuestion = useChatStore(state => {
@@ -400,6 +419,40 @@ export function WorktreeItem({
     }
   }, [isMobile, projectId, worktree.id, worktree.path, sessionsData?.sessions])
 
+  const handleWorktreeMiddleClose = useCallback(() => {
+    if (
+      decideWorktreeMiddleClose(preferences?.confirm_session_close) ===
+      'confirm'
+    ) {
+      setCloseConfirm({ mode: 'worktree' })
+    } else {
+      handleArchiveOrClose()
+    }
+  }, [handleArchiveOrClose, preferences?.confirm_session_close])
+
+  const handleSessionMiddleClose = useCallback(
+    (session: Session) => {
+      const activeSessionCount = (sessionsData?.sessions ?? []).filter(
+        s => !s.archived_at
+      ).length
+      const decision = decideSessionMiddleClose({
+        activeSessionCount,
+        sessionIsEmpty: !session.message_count,
+        confirmSessionClose: preferences?.confirm_session_close,
+      })
+      if (decision === 'confirm') {
+        setCloseConfirm({ mode: 'session', sessionId: session.id })
+      } else {
+        handleDeleteSession(session.id)
+      }
+    },
+    [
+      sessionsData?.sessions,
+      handleDeleteSession,
+      preferences?.confirm_session_close,
+    ]
+  )
+
   const handleDoubleClick = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation()
@@ -514,6 +567,7 @@ export function WorktreeItem({
               : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
           )}
           onClick={handleClick}
+          {...middleClickClose(handleWorktreeMiddleClose)}
           onDoubleClick={handleDoubleClick}
         >
           {/* Status indicator */}
@@ -627,8 +681,27 @@ export function WorktreeItem({
           sessions={sessionsData?.sessions ?? []}
           isNarrowSidebar={isNarrowSidebar}
           onSessionSelect={handleSessionSelect}
+          onSessionMiddleClose={handleSessionMiddleClose}
         />
       )}
+      <CloseWorktreeDialog
+        open={!!closeConfirm}
+        onOpenChange={open => {
+          if (!open) setCloseConfirm(null)
+        }}
+        onConfirm={() => {
+          const intent = closeConfirm
+          setCloseConfirm(null)
+          if (!intent) return
+          if (intent.mode === 'session' && intent.sessionId) {
+            handleDeleteSession(intent.sessionId)
+          } else {
+            handleArchiveOrClose()
+          }
+        }}
+        branchName={worktree.branch}
+        mode={closeConfirm?.mode ?? 'worktree'}
+      />
     </div>
   )
 }
@@ -637,10 +710,12 @@ function ExpandedWorktreeSessions({
   sessions,
   isNarrowSidebar,
   onSessionSelect,
+  onSessionMiddleClose,
 }: {
   sessions: Session[]
   isNarrowSidebar: boolean
   onSessionSelect: (sessionId: string) => void
+  onSessionMiddleClose: (session: Session) => void
 }) {
   const storeState = useCanvasStoreState()
   const allCards = useMemo(
@@ -678,6 +753,7 @@ function ExpandedWorktreeSessions({
                   e.stopPropagation()
                   onSessionSelect(card.session.id)
                 }}
+                {...middleClickClose(() => onSessionMiddleClose(card.session))}
               >
                 <StatusIndicator
                   status={config.indicatorStatus}

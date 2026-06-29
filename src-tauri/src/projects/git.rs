@@ -1518,6 +1518,47 @@ pub fn gh_pr_checkout(
     Ok(branch_name)
 }
 
+const WORKTREE_RM_ATTEMPTS: u32 = 5;
+
+fn is_transient_dir_removal_error(e: &std::io::Error) -> bool {
+    use std::io::ErrorKind;
+    if matches!(
+        e.kind(),
+        ErrorKind::DirectoryNotEmpty | ErrorKind::PermissionDenied
+    ) {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        const ERROR_SHARING_VIOLATION: i32 = 32;
+        if e.raw_os_error() == Some(ERROR_SHARING_VIOLATION) {
+            return true;
+        }
+    }
+    false
+}
+
+fn remove_dir_all_with_retry(path: &Path) -> std::io::Result<()> {
+    let mut attempt = 1;
+    loop {
+        match std::fs::remove_dir_all(path) {
+            Ok(()) => return Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => {
+                if attempt >= WORKTREE_RM_ATTEMPTS || !is_transient_dir_removal_error(&e) {
+                    return Err(e);
+                }
+                log::debug!(
+                    "Retrying directory removal of {} after transient error (attempt {attempt}/{WORKTREE_RM_ATTEMPTS}): {e}",
+                    path.display()
+                );
+                std::thread::sleep(Duration::from_millis(150 * attempt as u64));
+                attempt += 1;
+            }
+        }
+    }
+}
+
 /// Remove a git worktree
 ///
 /// # Arguments
@@ -1589,7 +1630,7 @@ pub fn remove_worktree(repo_path: &str, worktree_path: &str) -> Result<(), Strin
                 log::warn!(
                     "git worktree remove failed ({stderr}), attempting manual directory removal"
                 );
-                if let Err(rm_err) = std::fs::remove_dir_all(worktree_path) {
+                if let Err(rm_err) = remove_dir_all_with_retry(Path::new(worktree_path)) {
                     return Err(format!("Failed to remove worktree: {stderr} (manual cleanup also failed: {rm_err})"));
                 }
                 log::info!("Manually removed worktree directory at {worktree_path}");
@@ -1609,7 +1650,9 @@ pub fn remove_worktree(repo_path: &str, worktree_path: &str) -> Result<(), Strin
         log::warn!(
             "Worktree directory still exists after git worktree remove, cleaning up manually"
         );
-        let _ = std::fs::remove_dir_all(worktree_path);
+        if let Err(e) = remove_dir_all_with_retry(Path::new(worktree_path)) {
+            log::warn!("Best-effort cleanup of {worktree_path} failed: {e}");
+        }
     }
 
     log::trace!("Successfully removed worktree at {worktree_path}");
@@ -2742,6 +2785,41 @@ mod tests {
         std::fs::write(dir.join(name), content).unwrap();
         git(dir, &["add", name]).unwrap();
         git(dir, &["commit", "-m", message]).unwrap();
+    }
+
+    #[test]
+    fn remove_dir_all_with_retry_removes_populated_tree() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("worktree");
+        std::fs::create_dir_all(root.join("nested/deeper")).unwrap();
+        std::fs::write(root.join("nested/file.txt"), b"data").unwrap();
+
+        remove_dir_all_with_retry(&root).unwrap();
+
+        assert!(!root.exists());
+    }
+
+    #[test]
+    fn remove_dir_all_with_retry_absent_path_is_ok() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("does-not-exist");
+
+        remove_dir_all_with_retry(&missing).unwrap();
+    }
+
+    #[test]
+    fn transient_dir_removal_errors_match_expected_kinds() {
+        use std::io::ErrorKind;
+
+        assert!(is_transient_dir_removal_error(&std::io::Error::from(
+            ErrorKind::DirectoryNotEmpty
+        )));
+        assert!(is_transient_dir_removal_error(&std::io::Error::from(
+            ErrorKind::PermissionDenied
+        )));
+        assert!(!is_transient_dir_removal_error(&std::io::Error::from(
+            ErrorKind::NotFound
+        )));
     }
 
     #[test]

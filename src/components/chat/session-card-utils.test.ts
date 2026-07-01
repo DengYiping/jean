@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   computeSessionCardData,
   getResumeArgs,
+  shouldShowCodeReviewLoadingPanel,
   type ChatStoreState,
 } from './session-card-utils'
 import type { Session } from '@/types/chat'
@@ -221,6 +222,41 @@ describe('computeSessionCardData', () => {
 
     expect(card.isWaiting).toBe(true)
     expect(card.status).toBe('waiting')
+  })
+})
+
+describe('shouldShowCodeReviewLoadingPanel', () => {
+  it('does not treat ordinary review-named sessions as running code reviews', () => {
+    expect(
+      shouldShowCodeReviewLoadingPanel({
+        session: createSession({
+          name: 'Repo improvement review',
+          is_reviewing: true,
+        }),
+        isSessionReviewing: true,
+        hasReviewResults: false,
+      })
+    ).toBe(false)
+  })
+
+  it('shows the loading panel for generated code review sessions without results', () => {
+    expect(
+      shouldShowCodeReviewLoadingPanel({
+        session: createSession({ name: 'Code Review', is_reviewing: true }),
+        isSessionReviewing: true,
+        hasReviewResults: false,
+      })
+    ).toBe(true)
+  })
+
+  it('does not show the loading panel once review results exist', () => {
+    expect(
+      shouldShowCodeReviewLoadingPanel({
+        session: createSession({ name: 'Code Review', is_reviewing: true }),
+        isSessionReviewing: true,
+        hasReviewResults: true,
+      })
+    ).toBe(false)
   })
 })
 

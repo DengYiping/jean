@@ -181,7 +181,7 @@ export function shouldShowCodeReviewLoadingPanel({
     (isSessionReviewing ||
       !!session.is_reviewing ||
       session.session_derived_state?.status === 'review') &&
-    session.name.toLowerCase().includes('review')
+    session.name.trim().toLowerCase() === 'code review'
   )
 }
 

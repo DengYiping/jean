@@ -32,12 +32,7 @@ import type { StackableItem } from './tool-call-utils'
 import { Markdown } from '@/components/ui/markdown'
 import { cn } from '@/lib/utils'
 import { getFilename } from '@/lib/path-utils'
-import { FileChangeCard } from './FileChangeCard'
 import { InlineFileDiff } from './InlineFileDiff'
-import {
-  formatWorktreeRelativePath,
-  normalizeFileChanges,
-} from './file-change-utils'
 import {
   Collapsible,
   CollapsibleContent,
@@ -572,6 +567,82 @@ interface ToolDisplayOptions {
   worktreePath?: string | null
 }
 
+interface CodexFileChange {
+  diff?: string
+  kind?: { type?: string; move_path?: string | null }
+  path?: string
+}
+
+function parseCodexFileChanges(input: unknown): CodexFileChange[] {
+  if (Array.isArray(input)) {
+    return input as CodexFileChange[]
+  }
+
+  if (input && typeof input === 'object') {
+    return [input as CodexFileChange]
+  }
+
+  if (typeof input === 'string') {
+    try {
+      const parsed = JSON.parse(input) as unknown
+      if (Array.isArray(parsed)) {
+        return parsed as CodexFileChange[]
+      }
+      if (parsed && typeof parsed === 'object') {
+        return [parsed as CodexFileChange]
+      }
+    } catch {
+      return []
+    }
+  }
+
+  return []
+}
+
+function FileChangeDiffView({ input }: { input: unknown }) {
+  const changes = parseCodexFileChanges(input)
+
+  if (changes.length === 0) {
+    return <span>No file changes</span>
+  }
+
+  return (
+    <div className="space-y-3">
+      {changes.map((change, idx) => {
+        const filename = change.path
+          ? getFilename(change.path)
+          : `file ${idx + 1}`
+        const changeType = change.kind?.type ?? 'update'
+
+        return (
+          <div key={change.path ?? idx}>
+            <div className="mb-1 flex items-center gap-1.5">
+              <span className="truncate font-mono text-muted-foreground">
+                {filename}
+              </span>
+              <span className="rounded bg-muted px-1.5 py-0.5 text-[0.625rem] font-medium uppercase tracking-wide text-muted-foreground">
+                {changeType}
+              </span>
+              {change.kind?.move_path && (
+                <span className="truncate text-muted-foreground/60">
+                  → {getFilename(change.kind.move_path)}
+                </span>
+              )}
+            </div>
+            {change.diff ? (
+              <InlineFileDiff patch={change.diff} filePath={change.path} />
+            ) : (
+              <div className="text-muted-foreground/50 italic">
+                No diff available
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 const ANSI_ESCAPE_PATTERN = new RegExp(
   String.raw`\u001B(?:\][\s\S]*?(?:\u0007|\u001B\\)|\[[0-?]*[ -/]*[@-~]|[@-Z\\-_])`,
   'g'
@@ -924,7 +995,7 @@ function ScheduleWakeupCountdown({ toolCallId }: ScheduleWakeupIndicatorProps) {
 
 function getToolDisplay(
   toolCall: ToolCall,
-  { viewportRef, worktreePath }: ToolDisplayOptions = {}
+  _options: ToolDisplayOptions = {}
 ): ToolDisplay {
   const normalizedTool = normalizeCommandCodeToolForDisplay(
     toolCall.name,
@@ -1175,38 +1246,44 @@ function getToolDisplay(
     }
 
     case 'FileChange': {
-      const changes = normalizeFileChanges(toolCall.input)
-      const totalAdded = changes.reduce((sum, change) => sum + change.added, 0)
-      const totalRemoved = changes.reduce(
-        (sum, change) => sum + change.removed,
-        0
-      )
-      const filePath = changes.length === 1 ? changes[0]?.path : undefined
-      const filename = filePath
-        ? getFilename(formatWorktreeRelativePath(filePath, worktreePath))
-        : undefined
+      const changes =
+        input && typeof input === 'object'
+          ? (input as Record<string, unknown>)
+          : {}
+      const filePath = (changes.file ?? changes.path ?? changes.file_path) as
+        | string
+        | undefined
+      const fallbackChanges = !filePath
+        ? parseCodexFileChanges(toolCall.output)
+        : []
+      const fallbackFilePath =
+        fallbackChanges.length === 1
+          ? (fallbackChanges[0]?.path as string | undefined)
+          : undefined
+      const filename = filePath ? getFilename(filePath) : undefined
+      const isArray = Array.isArray(toolCall.input)
+      const isFallbackArray = !isArray && fallbackChanges.length > 1
+      const fileCount = isArray
+        ? (toolCall.input as unknown[]).length
+        : isFallbackArray
+          ? fallbackChanges.length
+          : undefined
       const detail =
-        changes.length <= 1
-          ? filename
-          : `${changes.length} files (+${totalAdded}/-${totalRemoved})`
+        isArray || isFallbackArray
+          ? `${fileCount} file${fileCount === 1 ? '' : 's'}`
+          : (filename ??
+            (fallbackFilePath ? getFilename(fallbackFilePath) : undefined))
 
       return {
         icon: <FileText className="h-4 w-4 shrink-0" />,
         label: 'File Change',
         detail,
-        filePath,
-        expandedContent:
-          changes.length > 0 ? (
-            <FileChangeCard
-              toolCalls={[toolCall]}
-              className="mt-0"
-              viewportRef={viewportRef}
-              worktreePath={worktreePath}
-            />
-          ) : (
-            JSON.stringify(toolCall.input, null, 2)
-          ),
-        suppressDefaultOutput: true,
+        filePath: filePath ?? fallbackFilePath,
+        expandedContent: (
+          <FileChangeDiffView
+            input={toolCall.input ?? toolCall.output ?? null}
+          />
+        ),
       }
     }
 

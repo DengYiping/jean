@@ -309,7 +309,7 @@ describe('MessageItem', () => {
     expect(screen.getByText('ChatWindow.tsx')).toBeInTheDocument()
   })
 
-  it('keeps Codex file-change summaries visible after streaming finishes', () => {
+  it('keeps Codex edited-file badges visible after streaming finishes', () => {
     render(
       <MessageItem
         message={createCodexFileChangeMessage()}
@@ -335,7 +335,8 @@ describe('MessageItem', () => {
       />
     )
 
-    expect(screen.getByText('2 files changed')).toBeInTheDocument()
-    expect(screen.getAllByText('src/components/ChatWindow.tsx')).toHaveLength(2)
+    expect(screen.getByText('Edited 1 file:')).toBeInTheDocument()
+    expect(screen.getByText('ChatWindow.tsx')).toBeInTheDocument()
+    expect(screen.queryByText('1 file changed')).not.toBeInTheDocument()
   })
 })

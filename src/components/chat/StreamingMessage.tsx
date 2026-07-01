@@ -16,7 +16,6 @@ import { ToolCallsDisplay } from './ToolCallsDisplay'
 import { ExitPlanModeButton } from './ExitPlanModeButton'
 import { PlanDisplay } from './PlanFileDisplay'
 import { EditedFilesDisplay } from './EditedFilesDisplay'
-import { FileChangeCard } from './FileChangeCard'
 import { ThinkingBlock } from './ThinkingBlock'
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary'
 import { logger } from '@/lib/logger'
@@ -398,8 +397,6 @@ export const StreamingMessage = memo(function StreamingMessage({
           ) : null}
         </>
       )}
-
-      <FileChangeCard toolCalls={toolCalls} worktreePath={worktreePath} />
 
       {/* Show edited files during streaming */}
       <EditedFilesDisplay toolCalls={toolCalls} worktreePath={worktreePath} />

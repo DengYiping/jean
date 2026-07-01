@@ -1,6 +1,5 @@
-import { useRef } from 'react'
 import { fireEvent, render, screen } from '@/test/test-utils'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ToolCallInline } from './ToolCallInline'
 
 vi.mock('@/services/preferences', () => ({
@@ -8,21 +7,8 @@ vi.mock('@/services/preferences', () => ({
 }))
 
 describe('ToolCallInline', () => {
-  beforeEach(() => {
-    vi.stubGlobal(
-      'requestAnimationFrame',
-      (callback: FrameRequestCallback) =>
-        setTimeout(() => callback(0), 0) as unknown as number
-    )
-    vi.stubGlobal('cancelAnimationFrame', (frameId: number) => {
-      clearTimeout(frameId as unknown as ReturnType<typeof setTimeout>)
-    })
-  })
-
   afterEach(() => {
-    vi.useRealTimers()
     vi.restoreAllMocks()
-    vi.unstubAllGlobals()
   })
 
   it('renders OpenCode ToolSearch calls without the unhandled fallback', () => {
@@ -55,7 +41,7 @@ describe('ToolCallInline', () => {
     expect(expandedContent).toBeInTheDocument()
   })
 
-  it('renders Codex file changes as parsed diffs with line counts', () => {
+  it('renders Codex file changes with the upstream inline diff view', () => {
     render(
       <ToolCallInline
         toolCall={{
@@ -78,27 +64,18 @@ describe('ToolCallInline', () => {
     )
 
     expect(screen.getByText('File Change')).toBeInTheDocument()
-    expect(screen.getByText('2 files (+1/-3)')).toBeInTheDocument()
+    expect(screen.getByText('2 files')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button'))
 
-    expect(screen.getByText('2 files changed')).toBeInTheDocument()
-    expect(screen.getByText('D')).toBeInTheDocument()
-    expect(screen.getByText('M')).toBeInTheDocument()
-
-    fireEvent.click(
-      screen.getByRole('button', { name: /GenerateViewRequestIF\.java/i })
-    )
-
-    fireEvent.click(
-      screen.getByRole('button', { name: /DmsMetadataClient\.java/i })
-    )
-    expect(screen.getByText('@@ -1,2 +1,2 @@')).toBeInTheDocument()
-    expect(screen.getByText('line 3')).toBeInTheDocument()
+    expect(screen.getByText('GenerateViewRequestIF.java')).toBeInTheDocument()
+    expect(screen.getByText('DmsMetadataClient.java')).toBeInTheDocument()
+    expect(screen.getByText('delete')).toBeInTheDocument()
+    expect(screen.getByText('update')).toBeInTheDocument()
     expect(screen.queryByText(/"diff":/)).not.toBeInTheDocument()
   })
 
-  it('renders Codex file changes relative to the active worktree', () => {
+  it('renders a single Codex file-change detail using the filename', () => {
     render(
       <ToolCallInline
         worktreePath="/tmp/worktree"
@@ -116,104 +93,12 @@ describe('ToolCallInline', () => {
       />
     )
 
-    fireEvent.click(screen.getByRole('button', { name: /File Change/i }))
-
-    expect(
-      screen.getByRole('button', { name: /src\/DmsMetadataClient\.java/i })
-    ).toBeInTheDocument()
-    expect(
-      screen.queryByTitle('/tmp/worktree/src/DmsMetadataClient.java')
-    ).not.toBeInTheDocument()
-  })
-
-  it('threads the chat viewport ref into inline file-change expansion', async () => {
-    vi.useFakeTimers()
-
-    const timeoutIds = new Map<number, ReturnType<typeof setTimeout>>()
-    let nextFrameId = 1
-    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
-      const frameId = nextFrameId++
-      const timeoutId = setTimeout(() => callback(0), 0)
-      timeoutIds.set(frameId, timeoutId)
-      return frameId
-    })
-    vi.stubGlobal('cancelAnimationFrame', (frameId: number) => {
-      const timeoutId = timeoutIds.get(frameId)
-      if (timeoutId) {
-        clearTimeout(timeoutId)
-        timeoutIds.delete(frameId)
-      }
-    })
-
-    function TestHarness() {
-      const viewportRef = useRef<HTMLDivElement>(null)
-
-      return (
-        <div ref={viewportRef} data-testid="viewport">
-          <ToolCallInline
-            viewportRef={viewportRef}
-            toolCall={{
-              id: 'tool-viewport',
-              name: 'FileChange',
-              input: [
-                {
-                  path: '/tmp/DmsMetadataClient.java',
-                  kind: { type: 'update' },
-                  diff: '@@ -1,2 +1,2 @@\n line 1\n-line 2\n+line 3\n',
-                },
-              ],
-            }}
-          />
-        </div>
-      )
-    }
-
-    render(<TestHarness />)
+    expect(screen.getByText('1 file')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /File Change/i }))
 
-    const viewport = screen.getByTestId('viewport')
-
-    Object.defineProperty(viewport, 'scrollTop', {
-      value: 300,
-      writable: true,
-      configurable: true,
-    })
-    viewport.getBoundingClientRect = () =>
-      ({
-        top: 40,
-        bottom: 440,
-        left: 0,
-        right: 0,
-        width: 0,
-        height: 400,
-        x: 0,
-        y: 40,
-        toJSON: () => ({}),
-      }) as DOMRect
-
-    let relativeOffset = 0
-    const rowButton = screen.getByTitle('/tmp/DmsMetadataClient.java')
-    rowButton.getBoundingClientRect = () => {
-      const top = 40 + 170 + relativeOffset - (viewport.scrollTop - 300)
-      return {
-        top,
-        bottom: top + 24,
-        left: 0,
-        right: 0,
-        width: 300,
-        height: 24,
-        x: 0,
-        y: top,
-        toJSON: () => ({}),
-      } as DOMRect
-    }
-
-    fireEvent.click(rowButton)
-    relativeOffset = -60
-    vi.runAllTimers()
-
-    expect(viewport.scrollTop).toBe(240)
+    expect(screen.getByText('DmsMetadataClient.java')).toBeInTheDocument()
+    expect(screen.getByText('update')).toBeInTheDocument()
   })
 
   it('renders Bash output in a terminal-style block and strips terminal control sequences', () => {

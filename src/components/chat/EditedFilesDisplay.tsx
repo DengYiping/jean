@@ -218,8 +218,8 @@ export const EditedFilesDisplay = memo(function EditedFilesDisplay({
           filePath={selectedFilePath}
           edits={selectedEdits}
           subsequentEdits={subsequentEdits}
-          patch={selectedCodexPatch}
           worktreePath={worktreePath}
+          patch={selectedCodexPatch}
         />
       )}
     </div>

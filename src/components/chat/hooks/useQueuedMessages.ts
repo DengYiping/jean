@@ -6,6 +6,7 @@ import {
   cancelChatMessage,
   persistRemoveQueued,
   persistReorderQueued,
+  persistUpdateQueued,
   steerCodexTurn,
 } from '@/services/chat'
 import { useChatStore } from '@/store/chat-store'
@@ -80,6 +81,44 @@ export function useQueuedMessages({
     [resolveWorktreeContext]
   )
 
+  const handleEditQueuedMessage = useCallback(
+    async (sessionId: string, messageId: string, message: string) => {
+      const trimmed = message.trim()
+      if (!trimmed) return
+
+      const store = useChatStore.getState()
+      const currentMessage = store
+        .getQueuedMessages(sessionId)
+        .find(item => item.id === messageId)
+      if (!currentMessage || currentMessage.message === trimmed) return
+
+      const { worktreeId, worktreePath } = resolveWorktreeContext(sessionId)
+      if (!worktreeId || !worktreePath) return
+
+      try {
+        const updated = await persistUpdateQueued(
+          worktreeId,
+          worktreePath,
+          sessionId,
+          messageId,
+          trimmed
+        )
+        if (!updated) {
+          store.removeQueuedMessage(sessionId, messageId)
+          return
+        }
+        store.updateQueuedMessage(sessionId, messageId, trimmed)
+      } catch (error) {
+        logger.error('Failed to persist queued edit', {
+          error,
+          sessionId,
+          messageId,
+        })
+      }
+    },
+    [resolveWorktreeContext]
+  )
+
   const handleForceSendQueued = useCallback((sessionId: string) => {
     useChatStore.getState().forceProcessQueue(sessionId)
   }, [])
@@ -145,6 +184,7 @@ export function useQueuedMessages({
   return {
     handleRemoveQueuedMessage,
     handleReorderQueuedMessages,
+    handleEditQueuedMessage,
     handleForceSendQueued,
     handleSteerQueuedMessage,
   }

@@ -2779,6 +2779,8 @@ mod tests {
         git(dir, &["init", "-b", "main"]).unwrap();
         git(dir, &["config", "user.name", "Jean Test"]).unwrap();
         git(dir, &["config", "user.email", "jean-tests@example.com"]).unwrap();
+        git(dir, &["config", "core.autocrlf", "false"]).unwrap();
+        git(dir, &["config", "core.eol", "lf"]).unwrap();
     }
 
     fn commit_file(dir: &Path, name: &str, content: &str, message: &str) {

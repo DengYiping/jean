@@ -394,6 +394,16 @@ fn default_model() -> String {
     "claude-opus-4-8[1m]".to_string()
 }
 
+fn migrate_default_claude_model(model: &str) -> Option<&'static str> {
+    match model {
+        "claude-opus-4-7[1m]" => Some("claude-opus-4-8[1m]"),
+        "claude-opus-4-7[1m]-fast" => Some("claude-opus-4-8[1m]-fast"),
+        "claude-opus-4-6-fast" => Some("claude-opus-4-6[1m]-fast"),
+        "sonnet" => Some("claude-sonnet-5"),
+        _ => None,
+    }
+}
+
 fn default_thinking_level() -> String {
     "ultrathink".to_string()
 }
@@ -628,6 +638,21 @@ mod tests {
                     path: ".".to_string(),
                 }),
             }
+        );
+    }
+
+    #[test]
+    fn migrate_default_claude_model_keeps_standard_non_1m_models() {
+        assert_eq!(super::migrate_default_claude_model("claude-opus-4-8"), None);
+        assert_eq!(super::migrate_default_claude_model("claude-opus-4-7"), None);
+        assert_eq!(super::migrate_default_claude_model("claude-opus-4-6"), None);
+    }
+
+    #[test]
+    fn migrate_default_claude_model_updates_sonnet_alias() {
+        assert_eq!(
+            super::migrate_default_claude_model("sonnet"),
+            Some("claude-sonnet-5")
         );
     }
 
@@ -2183,6 +2208,10 @@ fn migrate_loaded_preferences(preferences: &mut AppPreferences) -> bool {
     needs_resave |= preferences.magic_prompts.migrate_defaults();
 
     needs_resave |= preferences.magic_prompt_models.migrate_legacy_defaults();
+    if let Some(model) = migrate_default_claude_model(&preferences.selected_model) {
+        preferences.selected_model = model.to_string();
+        needs_resave = true;
+    }
     if preferences.branch_naming_model == "haiku" {
         preferences.branch_naming_model = default_branch_naming_model();
         needs_resave = true;
@@ -4326,6 +4355,7 @@ pub fn run() {
             projects::get_worktree_diff,
             projects::create_worktree,
             projects::fork_worktree,
+            projects::fork_session_to_worktree,
             projects::create_worktree_from_existing_branch,
             projects::checkout_pr,
             projects::delete_worktree,
@@ -4365,6 +4395,10 @@ pub fn run() {
             projects::run_coderabbit_review,
             projects::trigger_coderabbit_pr_review,
             projects::cancel_review_with_ai,
+            projects::start_review_job,
+            projects::get_review_job,
+            projects::list_review_jobs,
+            projects::cancel_review_job,
             projects::list_github_releases,
             projects::generate_release_notes,
             projects::generate_release_post,
@@ -4561,6 +4595,7 @@ pub fn run() {
             chat::dequeue_message,
             chat::remove_queued_message,
             chat::reorder_queued_messages,
+            chat::update_queued_message,
             chat::clear_message_queue,
             // Chat commands - ScheduleWakeup support
             chat::cancel_session_wakeup,

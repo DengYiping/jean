@@ -125,6 +125,34 @@ describe('useToolbarDerivedState', () => {
     )
   })
 
+  it('formats future Claude model ids when no picker option exists yet', () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
+
+    const { result } = renderHook(
+      () =>
+        useToolbarDerivedState({
+          selectedBackend: 'claude',
+          selectedProvider: null,
+          selectedModel: 'claude-sonnet-6-1',
+          opencodeModelOptions: undefined,
+          customCliProfiles: [],
+          customCodexModels: [],
+          favoriteModels: [],
+          fastModeModels: [],
+          availableMcpServers: [],
+          enabledMcpServers: [],
+        }),
+      { wrapper }
+    )
+
+    expect(result.current.selectedModelLabel).toBe('Sonnet 6 1')
+  })
+
   it('shows custom Codex model display names in the desktop picker', () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },

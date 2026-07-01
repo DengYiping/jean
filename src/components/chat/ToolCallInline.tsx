@@ -44,6 +44,12 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
 
+export const TOOL_CALL_ROW_CLASS =
+  'flex min-h-9 w-full items-center gap-1.5 px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-muted/50 select-none min-w-0'
+
+export const TOOL_CALL_DETAIL_PILL_CLASS =
+  'min-w-0 max-w-[55%] sm:max-w-full truncate rounded px-1 text-[0.6875rem] font-sans leading-none'
+
 interface ToolCallInlineProps {
   toolCall: ToolCall
   className?: string
@@ -105,9 +111,11 @@ export function ToolCallInline({
           isOpen && 'bg-muted/50'
         )}
       >
-        <CollapsibleTrigger className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-muted/50 cursor-pointer select-none min-w-0">
+        <CollapsibleTrigger className={TOOL_CALL_ROW_CLASS}>
           {icon}
-          <span className="font-medium">{label}</span>
+          <span className="font-medium shrink-0 flex-none whitespace-nowrap">
+            {label}
+          </span>
           {detail && filePath && onFileClick ? (
             <code
               role="button"
@@ -117,15 +125,16 @@ export function ToolCallInline({
                 e.key === 'Enter' &&
                 handleFileClick(e as unknown as React.MouseEvent)
               }
-              className="inline-flex items-center gap-1 truncate rounded bg-muted/50 px-1.5 py-0.5 text-xs hover:bg-primary/20 hover:text-primary transition-colors cursor-pointer"
+              className={cn(
+                TOOL_CALL_DETAIL_PILL_CLASS,
+                'inline-flex items-center gap-1 hover:bg-primary/20 hover:text-primary transition-colors cursor-pointer'
+              )}
             >
               <span className="truncate">{detail}</span>
               <ExternalLink className="h-3 w-3 shrink-0 opacity-60" />
             </code>
           ) : detail ? (
-            <code className="truncate rounded bg-muted/50 px-1.5 py-0.5 text-xs">
-              {detail}
-            </code>
+            <code className={TOOL_CALL_DETAIL_PILL_CLASS}>{detail}</code>
           ) : null}
           {isStreaming && isIncomplete ? (
             <Loader2 className="ml-auto h-3 w-3 shrink-0 animate-spin text-muted-foreground/50" />
@@ -215,15 +224,13 @@ export function TaskCallInline({
           isOpen && 'bg-muted/50'
         )}
       >
-        <CollapsibleTrigger className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-muted/50 cursor-pointer select-none min-w-0">
+        <CollapsibleTrigger className={TOOL_CALL_ROW_CLASS}>
           <Bot className="h-3.5 w-3.5 shrink-0" />
-          <span className="font-medium">
+          <span className="font-medium shrink-0 whitespace-nowrap">
             {subagentType ? `Task (${subagentType})` : 'Task'}
           </span>
           {description && (
-            <code className="truncate rounded bg-muted/50 px-1.5 py-0.5 text-xs">
-              {description}
-            </code>
+            <code className={TOOL_CALL_DETAIL_PILL_CLASS}>{description}</code>
           )}
           {/* Show sub-tool count badge */}
           {subToolCalls.length > 0 && (
@@ -335,7 +342,8 @@ export function StackedGroup({
     if (item.type === 'thinking') {
       thinkingCount++
     } else {
-      toolCounts.set(item.tool.name, (toolCounts.get(item.tool.name) ?? 0) + 1)
+      const name = getToolSummaryName(item.tool.name)
+      toolCounts.set(name, (toolCounts.get(name) ?? 0) + 1)
     }
   }
 
@@ -367,9 +375,11 @@ export function StackedGroup({
           isOpen && 'bg-muted/50'
         )}
       >
-        <CollapsibleTrigger className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-muted/50 cursor-pointer select-none min-w-0">
+        <CollapsibleTrigger className={TOOL_CALL_ROW_CLASS}>
           <Layers className="h-3.5 w-3.5 shrink-0" />
-          <span className="font-medium">{summary}</span>
+          <span className="font-medium shrink-0 whitespace-nowrap">
+            {summary}
+          </span>
           {isStreaming && isIncomplete ? (
             <Loader2 className="ml-auto h-3 w-3 shrink-0 animate-spin text-muted-foreground/50" />
           ) : (
@@ -800,6 +810,60 @@ function formatWakeupDelay(seconds: number): string {
   return remMins > 0 ? `${hours}h ${remMins}m` : `${hours}h`
 }
 
+function normalizeCommandCodeToolForDisplay(
+  name: string,
+  input: Record<string, unknown>
+): { name: string; input: Record<string, unknown> } {
+  switch (name) {
+    case 'read_file':
+      return {
+        name: 'Read',
+        input: {
+          ...input,
+          file_path:
+            input.file_path ??
+            input.absolutePath ??
+            input.filePath ??
+            input.path,
+        },
+      }
+    case 'write_file':
+      return {
+        name: 'Write',
+        input: {
+          ...input,
+          file_path:
+            input.file_path ??
+            input.filePath ??
+            input.absolutePath ??
+            input.path,
+        },
+      }
+    case 'read_multiple_files':
+      return {
+        name: 'ReadMultipleFiles',
+        input: {
+          ...input,
+          path: input.path ?? input.targetDirectory,
+        },
+      }
+    case 'shell_command':
+      return { name: 'Bash', input }
+    case 'read_directory':
+      return { name: 'List', input }
+    case 'glob':
+      return { name: 'Glob', input }
+    case 'grep':
+      return { name: 'Grep', input }
+    default:
+      return { name, input }
+  }
+}
+
+function getToolSummaryName(name: string): string {
+  return normalizeCommandCodeToolForDisplay(name, {}).name
+}
+
 /** Live-ticking remaining seconds for a pending ScheduleWakeup. */
 function useWakeupRemaining(fireAtUnix: number | undefined): number | null {
   const [nowUnix, setNowUnix] = useState<number | null>(null)
@@ -862,9 +926,13 @@ function getToolDisplay(
   toolCall: ToolCall,
   { viewportRef, worktreePath }: ToolDisplayOptions = {}
 ): ToolDisplay {
-  const input = (toolCall.input ?? {}) as Record<string, unknown>
+  const normalizedTool = normalizeCommandCodeToolForDisplay(
+    toolCall.name,
+    (toolCall.input ?? {}) as Record<string, unknown>
+  )
+  const input = normalizedTool.input
 
-  switch (toolCall.name) {
+  switch (normalizedTool.name) {
     case 'Read': {
       const filePath = input.file_path as string | undefined
       const filename = filePath ? getFilename(filePath) : filePath

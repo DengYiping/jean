@@ -8129,6 +8129,47 @@ pub async fn reorder_queued_messages(
     Ok(queue)
 }
 
+/// Update a specific queued message's text by its `id` field.
+/// Returns `false` when the message is no longer queued.
+/// Holds the metadata lock across the entire read-modify-write to prevent TOCTOU races.
+#[tauri::command]
+pub async fn update_queued_message(
+    app: AppHandle,
+    _worktree_id: String,
+    _worktree_path: String,
+    session_id: String,
+    message_id: String,
+    message: String,
+) -> Result<bool, String> {
+    let (updated, queue) = with_existing_metadata_mut(&app, &session_id, |metadata| {
+        let Some(idx) = metadata
+            .queued_messages
+            .iter()
+            .position(|m| m.get("id").and_then(|v| v.as_str()) == Some(message_id.as_str()))
+        else {
+            return (false, metadata.queued_messages.clone());
+        };
+
+        let queued = &mut metadata.queued_messages[idx];
+        if let Some(obj) = queued.as_object_mut() {
+            obj.insert("message".to_string(), serde_json::Value::String(message));
+            return (true, metadata.queued_messages.clone());
+        }
+
+        (false, metadata.queued_messages.clone())
+    })?;
+
+    if updated {
+        app.emit_all(
+            "queue:updated",
+            &serde_json::json!({ "sessionId": session_id, "queue": queue }),
+        )
+        .ok();
+    }
+
+    Ok(updated)
+}
+
 /// Clear all queued messages for a session.
 /// Holds the metadata lock across the entire read-modify-write to prevent TOCTOU races.
 #[tauri::command]

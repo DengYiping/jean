@@ -11,6 +11,7 @@ import {
   Eye,
   FolderOpen,
   GitBranch,
+  GitBranchPlus,
   GitCommitHorizontal,
   GitMerge,
   GitPullRequest,
@@ -63,6 +64,7 @@ import {
   getPrStatusDisplay,
   getProviderDisplayName,
 } from '@/components/chat/toolbar/toolbar-utils'
+import { getMessageModelLabel } from '@/components/chat/message-settings-labels'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useUIStore } from '@/store/ui-store'
 import { cn } from '@/lib/utils'
@@ -195,9 +197,9 @@ export function MobileToolbarMenu({
   const [modeSheetOpen, setModeSheetOpen] = useState(false)
   const [modelSearchQuery, setModelSearchQuery] = useState('')
   const providerDisplayName = getProviderDisplayName(selectedProvider)
-  const selectedModelLabel = filteredModelOptions.find(
-    o => o.value === selectedModel
-  )?.label
+  const selectedModelLabel =
+    filteredModelOptions.find(o => o.value === selectedModel)?.label ??
+    getMessageModelLabel(selectedModel)
 
   const openModelSheet = () => {
     setMenuOpen(false)
@@ -301,6 +303,22 @@ export function MobileToolbarMenu({
             Load Context
             <span className="ml-auto text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
               L
+            </span>
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => {
+              setMenuOpen(false)
+              window.dispatchEvent(
+                new CustomEvent('magic-command', {
+                  detail: { command: 'fork-session' },
+                })
+              )
+            }}
+          >
+            <GitBranchPlus className="h-4 w-4" />
+            Fork Session
+            <span className="ml-auto text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+              B
             </span>
           </DropdownMenuItem>
 

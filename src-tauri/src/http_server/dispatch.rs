@@ -201,6 +201,19 @@ pub async fn dispatch_command(
             let result = crate::projects::fork_worktree(app.clone(), source_worktree_id).await?;
             to_value(result)
         }
+        "fork_session_to_worktree" => {
+            let source_worktree_id: String =
+                field(&args, "sourceWorktreeId", "source_worktree_id")?;
+            let source_session_id: String = field(&args, "sourceSessionId", "source_session_id")?;
+            let result = crate::projects::fork_session_to_worktree(
+                app.clone(),
+                source_worktree_id,
+                source_session_id,
+            )
+            .await?;
+            emit_cache_invalidation(app, &["projects", "sessions", "session"]);
+            to_value(result)
+        }
         "delete_worktree" => {
             let worktree_id: String = field(&args, "worktreeId", "worktree_id")?;
             crate::projects::delete_worktree(app.clone(), worktree_id).await?;
@@ -563,6 +576,49 @@ pub async fn dispatch_command(
         "cancel_review_with_ai" => {
             let review_run_id: String = field(&args, "reviewRunId", "review_run_id")?;
             let result = crate::projects::cancel_review_with_ai(review_run_id).await?;
+            to_value(result)
+        }
+        "start_review_job" => {
+            let worktree_id: String = field(&args, "worktreeId", "worktree_id")?;
+            let worktree_path: String = field(&args, "worktreePath", "worktree_path")?;
+            let source: String = field(&args, "source", "source")?;
+            let custom_prompt: Option<String> = field_opt(&args, "customPrompt", "custom_prompt")?;
+            let model: Option<String> = from_field_opt(&args, "model")?;
+            let custom_profile_name: Option<String> =
+                field_opt(&args, "customProfileName", "custom_profile_name")?;
+            let review_run_id: Option<String> = field_opt(&args, "reviewRunId", "review_run_id")?;
+            let reasoning_effort: Option<String> =
+                field_opt(&args, "reasoningEffort", "reasoning_effort")?;
+            let review_type: Option<String> = field_opt(&args, "reviewType", "review_type")?;
+            let result = crate::projects::start_review_job(
+                app.clone(),
+                worktree_id,
+                worktree_path,
+                source,
+                custom_prompt,
+                model,
+                custom_profile_name,
+                review_run_id,
+                reasoning_effort,
+                review_type,
+            )
+            .await?;
+            emit_cache_invalidation(app, &["sessions", "session"]);
+            to_value(result)
+        }
+        "get_review_job" => {
+            let job_id: String = field(&args, "jobId", "job_id")?;
+            let result = crate::projects::get_review_job(job_id).await?;
+            to_value(result)
+        }
+        "list_review_jobs" => {
+            let worktree_id: Option<String> = field_opt(&args, "worktreeId", "worktree_id")?;
+            let result = crate::projects::list_review_jobs(worktree_id).await?;
+            to_value(result)
+        }
+        "cancel_review_job" => {
+            let job_id: String = field(&args, "jobId", "job_id")?;
+            let result = crate::projects::cancel_review_job(job_id).await?;
             to_value(result)
         }
         "update_worktree_cached_status" => {
@@ -2580,6 +2636,23 @@ pub async fn dispatch_command(
                 worktree_path,
                 session_id,
                 queue,
+            )
+            .await?;
+            to_value(result)
+        }
+        "update_queued_message" => {
+            let worktree_id: String = field(&args, "worktreeId", "worktree_id")?;
+            let worktree_path: String = field(&args, "worktreePath", "worktree_path")?;
+            let session_id: String = field(&args, "sessionId", "session_id")?;
+            let message_id: String = field(&args, "messageId", "message_id")?;
+            let message: String = from_field(&args, "message")?;
+            let result = crate::chat::update_queued_message(
+                app.clone(),
+                worktree_id,
+                worktree_path,
+                session_id,
+                message_id,
+                message,
             )
             .await?;
             to_value(result)

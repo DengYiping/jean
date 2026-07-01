@@ -503,6 +503,26 @@ export interface ReviewResponse {
   approval_status: 'approved' | 'changes_requested' | 'needs_discussion'
 }
 
+export type ReviewJobStatus = 'running' | 'completed' | 'failed' | 'cancelled'
+
+export interface ReviewJob {
+  id: string
+  reviewRunId: string
+  worktreeId: string
+  worktreePath: string
+  sessionId: string | null
+  source: string
+  status: ReviewJobStatus
+  findingCount: number | null
+  error: string | null
+  createdAt: number
+  updatedAt: number
+}
+
+export interface StartReviewJobResponse {
+  job: ReviewJob
+}
+
 // =============================================================================
 // Release Notes
 // =============================================================================

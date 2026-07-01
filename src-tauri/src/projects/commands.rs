@@ -3,6 +3,7 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -46,6 +47,7 @@ use super::types::{
     WorktreeDeletingEvent, WorktreePathExistsEvent, WorktreePermanentlyDeletedEvent,
     WorktreeSetupCompleteEvent, WorktreeUnarchivedEvent,
 };
+use crate::chat::types::{Session, SessionMetadata, WorktreeSessions};
 use crate::claude_cli::resolve_cli_binary;
 use crate::coderabbit_cli::resolve_coderabbit_binary;
 use crate::codex_cli::resolve_cli_binary as resolve_codex_cli_binary;
@@ -92,6 +94,13 @@ const FAVICON_CANDIDATES: &[&str] = &[
     "assets/logo.png",
     ".idea/icon.svg",
 ];
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForkSessionToWorktreeResponse {
+    pub worktree: Worktree,
+    pub session: Session,
+}
 
 const ICON_SOURCE_FILES: &[&str] = &[
     "index.html",
@@ -325,6 +334,135 @@ fn take_review_process_pid(review_run_id: &str) -> Option<u32> {
         .unwrap()
         .remove(review_run_id)
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewJobStatus {
+    Running,
+    Completed,
+    Failed,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewJob {
+    pub id: String,
+    pub review_run_id: String,
+    pub worktree_id: String,
+    pub worktree_path: String,
+    pub session_id: Option<String>,
+    pub source: String,
+    pub status: ReviewJobStatus,
+    pub finding_count: Option<usize>,
+    pub error: Option<String>,
+    pub created_at: u64,
+    pub updated_at: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct ReviewJobStart {
+    pub id: String,
+    pub review_run_id: String,
+    pub worktree_id: String,
+    pub worktree_path: String,
+    pub session_id: Option<String>,
+    pub source: String,
+}
+
+#[derive(Default)]
+pub struct ReviewJobRegistry {
+    jobs: Mutex<HashMap<String, ReviewJob>>,
+}
+
+impl ReviewJobRegistry {
+    pub fn try_insert_running(&self, start: ReviewJobStart) -> Result<ReviewJob, String> {
+        let mut jobs = self.jobs.lock().unwrap();
+        if jobs.values().any(|job| {
+            job.worktree_id == start.worktree_id && job.status == ReviewJobStatus::Running
+        }) {
+            return Err("A review is already running for this worktree".to_string());
+        }
+
+        let job = Self::build_running_job(start, now());
+        jobs.insert(job.id.clone(), job.clone());
+        Ok(job)
+    }
+
+    fn build_running_job(start: ReviewJobStart, now: u64) -> ReviewJob {
+        ReviewJob {
+            id: start.id,
+            review_run_id: start.review_run_id,
+            worktree_id: start.worktree_id,
+            worktree_path: start.worktree_path,
+            session_id: start.session_id,
+            source: start.source,
+            status: ReviewJobStatus::Running,
+            finding_count: None,
+            error: None,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    pub fn get(&self, job_id: &str) -> Option<ReviewJob> {
+        self.jobs.lock().unwrap().get(job_id).cloned()
+    }
+
+    pub fn list(&self) -> Vec<ReviewJob> {
+        let mut jobs: Vec<_> = self.jobs.lock().unwrap().values().cloned().collect();
+        jobs.sort_by_key(|job| std::cmp::Reverse(job.created_at));
+        jobs
+    }
+
+    pub fn mark_completed(
+        &self,
+        job_id: &str,
+        session_id: String,
+        response: &ReviewResponse,
+    ) -> Option<ReviewJob> {
+        self.update(job_id, |job| {
+            job.status = ReviewJobStatus::Completed;
+            job.session_id = Some(session_id);
+            job.finding_count = Some(response.findings.len());
+            job.error = None;
+        })
+    }
+
+    pub fn mark_failed(&self, job_id: &str, error: String) -> Option<ReviewJob> {
+        self.update(job_id, |job| {
+            job.status = ReviewJobStatus::Failed;
+            job.error = Some(error);
+        })
+    }
+
+    pub fn mark_cancelled(&self, job_id: &str) -> Option<ReviewJob> {
+        self.update(job_id, |job| {
+            job.status = ReviewJobStatus::Cancelled;
+            job.error = Some("Review cancelled".to_string());
+        })
+    }
+
+    pub fn attach_session(&self, job_id: &str, session_id: String) -> Option<ReviewJob> {
+        self.update(job_id, |job| {
+            job.session_id = Some(session_id);
+        })
+    }
+
+    pub fn remove(&self, job_id: &str) -> Option<ReviewJob> {
+        self.jobs.lock().unwrap().remove(job_id)
+    }
+
+    fn update(&self, job_id: &str, update: impl FnOnce(&mut ReviewJob)) -> Option<ReviewJob> {
+        let mut jobs = self.jobs.lock().unwrap();
+        let job = jobs.get_mut(job_id)?;
+        update(job);
+        job.updated_at = now();
+        Some(job.clone())
+    }
+}
+
+static REVIEW_JOB_REGISTRY: Lazy<ReviewJobRegistry> = Lazy::new(ReviewJobRegistry::default);
 
 /// List all projects
 /// Check if git global user identity is configured
@@ -1063,6 +1201,233 @@ fn truncate_utf8(input: &str, max_bytes: usize) -> (String, bool) {
         ),
         true,
     )
+}
+
+fn run_git_with_input(repo_path: &Path, args: &[&str], input: &[u8]) -> Result<(), String> {
+    let mut child = silent_command("git")
+        .args(args)
+        .current_dir(repo_path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to run git {}: {e}", args.join(" ")))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(input)
+            .map_err(|e| format!("Failed to write to git {} stdin: {e}", args.join(" ")))?;
+    }
+
+    let output = child
+        .wait_with_output()
+        .map_err(|e| format!("Failed to wait for git {}: {e}", args.join(" ")))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!("git {} failed: {stderr}", args.join(" ")))
+    }
+}
+
+fn git_output_bytes(repo_path: &Path, args: &[&str]) -> Result<Vec<u8>, String> {
+    let output = silent_command("git")
+        .args(args)
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| format!("Failed to run git {}: {e}", args.join(" ")))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("git {} failed: {stderr}", args.join(" ")));
+    }
+    Ok(output.stdout)
+}
+
+fn copy_untracked_files(source_path: &Path, target_path: &Path) -> Result<(), String> {
+    let output = git_output_bytes(
+        source_path,
+        &["ls-files", "--others", "--exclude-standard", "-z"],
+    )?;
+
+    for raw_path in output
+        .split(|byte| *byte == 0)
+        .filter(|path| !path.is_empty())
+    {
+        let relative = std::str::from_utf8(raw_path)
+            .map_err(|e| format!("Git returned a non-UTF8 untracked path: {e}"))?;
+        let source_file = source_path.join(relative);
+        if !source_file.is_file() {
+            continue;
+        }
+        let target_file = target_path.join(relative);
+        if let Some(parent) = target_file.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create {}: {e}", parent.display()))?;
+        }
+        fs::copy(&source_file, &target_file).map_err(|e| {
+            format!(
+                "Failed to copy untracked file {} to {}: {e}",
+                source_file.display(),
+                target_file.display()
+            )
+        })?;
+    }
+
+    Ok(())
+}
+
+fn copy_dirty_worktree_state(source_path: &Path, target_path: &Path) -> Result<(), String> {
+    let patch = git_output_bytes(source_path, &["diff", "--binary", "HEAD"])?;
+    if !patch.is_empty() {
+        run_git_with_input(
+            target_path,
+            &["apply", "--binary", "--whitespace=nowarn"],
+            &patch,
+        )?;
+    }
+    copy_untracked_files(source_path, target_path)
+}
+
+fn forked_session_name(source_name: &str) -> String {
+    let trimmed = source_name.trim();
+    if trimmed.is_empty() {
+        "Forked Session".to_string()
+    } else if trimmed.starts_with("Fork of ") {
+        trimmed.to_string()
+    } else {
+        format!("Fork of {trimmed}")
+    }
+}
+
+fn clear_session_runtime_state(session: &mut Session) {
+    session.claude_session_id = None;
+    session.codex_thread_id = None;
+    session.codex_goal = None;
+    session.opencode_session_id = None;
+    session.is_reviewing = false;
+    session.waiting_for_input = false;
+    session.waiting_for_input_type = None;
+    session.pending_permission_denials.clear();
+    session.pending_codex_mcp_elicitations.clear();
+    session.denied_message_context = None;
+    session.queued_messages.clear();
+    session.scheduled_wakeup = None;
+    session.review_results = None;
+    session.approved_plan_message_ids.clear();
+    session.plan_file_path = None;
+    session.pending_plan_message_id = None;
+    session.digest = None;
+    session.table_checked_rows.clear();
+    session.supervisor_action = None;
+    session.session_derived_state = None;
+    session.last_run_status = None;
+    session.last_run_execution_mode = None;
+    session.automation_id = None;
+    session.automation_name = None;
+    session.automation_target_worktree_id = None;
+    session.automation_owned = false;
+    session.agent_board_item_id = None;
+    session.primary_surface = None;
+    session.terminal_command = None;
+    session.terminal_command_args.clear();
+    session.terminal_label = None;
+}
+
+fn prepare_forked_session(source: &Session, order: u32, created_at: u64) -> Session {
+    let mut forked = source.clone();
+    forked.id = Uuid::new_v4().to_string();
+    forked.name = forked_session_name(&source.name);
+    forked.order = order;
+    forked.created_at = created_at;
+    forked.updated_at = created_at;
+    forked.last_opened_at = Some(created_at);
+    forked.archived_at = None;
+    forked.archived_by_base_close = None;
+    forked.session_naming_completed = false;
+    clear_session_runtime_state(&mut forked);
+    forked
+}
+
+fn prepare_forked_metadata(
+    source: Option<SessionMetadata>,
+    forked_session: &Session,
+    new_worktree_id: &str,
+) -> SessionMetadata {
+    let mut metadata = source.unwrap_or_else(|| {
+        SessionMetadata::new(
+            forked_session.id.clone(),
+            new_worktree_id.to_string(),
+            forked_session.name.clone(),
+            forked_session.order,
+        )
+    });
+    metadata.id = forked_session.id.clone();
+    metadata.worktree_id = new_worktree_id.to_string();
+    metadata.name = forked_session.name.clone();
+    metadata.order = forked_session.order;
+    metadata.created_at = forked_session.created_at;
+    metadata.backend = forked_session.backend.clone();
+    metadata.claude_session_id = None;
+    metadata.codex_thread_id = None;
+    metadata.codex_goal = None;
+    metadata.opencode_session_id = None;
+    metadata.session_naming_completed = false;
+    metadata.archived_at = None;
+    metadata.archived_by_base_close = None;
+    metadata.pending_permission_denials.clear();
+    metadata.pending_codex_mcp_elicitations.clear();
+    metadata.denied_message_context = None;
+    metadata.is_reviewing = false;
+    metadata.waiting_for_input = false;
+    metadata.waiting_for_input_type = None;
+    metadata.queued_messages.clear();
+    metadata.scheduled_wakeup = None;
+    metadata.review_results = None;
+    metadata.approved_plan_message_ids.clear();
+    metadata.plan_file_path = None;
+    metadata.pending_plan_message_id = None;
+    metadata.digest = None;
+    metadata.attention_updated_at = None;
+    metadata.table_checked_rows.clear();
+    metadata.supervisor_action = None;
+    metadata.last_opened_at = Some(forked_session.created_at);
+    metadata.automation_id = None;
+    metadata.automation_name = None;
+    metadata.automation_target_worktree_id = None;
+    metadata.automation_owned = false;
+    metadata.agent_board_item_id = None;
+    metadata.primary_surface = None;
+    metadata.terminal_command = None;
+    metadata.terminal_command_args.clear();
+    metadata.terminal_label = None;
+    metadata
+}
+
+fn copy_session_run_files(
+    app: &AppHandle,
+    source_session_id: &str,
+    target_session_id: &str,
+) -> Result<(), String> {
+    let source_dir = crate::chat::storage::get_session_dir(app, source_session_id)?;
+    if !source_dir.exists() {
+        return Ok(());
+    }
+    let target_dir = crate::chat::storage::get_session_dir(app, target_session_id)?;
+    fs::create_dir_all(&target_dir)
+        .map_err(|e| format!("Failed to create forked session log directory: {e}"))?;
+    for entry in fs::read_dir(&source_dir)
+        .map_err(|e| format!("Failed to read source session log directory: {e}"))?
+    {
+        let entry = entry.map_err(|e| format!("Failed to read source session log entry: {e}"))?;
+        let file_type = entry
+            .file_type()
+            .map_err(|e| format!("Failed to read session log entry type: {e}"))?;
+        if file_type.is_file() {
+            fs::copy(entry.path(), target_dir.join(entry.file_name()))
+                .map_err(|e| format!("Failed to copy session log file: {e}"))?;
+        }
+    }
+    Ok(())
 }
 
 /// Create a new worktree for a project (runs in background)
@@ -2291,6 +2656,198 @@ pub async fn fork_worktree(app: AppHandle, source_worktree_id: String) -> Result
         Some(true),
     )
     .await
+}
+
+/// Fork an existing Jean session into a new worktree and continue from there.
+///
+/// The new worktree is created at the source worktree's current HEAD. Dirty tracked changes
+/// are copied with a binary git patch, and untracked non-ignored files are copied directly.
+#[tauri::command]
+pub async fn fork_session_to_worktree(
+    app: AppHandle,
+    source_worktree_id: String,
+    source_session_id: String,
+) -> Result<ForkSessionToWorktreeResponse, String> {
+    log::trace!(
+        "Forking session {source_session_id} from worktree {source_worktree_id} into a new worktree"
+    );
+
+    let mut data = load_projects_data(&app)?;
+    let source_worktree = data
+        .find_worktree(&source_worktree_id)
+        .cloned()
+        .ok_or_else(|| format!("Worktree not found: {source_worktree_id}"))?;
+    if source_worktree.archived_at.is_some() {
+        return Err("Cannot fork a session from an archived worktree".to_string());
+    }
+    let project = data
+        .find_project(&source_worktree.project_id)
+        .cloned()
+        .ok_or_else(|| format!("Project not found: {}", source_worktree.project_id))?;
+
+    let source_sessions =
+        crate::chat::storage::load_sessions(&app, &source_worktree.path, &source_worktree_id)?;
+    let source_session = source_sessions
+        .find_session(&source_session_id)
+        .cloned()
+        .ok_or_else(|| format!("Session not found: {source_session_id}"))?;
+
+    let source_path = Path::new(&source_worktree.path);
+    if !source_path.exists() {
+        return Err(format!(
+            "Source worktree path does not exist: {}",
+            source_worktree.path
+        ));
+    }
+
+    let source_head = git_output(&source_worktree.path, &["rev-parse", "--verify", "HEAD"])?
+        .trim()
+        .to_string();
+    if source_head.is_empty() {
+        return Err("Cannot fork session: source worktree has no HEAD commit".to_string());
+    }
+
+    let base_name = {
+        let sanitized = sanitize_folder_name(&format!("fork-{}", source_worktree.name));
+        if sanitized == "fork-" {
+            "fork-session".to_string()
+        } else {
+            sanitized
+        }
+    };
+    let name = generate_unique_suffix_name(&base_name, &project.path, &project.id, Some(&data));
+    let project_worktrees_dir =
+        get_project_worktrees_dir(&app, &project.name, project.worktrees_dir.as_deref())?;
+    allow_project_in_asset_scope(&app, &project.path);
+    if let Some(worktrees_dir) = project_worktrees_dir.to_str() {
+        allow_project_in_asset_scope(&app, worktrees_dir);
+    }
+    let worktree_path = project_worktrees_dir.join(sanitize_folder_name(&name));
+    if worktree_path.exists() {
+        return Err(format!(
+            "Cannot fork session: target worktree path already exists: {}",
+            worktree_path.display()
+        ));
+    }
+    let worktree_path_str = worktree_path
+        .to_str()
+        .ok_or_else(|| "Invalid fork worktree path".to_string())?
+        .to_string();
+
+    git::create_worktree(&project.path, &worktree_path_str, &name, &source_head)?;
+
+    let created_at = now();
+    let max_order = data
+        .worktrees
+        .iter()
+        .filter(|w| w.project_id == project.id)
+        .map(|w| w.order)
+        .max()
+        .unwrap_or(0);
+    let worktree_id = Uuid::new_v4().to_string();
+    let worktree = Worktree {
+        id: worktree_id.clone(),
+        project_id: project.id.clone(),
+        name: name.clone(),
+        path: worktree_path_str.clone(),
+        stable_slot_id: None,
+        branch: name.clone(),
+        base_branch: source_worktree
+            .base_branch
+            .clone()
+            .or(Some(project.default_branch.clone())),
+        created_at,
+        setup_output: None,
+        setup_script: None,
+        setup_success: None,
+        session_type: SessionType::Worktree,
+        pr_number: source_worktree.pr_number,
+        pr_url: source_worktree.pr_url.clone(),
+        issue_number: source_worktree.issue_number,
+        linear_issue_identifier: source_worktree.linear_issue_identifier.clone(),
+        security_alert_number: source_worktree.security_alert_number,
+        security_alert_url: source_worktree.security_alert_url.clone(),
+        advisory_ghsa_id: source_worktree.advisory_ghsa_id.clone(),
+        advisory_url: source_worktree.advisory_url.clone(),
+        cached_pr_status: None,
+        cached_check_status: None,
+        cached_behind_count: None,
+        cached_ahead_count: None,
+        cached_status_at: None,
+        cached_uncommitted_added: None,
+        cached_uncommitted_removed: None,
+        cached_branch_diff_added: None,
+        cached_branch_diff_removed: None,
+        cached_base_branch_ahead_count: None,
+        cached_base_branch_behind_count: None,
+        cached_worktree_ahead_count: None,
+        cached_unpushed_count: None,
+        pr_push_remote: source_worktree.pr_push_remote.clone(),
+        pr_push_branch: source_worktree.pr_push_branch.clone(),
+        order: max_order + 1,
+        label: source_worktree.label.clone(),
+        archived_at: None,
+        last_opened_at: Some(created_at),
+        automation_id: None,
+        automation_name: None,
+        automation_owned: false,
+    };
+
+    let result = (|| -> Result<ForkSessionToWorktreeResponse, String> {
+        copy_dirty_worktree_state(source_path, &worktree_path)?;
+
+        let mut forked_session = prepare_forked_session(&source_session, 0, created_at);
+        let source_metadata = crate::chat::storage::load_metadata(&app, &source_session_id)?;
+        copy_session_run_files(&app, &source_session_id, &forked_session.id)?;
+        let forked_metadata =
+            prepare_forked_metadata(source_metadata, &forked_session, &worktree_id);
+
+        let saved_session = crate::chat::storage::with_sessions_mut(
+            &app,
+            &worktree.path,
+            &worktree_id,
+            |sessions: &mut WorktreeSessions| {
+                sessions.sessions.clear();
+                sessions.sessions.push(forked_session.clone());
+                sessions.active_session_id = Some(forked_session.id.clone());
+                Ok(forked_session.clone())
+            },
+        )?;
+        crate::chat::storage::save_metadata(&app, &forked_metadata)?;
+        forked_session = saved_session;
+
+        data.add_worktree(worktree.clone());
+        save_projects_data(&app, &data)?;
+
+        let created_event = WorktreeCreatedEvent {
+            worktree: worktree.clone(),
+            auto_open_in_jean: false,
+        };
+        let _ = app.emit_all("worktree:created", &created_event);
+        let _ = app.emit_all(
+            "worktrees:changed",
+            &serde_json::json!({ "project_id": project.id }),
+        );
+        let _ = app.emit_all(
+            "cache:invalidate",
+            &serde_json::json!({ "keys": ["sessions", "projects"] }),
+        );
+
+        Ok(ForkSessionToWorktreeResponse {
+            worktree,
+            session: forked_session,
+        })
+    })();
+
+    if let Err(error) = result.as_ref() {
+        log::warn!(
+            "Fork session failed after git worktree creation; cleaning up {worktree_path_str}: {error}"
+        );
+        let _ = git::remove_worktree(&project.path, &worktree_path_str);
+        let _ = git::delete_branch(&project.path, &name);
+    }
+
+    result
 }
 
 /// Create a worktree from an existing branch (runs in background)
@@ -9059,6 +9616,228 @@ pub async fn run_review_with_ai(
     );
 
     Ok(response)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartReviewJobResponse {
+    pub job: ReviewJob,
+}
+
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub async fn start_review_job(
+    app: AppHandle,
+    worktree_id: String,
+    worktree_path: String,
+    source: String,
+    custom_prompt: Option<String>,
+    model: Option<String>,
+    custom_profile_name: Option<String>,
+    review_run_id: Option<String>,
+    reasoning_effort: Option<String>,
+    review_type: Option<String>,
+) -> Result<StartReviewJobResponse, String> {
+    let review_run_id = review_run_id.unwrap_or_else(|| Uuid::new_v4().to_string());
+    let job_id = Uuid::new_v4().to_string();
+    REVIEW_JOB_REGISTRY.try_insert_running(ReviewJobStart {
+        id: job_id.clone(),
+        review_run_id: review_run_id.clone(),
+        worktree_id: worktree_id.clone(),
+        worktree_path: worktree_path.clone(),
+        session_id: None,
+        source: source.clone(),
+    })?;
+
+    let session = crate::chat::create_session(
+        app.clone(),
+        worktree_id.clone(),
+        worktree_path.clone(),
+        Some("Code Review".to_string()),
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .await
+    .inspect_err(|_| {
+        REVIEW_JOB_REGISTRY.remove(&job_id);
+    })?;
+
+    if let Err(error) = update_review_session_state(
+        app.clone(),
+        worktree_id.clone(),
+        worktree_path.clone(),
+        session.id.clone(),
+        Some(true),
+        None,
+    )
+    .await
+    {
+        REVIEW_JOB_REGISTRY.remove(&job_id);
+        return Err(error);
+    }
+
+    let job = REVIEW_JOB_REGISTRY
+        .attach_session(&job_id, session.id.clone())
+        .ok_or_else(|| "Review job reservation disappeared".to_string())?;
+    emit_review_job_update(&app, &job);
+
+    let task_app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let review_app = task_app.clone();
+        let review_worktree_path = worktree_path.clone();
+        let review_source = source.clone();
+        let review_run_id_for_task = review_run_id.clone();
+
+        let result = tokio::task::spawn_blocking(move || {
+            tauri::async_runtime::block_on(async move {
+                if review_source == "coderabbit-cli" {
+                    run_coderabbit_review(
+                        review_app,
+                        review_worktree_path,
+                        Some(review_run_id_for_task),
+                        review_type,
+                    )
+                    .await
+                } else {
+                    run_review_with_ai(
+                        review_app,
+                        review_worktree_path,
+                        custom_prompt,
+                        model,
+                        custom_profile_name,
+                        Some(review_run_id_for_task),
+                        reasoning_effort,
+                    )
+                    .await
+                }
+            })
+        })
+        .await
+        .map_err(|e| format!("Review task failed: {e}"))
+        .and_then(|result| result);
+
+        match result {
+            Ok(response) => {
+                let review_results = serde_json::to_value(&response).ok();
+                let _ = update_review_session_state(
+                    task_app.clone(),
+                    worktree_id.clone(),
+                    worktree_path.clone(),
+                    session.id.clone(),
+                    Some(false),
+                    review_results.map(Some),
+                )
+                .await;
+                if let Some(job) =
+                    REVIEW_JOB_REGISTRY.mark_completed(&job_id, session.id, &response)
+                {
+                    emit_review_job_update(&task_app, &job);
+                }
+            }
+            Err(error) => {
+                let cancelled = error.to_lowercase().contains("cancelled")
+                    || error.to_lowercase().contains("canceled");
+                let _ = update_review_session_state(
+                    task_app.clone(),
+                    worktree_id.clone(),
+                    worktree_path.clone(),
+                    session.id.clone(),
+                    Some(false),
+                    None,
+                )
+                .await;
+                let updated = if cancelled {
+                    REVIEW_JOB_REGISTRY.mark_cancelled(&job_id)
+                } else {
+                    REVIEW_JOB_REGISTRY.mark_failed(&job_id, error)
+                };
+                if let Some(job) = updated {
+                    emit_review_job_update(&task_app, &job);
+                }
+            }
+        }
+    });
+
+    Ok(StartReviewJobResponse { job })
+}
+
+#[tauri::command]
+pub async fn get_review_job(job_id: String) -> Result<Option<ReviewJob>, String> {
+    Ok(REVIEW_JOB_REGISTRY.get(&job_id))
+}
+
+#[tauri::command]
+pub async fn list_review_jobs(worktree_id: Option<String>) -> Result<Vec<ReviewJob>, String> {
+    Ok(REVIEW_JOB_REGISTRY
+        .list()
+        .into_iter()
+        .filter(|job| {
+            worktree_id
+                .as_ref()
+                .map(|id| job.worktree_id == *id)
+                .unwrap_or(true)
+        })
+        .collect())
+}
+
+#[tauri::command]
+pub async fn cancel_review_job(job_id: String) -> Result<bool, String> {
+    let Some(job) = REVIEW_JOB_REGISTRY.get(&job_id) else {
+        return Ok(false);
+    };
+    let cancelled = cancel_review_with_ai(job.review_run_id.clone()).await?;
+    if cancelled {
+        if let Some(job) = REVIEW_JOB_REGISTRY.mark_cancelled(&job_id) {
+            // Best effort event for clients that are still listening.
+            // There is no AppHandle in this command, so the running task also
+            // emits terminal state once its process exits.
+            let _ = job;
+        }
+    }
+    Ok(cancelled)
+}
+
+fn emit_review_job_update(app: &AppHandle, job: &ReviewJob) {
+    let _ = app.emit_all("review-job:updated", job);
+}
+
+async fn update_review_session_state(
+    app: AppHandle,
+    worktree_id: String,
+    worktree_path: String,
+    session_id: String,
+    is_reviewing: Option<bool>,
+    review_results: Option<Option<serde_json::Value>>,
+) -> Result<(), String> {
+    crate::chat::update_session_state(
+        app,
+        worktree_id,
+        worktree_path,
+        session_id,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        is_reviewing,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        review_results,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .await
 }
 
 fn map_coderabbit_severity(severity: &str) -> String {

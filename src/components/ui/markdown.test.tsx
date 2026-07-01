@@ -40,4 +40,20 @@ describe('Markdown math rendering', () => {
     expect(screen.getByRole('checkbox')).toBeInTheDocument()
     expect(screen.getByText(/Keep this task unchecked/)).toBeInTheDocument()
   })
+
+  it('converts app-data image paths into loadable file URLs', () => {
+    const { container } = render(
+      <Markdown>
+        {
+          '![Linear screenshot](</Users/me/Library/Application Support/com.jean.desktop/linear-context-images/ENG-123/image.png>)'
+        }
+      </Markdown>
+    )
+
+    const image = container.querySelector('img')
+
+    expect(image?.getAttribute('src')).toBe(
+      '/api/files/linear-context-images/ENG-123/image.png'
+    )
+  })
 })

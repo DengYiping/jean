@@ -459,6 +459,30 @@ export function SessionChatModal({
     [handleRenameSubmit]
   )
 
+  useEffect(() => {
+    if (!isOpen) return
+    const handleRenameSessionCommand = (event: Event) => {
+      const detail = (event as CustomEvent<{ sessionId?: string }>).detail
+      const session =
+        sessions.find(item => item.id === detail?.sessionId) ??
+        sessions.find(item => item.id === currentSessionId)
+      if (!session) return
+
+      setRenameValue(session.name)
+      setRenamingSessionId(session.id)
+    }
+
+    window.addEventListener(
+      'command:rename-session',
+      handleRenameSessionCommand as EventListener
+    )
+    return () =>
+      window.removeEventListener(
+        'command:rename-session',
+        handleRenameSessionCommand as EventListener
+      )
+  }, [currentSessionId, isOpen, sessions])
+
   const renameInputRef = useCallback((node: HTMLInputElement | null) => {
     if (node) {
       node.focus()
@@ -506,7 +530,7 @@ export function SessionChatModal({
   )
 
   const handleTabAuxClick = useCallback(
-    (e: MouseEvent<HTMLButtonElement>, session: Session) => {
+    (e: MouseEvent<HTMLElement>, session: Session) => {
       if (e.button !== 1) return
       e.preventDefault()
       e.stopPropagation()
@@ -1273,13 +1297,22 @@ export function SessionChatModal({
                       return (
                         <ContextMenu key={session.id}>
                           <ContextMenuTrigger asChild>
-                            <button
+                            <div
                               data-session-id={session.id}
+                              role="button"
+                              tabIndex={0}
                               onClick={() => handleTabClick(session.id)}
                               onMouseDown={e => {
                                 if (e.button === 1) e.preventDefault()
                               }}
                               onAuxClick={e => handleTabAuxClick(e, session)}
+                              onKeyDown={e => {
+                                if (renamingSessionId === session.id) return
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault()
+                                  handleTabClick(session.id)
+                                }
+                              }}
                               onDoubleClick={() =>
                                 handleStartRenameImmediate(
                                   session.id,
@@ -1315,6 +1348,7 @@ export function SessionChatModal({
                                   onKeyDown={e =>
                                     handleRenameKeyDown(e, session.id)
                                   }
+                                  onPointerDown={e => e.stopPropagation()}
                                   onClick={e => e.stopPropagation()}
                                   className="w-full min-w-0 bg-transparent text-xs outline-none"
                                 />
@@ -1337,7 +1371,7 @@ export function SessionChatModal({
                                   size="xs"
                                 />
                               )}
-                            </button>
+                            </div>
                           </ContextMenuTrigger>
                           <ContextMenuContent className="w-64">
                             <ContextMenuItem

@@ -95,6 +95,7 @@ interface MessageDiffModalProps {
   edits: EditTool[]
   subsequentEdits?: EditTool[]
   worktreePath?: string
+  patch?: string | null
 }
 
 export function MessageDiffModal({
@@ -104,6 +105,7 @@ export function MessageDiffModal({
   edits,
   subsequentEdits = [],
   worktreePath,
+  patch,
 }: MessageDiffModalProps) {
   const [diffStyle, setDiffStyle] = useState<DiffStyle>('split')
   const [viewMode, setViewMode] = useState<ViewMode>('last')
@@ -130,11 +132,19 @@ export function MessageDiffModal({
   const { data: fileContent, isLoading: isLoadingFile } = useQuery({
     queryKey: ['file-content', filePath],
     queryFn: () => invoke<string>('read_file_content', { path: filePath }),
-    enabled: isOpen && viewMode === 'last',
+    enabled: isOpen && viewMode === 'last' && !patch,
     staleTime: 10_000,
   })
 
   const currentChangeFile = useMemo(() => {
+    if (patch) {
+      try {
+        const patches = parsePatchFiles(patch)
+        return patches[0]?.files[0] ?? null
+      } catch {
+        return null
+      }
+    }
     if (!fileContent) return null
     try {
       // Step 1: undo subsequent messages' edits → get file state right after THIS message
@@ -163,7 +173,7 @@ export function MessageDiffModal({
     } catch {
       return null
     }
-  }, [fileContent, edits, subsequentEdits, relativePath])
+  }, [fileContent, edits, subsequentEdits, relativePath, patch])
 
   // ── All changes: full uncommitted git diff ───────────────────────────────
   const { data: gitDiff, isLoading: isLoadingGit } = useQuery({

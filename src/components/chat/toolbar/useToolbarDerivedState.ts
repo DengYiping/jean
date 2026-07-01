@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { getMessageModelLabel } from '@/components/chat/message-settings-labels'
 import type {
   ClaudeModel,
   CustomCliProfile,
@@ -204,7 +205,7 @@ export function useToolbarDerivedState({
   const selectedBaseModel = selectedFastInfo.baseModel
   const selectedModelLabel =
     desktopModelOptions.find(option => option.value === selectedBaseModel)
-      ?.label ?? selectedBaseModel
+      ?.label ?? getMessageModelLabel(selectedBaseModel, customCodexModels)
 
   return {
     isCodex,

@@ -1,4 +1,4 @@
-import { memo, useCallback, type CSSProperties } from 'react'
+import { memo, useCallback, useState, type CSSProperties } from 'react'
 import {
   DndContext,
   KeyboardSensor,
@@ -16,7 +16,14 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { GripVertical, Trash2, WandSparkles } from 'lucide-react'
+import {
+  Check,
+  GripVertical,
+  Pencil,
+  Trash2,
+  WandSparkles,
+  X,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { MessageSettingsBadges } from '@/components/chat/MessageSettingsBadges'
 import type { QueuedMessage } from '@/types/chat'
@@ -26,6 +33,7 @@ interface SortableQueuedMessageItemProps {
   index: number
   sessionId: string
   onRemove: (sessionId: string, messageId: string) => void
+  onEdit: (sessionId: string, messageId: string, message: string) => void
   onSteer: (sessionId: string, messageId: string) => void
 }
 
@@ -34,8 +42,11 @@ const SortableQueuedMessageItem = memo(function SortableQueuedMessageItem({
   index,
   sessionId,
   onRemove,
+  onEdit,
   onSteer,
 }: SortableQueuedMessageItemProps) {
+  const [isEditing, setIsEditing] = useState(false)
+  const [draft, setDraft] = useState(message.message)
   const skillCount =
     message.skills?.length ?? message.pendingSkills?.length ?? 0
   const {
@@ -63,6 +74,25 @@ const SortableQueuedMessageItem = memo(function SortableQueuedMessageItem({
     onSteer(sessionId, message.id)
   }, [message.id, onSteer, sessionId])
 
+  const handleStartEdit = useCallback(() => {
+    setDraft(message.message)
+    setIsEditing(true)
+  }, [message.message])
+
+  const handleCancelEdit = useCallback(() => {
+    setDraft(message.message)
+    setIsEditing(false)
+  }, [message.message])
+
+  const handleSaveEdit = useCallback(() => {
+    const trimmed = draft.trim()
+    if (!trimmed) return
+    if (trimmed !== message.message) {
+      onEdit(sessionId, message.id, trimmed)
+    }
+    setIsEditing(false)
+  }, [draft, message.id, message.message, onEdit, sessionId])
+
   const isMagicCommand = message.kind === 'magic_command'
   const displayMessage = isMagicCommand
     ? `Magic: ${message.magicCommandLabel ?? message.message}`
@@ -88,32 +118,42 @@ const SortableQueuedMessageItem = memo(function SortableQueuedMessageItem({
           </button>
 
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <span className="truncate text-sm">
-                {displayMessage.length > 120
-                  ? `${displayMessage.slice(0, 120)}...`
-                  : displayMessage}
-              </span>
-
-              {message.pendingImages.length > 0 && (
-                <span className="shrink-0 text-[10px] text-muted-foreground">
-                  {message.pendingImages.length} img
+            {isEditing ? (
+              <textarea
+                value={draft}
+                onChange={event => setDraft(event.target.value)}
+                className="min-h-16 w-full resize-y rounded-md border border-border bg-background px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-ring"
+                aria-label={`Edit queued message ${index + 1}`}
+                autoFocus
+              />
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="truncate text-sm">
+                  {displayMessage.length > 120
+                    ? `${displayMessage.slice(0, 120)}...`
+                    : displayMessage}
                 </span>
-              )}
 
-              {(message.pendingFiles.length > 0 ||
-                skillCount > 0 ||
-                message.pendingTextFiles.length > 0) && (
-                <span className="shrink-0 text-[10px] text-muted-foreground">
-                  {message.pendingFiles.length +
-                    skillCount +
-                    message.pendingTextFiles.length}{' '}
-                  file(s)
-                </span>
-              )}
-            </div>
+                {message.pendingImages.length > 0 && (
+                  <span className="shrink-0 text-[10px] text-muted-foreground">
+                    {message.pendingImages.length} img
+                  </span>
+                )}
 
-            {!isMagicCommand && (
+                {(message.pendingFiles.length > 0 ||
+                  skillCount > 0 ||
+                  message.pendingTextFiles.length > 0) && (
+                  <span className="shrink-0 text-[10px] text-muted-foreground">
+                    {message.pendingFiles.length +
+                      skillCount +
+                      message.pendingTextFiles.length}{' '}
+                    file(s)
+                  </span>
+                )}
+              </div>
+            )}
+
+            {!isMagicCommand && !isEditing && (
               <div className="mt-1">
                 <MessageSettingsBadges
                   model={message.model}
@@ -127,27 +167,60 @@ const SortableQueuedMessageItem = memo(function SortableQueuedMessageItem({
           </div>
 
           <div className="flex shrink-0 items-center gap-1.5">
-            {!isMagicCommand && (
-              <button
-                type="button"
-                onClick={handleSteer}
-                className="rounded-full bg-primary px-2.5 py-1 text-[11px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-              >
-                <span className="inline-flex items-center gap-1">
-                  <WandSparkles className="h-3 w-3" />
-                  <span>Steer</span>
-                </span>
-              </button>
-            )}
+            {isEditing ? (
+              <>
+                <button
+                  type="button"
+                  onClick={handleSaveEdit}
+                  className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-primary hover:text-primary-foreground"
+                  aria-label={`Save queued message ${index + 1}`}
+                >
+                  <Check className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCancelEdit}
+                  className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  aria-label={`Cancel editing queued message ${index + 1}`}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </>
+            ) : (
+              <>
+                {!isMagicCommand && (
+                  <button
+                    type="button"
+                    onClick={handleStartEdit}
+                    className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    aria-label={`Edit queued message ${index + 1}`}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                )}
+                {!isMagicCommand && (
+                  <button
+                    type="button"
+                    onClick={handleSteer}
+                    className="rounded-full bg-primary px-2.5 py-1 text-[11px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                  >
+                    <span className="inline-flex items-center gap-1">
+                      <WandSparkles className="h-3 w-3" />
+                      <span>Steer</span>
+                    </span>
+                  </button>
+                )}
 
-            <button
-              type="button"
-              onClick={handleRemove}
-              className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-destructive hover:text-destructive-foreground"
-              aria-label={`Delete queued message ${index + 1}`}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
+                <button
+                  type="button"
+                  onClick={handleRemove}
+                  className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-destructive hover:text-destructive-foreground"
+                  aria-label={`Delete queued message ${index + 1}`}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -160,6 +233,7 @@ interface QueuedMessagesListProps {
   sessionId: string
   onRemove: (sessionId: string, messageId: string) => void
   onReorder: (sessionId: string, messages: QueuedMessage[]) => void
+  onEdit: (sessionId: string, messageId: string, message: string) => void
   onSteer: (sessionId: string, messageId: string) => void
 }
 
@@ -168,6 +242,7 @@ export const QueuedMessagesList = memo(function QueuedMessagesList({
   sessionId,
   onRemove,
   onReorder,
+  onEdit,
   onSteer,
 }: QueuedMessagesListProps) {
   const sensors = useSensors(
@@ -216,6 +291,7 @@ export const QueuedMessagesList = memo(function QueuedMessagesList({
                 index={index}
                 sessionId={sessionId}
                 onRemove={onRemove}
+                onEdit={onEdit}
                 onSteer={onSteer}
               />
             ))}

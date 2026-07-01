@@ -17,6 +17,8 @@ import {
   DEFAULT_MAGIC_PROMPT_PROVIDERS,
   DEFAULT_MAGIC_PROMPT_BACKENDS,
   DEFAULT_MAGIC_PROMPT_EFFORTS,
+  modelOptions,
+  normalizeClaudeModel,
 } from '@/types/preferences'
 import { DEFAULT_KEYBINDINGS } from '@/types/keybindings'
 
@@ -55,6 +57,17 @@ const createWrapper = (queryClient: QueryClient) => {
   Wrapper.displayName = 'TestQueryClientWrapper'
   return Wrapper
 }
+
+describe('model option helpers', () => {
+  it('offers Claude Sonnet 5 and normalizes the legacy sonnet alias', () => {
+    expect(modelOptions.map(option => option.value)).toContain(
+      'claude-sonnet-5'
+    )
+    expect(normalizeClaudeModel('sonnet')).toBe('claude-sonnet-5')
+    expect(normalizeClaudeModel('claude-sonnet-5')).toBe('claude-sonnet-5')
+    expect(normalizeClaudeModel('claude-sonnet-4-6')).toBe('claude-sonnet-4-6')
+  })
+})
 
 describe('preferences service', () => {
   let queryClient: QueryClient

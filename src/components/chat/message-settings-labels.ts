@@ -3,7 +3,10 @@ import {
   MODEL_OPTIONS,
   OPENCODE_MODEL_OPTIONS,
 } from '@/components/chat/toolbar/toolbar-options'
-import { formatOpencodeModelLabel } from '@/components/chat/toolbar/toolbar-utils'
+import {
+  formatClaudeModelLabel,
+  formatOpencodeModelLabel,
+} from '@/components/chat/toolbar/toolbar-utils'
 import {
   getClaudeFastInfo,
   getCodexFastInfo,
@@ -52,5 +55,6 @@ export function getMessageModelLabel(
     if (baseLabel) return `${baseLabel} Fast`
   }
 
+  if (model.startsWith('claude-')) return formatClaudeModelLabel(model)
   return model.includes('/') ? formatOpencodeModelLabel(model) : model
 }

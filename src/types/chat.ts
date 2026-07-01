@@ -92,6 +92,7 @@ export type ContentBlock =
   | { type: 'text'; text: string }
   | { type: 'tool_use'; tool_call_id: string }
   | { type: 'thinking'; thinking: string }
+  | { type: 'user_input'; text: string }
 
 /**
  * A single chat message
@@ -795,11 +796,36 @@ export function isAskUserQuestion(
   )
 }
 
+export function getAskUserQuestions(input: unknown): Question[] | null {
+  if (typeof input !== 'object' || input === null || !('questions' in input)) {
+    return null
+  }
+  const questions = (input as { questions?: unknown }).questions
+  return Array.isArray(questions) ? (questions as Question[]) : null
+}
+
+export function normalizeQuestionMultipleField(
+  questions: (Question & { multiple?: boolean })[]
+): Question[] {
+  return questions.map(question => ({
+    ...question,
+    multiSelect: question.multiSelect ?? question.multiple === true,
+  }))
+}
+
+export function hasQuestionAnswerOutput(output?: string): boolean {
+  return Boolean(output?.trim())
+}
+
 /**
  * Type guard to check if a tool call is ExitPlanMode
  */
 export function isExitPlanMode(toolCall: ToolCall): boolean {
   return toolCall.name === 'ExitPlanMode'
+}
+
+export function isPlanToolCall(toolCall: ToolCall): boolean {
+  return isExitPlanMode(toolCall)
 }
 
 // ============================================================================

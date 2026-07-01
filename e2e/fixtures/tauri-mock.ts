@@ -64,6 +64,7 @@ export const test = base.extend<TauriMockFixtures>({
         )
         const latestTerminalRunBySession: Record<string, string> = {}
         const terminalRunCountersBySession: Record<string, number> = {}
+        const reviewJobStore: Record<string, Record<string, unknown>> = {}
         const invokeCalls: Array<{
           command: string
           args: Record<string, unknown> | undefined
@@ -804,6 +805,78 @@ export const test = base.extend<TauriMockFixtures>({
             }, 0)
             return structuredClone(worktree)
           },
+          fork_session_to_worktree: args => {
+            const sourceWorktreeId = args?.sourceWorktreeId as
+              | string
+              | undefined
+            const sourceSessionId = args?.sourceSessionId as string | undefined
+            const sourceWorktree = worktreeStore.find(
+              w => w.id === sourceWorktreeId
+            )
+            const projectId =
+              (sourceWorktree?.project_id as string | undefined) ?? 'project-1'
+            const sourceName =
+              (sourceWorktree?.name as string | undefined) ?? 'worktree'
+            const name = `fork-${sourceName}`
+            const id = `worktree-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+            const sourceStore = getWorktreeStore(sourceWorktreeId ?? 'unknown')
+            const sourceSession =
+              sourceStore.sessions.find(s => s.id === sourceSessionId) ??
+              sourceStore.sessions[0]
+            const forkedSession = {
+              ...(structuredClone(sourceSession ?? {}) as Record<
+                string,
+                unknown
+              >),
+              id: `session-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              name: `Fork of ${String(sourceSession?.name ?? 'Session')}`,
+              order: 0,
+              created_at: Date.now() / 1000,
+              updated_at: Date.now() / 1000,
+              claude_session_id: null,
+              codex_thread_id: null,
+              codex_goal: null,
+              opencode_session_id: null,
+              is_reviewing: false,
+              waiting_for_input: false,
+              waiting_for_input_type: null,
+              pending_permission_denials: [],
+              pending_codex_mcp_elicitations: [],
+              queued_messages: [],
+              review_results: null,
+            }
+            const worktree = {
+              id,
+              project_id: projectId,
+              name,
+              path: `/tmp/e2e-test-project/.worktrees/${name}`,
+              branch: name,
+              base_branch:
+                (sourceWorktree?.branch as string | undefined) ?? 'main',
+              created_at: Date.now() / 1000,
+              order: worktreeStore.length,
+              session_type: 'worktree',
+              status: 'ready',
+            }
+            worktreeStore.push(worktree)
+            const forkStore = getWorktreeStore(id)
+            forkStore.sessions = [forkedSession]
+            forkStore.active_session_id = forkedSession.id as string
+            window.setTimeout(() => {
+              eventEmitter.dispatchEvent(
+                new CustomEvent('worktree:created', {
+                  detail: {
+                    worktree: structuredClone(worktree),
+                    autoOpenInJean: false,
+                  },
+                })
+              )
+            }, 0)
+            return {
+              worktree: structuredClone(worktree),
+              session: cloneSessionWithDerivedState(forkedSession),
+            }
+          },
           create_session: args => {
             const wid = (args?.worktreeId as string) ?? 'unknown'
             const store = getWorktreeStore(wid)
@@ -972,6 +1045,11 @@ export const test = base.extend<TauriMockFixtures>({
               if (args?.isReviewing !== undefined) {
                 session.is_reviewing = args.isReviewing
               }
+              if (args?.reviewResults !== undefined) {
+                session.review_results = structuredClone(
+                  args.reviewResults as unknown
+                )
+              }
               if (args?.parallelExecutionPromptEnabled !== undefined) {
                 session.parallel_execution_prompt_enabled =
                   args.parallelExecutionPromptEnabled
@@ -983,6 +1061,75 @@ export const test = base.extend<TauriMockFixtures>({
               }
             }
             return null
+          },
+          start_review_job: args => {
+            const wid = (args?.worktreeId as string) ?? 'unknown'
+            const store = getWorktreeStore(wid)
+            const session = {
+              id: `review-session-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              name: 'Code Review',
+              order: store.sessions.length,
+              created_at: Date.now() / 1000,
+              updated_at: Date.now() / 1000,
+              messages: [],
+              backend: 'claude',
+              is_reviewing: true,
+            }
+            store.sessions.unshift(session)
+            store.active_session_id = session.id
+            const job = {
+              id: `review-job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              reviewRunId:
+                (args?.reviewRunId as string | undefined) ?? 'review-run',
+              worktreeId: wid,
+              worktreePath: args?.worktreePath as string,
+              sessionId: session.id,
+              source: (args?.source as string | undefined) ?? 'ai',
+              status: 'running',
+              findingCount: null,
+              error: null,
+              createdAt: Date.now() / 1000,
+              updatedAt: Date.now() / 1000,
+            }
+            reviewJobStore[job.id] = job
+            window.setTimeout(() => {
+              eventEmitter.dispatchEvent(
+                new CustomEvent('review-job:updated', {
+                  detail: structuredClone(job),
+                })
+              )
+            }, 0)
+            return { job: structuredClone(job) }
+          },
+          get_review_job: args => {
+            const jobId = args?.jobId as string | undefined
+            return jobId && reviewJobStore[jobId]
+              ? structuredClone(reviewJobStore[jobId])
+              : null
+          },
+          list_review_jobs: args => {
+            const worktreeId = args?.worktreeId as string | undefined
+            return Object.values(reviewJobStore)
+              .filter(job => !worktreeId || job.worktreeId === worktreeId)
+              .map(job => structuredClone(job))
+          },
+          cancel_review_job: args => {
+            const jobId = args?.jobId as string | undefined
+            const job = jobId ? reviewJobStore[jobId] : null
+            if (!job) return false
+            job.status = 'cancelled'
+            job.error = 'Review cancelled'
+            job.updatedAt = Date.now() / 1000
+            if (typeof job.sessionId === 'string') {
+              const session = findStoredSession(job.sessionId)
+              if (session) session.is_reviewing = false
+            }
+            eventEmitter.dispatchEvent(
+              new CustomEvent('review-job:updated', {
+                detail: structuredClone(job),
+              })
+            )
+            return true
           },
           claim_supervisor_action_trigger: args => {
             const sessionId = args?.sessionId as string | undefined

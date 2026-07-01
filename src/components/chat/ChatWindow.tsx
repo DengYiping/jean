@@ -40,7 +40,12 @@ import {
   useUpdateSessionState,
   useCodexSubAgents,
 } from '@/services/chat'
-import { useWorktree, useProjects, useRunScripts } from '@/services/projects'
+import {
+  useWorktree,
+  useProjects,
+  useRunScripts,
+  projectsQueryKeys,
+} from '@/services/projects'
 import { useProjectsStore } from '@/store/projects-store'
 import type {
   Worktree,
@@ -196,6 +201,8 @@ import { sendApprovedPlanContinuation } from './hooks/send-approved-plan-continu
 import { dedupeInFlightAssistantMessage } from './in-flight-message-dedupe'
 import { shouldShowPermissionApproval } from './permission-approval-utils'
 import type { PendingInputSnapshot } from './pending-input'
+import { navigateToForkedSession } from './fork-session-navigation'
+import { shouldShowCodeReviewLoadingPanel } from './session-card-utils'
 
 // PERFORMANCE: Stable empty array references to prevent infinite render loops
 // When Zustand selectors return [], a new reference is created each time
@@ -210,6 +217,11 @@ const EMPTY_INPUT_DRAFT = ''
 const EMPTY_QUEUED_MESSAGES: QueuedMessage[] = []
 const EMPTY_PERMISSION_DENIALS: PermissionDenial[] = []
 const EMPTY_CODEX_MCP_ELICITATIONS: CodexMcpElicitationType[] = []
+
+interface ForkSessionToWorktreeResponse {
+  worktree: Worktree
+  session: Session
+}
 
 interface ChatWindowProps {
   /** When true, hides terminal panel and other elements not needed in modal */
@@ -441,6 +453,18 @@ export function ChatWindow({
     activeWorktreeId,
     activeWorktreePath
   )
+  const isCodeReviewLoadingPanel = shouldShowCodeReviewLoadingPanel({
+    session: session ?? undefined,
+    isSessionReviewing,
+    hasReviewResults,
+  })
+  const hasReviewPanel = hasReviewResults || isCodeReviewLoadingPanel
+
+  useEffect(() => {
+    if (hasReviewPanel && !reviewSidebarVisible) {
+      useChatStore.getState().setReviewSidebarVisible(true)
+    }
+  }, [hasReviewPanel, reviewSidebarVisible])
 
   useEffect(() => {
     if (
@@ -2163,6 +2187,78 @@ export function ChatWindow({
     })
   }, [activeWorktreePath, worktree?.pr_number])
 
+  const handleForkSession = useCallback(async () => {
+    if (!activeWorktreeId || !activeSessionId) {
+      toast.error('No active session to fork')
+      return
+    }
+
+    const toastId = toast.loading('Forking session to a new worktree...')
+    try {
+      const { worktree: forkedWorktree, session: forkedSession } =
+        await invoke<ForkSessionToWorktreeResponse>(
+          'fork_session_to_worktree',
+          {
+            sourceWorktreeId: activeWorktreeId,
+            sourceSessionId: activeSessionId,
+          }
+        )
+
+      queryClient.setQueryData<Worktree>(
+        [...projectsQueryKeys.all, 'worktree', forkedWorktree.id],
+        forkedWorktree
+      )
+      queryClient.setQueryData<Session>(
+        chatQueryKeys.session(forkedSession.id),
+        forkedSession
+      )
+      queryClient.invalidateQueries({ queryKey: projectsQueryKeys.list() })
+      queryClient.invalidateQueries({
+        queryKey: projectsQueryKeys.worktrees(forkedWorktree.project_id),
+      })
+      queryClient.invalidateQueries({
+        queryKey: chatQueryKeys.sessions(forkedWorktree.id),
+      })
+
+      const projectsStore = useProjectsStore.getState()
+      const chatStore = useChatStore.getState()
+      navigateToForkedSession(
+        forkedWorktree,
+        forkedSession,
+        {
+          activeWorktreePath,
+          sessionChatModalOpen: isModal || sessionModalOpen,
+        },
+        {
+          expandProject: projectsStore.expandProject,
+          selectWorktree: projectsStore.selectWorktree,
+          registerWorktreePath: chatStore.registerWorktreePath,
+          setActiveWorktree: chatStore.setActiveWorktree,
+          setActiveSession: chatStore.setActiveSession,
+          addUserInitiatedSession: chatStore.addUserInitiatedSession,
+          openWorktreeModal: (worktreeId, worktreePath) => {
+            window.dispatchEvent(
+              new CustomEvent('open-worktree-modal', {
+                detail: { worktreeId, worktreePath },
+              })
+            )
+          },
+        }
+      )
+
+      toast.success(`Forked session to ${forkedWorktree.name}`, { id: toastId })
+    } catch (error) {
+      toast.error(`Failed to fork session: ${error}`, { id: toastId })
+    }
+  }, [
+    activeSessionId,
+    activeWorktreeId,
+    activeWorktreePath,
+    isModal,
+    queryClient,
+    sessionModalOpen,
+  ])
+
   // Global cancel keyboard shortcut (Cmd+Option+Backspace / Ctrl+Alt+Backspace)
   // ChatInput handles this when focused, but we need a global handler for when
   // focus is elsewhere (e.g., ReviewResultsPanel after clicking Fix)
@@ -2281,6 +2377,7 @@ export function ChatWindow({
     handlePush: handlePushWithPicker,
     handleOpenPr,
     handleReview: () => setReviewMethodModalOpen(true),
+    handleForkSession,
     handleMerge,
     handleMergePr,
     handleResolveConflicts,
@@ -2567,6 +2664,7 @@ export function ChatWindow({
   const {
     handleRemoveQueuedMessage,
     handleReorderQueuedMessages,
+    handleEditQueuedMessage,
     handleSteerQueuedMessage,
   } = useQueuedMessages({
     activeSessionId,
@@ -2680,7 +2778,7 @@ export function ChatWindow({
         />
         <ResizablePanelGroup direction="horizontal" className="flex-1">
           <ResizablePanel
-            defaultSize={hasReviewResults && reviewSidebarVisible ? 50 : 100}
+            defaultSize={hasReviewPanel && reviewSidebarVisible ? 50 : 100}
             minSize={40}
           >
             <ResizablePanelGroup direction="vertical" className="h-full">
@@ -3093,6 +3191,7 @@ export function ChatWindow({
                               sessionId={activeSessionId}
                               onRemove={handleRemoveQueuedMessage}
                               onReorder={handleReorderQueuedMessages}
+                              onEdit={handleEditQueuedMessage}
                               onSteer={handleSteerQueuedMessage}
                             />
                           )}
@@ -3400,8 +3499,8 @@ export function ChatWindow({
             </ResizablePanelGroup>
           </ResizablePanel>
 
-          {/* Review sidebar - shown when active session has review results */}
-          {hasReviewResults && (
+          {/* Review sidebar - shown when active session has review results or a running review */}
+          {hasReviewPanel && (
             <>
               <ResizableHandle withHandle />
               <ResizablePanel
@@ -3416,6 +3515,7 @@ export function ChatWindow({
                 {activeSessionId && (
                   <ReviewResultsPanel
                     sessionId={activeSessionId}
+                    isReviewing={isCodeReviewLoadingPanel}
                     onSendFix={handleReviewFix}
                   />
                 )}

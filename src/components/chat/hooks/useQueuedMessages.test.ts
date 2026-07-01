@@ -8,12 +8,14 @@ const {
   mockCancelChatMessage,
   mockPersistRemoveQueued,
   mockPersistReorderQueued,
+  mockPersistUpdateQueued,
   mockSteerCodexTurn,
   mockToastInfo,
 } = vi.hoisted(() => ({
   mockCancelChatMessage: vi.fn(),
   mockPersistRemoveQueued: vi.fn(),
   mockPersistReorderQueued: vi.fn(),
+  mockPersistUpdateQueued: vi.fn(),
   mockSteerCodexTurn: vi.fn(),
   mockToastInfo: vi.fn(),
 }))
@@ -22,6 +24,7 @@ vi.mock('@/services/chat', () => ({
   cancelChatMessage: mockCancelChatMessage,
   persistRemoveQueued: mockPersistRemoveQueued,
   persistReorderQueued: mockPersistReorderQueued,
+  persistUpdateQueued: mockPersistUpdateQueued,
   steerCodexTurn: mockSteerCodexTurn,
 }))
 
@@ -58,6 +61,7 @@ describe('useQueuedMessages', () => {
     mockCancelChatMessage.mockReset()
     mockPersistRemoveQueued.mockReset()
     mockPersistReorderQueued.mockReset()
+    mockPersistUpdateQueued.mockReset()
     mockSteerCodexTurn.mockReset()
     mockToastInfo.mockReset()
 
@@ -124,6 +128,63 @@ describe('useQueuedMessages', () => {
       sessionId,
       [second, first]
     )
+  })
+
+  it('edits queued messages and persists the new text', async () => {
+    mockPersistUpdateQueued.mockResolvedValue(true)
+
+    const { result } = renderHook(() =>
+      useQueuedMessages({
+        activeSessionId: sessionId,
+        activeWorktreeId: worktreeId,
+        activeWorktreePath: worktreePath,
+        selectedBackend: 'claude',
+      })
+    )
+
+    await act(async () => {
+      await result.current.handleEditQueuedMessage(
+        sessionId,
+        first.id,
+        'updated first'
+      )
+    })
+
+    expect(mockPersistUpdateQueued).toHaveBeenCalledWith(
+      worktreeId,
+      worktreePath,
+      sessionId,
+      first.id,
+      'updated first'
+    )
+    expect(useChatStore.getState().messageQueues[sessionId]?.[0]?.message).toBe(
+      'updated first'
+    )
+  })
+
+  it('drops stale queued messages when edit persistence reports it is gone', async () => {
+    mockPersistUpdateQueued.mockResolvedValue(false)
+
+    const { result } = renderHook(() =>
+      useQueuedMessages({
+        activeSessionId: sessionId,
+        activeWorktreeId: worktreeId,
+        activeWorktreePath: worktreePath,
+        selectedBackend: 'claude',
+      })
+    )
+
+    await act(async () => {
+      await result.current.handleEditQueuedMessage(
+        sessionId,
+        first.id,
+        'updated first'
+      )
+    })
+
+    expect(
+      useChatStore.getState().messageQueues[sessionId]?.map(m => m.id)
+    ).toEqual([second.id])
   })
 
   it('steers Claude by moving the queued message to the front and cancelling the current turn', async () => {

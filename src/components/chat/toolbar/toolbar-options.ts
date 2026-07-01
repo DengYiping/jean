@@ -3,6 +3,7 @@ import type { EffortLevel, ThinkingLevel } from '@/types/chat'
 
 export const MODEL_OPTIONS: { value: ClaudeModel; label: string }[] = [
   { value: 'claude-fable-5', label: 'Fable 5' },
+  { value: 'claude-sonnet-5', label: 'Sonnet 5' },
   { value: 'claude-opus-4-8[1m]', label: 'Opus 4.8 (1M)' },
   { value: 'claude-opus-4-7', label: 'Opus 4.7' },
   { value: 'claude-opus-4-7[1m]', label: 'Opus 4.7 (1M)' },
@@ -12,6 +13,7 @@ export const MODEL_OPTIONS: { value: ClaudeModel; label: string }[] = [
   { value: 'claude-opus-4-6-fast', label: 'Opus 4.6 Fast' },
   { value: 'claude-opus-4-6[1m]-fast', label: 'Opus 4.6 (1M) Fast' },
   { value: 'sonnet', label: 'Sonnet 4.6' },
+  { value: 'claude-sonnet-4-6', label: 'Sonnet 4.6' },
   { value: 'claude-sonnet-4-6[1m]', label: 'Sonnet 4.6 (1M)' },
   { value: 'haiku', label: 'Haiku' },
 ]

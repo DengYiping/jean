@@ -32,6 +32,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
 import { useChatStore } from '@/store/chat-store'
+import { convertFileSrc } from '@/lib/transport'
 
 interface MarkdownProps {
   children: string
@@ -172,6 +173,12 @@ function normalizeStandaloneBracketMath(content: string): string {
         ? `${indent}$$\n${formula}\n${indent}$$`
         : line
   )
+}
+
+function markdownImageSrc(src: string | undefined): string | undefined {
+  if (!src) return src
+  if (/^(https?:|data:|blob:|asset:|\/api\/|#)/i.test(src)) return src
+  return convertFileSrc(src)
 }
 
 /**
@@ -426,7 +433,7 @@ const components: Components = {
   // Images
   img: ({ src, alt }) => (
     <img
-      src={src}
+      src={markdownImageSrc(src)}
       alt={alt || ''}
       className="max-w-full h-auto rounded-md my-4"
     />

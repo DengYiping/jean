@@ -553,6 +553,11 @@ interface ChatUIState {
   enqueueMessage: (sessionId: string, message: QueuedMessage) => void
   dequeueMessage: (sessionId: string) => QueuedMessage | undefined
   removeQueuedMessage: (sessionId: string, messageId: string) => void
+  updateQueuedMessage: (
+    sessionId: string,
+    messageId: string,
+    message: string
+  ) => void
   reorderQueuedMessages: (sessionId: string, messages: QueuedMessage[]) => void
   clearQueue: (sessionId: string) => void
   getQueueLength: (sessionId: string) => number
@@ -2445,6 +2450,25 @@ export const useChatStore = create<ChatUIState>()(
           },
           undefined,
           'removeQueuedMessage'
+        ),
+
+      updateQueuedMessage: (sessionId, messageId, message) =>
+        set(
+          state => {
+            const queue = state.messageQueues[sessionId] ?? []
+            const idx = queue.findIndex(m => m.id === messageId)
+            if (idx === -1 || queue[idx]?.message === message) return state
+            return {
+              messageQueues: {
+                ...state.messageQueues,
+                [sessionId]: queue.map(m =>
+                  m.id === messageId ? { ...m, message } : m
+                ),
+              },
+            }
+          },
+          undefined,
+          'updateQueuedMessage'
         ),
 
       reorderQueuedMessages: (sessionId, messages) =>

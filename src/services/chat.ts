@@ -2483,6 +2483,26 @@ export function persistRemoveQueued(
 }
 
 /**
+ * Persist a queued message text edit.
+ * Returns false when the message is no longer queued.
+ */
+export async function persistUpdateQueued(
+  worktreeId: string,
+  worktreePath: string,
+  sessionId: string,
+  messageId: string,
+  message: string
+): Promise<boolean> {
+  return invoke<boolean>('update_queued_message', {
+    worktreeId,
+    worktreePath,
+    sessionId,
+    messageId,
+    message,
+  })
+}
+
+/**
  * Persist a queue reorder for a session.
  */
 export function persistReorderQueued(

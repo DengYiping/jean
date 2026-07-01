@@ -24,6 +24,7 @@ interface MagicCommandHandlers {
   handlePush: () => void
   handleOpenPr: (draft?: boolean) => void
   handleReview: () => void
+  handleForkSession: () => void
   handleMerge: () => void
   handleMergePr: () => void
   handleResolveConflicts: (override?: ResolveConflictsOverride) => void
@@ -62,6 +63,7 @@ export function useMagicCommands({
   handlePush,
   handleOpenPr,
   handleReview,
+  handleForkSession,
   handleMerge,
   handleMergePr,
   handleResolveConflicts,
@@ -83,6 +85,7 @@ export function useMagicCommands({
     handlePush,
     handleOpenPr,
     handleReview,
+    handleForkSession,
     handleMerge,
     handleMergePr,
     handleResolveConflicts,
@@ -105,6 +108,7 @@ export function useMagicCommands({
       handlePush,
       handleOpenPr,
       handleReview,
+      handleForkSession,
       handleMerge,
       handleMergePr,
       handleResolveConflicts,
@@ -165,6 +169,9 @@ export function useMagicCommands({
           break
         case 'review':
           handlers.handleReview()
+          break
+        case 'fork-session':
+          handlers.handleForkSession()
           break
         case 'merge':
           handlers.handleMerge()

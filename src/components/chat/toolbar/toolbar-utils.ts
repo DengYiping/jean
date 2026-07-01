@@ -60,7 +60,7 @@ function formatProviderName(provider: string): string {
   )
 }
 
-function formatModelToken(token: string): string {
+export function formatModelToken(token: string): string {
   const knownTokens: Record<string, string> = {
     claude: 'Claude',
     gpt: 'GPT',
@@ -90,6 +90,15 @@ function formatModelToken(token: string): string {
   if (/^\d+(\.\d+)*$/.test(token)) return token
   if (/^[a-z]{1,3}$/i.test(token)) return token.toUpperCase()
   return token.charAt(0).toUpperCase() + token.slice(1)
+}
+
+export function formatClaudeModelLabel(model: string): string {
+  const normalized = model.replace(/^claude-/, '')
+  return normalized
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map(formatModelToken)
+    .join(' ')
 }
 
 export function formatOpencodeModelLabel(raw: string): string {

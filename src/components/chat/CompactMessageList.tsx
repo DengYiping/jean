@@ -9,8 +9,8 @@ import {
   useRef,
   useState,
 } from 'react'
-import { flushSync } from 'react-dom'
 import { ChevronRight, Loader2, Activity, Brain } from 'lucide-react'
+import { Markdown } from '@/components/ui/markdown'
 import {
   Collapsible,
   CollapsibleContent,
@@ -24,18 +24,36 @@ import type {
   ReviewFinding,
   ToolCall,
 } from '@/types/chat'
-import { isAskUserQuestion, isExitPlanMode } from '@/types/chat'
+import {
+  getAskUserQuestions,
+  hasQuestionAnswerOutput,
+  isAskUserQuestion,
+  isPlanToolCall,
+  normalizeQuestionMultipleField,
+} from '@/types/chat'
 import { MessageItem } from './MessageItem'
+import { EditedFilesDisplay } from './EditedFilesDisplay'
 import { AskUserQuestion } from './AskUserQuestion'
-import { buildTimeline } from './tool-call-utils'
+import { SteeredPromptGroup } from './SteeredPromptGroup'
+import { buildTimeline, coalesceContentBlocks } from './tool-call-utils'
+import { formatDuration, getAssistantDurationMs } from './time-utils'
+import {
+  TOOL_CALL_ROW_CLASS,
+  TOOL_CALL_DETAIL_PILL_CLASS,
+} from './ToolCallInline'
 import type { VirtualizedMessageListHandle } from './VirtualizedMessageList'
-import { getAssistantDurationMs } from './time-utils'
+import {
+  capturePrependScrollAnchor,
+  restorePrependScrollAnchor,
+  type PrependScrollAnchor,
+} from './message-scroll-anchor'
+import {
+  RECAP_HEADING_RE,
+  extractRecapSection,
+  stripRecapFromMessage,
+} from './recap-utils'
 
 const SCROLL_THRESHOLD = 300
-
-function hasQuestionAnswerOutput(output?: string): boolean {
-  return Boolean(output?.trim())
-}
 
 interface CompactMessageListProps {
   messages: ChatMessage[]
@@ -85,6 +103,8 @@ interface CompactMessageListProps {
   isLoadingOlder?: boolean
   onLoadOlderRuns?: () => void
   loadedRunStartIndex?: number
+  hiddenPromptCount?: number
+  onShowHiddenPrompts?: () => void
 }
 
 type RenderItem =
@@ -93,19 +113,144 @@ type RenderItem =
       kind: 'compact'
       messages: { message: ChatMessage; globalIndex: number }[]
       key: string
+      latestText: string | null
     }
   | { kind: 'question'; message: ChatMessage; globalIndex: number }
+  | {
+      kind: 'steered'
+      texts: string[]
+      key: string
+      messageId: string
+      globalIndex: number
+    }
 
 /**
  * Returns true if an assistant message should always render in full
  * (contains a plan tool call) under compact mode.
  */
 function messageContainsPlan(message: ChatMessage): boolean {
-  return Boolean(message.tool_calls?.some(isExitPlanMode))
+  return Boolean(message.tool_calls?.some(isPlanToolCall))
 }
 
 function messageContainsQuestion(message: ChatMessage): boolean {
   return Boolean(message.tool_calls?.some(isAskUserQuestion))
+}
+
+type SteerSegment =
+  | { kind: 'blocks'; message: ChatMessage }
+  | { kind: 'steered'; texts: string[]; key: string }
+
+/**
+ * Splits an assistant message at mid-turn steered user prompts (Codex
+ * `turn/steer`, `user_input` blocks) so the compact view can interleave them
+ * chronologically: activity before a steer renders before its bubble, and
+ * activity after the steer renders after it. Returns null when the message
+ * contains no steered input.
+ */
+function splitMessageAtSteeredInputs(
+  message: ChatMessage
+): SteerSegment[] | null {
+  const blocks = message.content_blocks ?? []
+  if (!blocks.some(block => block.type === 'user_input')) return null
+
+  const segments: SteerSegment[] = []
+  let current: ContentBlock[] = []
+  let part = 0
+
+  const flushBlocks = () => {
+    if (current.length === 0) return
+    const toolIds = new Set(
+      current.flatMap(b => (b.type === 'tool_use' ? [b.tool_call_id] : []))
+    )
+    const text = current
+      .filter(b => b.type === 'text')
+      .map(b => b.text)
+      .join('')
+    segments.push({
+      kind: 'blocks',
+      message: {
+        ...message,
+        id: `${message.id}-part-${part++}`,
+        content: text,
+        content_blocks: current,
+        tool_calls: (message.tool_calls ?? []).filter(tc => toolIds.has(tc.id)),
+      },
+    })
+    current = []
+  }
+
+  blocks.forEach((block, index) => {
+    if (block.type === 'user_input') {
+      flushBlocks()
+      if (block.text.trim()) {
+        // Consecutive steered prompts merge into one connected group
+        const last = segments[segments.length - 1]
+        if (last && last.kind === 'steered') {
+          last.texts.push(block.text)
+        } else {
+          segments.push({
+            kind: 'steered',
+            texts: [block.text],
+            key: `steered-${message.id}-${index}`,
+          })
+        }
+      }
+    } else {
+      current.push(block)
+    }
+  })
+  flushBlocks()
+
+  return segments
+}
+
+function isPureTextAssistantMessage(message: ChatMessage): boolean {
+  if (message.role !== 'assistant') return false
+  if ((message.tool_calls?.length ?? 0) > 0) return false
+
+  const blocks = message.content_blocks ?? []
+  if (blocks.some(block => block.type !== 'text')) return false
+
+  const blockText = blocks
+    .filter(block => block.type === 'text')
+    .map(block => block.text)
+    .join('')
+
+  return Boolean(blockText.trim() || message.content?.trim())
+}
+
+/**
+ * Returns the latest assistant prose text in a compact group as plain text.
+ * Walks newest → oldest and returns the first non-empty result. If the latest
+ * message contains a `## Recap` section, only that section is returned so the
+ * compact view surfaces the wrap-up instead of replaying the whole turn.
+ */
+function findLatestAssistantText(
+  group: { message: ChatMessage }[]
+): string | null {
+  for (let g = group.length - 1; g >= 0; g--) {
+    const message = group[g]?.message
+    if (!message || message.role !== 'assistant') continue
+
+    const blocks = coalesceContentBlocks(message.content_blocks ?? [])
+    const texts: string[] = []
+    for (const block of blocks) {
+      if (block?.type === 'text' && block.text.trim()) {
+        texts.push(block.text)
+      }
+    }
+    if (texts.length === 0 && message.content?.trim()) {
+      texts.push(message.content)
+    }
+    if (texts.length === 0) continue
+
+    const combined = texts.join('\n\n')
+    if (!combined.trim()) continue
+    const recap = extractRecapSection(combined)
+    if (recap) return recap
+    return texts[texts.length - 1] ?? null
+  }
+  return null
 }
 
 /**
@@ -138,6 +283,13 @@ function truncate(text: string, max: number): string {
   return oneLine.length > max ? `${oneLine.slice(0, max - 1)}…` : oneLine
 }
 
+function truncatePath(text: string, max: number): string {
+  const oneLine = text.replace(/\s+/g, ' ').trim()
+  if (oneLine.length <= max) return oneLine
+  if (oneLine.includes('/')) return `…${oneLine.slice(-(max - 1))}`
+  return `${oneLine.slice(0, max - 1)}…`
+}
+
 function summarizeToolCall(tc: ToolCall): { label: string; detail?: string } {
   const input = (tc.input ?? {}) as Record<string, unknown>
   const filePath =
@@ -149,8 +301,11 @@ function summarizeToolCall(tc: ToolCall): { label: string; detail?: string } {
   const description =
     typeof input.description === 'string' ? input.description : undefined
 
-  const detail =
-    filePath ?? path ?? command ?? url ?? pattern ?? description ?? undefined
+  const pathDetail = filePath ?? path
+  if (pathDetail) {
+    return { label: tc.name, detail: truncatePath(pathDetail, 80) }
+  }
+  const detail = command ?? url ?? pattern ?? description ?? undefined
   return {
     label: tc.name,
     detail: detail ? truncate(detail, 80) : undefined,
@@ -168,7 +323,7 @@ function summarizeGroup(
   for (let g = group.length - 1; g >= 0; g--) {
     const message = group[g]?.message
     if (!message) continue
-    const blocks: ContentBlock[] = message.content_blocks ?? []
+    const blocks = coalesceContentBlocks(message.content_blocks ?? [])
     for (let i = blocks.length - 1; i >= 0; i--) {
       const block = blocks[i]
       if (!block) continue
@@ -217,10 +372,18 @@ interface CompactActivityRowProps {
   total: number
   renderMessage: (
     item: { message: ChatMessage; globalIndex: number },
-    extra: { hasFollowUpMessage: boolean; durationMs: number | null }
+    extra: {
+      hasFollowUpMessage: boolean
+      durationMs: number | null
+      hideCancelledIndicator?: boolean
+    }
   ) => React.ReactNode
   hasFollowUpFor: (globalIndex: number) => boolean
   durationFor: (globalIndex: number, message: ChatMessage) => number | null
+  /** When true, the recap section is rendered separately under the row, so
+   * strip it from the latest assistant message inside the expanded body to
+   * avoid duplicating the recap. */
+  recapShownExternally?: boolean
 }
 
 function CompactActivityRow({
@@ -229,11 +392,39 @@ function CompactActivityRow({
   renderMessage,
   hasFollowUpFor,
   durationFor,
+  recapShownExternally,
 }: CompactActivityRowProps) {
   const [isOpen, setIsOpen] = useState(false)
   const summary = useMemo(() => summarizeGroup(group), [group])
   const stepCount = useMemo(() => countSteps(group), [group])
   const messageCount = group.length
+  const hasCancelledMessage = useMemo(
+    () => group.some(item => item.message.cancelled),
+    [group]
+  )
+  const groupDurationMs = useMemo(() => {
+    for (let i = group.length - 1; i >= 0; i--) {
+      const item = group[i]
+      if (!item) continue
+      const duration = durationFor(item.globalIndex, item.message)
+      if (duration != null && duration > 0) return duration
+    }
+    return null
+  }, [group, durationFor])
+
+  const renderGroup = useMemo(() => {
+    if (!recapShownExternally) return group
+    let stripped = false
+    return group
+      .slice()
+      .reverse()
+      .map(item => {
+        if (stripped || item.message.role !== 'assistant') return item
+        stripped = true
+        return { ...item, message: stripRecapFromMessage(item.message) }
+      })
+      .reverse()
+  }, [group, recapShownExternally])
 
   return (
     <Collapsible
@@ -247,20 +438,22 @@ function CompactActivityRow({
           (isOpen ? ' bg-muted/50' : '')
         }
       >
-        <CollapsibleTrigger className="flex h-9 w-full items-center gap-2 px-3 text-xs text-muted-foreground hover:bg-muted/50 select-none min-w-0">
+        <CollapsibleTrigger className={TOOL_CALL_ROW_CLASS}>
           {summary.isThinking ? (
             <Brain className="h-3.5 w-3.5 shrink-0 opacity-70" />
           ) : (
             <Activity className="h-3.5 w-3.5 shrink-0 opacity-70" />
           )}
-          <span className="font-medium truncate">{summary.label}</span>
+          <span className="font-medium shrink-0 flex-none whitespace-nowrap">
+            {summary.label}
+          </span>
           {summary.detail && (
-            <code className="truncate rounded bg-muted/50 px-1.5 text-xs font-sans leading-none">
+            <code className={TOOL_CALL_DETAIL_PILL_CLASS}>
               {summary.detail}
             </code>
           )}
           <span className="ml-auto flex items-center gap-2 shrink-0">
-            <span className="text-muted-foreground/70 tabular-nums">
+            <span className="hidden sm:inline text-muted-foreground/70 tabular-nums">
               {stepCount > 0
                 ? `${stepCount} step${stepCount === 1 ? '' : 's'}`
                 : `${messageCount} msg${messageCount === 1 ? '' : 's'}`}
@@ -275,17 +468,30 @@ function CompactActivityRow({
         </CollapsibleTrigger>
         <CollapsibleContent>
           <div className="border-t border-border/50 p-3 space-y-4">
-            {group.map(item => (
+            {renderGroup.map(item => (
               <div key={item.message.id}>
                 {renderMessage(item, {
                   hasFollowUpMessage: hasFollowUpFor(item.globalIndex),
                   durationMs: durationFor(item.globalIndex, item.message),
+                  hideCancelledIndicator: hasCancelledMessage,
                 })}
               </div>
             ))}
           </div>
         </CollapsibleContent>
       </div>
+      {(groupDurationMs != null || hasCancelledMessage) && (
+        <div className="mt-1 flex min-h-4 items-center gap-2 text-xs leading-4 text-muted-foreground/40">
+          {groupDurationMs != null && (
+            <span className="tabular-nums font-mono">
+              {formatDuration(groupDurationMs)}
+            </span>
+          )}
+          {hasCancelledMessage && (
+            <span className="italic text-muted-foreground/50">(cancelled)</span>
+          )}
+        </div>
+      )}
       <span aria-hidden className="sr-only">
         Total: {total}
       </span>
@@ -314,7 +520,11 @@ interface CompactQuestionMessageProps {
   areQuestionsSkipped: (sessionId: string) => boolean
   renderMessage: (
     item: { message: ChatMessage; globalIndex: number },
-    extra: { hasFollowUpMessage: boolean; durationMs: number | null }
+    extra: {
+      hasFollowUpMessage: boolean
+      durationMs: number | null
+      hideCancelledIndicator?: boolean
+    }
   ) => React.ReactNode
   hasFollowUpFor: (globalIndex: number) => boolean
   durationFor: (globalIndex: number, message: ChatMessage) => number | null
@@ -382,13 +592,11 @@ function CompactQuestionMessage({
           hasFollowUpMessage ||
           isQuestionAnswered(sessionId, item.tool.id) ||
           hasQuestionAnswerOutput(item.tool.output)
-        const rawInput = item.tool.input as {
-          questions: (Question & { multiple?: boolean })[]
-        }
-        const normalizedQuestions = rawInput.questions.map(q => ({
-          ...q,
-          multiSelect: q.multiSelect ?? q.multiple === true,
-        }))
+        const normalizedQuestions = normalizeQuestionMultipleField(
+          (getAskUserQuestions(item.tool.input) ?? []) as (Question & {
+            multiple?: boolean
+          })[]
+        )
         return (
           <AskUserQuestion
             key={item.key}
@@ -412,9 +620,11 @@ function CompactQuestionMessage({
           />
         )
       })}
-      <span aria-hidden className="sr-only">
-        {durationMs ? `Duration ${durationMs}ms` : ''}
-      </span>
+      {durationMs != null && durationMs > 0 && (
+        <span className="mt-1 block min-h-4 text-xs leading-4 text-muted-foreground/40 tabular-nums font-mono">
+          {formatDuration(durationMs)}
+        </span>
+      )}
     </>
   )
 }
@@ -476,21 +686,26 @@ export const CompactMessageList = memo(
         isLoadingOlder = false,
         onLoadOlderRuns,
         loadedRunStartIndex = 0,
+        hiddenPromptCount = 0,
+        onShowHiddenPrompts,
       },
       ref
     ) {
       const messageRefs = useRef<Map<number, HTMLDivElement>>(new Map())
-      const pendingPrependScrollHeightRef = useRef<number | null>(null)
+      const pendingPrependAnchorRef = useRef<PrependScrollAnchor | null>(null)
       const pendingPrependMessagesLengthRef = useRef<number | null>(null)
-      const messagesRef = useRef(messages)
 
+      // Stable accessor for the full message list. Kept in a ref so the
+      // identity handed to memoized rows never changes — "subsequent edits"
+      // stays lazy without busting per-row memoization.
+      const messagesRef = useRef(messages)
       useEffect(() => {
         messagesRef.current = messages
       }, [messages])
-
       const getMessages = useCallback(() => messagesRef.current, [])
 
       const lastIndex = messages.length - 1
+      const hasHiddenPrompts = hiddenPromptCount > 0 && !!onShowHiddenPrompts
 
       const hasFollowUpMap = useMemo(() => {
         const map = new Map<number, boolean>()
@@ -509,16 +724,26 @@ export const CompactMessageList = memo(
         [hasFollowUpMap]
       )
 
+      const latestRunHasPlan = useMemo(() => {
+        for (let i = messages.length - 1; i >= 0; i--) {
+          const m = messages[i]
+          if (!m) continue
+          if (m.role === 'user') return false
+          if (m.tool_calls?.some(isPlanToolCall)) return true
+        }
+        return false
+      }, [messages])
+
       const durationFor = useCallback(
         (globalIndex: number, message: ChatMessage): number | null => {
-          if (message.role !== 'assistant') return null
+          if (message !== messages[globalIndex]) return null
           return getAssistantDurationMs(
             messages,
             globalIndex,
-            globalIndex === lastIndex ? completedDurationMs : null
+            completedDurationMs
           )
         },
-        [messages, lastIndex, completedDurationMs]
+        [messages, completedDurationMs]
       )
 
       // Group messages into render items. Anything that should always render
@@ -535,21 +760,67 @@ export const CompactMessageList = memo(
             buffer = []
             return
           }
+          const compactKey =
+            buffer.length === 1
+              ? `compact-${first.message.id}`
+              : `compact-${first.message.id}-${last.message.id}`
           items.push({
             kind: 'compact',
             messages: buffer,
-            key:
-              buffer.length === 1
-                ? `compact-${first.message.id}`
-                : `compact-${first.message.id}-${last.message.id}`,
+            key: compactKey,
+            latestText: findLatestAssistantText(buffer),
           })
           buffer = []
         }
 
+        // Buffer an assistant message. Messages containing mid-turn steered
+        // user prompts are split at each steer so the visible order matches
+        // chronology: activity → steered bubble → activity after the steer.
+        const pushBuffered = (message: ChatMessage, globalIndex: number) => {
+          const segments = splitMessageAtSteeredInputs(message)
+          if (!segments) {
+            buffer.push({ message, globalIndex })
+            return
+          }
+          for (const segment of segments) {
+            if (segment.kind === 'steered') {
+              flush()
+              // Merge with a preceding steered group (e.g. across messages)
+              const last = items[items.length - 1]
+              if (last && last.kind === 'steered') {
+                last.texts.push(...segment.texts)
+              } else {
+                items.push({
+                  kind: 'steered',
+                  texts: segment.texts,
+                  key: segment.key,
+                  messageId: message.id,
+                  globalIndex,
+                })
+              }
+            } else {
+              buffer.push({ message: segment.message, globalIndex })
+            }
+          }
+        }
+
         messages.forEach((message, globalIndex) => {
-          if (message.role === 'user' || messageContainsPlan(message)) {
+          if (message.role === 'user') {
             flush()
             items.push({ kind: 'message', message, globalIndex })
+            return
+          }
+
+          if (messageContainsPlan(message)) {
+            const isResolvedPlan =
+              Boolean(message.plan_approved) &&
+              (hasFollowUpMap.get(globalIndex) ?? false)
+            if (!isResolvedPlan) {
+              flush()
+              items.push({ kind: 'message', message, globalIndex })
+              return
+            }
+            pushBuffered(message, globalIndex)
             return
           }
 
@@ -559,23 +830,21 @@ export const CompactMessageList = memo(
             return
           }
 
-          if (globalIndex === lastIndex) {
-            flush()
-            items.push({ kind: 'message', message, globalIndex })
-            return
-          }
-
-          buffer.push({ message, globalIndex })
+          pushBuffered(message, globalIndex)
         })
 
         flush()
         return items
-      }, [messages, lastIndex])
+      }, [messages, lastIndex, hasFollowUpMap])
 
       const renderMessageItem = useCallback(
         (
           item: { message: ChatMessage; globalIndex: number },
-          extra: { hasFollowUpMessage: boolean; durationMs: number | null }
+          extra: {
+            hasFollowUpMessage: boolean
+            durationMs: number | null
+            hideCancelledIndicator?: boolean
+          }
         ) => (
           <MessageItem
             message={item.message}
@@ -615,6 +884,7 @@ export const CompactMessageList = memo(
             isFindingFixed={isFindingFixed}
             onCopyToInput={onCopyToInput}
             hideApproveButtons={hideApproveButtons}
+            hideCancelledIndicator={extra.hideCancelledIndicator}
             durationMs={extra.durationMs}
           />
         ),
@@ -658,11 +928,11 @@ export const CompactMessageList = memo(
           !hasOlderOnDisk ||
           isLoadingOlder ||
           !onLoadOlderRuns ||
-          pendingPrependScrollHeightRef.current !== null
+          pendingPrependMessagesLengthRef.current !== null
         ) {
           return
         }
-        pendingPrependScrollHeightRef.current = container.scrollHeight
+        pendingPrependAnchorRef.current = capturePrependScrollAnchor(container)
         pendingPrependMessagesLengthRef.current = messages.length
         onLoadOlderRuns()
       }, [
@@ -676,39 +946,36 @@ export const CompactMessageList = memo(
       // Restore scroll position after older messages prepend.
       useLayoutEffect(() => {
         const container = scrollContainerRef.current
-        const before = pendingPrependScrollHeightRef.current
+        const anchor = pendingPrependAnchorRef.current
         const prevLen = pendingPrependMessagesLengthRef.current
-        if (!container || before === null || prevLen === null) return
+        if (!container || prevLen === null) return
         if (isLoadingOlder) return
 
-        pendingPrependScrollHeightRef.current = null
+        pendingPrependAnchorRef.current = null
         pendingPrependMessagesLengthRef.current = null
 
         if (messages.length === prevLen) return
 
-        flushSync(() => {
-          /* trigger paint */
-        })
-        const delta = container.scrollHeight - before
-        if (delta > 0) container.scrollTop += delta
+        restorePrependScrollAnchor(container, anchor)
       }, [scrollContainerRef, isLoadingOlder, messages.length])
 
       // Scroll-to-top auto-load.
       useEffect(() => {
         const container = scrollContainerRef.current
-        if (!container || !hasOlderOnDisk) return
+        if (!container || !hasOlderOnDisk || hasHiddenPrompts) return
         const handleScroll = () => {
           if (container.scrollTop < SCROLL_THRESHOLD) loadOlder()
         }
         container.addEventListener('scroll', handleScroll, { passive: true })
         return () => container.removeEventListener('scroll', handleScroll)
-      }, [scrollContainerRef, hasOlderOnDisk, loadOlder])
+      }, [scrollContainerRef, hasOlderOnDisk, hasHiddenPrompts, loadOlder])
 
       // Scroll-to-bottom on new message arrival.
       const prevMessageCountRef = useRef(messages.length)
       useEffect(() => {
         if (
           shouldScrollToBottom &&
+          pendingPrependMessagesLengthRef.current === null &&
           messages.length > prevMessageCountRef.current
         ) {
           const lastEl = messageRefs.current.get(lastIndex)
@@ -755,20 +1022,22 @@ export const CompactMessageList = memo(
 
       return (
         <div className="flex flex-col w-full">
-          {hasOlderOnDisk && (
+          {(hasHiddenPrompts || hasOlderOnDisk) && (
             <button
               type="button"
-              onClick={loadOlder}
-              disabled={isLoadingOlder}
+              onClick={hasHiddenPrompts ? onShowHiddenPrompts : loadOlder}
+              disabled={!hasHiddenPrompts && isLoadingOlder}
               className="w-full text-center text-muted-foreground text-xs py-2 opacity-60 hover:opacity-100 transition-opacity cursor-pointer disabled:cursor-wait"
             >
-              {isLoadingOlder ? (
+              {hasHiddenPrompts ? (
+                `↑ Load old prompts (${hiddenPromptCount})`
+              ) : isLoadingOlder ? (
                 <span className="inline-flex items-center gap-2">
                   <Loader2 className="h-3 w-3 animate-spin" />
-                  Loading older messages…
+                  Loading old prompts…
                 </span>
               ) : (
-                `↑ Load older messages (${loadedRunStartIndex} older runs on disk)`
+                `↑ Load old prompts (${loadedRunStartIndex} older runs on disk)`
               )}
             </button>
           )}
@@ -781,6 +1050,7 @@ export const CompactMessageList = memo(
               return (
                 <div
                   key={item.message.id}
+                  data-message-anchor-id={item.message.id}
                   ref={el => {
                     if (el) messageRefs.current.set(item.globalIndex, el)
                     else messageRefs.current.delete(item.globalIndex)
@@ -805,6 +1075,7 @@ export const CompactMessageList = memo(
               return (
                 <div
                   key={item.message.id}
+                  data-message-anchor-id={item.message.id}
                   ref={el => {
                     if (el) messageRefs.current.set(item.globalIndex, el)
                     else messageRefs.current.delete(item.globalIndex)
@@ -831,15 +1102,115 @@ export const CompactMessageList = memo(
               )
             }
 
+            if (item.kind === 'steered') {
+              return (
+                <div key={item.key} className="pb-4">
+                  <SteeredPromptGroup
+                    texts={item.texts}
+                    worktreePath={worktreePath}
+                    onCopyText={
+                      onCopyToInput
+                        ? text =>
+                            onCopyToInput({
+                              id: `${item.messageId}-steered-copy`,
+                              session_id:
+                                messages[item.globalIndex]?.session_id ??
+                                sessionId,
+                              role: 'user',
+                              content: text,
+                              timestamp:
+                                messages[item.globalIndex]?.timestamp ??
+                                Date.now(),
+                              content_blocks: [],
+                              tool_calls: [],
+                            })
+                        : undefined
+                    }
+                  />
+                </div>
+              )
+            }
+
+            const singleMessage = item.messages[0]
+            if (
+              item.messages.length === 1 &&
+              singleMessage &&
+              isPureTextAssistantMessage(singleMessage.message)
+            ) {
+              const hasFollowUpMessage = hasFollowUpFor(
+                singleMessage.globalIndex
+              )
+              return (
+                <div
+                  key={singleMessage.message.id}
+                  ref={el => {
+                    if (el)
+                      messageRefs.current.set(singleMessage.globalIndex, el)
+                    else messageRefs.current.delete(singleMessage.globalIndex)
+                  }}
+                  className={
+                    singleMessage.globalIndex === lastIndex && isSending
+                      ? ''
+                      : 'pb-4'
+                  }
+                >
+                  {renderMessageItem(singleMessage, {
+                    hasFollowUpMessage,
+                    durationMs: durationFor(
+                      singleMessage.globalIndex,
+                      singleMessage.message
+                    ),
+                  })}
+                </div>
+              )
+            }
+
+            const isLatestCompact =
+              renderItems.length > 0 &&
+              renderItems[renderItems.length - 1] === item
+            const latestTextIsRecap =
+              Boolean(item.latestText) &&
+              RECAP_HEADING_RE.test(item.latestText ?? '')
+            const hasCancelledMessage = item.messages.some(
+              ({ message }) => message.cancelled
+            )
+            const showLatestText =
+              isLatestCompact &&
+              !hasCancelledMessage &&
+              Boolean(item.latestText) &&
+              !(latestTextIsRecap && latestRunHasPlan)
+            const surfaceRecap = latestTextIsRecap && showLatestText
+            const surfacedLatestToolCalls = showLatestText
+              ? item.messages.flatMap(({ message }) => message.tool_calls ?? [])
+              : []
             return (
-              <CompactActivityRow
-                key={item.key}
-                group={item.messages}
-                total={totalMessages}
-                renderMessage={renderMessageItem}
-                hasFollowUpFor={hasFollowUpFor}
-                durationFor={durationFor}
-              />
+              <div key={item.key}>
+                <CompactActivityRow
+                  group={item.messages}
+                  total={totalMessages}
+                  renderMessage={renderMessageItem}
+                  hasFollowUpFor={hasFollowUpFor}
+                  durationFor={durationFor}
+                  recapShownExternally={surfaceRecap}
+                />
+                {showLatestText && (
+                  <div className="pb-4">
+                    <Markdown
+                      streaming={false}
+                      messageId={item.key}
+                      sessionId={sessionId}
+                    >
+                      {item.latestText ?? ''}
+                    </Markdown>
+                    {surfacedLatestToolCalls.length > 0 && (
+                      <EditedFilesDisplay
+                        toolCalls={surfacedLatestToolCalls}
+                        worktreePath={worktreePath}
+                      />
+                    )}
+                  </div>
+                )}
+              </div>
             )
           })}
         </div>

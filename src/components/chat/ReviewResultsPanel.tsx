@@ -27,6 +27,7 @@ import { cn } from '@/lib/utils'
 
 interface ReviewResultsPanelProps {
   sessionId: string
+  isReviewing?: boolean
   onSendFix?: (message: string, executionMode: 'build' | 'yolo') => void
 }
 
@@ -297,7 +298,21 @@ const FindingCard = memo(function FindingCard({
 })
 
 /** Empty state when no review results */
-function EmptyState() {
+function EmptyState({ isReviewing = false }: { isReviewing?: boolean }) {
+  if (isReviewing) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="mx-auto h-10 w-10 animate-spin text-muted-foreground/60" />
+          <p className="mt-3 text-sm font-medium">Review running...</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Results will appear here when the review finishes.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex h-full items-center justify-center">
       <div className="text-center">
@@ -310,6 +325,7 @@ function EmptyState() {
 
 export function ReviewResultsPanel({
   sessionId,
+  isReviewing = false,
   onSendFix,
 }: ReviewResultsPanelProps) {
   const [fixingIndices, setFixingIndices] = useState<Set<number>>(new Set())
@@ -429,7 +445,7 @@ Please apply all these fixes to the codebase.`
   )
 
   if (!reviewResults) {
-    return <EmptyState />
+    return <EmptyState isReviewing={isReviewing} />
   }
 
   const approvalConfig = getApprovalConfig(reviewResults.approval_status)

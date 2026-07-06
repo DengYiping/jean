@@ -23,7 +23,11 @@ import { useWorktree, useProjects } from '@/services/projects'
 import { usePreferences } from '@/services/preferences'
 import { useAvailableOpencodeModels } from '@/services/opencode-cli'
 import { useInstalledBackends } from '@/hooks/useInstalledBackends'
-import { getCodexModelOptions, useModelCatalog } from '@/services/model-catalog'
+import {
+  getCatalogModelOptions,
+  getCodexModelOptions,
+  useModelCatalog,
+} from '@/services/model-catalog'
 import {
   type CliBackend,
   PREDEFINED_CLI_PROFILES,
@@ -31,7 +35,7 @@ import {
   resolveMagicPromptProvider,
 } from '@/types/preferences'
 import {
-  MODEL_OPTIONS,
+  MODEL_OPTIONS as CLAUDE_FALLBACK_OPTIONS,
   OPENCODE_MODEL_OPTIONS,
 } from '@/components/chat/toolbar/toolbar-options'
 import { formatOpencodeModelLabel } from '@/components/chat/toolbar/toolbar-utils'
@@ -104,6 +108,23 @@ export function ResolveConflictsDialog({
       label: formatOpencodeLabel(value),
     }))
   }, [availableOpencodeModels])
+  const claudeModelOptions = useMemo(() => {
+    const catalogOptions = getCatalogModelOptions(modelCatalog, 'claude').map(
+      option => ({
+        ...option,
+        label: option.label.replace(/^Claude\s+/, ''),
+      })
+    )
+    const seen = new Set(catalogOptions.map(option => option.value))
+    return [
+      ...catalogOptions,
+      ...CLAUDE_FALLBACK_OPTIONS.filter(option => {
+        if (seen.has(option.value)) return false
+        seen.add(option.value)
+        return true
+      }),
+    ]
+  }, [modelCatalog])
   const resolveDefaults = useMemo(() => {
     const defaultBackend =
       project?.default_backend ?? preferences?.default_backend ?? 'claude'
@@ -170,9 +191,9 @@ export function ResolveConflictsDialog({
             { value: 'sonnet', label: `Sonnet${suffix(sonnetModel)}` },
             { value: 'haiku', label: `Haiku${suffix(haikuModel)}` },
           ]
-        : MODEL_OPTIONS
+        : claudeModelOptions
     },
-    [preferences?.custom_cli_profiles]
+    [claudeModelOptions, preferences?.custom_cli_profiles]
   )
 
   const resolveClaudeProvider =

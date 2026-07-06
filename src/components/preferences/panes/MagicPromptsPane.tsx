@@ -25,9 +25,16 @@ import {
 import { usePreferences, usePatchPreferences } from '@/services/preferences'
 import { useInstalledBackends } from '@/hooks/useInstalledBackends'
 import { useAvailableOpencodeModels } from '@/services/opencode-cli'
-import { getCodexModelOptions, useModelCatalog } from '@/services/model-catalog'
+import {
+  getCatalogModelOptions,
+  getCodexModelOptions,
+  useModelCatalog,
+} from '@/services/model-catalog'
 import { formatOpencodeModelLabel } from '@/components/chat/toolbar/toolbar-utils'
-import { OPENCODE_MODEL_OPTIONS as OPENCODE_FALLBACK_OPTIONS } from '@/components/chat/toolbar/toolbar-options'
+import {
+  MODEL_OPTIONS as CLAUDE_FALLBACK_OPTIONS,
+  OPENCODE_MODEL_OPTIONS as OPENCODE_FALLBACK_OPTIONS,
+} from '@/components/chat/toolbar/toolbar-options'
 import {
   DEFAULT_INVESTIGATE_ISSUE_PROMPT,
   DEFAULT_INVESTIGATE_PR_PROMPT,
@@ -624,18 +631,6 @@ export function getMagicPromptItemId(key: keyof MagicPrompts): string {
   return `settings-magic-prompt-${key}`
 }
 
-const CLAUDE_MODEL_OPTIONS: { value: MagicPromptModel; label: string }[] = [
-  { value: 'claude-sonnet-5', label: 'Sonnet 5' },
-  { value: 'claude-opus-4-8[1m]', label: 'Opus 4.8 (1M)' },
-  { value: 'claude-opus-4-7', label: 'Opus 4.7' },
-  { value: 'claude-opus-4-6', label: 'Opus 4.6' },
-  { value: 'sonnet', label: 'Sonnet 4.6' },
-  { value: 'claude-sonnet-4-6[1m]', label: 'Sonnet 4.6 (1M)' },
-  { value: 'claude-sonnet-4-6', label: 'Sonnet 4.6' },
-  { value: 'sonnet', label: 'Sonnet (provider alias)' },
-  { value: 'haiku', label: 'Haiku' },
-]
-
 function getDefaultModelForBackend(
   backend: CliBackend,
   config: PromptConfig,
@@ -709,6 +704,25 @@ export const MagicPromptsPane: React.FC<MagicPromptsPaneProps> = ({
       label: formatOpenCodeLabel(value),
     }))
   }, [availableOpencodeModels])
+  const claudeModelOptions = useMemo(() => {
+    const catalogOptions = getCatalogModelOptions(modelCatalog, 'claude').map(
+      option => ({
+        value: option.value as MagicPromptModel,
+        label: option.label.replace(/^Claude\s+/, ''),
+      })
+    )
+    const seen = new Set(catalogOptions.map(option => option.value))
+    return [
+      ...catalogOptions,
+      ...CLAUDE_FALLBACK_OPTIONS.flatMap(option => {
+        if (seen.has(option.value)) return []
+        seen.add(option.value)
+        return [
+          { value: option.value as MagicPromptModel, label: option.label },
+        ]
+      }),
+    ]
+  }, [modelCatalog])
   const codexModelOptions = useMemo(
     () =>
       getCodexModelOptions(
@@ -778,14 +792,14 @@ export const MagicPromptsPane: React.FC<MagicPromptsPaneProps> = ({
       : currentModel
   const filteredClaudeOptions = useMemo(() => {
     if (!currentProvider || effectiveBackend !== 'claude') {
-      return CLAUDE_MODEL_OPTIONS
+      return claudeModelOptions
     }
     const profile = profiles.find(p => p.name === currentProvider)
-    if (!profile?.settings_json) return CLAUDE_MODEL_OPTIONS
+    if (!profile?.settings_json) return claudeModelOptions
     try {
       const settings = JSON.parse(profile.settings_json)
       const env = settings?.env
-      if (!env) return CLAUDE_MODEL_OPTIONS
+      if (!env) return claudeModelOptions
       const suffix = (m?: string) => (m ? ` (${m})` : '')
       return [
         {
@@ -802,9 +816,9 @@ export const MagicPromptsPane: React.FC<MagicPromptsPaneProps> = ({
         },
       ] as { value: MagicPromptModel; label: string }[]
     } catch {
-      return CLAUDE_MODEL_OPTIONS
+      return claudeModelOptions
     }
-  }, [currentProvider, effectiveBackend, profiles])
+  }, [claudeModelOptions, currentProvider, effectiveBackend, profiles])
 
   const isModified = currentPrompts[selectedKey] !== null
 

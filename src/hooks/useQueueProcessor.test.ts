@@ -152,4 +152,32 @@ describe('useQueueProcessor', () => {
 
     expect(mockInvoke).not.toHaveBeenCalled()
   })
+
+  it('uses the backend drain command for web access clients', async () => {
+    const sessionId = 'session-1'
+    const worktreeId = 'worktree-1'
+    const worktreePath = '/tmp/worktree-1'
+
+    useChatStore.setState({
+      messageQueues: {
+        [sessionId]: [createQueuedMessage('msg-1', 'first')],
+      },
+      sessionWorktreeMap: { [sessionId]: worktreeId },
+      worktreePaths: { [worktreeId]: worktreePath },
+    })
+
+    renderHook(() => useQueueProcessor())
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith('process_message_queue', {
+        sessionId,
+        worktreeId,
+        worktreePath,
+      })
+    })
+
+    const commandNames = mockInvoke.mock.calls.map(([command]) => command)
+    expect(commandNames).not.toContain('dequeue_message')
+    expect(commandNames).not.toContain('send_chat_message')
+  })
 })

@@ -19,10 +19,13 @@ const preferencesMock = vi.hoisted(() => ({
         magic_prompt_backends: typeof DEFAULT_MAGIC_PROMPT_BACKENDS
         magic_prompt_efforts: typeof DEFAULT_MAGIC_PROMPT_EFFORTS
         custom_cli_profiles: never[]
-        default_backend: 'codex'
+        default_backend: 'claude' | 'codex'
         default_provider: null
       }
     | undefined,
+}))
+const installedBackendsMock = vi.hoisted(() => ({
+  value: ['codex'],
 }))
 
 vi.mock('@/services/preferences', () => ({
@@ -36,7 +39,7 @@ vi.mock('@/services/preferences', () => ({
 
 vi.mock('@/hooks/useInstalledBackends', () => ({
   useInstalledBackends: () => ({
-    installedBackends: ['codex'],
+    installedBackends: installedBackendsMock.value,
   }),
 }))
 
@@ -44,8 +47,22 @@ vi.mock('@/services/opencode-cli', () => ({
   useAvailableOpencodeModels: () => ({ data: [] }),
 }))
 
+vi.mock('@/services/model-catalog', () => ({
+  getCatalogModelOptions: (_catalog: unknown, backend: 'claude' | 'codex') =>
+    backend === 'claude'
+      ? [
+          { value: 'claude-fable-5', label: 'Claude Fable 5' },
+          { value: 'claude-sonnet-5', label: 'Claude Sonnet 5' },
+        ]
+      : [],
+  getCodexModelOptions: () => [{ value: 'gpt-5.4', label: 'GPT 5.4' }],
+  useModelCatalog: () => ({ data: null }),
+}))
+
 describe('MagicPromptsPane', () => {
   beforeEach(() => {
+    Element.prototype.scrollIntoView = vi.fn()
+    installedBackendsMock.value = ['codex']
     preferencesMock.data = {
       magic_prompts: DEFAULT_MAGIC_PROMPTS,
       magic_prompt_models: DEFAULT_MAGIC_PROMPT_MODELS,
@@ -109,5 +126,27 @@ describe('MagicPromptsPane', () => {
     render(<MagicPromptsPane />)
 
     expect(screen.getByText('Release Post')).toBeInTheDocument()
+  })
+
+  it('uses the catalog Claude models for magic prompt model choices', async () => {
+    installedBackendsMock.value = ['claude']
+    if (!preferencesMock.data) throw new Error('Expected preferences')
+    preferencesMock.data = {
+      ...preferencesMock.data,
+      default_backend: 'claude',
+      magic_prompt_backends: {
+        ...DEFAULT_MAGIC_PROMPT_BACKENDS,
+        investigate_issue_backend: 'claude',
+      },
+    }
+
+    const user = userEvent.setup()
+    render(<MagicPromptsPane />)
+
+    const [, modelCombobox] = screen.getAllByRole('combobox')
+    if (!modelCombobox) throw new Error('Expected model combobox')
+    await user.click(modelCombobox)
+
+    expect(screen.getByText('Fable 5')).toBeInTheDocument()
   })
 })

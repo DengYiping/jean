@@ -634,6 +634,7 @@ mod tests {
                 port: None,
                 token: None,
                 no_token: false,
+                allow_unsafe_no_token: false,
                 command: Some(CliCommand::Import {
                     path: ".".to_string(),
                 }),
@@ -726,6 +727,7 @@ mod tests {
                 port: None,
                 token: None,
                 no_token: false,
+                allow_unsafe_no_token: false,
                 command: Some(CliCommand::Yolo {
                     project_selector: None,
                     prompt: "tell me about Iceberg".to_string(),
@@ -752,6 +754,7 @@ mod tests {
                 port: None,
                 token: None,
                 no_token: false,
+                allow_unsafe_no_token: false,
                 command: Some(CliCommand::ListProjects),
             }
         );
@@ -779,6 +782,7 @@ mod tests {
                 port: None,
                 token: None,
                 no_token: false,
+                allow_unsafe_no_token: false,
                 command: Some(CliCommand::Yolo {
                     project_selector: Some("project-1".to_string()),
                     prompt: "fix the bug".to_string(),
@@ -858,6 +862,56 @@ mod tests {
         let parsed = try_parse_cli_args(&args).unwrap();
 
         assert_eq!(parsed.command, Some(CliCommand::ListProjects));
+    }
+
+    #[test]
+    fn parse_cli_args_supports_allow_unsafe_no_token() {
+        let args = vec![
+            "jean".to_string(),
+            "--headless".to_string(),
+            "--no-token".to_string(),
+            "--allow-unsafe-no-token".to_string(),
+        ];
+
+        let parsed = try_parse_cli_args(&args).unwrap();
+
+        assert!(parsed.no_token);
+        assert!(parsed.allow_unsafe_no_token);
+    }
+
+    #[test]
+    fn headless_rejects_disabled_token_preference_on_wildcard_host() {
+        let prefs = AppPreferences {
+            http_server_token_required: false,
+            ..Default::default()
+        };
+        let overrides = super::HttpServerOverrides {
+            host: Some("0.0.0.0".to_string()),
+            port: None,
+            token: None,
+            no_token: false,
+            allow_unsafe_no_token: false,
+        };
+
+        let bind_host = overrides.host.clone().unwrap();
+        let token_required = if overrides.no_token {
+            false
+        } else {
+            prefs.http_server_token_required
+        };
+        let err = super::validate_headless_security(
+            &bind_host,
+            !token_required,
+            overrides.allow_unsafe_no_token,
+        )
+        .unwrap_err();
+
+        assert!(err.contains("Refusing to disable token authentication"));
+    }
+
+    #[test]
+    fn headless_allows_explicit_unsafe_no_token_override_on_wildcard_host() {
+        super::validate_headless_security("0.0.0.0", true, true).unwrap();
     }
 
     #[test]
@@ -3116,6 +3170,8 @@ async fn start_http_server_headless(
         prefs.http_server_token_required
     };
 
+    validate_headless_security(&bind_host, !token_required, overrides.allow_unsafe_no_token)?;
+
     // Token: CLI --token used directly (not persisted), otherwise load/generate
     let token = if let Some(ref t) = overrides.token {
         t.clone()
@@ -3191,6 +3247,24 @@ fn list_http_bind_host_options() -> Result<Vec<http_server::server::BindHostOpti
 #[tauri::command]
 fn validate_http_bind_host(host: String) -> Result<String, String> {
     http_server::server::validate_bind_host(&host)
+}
+
+fn is_wildcard_bind_host(host: &str) -> bool {
+    matches!(host.trim(), "0.0.0.0" | "::" | "[::]")
+}
+
+fn validate_headless_security(
+    bind_host: &str,
+    token_auth_disabled: bool,
+    allow_unsafe_no_token: bool,
+) -> Result<(), String> {
+    if token_auth_disabled && is_wildcard_bind_host(bind_host) && !allow_unsafe_no_token {
+        return Err(
+            "Refusing to disable token authentication while binding to all interfaces. Use a token, bind to 127.0.0.1, or pass --allow-unsafe-no-token.".to_string(),
+        );
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -3542,6 +3616,7 @@ struct CliArgs {
     port: Option<u16>,
     token: Option<String>,
     no_token: bool,
+    allow_unsafe_no_token: bool,
     command: Option<CliCommand>,
 }
 
@@ -3552,6 +3627,7 @@ struct HttpServerOverrides {
     port: Option<u16>,
     token: Option<String>,
     no_token: bool,
+    allow_unsafe_no_token: bool,
 }
 
 fn print_cli_help() {
@@ -3572,6 +3648,8 @@ fn print_cli_help() {
     println!("  --port <port>       HTTP server port (overrides saved preference)");
     println!("  --token <token>     Use specific auth token (not persisted)");
     println!("  --no-token          Disable token authentication");
+    println!("  --allow-unsafe-no-token");
+    println!("                      Allow --no-token while binding to all interfaces");
     println!("  --help              Show this help message");
     println!("  --version           Show version");
 }
@@ -3582,6 +3660,7 @@ fn try_parse_cli_args(args: &[String]) -> Result<CliArgs, String> {
     let mut host = None;
     let mut port = None;
     let mut token = None;
+    let mut allow_unsafe_no_token = false;
     let mut command = None;
 
     let mut iter = args.iter().skip(1);
@@ -3592,6 +3671,9 @@ fn try_parse_cli_args(args: &[String]) -> Result<CliArgs, String> {
             }
             "--no-token" => {
                 no_token = true;
+            }
+            "--allow-unsafe-no-token" => {
+                allow_unsafe_no_token = true;
             }
             "--host" => {
                 host = iter.next().cloned();
@@ -3705,6 +3787,7 @@ fn try_parse_cli_args(args: &[String]) -> Result<CliArgs, String> {
         port,
         token,
         no_token,
+        allow_unsafe_no_token,
         command,
     })
 }
@@ -4225,6 +4308,7 @@ pub fn run() {
                 port: cli_args.port,
                 token: cli_args.token,
                 no_token: cli_args.no_token,
+                allow_unsafe_no_token: cli_args.allow_unsafe_no_token,
             };
             tauri::async_runtime::spawn(async move {
                 match load_preferences(app_handle_http.clone()).await {

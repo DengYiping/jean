@@ -47,6 +47,7 @@
     "task:complete": "node scripts/complete-task.js",
     "task:rename-done": "node scripts/complete-task.js --rename-existing",
     "version:bump": "node scripts/bump-version.js",
+    "test:server-ci": "node --test scripts/server-ci-assets.test.mjs",
     "worktrees:migrate": "node scripts/migrate-worktrees.js"
   },
   "dependencies": {

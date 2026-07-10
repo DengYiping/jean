@@ -87,6 +87,44 @@ describe('useToolbarDerivedState', () => {
     ).toHaveLength(1)
   })
 
+  it('uses canonical GPT 5.6 Codex fast model rows from bundled fallback options', () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
+    const { result } = renderHook(
+      () =>
+        useToolbarDerivedState({
+          selectedBackend: 'codex',
+          selectedProvider: null,
+          selectedModel: 'gpt-5.6-sol-fast',
+          opencodeModelOptions: undefined,
+          customCliProfiles: [],
+          customCodexModels: [],
+          favoriteModels: ['codex:gpt-5.6-sol'],
+          fastModeModels: ['codex:gpt-5.6-sol'],
+          availableMcpServers: [],
+          enabledMcpServers: [],
+        }),
+      { wrapper }
+    )
+
+    expect(result.current.selectedBaseModel).toBe('gpt-5.6-sol')
+    expect(result.current.selectedModelLabel).toBe('GPT 5.6 Sol')
+    expect(result.current.selectedModelIsFast).toBe(true)
+    expect(
+      result.current.desktopModelOptions.find(
+        option => option.value === 'gpt-5.6-sol'
+      )
+    ).toMatchObject({
+      isFavorite: true,
+      supportsFast: true,
+      isFastEnabled: true,
+    })
+  })
+
   it('keeps fork legacy Claude aliases when the remote catalog omits them', () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },

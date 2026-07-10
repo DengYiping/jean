@@ -135,6 +135,25 @@ describe('model catalog', () => {
       value: 'gpt-5.5',
       label: 'GPT 5.5',
     })
+    expect(getCatalogModelOptions(catalog, 'codex').slice(0, 3)).toEqual([
+      { value: 'gpt-5.6-sol', label: 'GPT 5.6 Sol' },
+      { value: 'gpt-5.6-terra', label: 'GPT 5.6 Terra' },
+      { value: 'gpt-5.6-luna', label: 'GPT 5.6 Luna' },
+    ])
+    expect(getCatalogModelFastInfo(catalog, 'codex', 'gpt-5.6-sol')).toEqual({
+      supportsFast: true,
+      isFast: false,
+      baseModel: 'gpt-5.6-sol',
+      fastModel: 'gpt-5.6-sol-fast',
+    })
+    expect(
+      getCatalogModelFastInfo(catalog, 'codex', 'gpt-5.6-sol-fast')
+    ).toEqual({
+      supportsFast: true,
+      isFast: true,
+      baseModel: 'gpt-5.6-sol',
+      fastModel: 'gpt-5.6-sol-fast',
+    })
   })
 
   it('merges custom Codex models after catalog models without duplicate rows', async () => {

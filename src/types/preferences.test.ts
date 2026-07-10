@@ -79,6 +79,9 @@ describe('magic prompt model compatibility', () => {
     expect(isMagicPromptModelCompatibleWithBackend('gpt-5.4', 'codex')).toBe(
       true
     )
+    expect(
+      isMagicPromptModelCompatibleWithBackend('gpt-5.6-sol', 'codex')
+    ).toBe(true)
     expect(isMagicPromptModelCompatibleWithBackend('gpt-5.4', 'claude')).toBe(
       false
     )
@@ -112,6 +115,18 @@ describe('magic prompt model compatibility', () => {
 
 describe('codex fast model handling', () => {
   it('recognizes the supported fast-tier base and fast variants', () => {
+    expect(getCodexFastInfo('gpt-5.6-sol')).toMatchObject({
+      supportsFast: true,
+      isFast: false,
+      baseModel: 'gpt-5.6-sol',
+      fastModel: 'gpt-5.6-sol-fast',
+    })
+    expect(getCodexFastInfo('gpt-5.6-sol-fast')).toMatchObject({
+      supportsFast: true,
+      isFast: true,
+      baseModel: 'gpt-5.6-sol',
+      fastModel: 'gpt-5.6-sol-fast',
+    })
     expect(getCodexFastInfo('gpt-5.5')).toMatchObject({
       supportsFast: true,
       isFast: false,
@@ -138,7 +153,15 @@ describe('codex fast model handling', () => {
     })
   })
 
-  it('normalizes persisted fast-tier defaults back to their base model', () => {
+  it('normalizes persisted Codex model aliases', () => {
+    expect(normalizeCodexModel('gpt-5.6')).toBe('gpt-5.6-sol')
+    expect(normalizeCodexModel('gpt-5.6-fast')).toBe('gpt-5.6-sol-fast')
+    expect(normalizeCodexModel('gpt-5-6-sol')).toBe('gpt-5.6-sol')
+    expect(normalizeCodexModel('gpt-5-6-sol-fast')).toBe('gpt-5.6-sol-fast')
+    expect(normalizeCodexModel('gpt-5-6-terra')).toBe('gpt-5.6-terra')
+    expect(normalizeCodexModel('gpt-5-6-terra-fast')).toBe('gpt-5.6-terra-fast')
+    expect(normalizeCodexModel('gpt-5-6-luna')).toBe('gpt-5.6-luna')
+    expect(normalizeCodexModel('gpt-5-6-luna-fast')).toBe('gpt-5.6-luna-fast')
     expect(normalizeCodexModel('gpt-5.5-fast')).toBe('gpt-5.5')
     expect(normalizeCodexModel('gpt-5.4-fast')).toBe('gpt-5.4')
     expect(normalizeCodexModel('gpt-5.4-mini-fast')).toBe('gpt-5.4-mini')

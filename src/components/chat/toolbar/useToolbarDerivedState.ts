@@ -85,10 +85,28 @@ export function useToolbarDerivedState({
 
   const filteredModelOptions = useMemo(() => {
     if (isCodex) {
-      return appendMissingModelOptions(
-        getCodexModelOptions(modelCatalog, customCodexModels, selectedModel),
+      const options = appendMissingModelOptions(
+        getCodexModelOptions(modelCatalog, customCodexModels),
         CODEX_MODEL_OPTIONS as { value: string; label: string }[]
       )
+      const selected = selectedModel.trim()
+      if (selected) {
+        const selectedFastInfo = getCatalogModelFastInfo(
+          modelCatalog,
+          'codex',
+          selected
+        )
+        if (
+          !options.some(
+            option =>
+              option.value === selected ||
+              option.value === selectedFastInfo.baseModel
+          )
+        ) {
+          options.push({ value: selected, label: selected })
+        }
+      }
+      return options
     }
     if (isOpencode) return opencodeModelOptions ?? OPENCODE_MODEL_OPTIONS
     if (!selectedProvider || selectedProvider === '__anthropic__') {

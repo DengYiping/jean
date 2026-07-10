@@ -17,8 +17,10 @@ import {
   DEFAULT_MAGIC_PROMPT_PROVIDERS,
   DEFAULT_MAGIC_PROMPT_BACKENDS,
   DEFAULT_MAGIC_PROMPT_EFFORTS,
+  codexModelOptions,
   modelOptions,
   normalizeClaudeModel,
+  normalizeCodexModel,
 } from '@/types/preferences'
 import { DEFAULT_KEYBINDINGS } from '@/types/keybindings'
 
@@ -66,6 +68,21 @@ describe('model option helpers', () => {
     expect(normalizeClaudeModel('sonnet')).toBe('claude-sonnet-5')
     expect(normalizeClaudeModel('claude-sonnet-5')).toBe('claude-sonnet-5')
     expect(normalizeClaudeModel('claude-sonnet-4-6')).toBe('claude-sonnet-4-6')
+  })
+
+  it('offers canonical GPT 5.6 Codex variants and normalizes deprecated aliases', () => {
+    const values = codexModelOptions.map(option => option.value)
+    expect(values.slice(0, 3)).toEqual([
+      'gpt-5.6-sol',
+      'gpt-5.6-terra',
+      'gpt-5.6-luna',
+    ])
+    expect(values).not.toContain('gpt-5.6')
+    expect(normalizeCodexModel('gpt-5.6')).toBe('gpt-5.6-sol')
+    expect(normalizeCodexModel('gpt-5.6-fast')).toBe('gpt-5.6-sol-fast')
+    expect(normalizeCodexModel('gpt-5-6-sol')).toBe('gpt-5.6-sol')
+    expect(normalizeCodexModel('gpt-5-6-terra-fast')).toBe('gpt-5.6-terra-fast')
+    expect(normalizeCodexModel('gpt-5-6-luna-fast')).toBe('gpt-5.6-luna-fast')
   })
 })
 
@@ -531,6 +548,14 @@ describe('preferences service', () => {
     })
 
     it.each([
+      ['gpt-5.6', 'gpt-5.6-sol'],
+      ['gpt-5.6-fast', 'gpt-5.6-sol-fast'],
+      ['gpt-5-6-sol', 'gpt-5.6-sol'],
+      ['gpt-5-6-sol-fast', 'gpt-5.6-sol-fast'],
+      ['gpt-5-6-terra', 'gpt-5.6-terra'],
+      ['gpt-5-6-terra-fast', 'gpt-5.6-terra-fast'],
+      ['gpt-5-6-luna', 'gpt-5.6-luna'],
+      ['gpt-5-6-luna-fast', 'gpt-5.6-luna-fast'],
       ['gpt-5.5-fast', 'gpt-5.5'],
       ['gpt-5.4-fast', 'gpt-5.4'],
       ['gpt-5.4-mini-fast', 'gpt-5.4-mini'],

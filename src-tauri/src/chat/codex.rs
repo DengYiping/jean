@@ -268,6 +268,12 @@ pub(crate) fn build_codex_prompt_with_parallel_request(
 /// Older models that happened to end in `-fast` are left unchanged.
 pub(crate) fn split_fast_model(model: &str) -> (&str, bool) {
     match model {
+        "gpt-5.6" | "gpt-5-6-sol" => ("gpt-5.6-sol", false),
+        "gpt-5-6-terra" => ("gpt-5.6-terra", false),
+        "gpt-5-6-luna" => ("gpt-5.6-luna", false),
+        "gpt-5.6-fast" | "gpt-5-6-sol-fast" | "gpt-5.6-sol-fast" => ("gpt-5.6-sol", true),
+        "gpt-5-6-terra-fast" | "gpt-5.6-terra-fast" => ("gpt-5.6-terra", true),
+        "gpt-5-6-luna-fast" | "gpt-5.6-luna-fast" => ("gpt-5.6-luna", true),
         "gpt-5.5-fast" => ("gpt-5.5", true),
         "gpt-5.4-fast" => ("gpt-5.4", true),
         "gpt-5.4-mini-fast" => ("gpt-5.4-mini", true),
@@ -279,14 +285,33 @@ pub(crate) fn resolve_codex_model_provider_override(
     preferences: &crate::AppPreferences,
     model: Option<&str>,
 ) -> Option<String> {
-    let model = model.map(split_fast_model).map(|(base, _)| base)?;
-    preferences
-        .codex_model_provider_overrides
-        .get(model)
-        .map(String::as_str)
-        .map(str::trim)
-        .filter(|provider| !provider.is_empty())
-        .map(ToString::to_string)
+    let requested_model = model?;
+    let (base_model, _) = split_fast_model(requested_model);
+    let aliases = match base_model {
+        "gpt-5.6-sol" => &[
+            "gpt-5.6",
+            "gpt-5.6-fast",
+            "gpt-5-6-sol",
+            "gpt-5-6-sol-fast",
+            "gpt-5.6-sol-fast",
+        ][..],
+        "gpt-5.6-terra" => &["gpt-5-6-terra", "gpt-5-6-terra-fast", "gpt-5.6-terra-fast"][..],
+        "gpt-5.6-luna" => &["gpt-5-6-luna", "gpt-5-6-luna-fast", "gpt-5.6-luna-fast"][..],
+        _ => &[][..],
+    };
+
+    std::iter::once(base_model)
+        .chain(std::iter::once(requested_model))
+        .chain(aliases.iter().copied())
+        .find_map(|model| {
+            preferences
+                .codex_model_provider_overrides
+                .get(model)
+                .map(String::as_str)
+                .map(str::trim)
+                .filter(|provider| !provider.is_empty())
+                .map(ToString::to_string)
+        })
 }
 
 pub fn is_manual_compact_request(prompt: &str) -> bool {
@@ -4488,6 +4513,38 @@ mod tests {
     use crate::chat::types::{RunEntry, RunStatus};
 
     #[test]
+    fn gpt_5_6_sol_fast_enables_fast_service_tier() {
+        let params = build_thread_start_params(
+            std::path::Path::new("/tmp"),
+            Some("gpt-5.6-sol-fast"),
+            None,
+            Some("plan"),
+            false,
+            None,
+            false,
+            None,
+        );
+        assert_eq!(params["model"], "gpt-5.6-sol");
+        assert_eq!(params["serviceTier"], "fast");
+    }
+
+    #[test]
+    fn gpt_5_6_alias_uses_sol_without_fast_service_tier() {
+        let params = build_thread_start_params(
+            std::path::Path::new("/tmp"),
+            Some("gpt-5.6"),
+            None,
+            Some("plan"),
+            false,
+            None,
+            false,
+            None,
+        );
+        assert_eq!(params["model"], "gpt-5.6-sol");
+        assert!(params.get("serviceTier").is_none());
+    }
+
+    #[test]
     fn gpt_5_4_fast_enables_fast_service_tier() {
         let params = build_thread_start_params(
             std::path::Path::new("/tmp"),
@@ -4582,11 +4639,38 @@ mod tests {
 
     #[test]
     fn split_fast_model_recognises_supported_fast_models() {
+        assert_eq!(split_fast_model("gpt-5.6-sol-fast"), ("gpt-5.6-sol", true));
+        assert_eq!(
+            split_fast_model("gpt-5.6-terra-fast"),
+            ("gpt-5.6-terra", true)
+        );
+        assert_eq!(
+            split_fast_model("gpt-5.6-luna-fast"),
+            ("gpt-5.6-luna", true)
+        );
         assert_eq!(split_fast_model("gpt-5.5-fast"), ("gpt-5.5", true));
         assert_eq!(split_fast_model("gpt-5.4-fast"), ("gpt-5.4", true));
         assert_eq!(
             split_fast_model("gpt-5.4-mini-fast"),
             ("gpt-5.4-mini", true)
+        );
+    }
+
+    #[test]
+    fn split_fast_model_normalizes_gpt_5_6_aliases() {
+        assert_eq!(split_fast_model("gpt-5.6"), ("gpt-5.6-sol", false));
+        assert_eq!(split_fast_model("gpt-5.6-fast"), ("gpt-5.6-sol", true));
+        assert_eq!(split_fast_model("gpt-5-6-sol"), ("gpt-5.6-sol", false));
+        assert_eq!(split_fast_model("gpt-5-6-sol-fast"), ("gpt-5.6-sol", true));
+        assert_eq!(split_fast_model("gpt-5-6-terra"), ("gpt-5.6-terra", false));
+        assert_eq!(
+            split_fast_model("gpt-5-6-terra-fast"),
+            ("gpt-5.6-terra", true)
+        );
+        assert_eq!(split_fast_model("gpt-5-6-luna"), ("gpt-5.6-luna", false));
+        assert_eq!(
+            split_fast_model("gpt-5-6-luna-fast"),
+            ("gpt-5.6-luna", true)
         );
     }
 
@@ -4660,6 +4744,23 @@ mod tests {
 
         assert_eq!(
             resolve_codex_model_provider_override(&preferences, Some("gpt-5.5-fast")).as_deref(),
+            Some("openrouter")
+        );
+    }
+
+    #[test]
+    fn resolves_codex_model_provider_override_from_gpt_5_6_alias() {
+        let mut preferences = crate::AppPreferences::default();
+        preferences
+            .codex_model_provider_overrides
+            .insert("gpt-5-6-sol".to_string(), "openrouter".to_string());
+
+        assert_eq!(
+            resolve_codex_model_provider_override(&preferences, Some("gpt-5-6-sol")).as_deref(),
+            Some("openrouter")
+        );
+        assert_eq!(
+            resolve_codex_model_provider_override(&preferences, Some("gpt-5.6")).as_deref(),
             Some("openrouter")
         );
     }

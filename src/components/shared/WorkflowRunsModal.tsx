@@ -57,6 +57,7 @@ import {
 import type { WorkflowRun } from '@/types/github'
 import type { Project, Worktree } from '@/types/projects'
 import { resolveParallelExecutionPromptForSession } from '@/lib/parallel-execution-prompt'
+import { isReusableWorkflowInvestigationSession } from './workflow-run-utils'
 
 function timeAgo(dateString: string): string {
   const seconds = Math.floor(
@@ -516,8 +517,7 @@ export function WorkflowRunsModal() {
       }
 
       const emptySession = existingSessions?.sessions?.find(
-        s =>
-          !s.archived_at && (s.message_count === 0 || s.message_count == null)
+        isReusableWorkflowInvestigationSession
       )
 
       if (emptySession) {

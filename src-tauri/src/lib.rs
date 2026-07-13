@@ -221,6 +221,8 @@ pub struct AppPreferences {
     #[serde(default)]
     pub favorite_models: Vec<String>, // Favourited model keys ("backend:model") shown at the top of the desktop picker
     #[serde(default)]
+    pub favorite_package_scripts: Vec<String>, // Favourited package script keys ("project_id:script")
+    #[serde(default)]
     pub fast_mode_models: Vec<String>, // Model keys ("backend:baseModel") with remembered fast-tier selection
     #[serde(default = "default_canvas_layout")]
     pub canvas_layout: String, // Canvas display mode: grid or list
@@ -595,10 +597,18 @@ mod tests {
         default_automation_run_prompt, default_claude_system_prompt, default_codex_system_prompt,
         default_pr_content_prompt, default_provider_switch_handoff_prompt,
         legacy_pr_content_prompt_without_session_recap, migrate_loaded_preferences,
-        resolve_http_server_bind_host, try_parse_cli_args, AppPreferences, CliArgs, CliCommand,
-        MagicPrompts,
+        resolve_http_server_bind_host, should_send_native_notification, try_parse_cli_args,
+        AppPreferences, CliArgs, CliCommand, MagicPrompts,
     };
     use serde_json::json;
+
+    #[test]
+    fn background_notification_uses_native_window_focus() {
+        assert!(!should_send_native_notification(true, Some(true)));
+        assert!(should_send_native_notification(true, Some(false)));
+        assert!(should_send_native_notification(true, None));
+        assert!(should_send_native_notification(false, Some(true)));
+    }
 
     #[test]
     fn resolve_http_server_bind_host_prefers_explicit_host() {
@@ -988,6 +998,7 @@ mod tests {
         assert!(prefs.custom_codex_models.is_empty());
         assert_eq!(prefs.codex_goal_execution_mode, "build");
         assert!(prefs.favorite_models.is_empty());
+        assert!(prefs.favorite_package_scripts.is_empty());
         assert!(prefs.fast_mode_models.is_empty());
         assert_eq!(prefs.branch_naming_model, "sonnet");
         assert_eq!(prefs.session_naming_model, "sonnet");
@@ -2135,6 +2146,7 @@ impl Default for AppPreferences {
             default_provider: None,
             default_project_id: None,
             favorite_models: Vec::new(),
+            favorite_package_scripts: Vec::new(),
             fast_mode_models: Vec::new(),
             canvas_layout: default_canvas_layout(),
             confirm_session_close: default_confirm_session_close(),
@@ -2849,7 +2861,15 @@ async fn send_native_notification(
     app: AppHandle,
     title: String,
     body: Option<String>,
+    background_only: Option<bool>,
 ) -> Result<(), String> {
+    let window_focused = app
+        .get_webview_window("main")
+        .and_then(|window| window.is_focused().ok());
+    if !should_send_native_notification(background_only.unwrap_or(false), window_focused) {
+        return Ok(());
+    }
+
     log::trace!("Sending native notification: {title}");
 
     #[cfg(not(mobile))]
@@ -2879,6 +2899,10 @@ async fn send_native_notification(
         log::warn!("Native notifications not supported on mobile");
         Err("Native notifications not supported on mobile".to_string())
     }
+}
+
+fn should_send_native_notification(background_only: bool, window_focused: Option<bool>) -> bool {
+    !background_only || window_focused != Some(true)
 }
 
 // Recovery functions - simple pattern for saving JSON data to disk
@@ -4606,6 +4630,7 @@ pub fn run() {
             terminal::get_active_terminals,
             terminal::has_active_terminal,
             terminal::get_run_scripts,
+            terminal::get_package_scripts,
             terminal::get_ports,
             terminal::get_build_script,
             terminal::kill_all_terminals,

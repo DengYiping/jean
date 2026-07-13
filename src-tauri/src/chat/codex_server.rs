@@ -772,7 +772,7 @@ fn reader_loop(
 
     // Notify all active sessions
     let sessions = active_sessions.lock().unwrap();
-    for (_tid, ctx) in sessions.iter() {
+    for ctx in sessions.values() {
         let _ = ctx.event_tx.send(ServerEvent::ServerDied);
     }
 
@@ -813,7 +813,7 @@ fn route_notification(
         // Broadcast to all sessions (global notifications)
         log::trace!("Broadcasting notification without threadId: {method}");
         let sessions = active_sessions.lock().unwrap();
-        for (_tid, ctx) in sessions.iter() {
+        for ctx in sessions.values() {
             let _ = ctx.event_tx.send(ServerEvent::Notification {
                 method: method.clone(),
                 params: params.clone(),

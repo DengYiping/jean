@@ -60,6 +60,7 @@ import {
 import { usePreferences } from '@/services/preferences'
 import {
   useBuildScript,
+  type PackageScript,
   useProjects,
   useRunScript,
   useWorktree,
@@ -87,6 +88,7 @@ import { ModalTerminalDrawer } from './ModalTerminalDrawer'
 import { ModalBrowserDrawer } from '@/components/browser/ModalBrowserDrawer'
 import { SwitchBaseBranchDialog } from '@/components/worktree/SwitchBaseBranchDialog'
 import { OpenInButton } from '@/components/open-in/OpenInButton'
+import { ScriptsButton } from '@/components/open-in/ScriptsButton'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -808,6 +810,18 @@ export function SessionChatModal({
     useTerminalStore.getState().setModalTerminalOpen(worktreeId, true)
   }, [buildScript, worktreeId])
 
+  const handlePackageScript = useCallback(
+    (script: PackageScript) => {
+      useTerminalStore
+        .getState()
+        .addTerminal(worktreeId, script.command, script.name, {
+          commandArgs: script.args,
+        })
+      useTerminalStore.getState().setModalTerminalOpen(worktreeId, true)
+    },
+    [worktreeId]
+  )
+
   // Close on Escape key
   useEffect(() => {
     if (!isOpen) return
@@ -1062,6 +1076,11 @@ export function SessionChatModal({
                       <TooltipContent>Build</TooltipContent>
                     </Tooltip>
                   )}
+                  <ScriptsButton
+                    projectId={worktree?.project_id}
+                    worktreePath={worktreePath}
+                    onRun={handlePackageScript}
+                  />
                 </div>
                 {/* Mobile: overflow menu */}
                 <DropdownMenu>

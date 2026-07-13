@@ -125,6 +125,10 @@ export const ChatToolbar = memo(function ChatToolbar({
   queuedMessageCount,
   onHarnessFanoutSend,
   fanoutDisabled,
+  packageScripts,
+  favoritePackageScripts,
+  onRunPackageScript,
+  onToggleFavoritePackageScript,
   availableMcpServers,
   enabledMcpServers,
   onToggleMcpServer,
@@ -511,6 +515,10 @@ export const ChatToolbar = memo(function ChatToolbar({
             enabledMcpServers={enabledMcpServers}
             activeMcpCount={activeMcpCount}
             onToggleMcpServer={onToggleMcpServer}
+            packageScripts={packageScripts}
+            favoritePackageScripts={favoritePackageScripts}
+            onRunPackageScript={onRunPackageScript}
+            onToggleFavoritePackageScript={onToggleFavoritePackageScript}
           />
 
           <DesktopToolbarControls

@@ -458,7 +458,7 @@ pub async fn dispatch_command(
         "create_pr_with_ai_content" => {
             let worktree_path: String = field(&args, "worktreePath", "worktree_path")?;
             let session_id: Option<String> = field_opt(&args, "sessionId", "session_id")?;
-            let magic_prompt: Option<String> = field_opt(&args, "magicPrompt", "magic_prompt")?;
+            let magic_prompt: Option<String> = field_opt(&args, "customPrompt", "custom_prompt")?;
             let model: Option<String> = from_field_opt(&args, "model")?;
             let custom_profile_name: Option<String> =
                 field_opt(&args, "customProfileName", "custom_profile_name")?;
@@ -493,7 +493,7 @@ pub async fn dispatch_command(
         }
         "create_commit_with_ai" => {
             let worktree_path: String = field(&args, "worktreePath", "worktree_path")?;
-            let custom_prompt: Option<String> = field_opt(&args, "magicPrompt", "magic_prompt")?;
+            let custom_prompt: Option<String> = field_opt(&args, "customPrompt", "custom_prompt")?;
             let push: bool = from_field_opt(&args, "push")?.unwrap_or(false);
             let remote: Option<String> = from_field_opt(&args, "remote")?;
             let pr_number: Option<u32> = from_field_opt(&args, "prNumber")?;
@@ -1645,7 +1645,9 @@ pub async fn dispatch_command(
         "send_native_notification" => {
             let title: String = from_field(&args, "title")?;
             let body: Option<String> = from_field_opt(&args, "body")?;
-            crate::send_native_notification(app.clone(), title, body).await?;
+            let background_only: Option<bool> =
+                field_opt(&args, "backgroundOnly", "background_only")?;
+            crate::send_native_notification(app.clone(), title, body, background_only).await?;
             Ok(Value::Null)
         }
         "save_emergency_data" => {
@@ -2009,6 +2011,11 @@ pub async fn dispatch_command(
             let worktree_path: String = field(&args, "worktreePath", "worktree_path")?;
             let project_path: Option<String> = field_opt(&args, "projectPath", "project_path")?;
             let result = crate::terminal::get_run_scripts(worktree_path, project_path).await;
+            to_value(result)
+        }
+        "get_package_scripts" => {
+            let worktree_path: String = field(&args, "worktreePath", "worktree_path")?;
+            let result = crate::terminal::get_package_scripts(worktree_path).await;
             to_value(result)
         }
         "get_ports" => {

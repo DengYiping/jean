@@ -2399,6 +2399,7 @@ fn normalize_item_types(item: &serde_json::Value) -> serde_json::Value {
                 "mcpToolCall" => "mcp_tool_call",
                 "agentMessage" => "agent_message",
                 "collabAgentToolCall" => "collab_tool_call",
+                "subAgentActivity" => "sub_agent_activity",
                 "todoList" => "todo_list",
                 "webSearch" => "web_search",
                 "imageGeneration" => "image_generation",
@@ -2430,8 +2431,50 @@ fn normalize_item_types(item: &serde_json::Value) -> serde_json::Value {
         if let Some(states) = obj.remove("agentsStates") {
             obj.insert("agents_states".to_string(), states);
         }
+        if let Some(thread_id) = obj.remove("agentThreadId") {
+            obj.insert("agent_thread_id".to_string(), thread_id);
+        }
+        if let Some(agent_path) = obj.remove("agentPath") {
+            obj.insert("agent_path".to_string(), agent_path);
+        }
     }
     item
+}
+
+fn sub_agent_activity_tool(item: &serde_json::Value) -> Option<(&'static str, serde_json::Value)> {
+    let kind = item.get("kind").and_then(|value| value.as_str())?;
+    let thread_id = item
+        .get("agent_thread_id")
+        .or_else(|| item.get("agentThreadId"))
+        .and_then(|value| value.as_str())?;
+    let agent_path = item
+        .get("agent_path")
+        .or_else(|| item.get("agentPath"))
+        .and_then(|value| value.as_str())
+        .unwrap_or(thread_id);
+    let (tool_name, agent_status) = match kind {
+        "started" => ("SpawnAgent", "running"),
+        "interacted" => ("SendInput", "running"),
+        "interrupted" => ("CloseAgent", "interrupted"),
+        _ => return None,
+    };
+
+    let mut agents_states = serde_json::Map::new();
+    agents_states.insert(
+        thread_id.to_string(),
+        serde_json::json!({ "status": agent_status, "message": null }),
+    );
+    let input = serde_json::json!({
+        "id": item.get("id").cloned().unwrap_or(serde_json::Value::Null),
+        "type": "sub_agent_activity",
+        "kind": kind,
+        "prompt": agent_path,
+        "receiver_thread_ids": [thread_id],
+        "agents_states": agents_states,
+        "status": "completed",
+    });
+
+    Some((tool_name, input))
 }
 
 fn parse_double_quoted_shell_word(payload: &str) -> Option<String> {
@@ -3664,6 +3707,40 @@ fn process_codex_event(
                         );
                     }
                 }
+                "sub_agent_activity" => {
+                    if let Some((tool_name, input)) = sub_agent_activity_tool(item) {
+                        let tool_id = if item_id.is_empty() {
+                            uuid::Uuid::new_v4().to_string()
+                        } else {
+                            item_id.to_string()
+                        };
+                        if let Some(tool) = tool_calls.iter_mut().find(|tool| tool.id == tool_id) {
+                            tool.input = input.clone();
+                        } else {
+                            tool_calls.push(ToolCall {
+                                id: tool_id.clone(),
+                                name: tool_name.to_string(),
+                                input: input.clone(),
+                                output: Some("completed".to_string()),
+                                parent_tool_use_id: None,
+                            });
+                            content_blocks.push(ContentBlock::ToolUse {
+                                tool_call_id: tool_id.clone(),
+                            });
+                        }
+                        let _ = app.emit_all(
+                            "chat:tool_use",
+                            &ToolUseEvent {
+                                session_id: session_id.to_string(),
+                                worktree_id: worktree_id.to_string(),
+                                id: tool_id,
+                                name: tool_name.to_string(),
+                                input,
+                                parent_tool_use_id: None,
+                            },
+                        );
+                    }
+                }
                 // Informational tool-like events — populate output for UI
                 "web_search" | "image_generation" | "image_view" | "context_compaction" => {
                     let output = if item_type == "context_compaction" {
@@ -4223,6 +4300,25 @@ pub fn parse_codex_run_to_message(
                             }
                         }
                     }
+                    "sub_agent_activity" => {
+                        if let Some((tool_name, input)) = sub_agent_activity_tool(item) {
+                            let tool_id = if item_id.is_empty() {
+                                uuid::Uuid::new_v4().to_string()
+                            } else {
+                                item_id.to_string()
+                            };
+                            tool_calls.push(ToolCall {
+                                id: tool_id.clone(),
+                                name: tool_name.to_string(),
+                                input,
+                                output: Some("completed".to_string()),
+                                parent_tool_use_id: None,
+                            });
+                            content_blocks.push(ContentBlock::ToolUse {
+                                tool_call_id: tool_id,
+                            });
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -4383,31 +4479,15 @@ pub fn execute_one_shot_codex(
     // Wait with timeout to avoid hanging indefinitely (e.g. MCP server connection issues)
     let timeout = std::time::Duration::from_secs(120);
     let start = std::time::Instant::now();
-    let output = loop {
-        match child.try_wait() {
-            Ok(Some(_status)) => {
-                // Process exited — collect output
-                break child
-                    .wait_with_output()
-                    .map_err(|e| format!("Failed to collect Codex CLI output: {e}"))?;
-            }
-            Ok(None) => {
-                // Still running
-                if start.elapsed() > timeout {
-                    let _ = child.kill();
-                    return Err(
-                        "Codex CLI timed out after 120s. This often happens when an MCP server \
-                         is stuck connecting. Check your Codex MCP server configuration."
-                            .to_string(),
-                    );
-                }
-                std::thread::sleep(std::time::Duration::from_millis(100));
-            }
-            Err(e) => {
-                return Err(format!("Failed to check Codex CLI status: {e}"));
-            }
+    let output = wait_for_child_output(&mut child, timeout).map_err(|error| {
+        if error == "Process timed out" {
+            "Codex CLI timed out after 120s. This often happens when an MCP server \
+             is stuck connecting. Check your Codex MCP server configuration."
+                .to_string()
+        } else {
+            error
         }
-    };
+    })?;
 
     log::debug!(
         "Codex CLI one-shot completed in {:.1}s, exit: {}",
@@ -4464,6 +4544,72 @@ pub fn execute_one_shot_codex(
     extract_codex_structured_output(&stdout)
 }
 
+fn wait_for_child_output(
+    child: &mut std::process::Child,
+    timeout: std::time::Duration,
+) -> Result<std::process::Output, String> {
+    use std::io::Read;
+
+    let stdout = child.stdout.take().map(|mut pipe| {
+        std::thread::spawn(move || {
+            let mut output = Vec::new();
+            pipe.read_to_end(&mut output)
+                .map(|_| output)
+                .map_err(|error| format!("Failed to read process stdout: {error}"))
+        })
+    });
+    let stderr = child.stderr.take().map(|mut pipe| {
+        std::thread::spawn(move || {
+            let mut output = Vec::new();
+            pipe.read_to_end(&mut output)
+                .map(|_| output)
+                .map_err(|error| format!("Failed to read process stderr: {error}"))
+        })
+    });
+
+    let started_at = std::time::Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if started_at.elapsed() <= timeout => {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            Ok(None) => {
+                let _ = crate::platform::kill_process_tree(child.id());
+                let _ = child.kill();
+                let _ = child.wait();
+                join_output_reader(stdout)?;
+                join_output_reader(stderr)?;
+                return Err("Process timed out".to_string());
+            }
+            Err(error) => {
+                let _ = crate::platform::kill_process_tree(child.id());
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("Failed to check process status: {error}"));
+            }
+        }
+    };
+
+    Ok(std::process::Output {
+        status,
+        stdout: join_output_reader(stdout)?,
+        stderr: join_output_reader(stderr)?,
+    })
+}
+
+fn join_output_reader(
+    reader: Option<std::thread::JoinHandle<Result<Vec<u8>, String>>>,
+) -> Result<Vec<u8>, String> {
+    reader
+        .map(|handle| {
+            handle
+                .join()
+                .map_err(|_| "Process output reader panicked".to_string())?
+        })
+        .unwrap_or_else(|| Ok(Vec::new()))
+}
+
 fn build_one_shot_codex_args(
     actual_model: &str,
     is_fast: bool,
@@ -4510,6 +4656,23 @@ fn build_one_shot_codex_args(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn one_shot_output_reader_does_not_deadlock_on_a_full_pipe() {
+        let mut child = std::process::Command::new("sh")
+            .args(["-c", "head -c 262144 /dev/zero"])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("spawn full pipe command");
+
+        let output = wait_for_child_output(&mut child, std::time::Duration::from_secs(5))
+            .expect("child output");
+
+        assert!(output.status.success());
+        assert_eq!(output.stdout.len(), 262144);
+    }
     use crate::chat::types::{RunEntry, RunStatus};
 
     #[test]
@@ -4618,6 +4781,78 @@ mod tests {
     fn one_shot_codex_uses_mini_when_nano_cannot_accept_tool_search() {
         assert_eq!(one_shot_codex_model("gpt-5.4-nano"), "gpt-5.4-mini");
         assert_eq!(one_shot_codex_model("gpt-5.4-mini"), "gpt-5.4-mini");
+    }
+
+    #[test]
+    fn normalize_item_types_supports_v2_sub_agent_activity() {
+        let item = serde_json::json!({
+            "id": "call-1",
+            "type": "subAgentActivity",
+            "kind": "started",
+            "agentThreadId": "agent-1",
+            "agentPath": "/root/reviewer"
+        });
+
+        let normalized = normalize_item_types(&item);
+
+        assert_eq!(normalized["type"], "sub_agent_activity");
+        assert_eq!(normalized["agent_thread_id"], "agent-1");
+        assert_eq!(normalized["agent_path"], "/root/reviewer");
+    }
+
+    #[test]
+    fn parse_codex_run_surfaces_v2_sub_agent_activity() {
+        let run = crate::chat::types::RunEntry {
+            run_id: "run-1".to_string(),
+            started_at: 1,
+            ended_at: Some(2),
+            status: crate::chat::types::RunStatus::Completed,
+            user_message_id: "user-1".to_string(),
+            assistant_message_id: Some("assistant-1".to_string()),
+            user_message: "Spawn an agent".to_string(),
+            model: None,
+            backend: None,
+            execution_mode: Some("build".to_string()),
+            thinking_level: None,
+            effort_level: None,
+            claude_session_id: None,
+            pid: None,
+            cancelled: false,
+            recovered: false,
+            usage: None,
+        };
+        let lines = vec![
+            r#"{"type":"item.completed","item":{"id":"call-1","type":"subAgentActivity","kind":"started","agentThreadId":"agent-1","agentPath":"/root/reviewer"}}"#.to_string(),
+        ];
+
+        let message = parse_codex_run_to_message(&lines, &run).expect("message");
+        let agent = message
+            .tool_calls
+            .iter()
+            .find(|tool| tool.name == "SpawnAgent")
+            .expect("spawned agent tool");
+
+        assert_eq!(agent.input["receiver_thread_ids"][0], "agent-1");
+        assert_eq!(agent.input["prompt"], "/root/reviewer");
+        assert_eq!(agent.input["agents_states"]["agent-1"]["status"], "running");
+    }
+
+    #[test]
+    fn structured_output_uses_final_schema_valid_agent_message() {
+        let output = concat!(
+            r####"{"type":"item.completed","item":{"type":"agent_message","text":"{\"title\":\"Preparing release notes\",\"body\":\"I’ll inspect the commits first.\"}"}}"####,
+            "\n",
+            r####"{"type":"item.completed","item":{"type":"command_execution","command":"git log","aggregated_output":"commits"}}"####,
+            "\n",
+            r####"{"type":"item.completed","item":{"type":"agent_message","text":"{\"title\":\"Release notes\",\"body\":\"### Fixes\\n- Fixed session recovery.\"}"}}"####,
+            "\n",
+            r####"{"type":"turn.completed"}"####,
+        );
+
+        assert_eq!(
+            extract_codex_structured_output(output).unwrap(),
+            r####"{"title":"Release notes","body":"### Fixes\n- Fixed session recovery."}"####
+        );
     }
 
     #[test]
@@ -6025,7 +6260,7 @@ mod tests {
 /// - `item.completed` with type `agent_message` containing JSON text
 /// - `turn.completed` with an `output` field
 fn extract_codex_structured_output(output: &str) -> Result<String, String> {
-    let mut last_agent_message = None;
+    let mut structured_output = None;
 
     for line in output.lines() {
         let line = line.trim();
@@ -6045,27 +6280,9 @@ fn extract_codex_structured_output(output: &str) -> Result<String, String> {
                 if let Some(item) = parsed.get("item") {
                     let item_type = item.get("type").and_then(|t| t.as_str()).unwrap_or("");
                     if item_type == "agent_message" {
-                        if let Some(text) = item.get("text").and_then(|t| t.as_str()) {
-                            last_agent_message = Some(text.to_string());
-                        }
-                        // Also check content array
-                        if let Some(content) = item.get("content").and_then(|c| c.as_array()) {
-                            for block in content {
-                                if block.get("type").and_then(|t| t.as_str()) == Some("text") {
-                                    if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
-                                        last_agent_message = Some(text.to_string());
-                                    }
-                                }
-                                // Check for output_text type (structured output)
-                                if block.get("type").and_then(|t| t.as_str()) == Some("output_text")
-                                {
-                                    if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
-                                        // Try to parse as JSON — if it works, it's our structured output
-                                        if serde_json::from_str::<serde_json::Value>(text).is_ok() {
-                                            return Ok(text.to_string());
-                                        }
-                                    }
-                                }
+                        if let Some(text) = extract_agent_message_text(item) {
+                            if serde_json::from_str::<serde_json::Value>(&text).is_ok() {
+                                structured_output = Some(text);
                             }
                         }
                     }
@@ -6074,8 +6291,12 @@ fn extract_codex_structured_output(output: &str) -> Result<String, String> {
             "turn.completed" => {
                 // Check for output field directly
                 if let Some(output_val) = parsed.get("output") {
-                    if !output_val.is_null() {
-                        return Ok(output_val.to_string());
+                    if let Some(text) = extract_text_from_turn_output(output_val) {
+                        if serde_json::from_str::<serde_json::Value>(&text).is_ok() {
+                            structured_output = Some(text);
+                        }
+                    } else if !output_val.is_null() {
+                        structured_output = Some(output_val.to_string());
                     }
                 }
             }
@@ -6083,12 +6304,39 @@ fn extract_codex_structured_output(output: &str) -> Result<String, String> {
         }
     }
 
-    // Fall back to last agent message if it parses as JSON
-    if let Some(msg) = last_agent_message {
-        if serde_json::from_str::<serde_json::Value>(&msg).is_ok() {
-            return Ok(msg);
-        }
+    structured_output.ok_or_else(|| "No structured output found in Codex response".to_string())
+}
+
+fn extract_agent_message_text(item: &serde_json::Value) -> Option<String> {
+    if let Some(text) = item.get("text").and_then(|text| text.as_str()) {
+        return Some(text.to_string());
     }
 
-    Err("No structured output found in Codex response".to_string())
+    let content = item.get("content").and_then(|content| content.as_array())?;
+    for block in content {
+        let block_type = block.get("type").and_then(|value| value.as_str());
+        if matches!(block_type, Some("output_text" | "text")) {
+            if let Some(text) = block.get("text").and_then(|text| text.as_str()) {
+                return Some(text.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn extract_text_from_turn_output(output: &serde_json::Value) -> Option<String> {
+    if let Some(text) = output.as_str() {
+        return Some(text.to_string());
+    }
+
+    let content = output.as_array()?;
+    for block in content {
+        let block_type = block.get("type").and_then(|value| value.as_str());
+        if matches!(block_type, Some("output_text" | "text")) {
+            if let Some(text) = block.get("text").and_then(|text| text.as_str()) {
+                return Some(text.to_string());
+            }
+        }
+    }
+    None
 }

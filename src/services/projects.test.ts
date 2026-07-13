@@ -1,10 +1,11 @@
 import { createElement } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, renderHook } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   projectsQueryKeys,
   useReorderWorktrees,
+  usePackageScripts,
   useSwitchWorktreeBaseBranch,
   useUpdateProjectSettings,
   useWorktree,
@@ -82,6 +83,26 @@ describe('projects service', () => {
       'get_worktree',
       expect.anything()
     )
+  })
+
+  it('loads package scripts through the shared backend transport', async () => {
+    const queryClient = createTestQueryClient()
+    mockInvoke.mockResolvedValue([
+      { name: 'dev', command: 'bun', args: ['run', 'dev'] },
+    ])
+
+    const { result } = renderHook(() => usePackageScripts('/repo'), {
+      wrapper: createWrapper(queryClient),
+    })
+
+    await waitFor(() => {
+      expect(result.current.data).toEqual([
+        { name: 'dev', command: 'bun', args: ['run', 'dev'] },
+      ])
+    })
+    expect(mockInvoke).toHaveBeenCalledWith('get_package_scripts', {
+      worktreePath: '/repo',
+    })
   })
 
   it('forwards linked project ids when updating project settings', async () => {

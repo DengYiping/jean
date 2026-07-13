@@ -2489,6 +2489,25 @@ export function useBuildScript(
   return useJeanScript(worktreePath, projectPath, 'build')
 }
 
+export interface PackageScript {
+  name: string
+  command: string
+  args: string[]
+}
+
+/** Get scripts from package.json with the detected package-manager command. */
+export function usePackageScripts(worktreePath: string | null) {
+  return useQuery<PackageScript[]>({
+    queryKey: ['package-scripts', worktreePath],
+    queryFn: async () => {
+      if (!hasBackend() || !worktreePath) return []
+      return invoke<PackageScript[]>('get_package_scripts', { worktreePath })
+    },
+    enabled: !!worktreePath,
+    staleTime: 30_000,
+  })
+}
+
 /**
  * Hook to get configured ports from jean.json for a worktree.
  * Returns PortEntry[] (empty = none configured).

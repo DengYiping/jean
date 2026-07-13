@@ -219,6 +219,7 @@ export const defaultResponses: Record<string, unknown> = {
 
   // Terminal
   get_run_scripts: [],
+  get_package_scripts: [],
   get_build_script: null,
   get_ports: [],
   prepare_backend_terminal_context: { commandArgs: [] },

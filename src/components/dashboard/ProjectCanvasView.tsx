@@ -62,6 +62,7 @@ import {
   useRemoveProject,
   useReorderWorktrees,
   projectsQueryKeys,
+  type PackageScript,
 } from '@/services/projects'
 import { cancelChatMessage } from '@/services/chat'
 import { createProjectCanvasSessionsQuery } from './project-canvas-session-queries'
@@ -96,6 +97,7 @@ import {
 } from '@/components/chat/session-card-utils'
 import { WorktreeSetupCard } from '@/components/chat/WorktreeSetupCard'
 import { OpenInButton } from '@/components/open-in/OpenInButton'
+import { ScriptsButton } from '@/components/open-in/ScriptsButton'
 import { useCanvasStoreState } from '@/components/chat/hooks/useCanvasStoreState'
 import { usePlanApproval } from '@/components/chat/hooks/usePlanApproval'
 import { useClearContextApproval } from '@/components/chat/hooks/useClearContextApproval'
@@ -922,6 +924,28 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
       setSelectedWorktreeModal({ worktreeId, worktreePath })
     },
     [markWorktreeLastUsed, projectId]
+  )
+
+  const handlePackageScript = useCallback(
+    async (script: PackageScript) => {
+      let baseWorktree = worktrees.find(isBaseSession)
+      if (!baseWorktree) {
+        try {
+          baseWorktree = await createBaseSession.mutateAsync(projectId)
+        } catch {
+          return
+        }
+      }
+
+      useTerminalStore
+        .getState()
+        .addTerminal(baseWorktree.id, script.command, script.name, {
+          commandArgs: script.args,
+        })
+      openWorktreeModal(baseWorktree.id, baseWorktree.path, 'package-script')
+      useTerminalStore.getState().setModalTerminalOpen(baseWorktree.id, true)
+    },
+    [createBaseSession, openWorktreeModal, projectId, worktrees]
   )
 
   // Build worktree sections with computed card data
@@ -2466,6 +2490,11 @@ export function ProjectCanvasView({ projectId }: ProjectCanvasViewProps) {
               <OpenInButton
                 worktreePath={project.path}
                 preferredEditor={project.default_editor}
+              />
+              <ScriptsButton
+                projectId={project.id}
+                worktreePath={project.path}
+                onRun={handlePackageScript}
               />
             </div>
           )}

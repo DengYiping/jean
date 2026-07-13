@@ -24,9 +24,9 @@ use super::github_issues::{
     format_advisory_context_markdown, format_issue_context_markdown, format_pr_context_markdown,
     format_security_context_markdown, generate_branch_name_from_advisory,
     generate_branch_name_from_issue, generate_branch_name_from_security_alert,
-    get_github_contexts_dir, get_github_pr, get_pr_diff, get_session_context_content,
-    get_session_context_numbers, AdvisoryContext, IssueContext, PullRequestContext,
-    SecurityAlertContext,
+    get_github_contexts_dir, get_github_pr, get_github_pr_by_number, get_pr_diff,
+    get_session_context_content, get_session_context_numbers, AdvisoryContext, IssueContext,
+    PullRequestContext, SecurityAlertContext,
 };
 use super::linear_issues::{
     add_linear_reference, format_linear_issue_context_markdown,
@@ -6352,20 +6352,42 @@ pub async fn get_review_prompt(
     // Load projects data to find the target branch
     let data = load_projects_data(&app)?;
 
-    // Find the worktree by path
-    let worktree = data
-        .worktrees
-        .iter()
-        .find(|w| w.path == worktree_path)
-        .ok_or_else(|| format!("Worktree not found: {worktree_path}"))?;
+    let (pr_number, worktree_base, project_default) = {
+        let worktree = data
+            .worktrees
+            .iter()
+            .find(|w| w.path == worktree_path)
+            .ok_or_else(|| format!("Worktree not found: {worktree_path}"))?;
+        let project = data
+            .find_project(&worktree.project_id)
+            .ok_or_else(|| format!("Project not found: {}", worktree.project_id))?;
 
-    // Find the project to get default_branch
-    let project = data
-        .find_project(&worktree.project_id)
-        .ok_or_else(|| format!("Project not found: {}", worktree.project_id))?;
+        (
+            worktree.pr_number,
+            worktree.base_branch.clone(),
+            project.default_branch.clone(),
+        )
+    };
 
-    let target_branch = resolve_pr_target_branch(worktree, project);
     let current_branch = git::get_current_branch(&worktree_path)?;
+    let linked_pr_base = if let Some(pr_number) = pr_number {
+        match get_github_pr_by_number(app.clone(), worktree_path.clone(), pr_number).await {
+            Ok(pr) => Some(pr.base_ref_name),
+            Err(error) => {
+                log::warn!(
+                    "Failed to load linked PR #{pr_number} for review target selection: {error}"
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let target_branch = select_review_target_branch(
+        linked_pr_base.as_deref(),
+        worktree_base.as_deref(),
+        &project_default,
+    );
 
     // Get the full git diff (origin/target...HEAD)
     let diff_output = silent_command("git")
@@ -7719,6 +7741,18 @@ fn resolve_pr_target_branch<'a>(worktree: &'a Worktree, project: &'a Project) ->
         .map(str::trim)
         .filter(|branch| !branch.is_empty())
         .unwrap_or(&project.default_branch)
+}
+
+fn select_review_target_branch(
+    linked_pr_base: Option<&str>,
+    worktree_base: Option<&str>,
+    project_default: &str,
+) -> String {
+    linked_pr_base
+        .filter(|branch| !branch.trim().is_empty())
+        .or_else(|| worktree_base.filter(|branch| !branch.trim().is_empty()))
+        .unwrap_or(project_default)
+        .to_string()
 }
 
 /// Create a PR with AI-generated title and body
@@ -9416,20 +9450,42 @@ pub async fn run_review_with_ai(
     // Load projects data to find the target branch
     let data = load_projects_data(&app)?;
 
-    // Find the worktree by path
-    let worktree = data
-        .worktrees
-        .iter()
-        .find(|w| w.path == worktree_path)
-        .ok_or_else(|| format!("Worktree not found: {worktree_path}"))?;
+    let (pr_number, worktree_base, project_default) = {
+        let worktree = data
+            .worktrees
+            .iter()
+            .find(|w| w.path == worktree_path)
+            .ok_or_else(|| format!("Worktree not found: {worktree_path}"))?;
+        let project = data
+            .find_project(&worktree.project_id)
+            .ok_or_else(|| format!("Project not found: {}", worktree.project_id))?;
 
-    // Find the project to get default_branch
-    let project = data
-        .find_project(&worktree.project_id)
-        .ok_or_else(|| format!("Project not found: {}", worktree.project_id))?;
+        (
+            worktree.pr_number,
+            worktree.base_branch.clone(),
+            project.default_branch.clone(),
+        )
+    };
 
-    let target_branch = resolve_pr_target_branch(worktree, project);
     let current_branch = git::get_current_branch(&worktree_path)?;
+    let linked_pr_base = if let Some(pr_number) = pr_number {
+        match get_github_pr_by_number(app.clone(), worktree_path.clone(), pr_number).await {
+            Ok(pr) => Some(pr.base_ref_name),
+            Err(error) => {
+                log::warn!(
+                    "Failed to load linked PR #{pr_number} for review target selection: {error}"
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let target_branch = select_review_target_branch(
+        linked_pr_base.as_deref(),
+        worktree_base.as_deref(),
+        &project_default,
+    );
 
     // Get branch diff (non-fatal — may fail if origin ref doesn't exist)
     emit_review_progress(
@@ -9439,7 +9495,7 @@ pub async fn run_review_with_ai(
         "Collecting branch diff...",
         20,
     );
-    let diff = get_branch_diff(&worktree_path, target_branch, "HEAD").unwrap_or_default();
+    let diff = get_branch_diff(&worktree_path, target_branch.as_str(), "HEAD").unwrap_or_default();
 
     // Get commit history (non-fatal — same reason)
     emit_review_progress(
@@ -9449,7 +9505,8 @@ pub async fn run_review_with_ai(
         "Collecting commit history...",
         30,
     );
-    let commits = get_branch_commits(&worktree_path, target_branch, "HEAD").unwrap_or_default();
+    let commits =
+        get_branch_commits(&worktree_path, target_branch.as_str(), "HEAD").unwrap_or_default();
 
     // Get uncommitted changes (staged + unstaged for tracked files)
     emit_review_progress(
@@ -13123,6 +13180,27 @@ mod tests {
         let project = test_project("project-1", "main");
 
         assert_eq!(resolve_pr_target_branch(&worktree, &project), "main");
+    }
+
+    #[test]
+    fn review_target_branch_prefers_linked_pr_base() {
+        assert_eq!(
+            select_review_target_branch(Some("v4.x"), Some("develop"), "next"),
+            "v4.x"
+        );
+    }
+
+    #[test]
+    fn review_target_branch_falls_back_to_worktree_base() {
+        assert_eq!(
+            select_review_target_branch(None, Some("develop"), "next"),
+            "develop"
+        );
+    }
+
+    #[test]
+    fn review_target_branch_falls_back_to_project_default() {
+        assert_eq!(select_review_target_branch(None, None, "next"), "next");
     }
 
     #[test]

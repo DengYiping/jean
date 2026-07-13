@@ -21,6 +21,7 @@ import type {
   AttachedSavedContext,
 } from '@/types/github'
 import type { LoadedLinearIssueContext } from '@/types/linear'
+import type { PackageScript } from '@/services/projects'
 
 export interface ViewingContext {
   type: 'issue' | 'pr' | 'saved' | 'security' | 'advisory' | 'linear'
@@ -103,6 +104,10 @@ export interface ChatToolbarProps {
   queuedMessageCount?: number
   onHarnessFanoutSend?: (targetBackends: Backend[]) => void
   fanoutDisabled?: boolean
+  packageScripts?: PackageScript[]
+  favoritePackageScripts?: string[]
+  onRunPackageScript?: (script: PackageScript) => void
+  onToggleFavoritePackageScript?: (scriptName: string) => void
 
   availableMcpServers: McpServerInfo[]
   enabledMcpServers: string[]

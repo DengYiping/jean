@@ -196,4 +196,53 @@ describe('MobileToolbarMenu', () => {
 
     expect(onToggleMcpServer).toHaveBeenCalledWith('filesystem')
   })
+
+  it('opens a touch-friendly package scripts sheet', async () => {
+    const user = userEvent.setup()
+    const onRunPackageScript = vi.fn()
+    const onToggleFavoritePackageScript = vi.fn()
+    render(
+      <MobileToolbarMenu
+        {...createProps({
+          packageScripts: [
+            { name: 'dev', command: 'bun', args: ['run', 'dev'] },
+            { name: 'test:unit', command: 'bun', args: ['run', 'test:unit'] },
+          ],
+          favoritePackageScripts: ['test:unit'],
+          onRunPackageScript,
+          onToggleFavoritePackageScript,
+        })}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: 'More actions' }))
+    const scriptsItem = (await screen.findByText('Scripts')).closest(
+      '[role="menuitem"]'
+    )
+    expect(scriptsItem).toBeInTheDocument()
+    if (!scriptsItem) throw new Error('Scripts menu item not found')
+    await user.click(scriptsItem)
+
+    expect(
+      await screen.findByRole('heading', { name: 'Scripts' })
+    ).toBeInTheDocument()
+    const favoriteButtons = screen.getAllByRole('button', {
+      name: /favorite/i,
+    })
+    expect(
+      favoriteButtons.map(button => button.getAttribute('aria-label'))
+    ).toEqual(['Unfavorite test:unit', 'Favorite dev'])
+
+    await user.click(screen.getByRole('button', { name: 'Favorite dev' }))
+
+    expect(onToggleFavoritePackageScript).toHaveBeenCalledWith('dev')
+
+    await user.click(screen.getByRole('button', { name: 'test:unit' }))
+
+    expect(onRunPackageScript).toHaveBeenCalledWith({
+      name: 'test:unit',
+      command: 'bun',
+      args: ['run', 'test:unit'],
+    })
+  })
 })

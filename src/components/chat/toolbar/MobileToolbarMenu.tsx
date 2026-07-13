@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   ArrowDownToLine,
   ArrowUpToLine,
@@ -19,7 +19,9 @@ import {
   MessageSquare,
   Pencil,
   Plug,
+  Play,
   Sparkles,
+  Star,
   Wand2,
   Zap,
 } from 'lucide-react'
@@ -47,6 +49,7 @@ import type { CustomCliProfile } from '@/types/preferences'
 import type { EffortLevel, ExecutionMode, ThinkingLevel } from '@/types/chat'
 import type { CheckStatus, PrDisplayStatus } from '@/types/pr-status'
 import type { McpServerInfo } from '@/types/chat'
+import type { PackageScript } from '@/services/projects'
 import type {
   AttachedSavedContext,
   LoadedIssueContext,
@@ -111,6 +114,10 @@ interface MobileToolbarMenuProps {
   enabledMcpServers?: string[]
   activeMcpCount?: number
   onToggleMcpServer?: (serverName: string) => void
+  packageScripts?: PackageScript[]
+  favoritePackageScripts?: string[]
+  onRunPackageScript?: (script: PackageScript) => void
+  onToggleFavoritePackageScript?: (scriptName: string) => void
 
   onSaveContext: () => void
   onLoadContext: () => void
@@ -166,6 +173,10 @@ export function MobileToolbarMenu({
   enabledMcpServers,
   activeMcpCount,
   onToggleMcpServer,
+  packageScripts = [],
+  favoritePackageScripts = [],
+  onRunPackageScript,
+  onToggleFavoritePackageScript,
   onSaveContext,
   onLoadContext,
   onCommit,
@@ -194,6 +205,7 @@ export function MobileToolbarMenu({
   const [menuOpen, setMenuOpen] = useState(false)
   const [modelSheetOpen, setModelSheetOpen] = useState(false)
   const [mcpSheetOpen, setMcpSheetOpen] = useState(false)
+  const [scriptsSheetOpen, setScriptsSheetOpen] = useState(false)
   const [modeSheetOpen, setModeSheetOpen] = useState(false)
   const [modelSearchQuery, setModelSearchQuery] = useState('')
   const providerDisplayName = getProviderDisplayName(selectedProvider)
@@ -213,6 +225,10 @@ export function MobileToolbarMenu({
   const openMcpSheet = () => {
     setMenuOpen(false)
     requestAnimationFrame(() => setMcpSheetOpen(true))
+  }
+  const openScriptsSheet = () => {
+    setMenuOpen(false)
+    requestAnimationFrame(() => setScriptsSheetOpen(true))
   }
   const normalizedModelQuery = modelSearchQuery.trim().toLowerCase()
   const visibleModelOptions = normalizedModelQuery
@@ -255,6 +271,19 @@ export function MobileToolbarMenu({
     !!onToggleMcpServer &&
     (availableMcpServers ?? []).some(server => !server.disabled)
   const enabledMcpSet = new Set(enabledMcpServers ?? [])
+  const favoritePackageScriptSet = useMemo(
+    () => new Set(favoritePackageScripts),
+    [favoritePackageScripts]
+  )
+  const sortedPackageScripts = useMemo(
+    () =>
+      [...packageScripts].sort(
+        (a, b) =>
+          Number(favoritePackageScriptSet.has(b.name)) -
+          Number(favoritePackageScriptSet.has(a.name))
+      ),
+    [favoritePackageScriptSet, packageScripts]
+  )
 
   return (
     <>
@@ -738,6 +767,17 @@ export function MobileToolbarMenu({
               </DropdownMenuSubContent>
             </DropdownMenuSub>
           )}
+
+          {packageScripts.length > 0 && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={openScriptsSheet}>
+                <Play className="h-4 w-4" />
+                <span>Scripts</span>
+                <ChevronRight className="ml-auto h-4 w-4 shrink-0" />
+              </DropdownMenuItem>
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
       <Sheet open={modeSheetOpen} onOpenChange={setModeSheetOpen}>
@@ -868,6 +908,57 @@ export function MobileToolbarMenu({
                 </button>
               )
             })}
+          </div>
+        </SheetContent>
+      </Sheet>
+      <Sheet open={scriptsSheetOpen} onOpenChange={setScriptsSheetOpen}>
+        <SheetContent
+          side="bottom"
+          className="max-h-[75svh] rounded-t-xl p-0"
+          showCloseButton={false}
+        >
+          <SheetHeader className="border-b px-4 py-3">
+            <SheetTitle className="text-base">Scripts</SheetTitle>
+            <SheetDescription className="sr-only">
+              Run a package.json script in a terminal.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="overflow-y-auto p-2">
+            {sortedPackageScripts.map(script => (
+              <div
+                key={script.name}
+                className="flex min-h-12 items-center rounded-md hover:bg-accent"
+              >
+                <button
+                  type="button"
+                  className="flex min-h-12 min-w-0 flex-1 items-center gap-3 px-3 text-left"
+                  onClick={() => {
+                    onRunPackageScript?.(script)
+                    setScriptsSheetOpen(false)
+                  }}
+                >
+                  <Play className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <span className="truncate font-mono text-sm">
+                    {script.name}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="mr-2 flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-label={`${favoritePackageScriptSet.has(script.name) ? 'Unfavorite' : 'Favorite'} ${script.name}`}
+                  aria-pressed={favoritePackageScriptSet.has(script.name)}
+                  onClick={() => onToggleFavoritePackageScript?.(script.name)}
+                >
+                  <Star
+                    className={cn(
+                      'h-3.5 w-3.5',
+                      favoritePackageScriptSet.has(script.name) &&
+                        'fill-yellow-500 text-yellow-500'
+                    )}
+                  />
+                </button>
+              </div>
+            ))}
           </div>
         </SheetContent>
       </Sheet>

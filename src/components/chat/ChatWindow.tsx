@@ -43,8 +43,10 @@ import {
 import {
   useWorktree,
   useProjects,
+  usePackageScripts,
   useRunScripts,
   projectsQueryKeys,
+  type PackageScript,
 } from '@/services/projects'
 import { useProjectsStore } from '@/store/projects-store'
 import type {
@@ -608,6 +610,9 @@ export function ChatWindow({
     activeWorktreePath ?? null,
     project?.path ?? null
   )
+  const { data: packageScripts = [] } = usePackageScripts(
+    activeWorktreePath ?? null
+  )
 
   // Per-session provider selection: persisted session → zustand → project default → global default
   const projectDefaultProvider = project?.default_provider ?? null
@@ -828,6 +833,42 @@ export function ChatWindow({
     deferredSessionId
       ? (state.messageQueues[deferredSessionId] ?? EMPTY_QUEUED_MESSAGES)
       : EMPTY_QUEUED_MESSAGES
+  )
+
+  const favoritePackageScriptNames = useMemo(() => {
+    const projectId = worktree?.project_id
+    if (!projectId) return []
+    const prefix = `${projectId}:`
+    return (preferences?.favorite_package_scripts ?? [])
+      .filter(key => key.startsWith(prefix))
+      .map(key => key.slice(prefix.length))
+  }, [preferences?.favorite_package_scripts, worktree?.project_id])
+
+  const handleRunPackageScript = useCallback(
+    (script: PackageScript) => {
+      if (!activeWorktreeId) return
+      useTerminalStore
+        .getState()
+        .addTerminal(activeWorktreeId, script.command, script.name, {
+          commandArgs: script.args,
+        })
+    },
+    [activeWorktreeId]
+  )
+
+  const handleToggleFavoritePackageScript = useCallback(
+    (scriptName: string) => {
+      const projectId = worktree?.project_id
+      if (!preferences || !projectId) return
+      const favoriteKeys = preferences.favorite_package_scripts ?? []
+      const key = `${projectId}:${scriptName}`
+      patchPreferences.mutate({
+        favorite_package_scripts: favoriteKeys.includes(key)
+          ? favoriteKeys.filter(favorite => favorite !== key)
+          : [...favoriteKeys, key],
+      })
+    },
+    [patchPreferences, preferences, worktree?.project_id]
   )
   // Per-session pending permission denials (uses deferredSessionId for content consistency)
   const pendingDenials = useChatStore(state =>
@@ -3423,6 +3464,12 @@ export function ChatWindow({
                             queuedMessageCount={currentQueuedMessages.length}
                             onHarnessFanoutSend={handleHarnessFanoutSend}
                             fanoutDisabled={!worktree?.project_id}
+                            packageScripts={packageScripts}
+                            favoritePackageScripts={favoritePackageScriptNames}
+                            onRunPackageScript={handleRunPackageScript}
+                            onToggleFavoritePackageScript={
+                              handleToggleFavoritePackageScript
+                            }
                             availableMcpServers={availableMcpServers}
                             enabledMcpServers={enabledMcpServers}
                             onToggleMcpServer={handleToggleMcpServer}

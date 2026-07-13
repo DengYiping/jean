@@ -1082,6 +1082,7 @@ export interface AppPreferences {
   default_provider: string | null // Default provider profile name (null = Anthropic direct)
   default_project_id: string | null // Default repo/project used by desktop CLI yolo requests
   favorite_models: string[] // Favourited model keys ("backend:model") shown at the top of the desktop picker
+  favorite_package_scripts?: string[] // Favourited package script keys ("project_id:script")
   fast_mode_models: string[] // Model keys ("backend:baseModel") with remembered fast-tier selection
 
   confirm_session_close: boolean // Show confirmation dialog before closing sessions/worktrees
@@ -2140,6 +2141,7 @@ export const defaultPreferences: AppPreferences = {
   default_provider: null,
   default_project_id: null,
   favorite_models: [], // Default: no favourites
+  favorite_package_scripts: [], // Default: no favourited package scripts
   fast_mode_models: [], // Default: no remembered fast tiers
   confirm_session_close: true, // Default: enabled (show confirmation)
   default_execution_mode: 'plan', // Default: plan mode

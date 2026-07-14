@@ -109,6 +109,23 @@ test.describe('Keyboard shortcuts', () => {
     ).not.toBeVisible({ timeout: 3000 })
   })
 
+  test('Escape closes the Cmd+N new session dialog', async ({ mockPage }) => {
+    await expect(mockPage.getByText('Test Project')).toBeVisible({
+      timeout: 5000,
+    })
+
+    await mockPage.keyboard.press('Meta+n')
+
+    const dialog = mockPage.getByRole('dialog', {
+      name: /New Session for Test Project/i,
+    })
+    await expect(dialog).toBeVisible({ timeout: 3000 })
+
+    await mockPage.keyboard.press('Escape')
+
+    await expect(dialog).not.toBeVisible({ timeout: 2000 })
+  })
+
   test('Cmd+K opens a worktree in the current project directly', async ({
     mockPage,
   }) => {

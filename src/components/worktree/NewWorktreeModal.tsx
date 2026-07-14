@@ -250,7 +250,9 @@ export function NewWorktreeModal() {
           className="!w-screen !h-dvh !max-w-screen !max-h-none !rounded-none sm:!w-[90vw] sm:!max-w-[90vw] sm:!h-[85vh] sm:!max-h-[85vh] sm:!rounded-lg p-0 flex flex-col overflow-hidden"
           onKeyDown={handleKeyDown}
           onEscapeKeyDown={e => {
-            if (previewItem || previewOpenRef.current) e.preventDefault()
+            e.preventDefault()
+            if (previewItem || previewOpenRef.current) return
+            handlers.handleOpenChange(false)
           }}
           onPointerDownOutside={e => {
             if (previewItem || previewOpenRef.current) e.preventDefault()

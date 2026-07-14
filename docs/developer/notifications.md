@@ -50,6 +50,9 @@ notify('Update Available', 'Click to install', { native: true })
 - **Background session events**: Rust checks the native main-window focus state
   before showing the banner. Do not gate these with `document.hasFocus()` in the
   webview because that value can be stale while the desktop window is inactive.
+- **Session navigation on macOS**: Background session notifications include their
+  project, worktree, and session target. Clicking the banner focuses Jean and
+  opens that session through the shared workspace navigation path.
 
 ## Options
 

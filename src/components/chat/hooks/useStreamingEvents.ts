@@ -16,7 +16,10 @@ import type { AppPreferences, NotificationSound } from '@/types/preferences'
 import { triggerImmediateGitPoll } from '@/services/git-status'
 import { isAskUserQuestion, isExitPlanMode } from '@/types/chat'
 import { playNotificationSound } from '@/lib/sounds'
-import { notifyIfBackground } from '@/lib/session-notifications'
+import {
+  notifyIfBackground,
+  type SessionNotificationTarget,
+} from '@/lib/session-notifications'
 import { findPlanFilePath } from '@/components/chat/tool-call-utils'
 import { lookupSessionLabel } from '@/components/chat/hooks/session-label-utils'
 import { generateId } from '@/lib/uuid'
@@ -172,7 +175,22 @@ function notifySession(
   const session = queryClient.getQueryData<Session>(
     chatQueryKeys.session(sessionId)
   )
-  notifyIfBackground(title, session?.name)
+  const entry = queryClient
+    .getQueryData<AllSessionsResponse>(['all-sessions'])
+    ?.entries.find(candidate =>
+      candidate.sessions.some(
+        candidateSession => candidateSession.id === sessionId
+      )
+    )
+  const target: SessionNotificationTarget = entry
+    ? {
+        projectId: entry.project_id,
+        worktreeId: entry.worktree_id,
+        worktreePath: entry.worktree_path,
+        sessionId,
+      }
+    : { sessionId }
+  notifyIfBackground(title, session?.name, target)
 }
 
 function updateAllSessionsCache(

@@ -22,12 +22,23 @@ describe('notifyIfBackground', () => {
   it('lets the native backend decide whether the window is backgrounded', () => {
     vi.spyOn(document, 'hasFocus').mockReturnValue(true)
 
-    notifyIfBackground('Session finished', 'Fix notifications')
+    notifyIfBackground('Session finished', 'Fix notifications', {
+      projectId: 'project-1',
+      worktreeId: 'worktree-1',
+      worktreePath: '/tmp/worktree-1',
+      sessionId: 'session-1',
+    })
 
     expect(invoke).toHaveBeenCalledWith('send_native_notification', {
       title: 'Session finished',
       body: 'Fix notifications',
       backgroundOnly: true,
+      target: {
+        projectId: 'project-1',
+        worktreeId: 'worktree-1',
+        worktreePath: '/tmp/worktree-1',
+        sessionId: 'session-1',
+      },
     })
   })
 

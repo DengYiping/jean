@@ -2862,6 +2862,7 @@ async fn send_native_notification(
     title: String,
     body: Option<String>,
     background_only: Option<bool>,
+    target: Option<NativeNotificationTarget>,
 ) -> Result<(), String> {
     let window_focused = app
         .get_webview_window("main")
@@ -2871,6 +2872,44 @@ async fn send_native_notification(
     }
 
     log::trace!("Sending native notification: {title}");
+
+    #[cfg(target_os = "macos")]
+    if let Some(target) = target {
+        let identifier = app.config().identifier.clone();
+        let _ = notify_rust::set_application(if tauri::is_dev() {
+            "com.apple.Terminal"
+        } else {
+            &identifier
+        });
+        std::thread::spawn(move || {
+            let mut notification = notify_rust::Notification::new();
+            notification.summary(&title);
+            if let Some(body_text) = body {
+                notification.body(&body_text);
+            }
+
+            match notification.show() {
+                Ok(handle) => {
+                    log::trace!("Native notification sent successfully");
+                    handle.wait_for_action(move |action| {
+                        if action != "default" {
+                            return;
+                        }
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.unminimize();
+                            let _ = window.set_focus();
+                        }
+                        if let Err(error) = app.emit("native-notification-clicked", target) {
+                            log::error!("Failed to handle native notification click: {error}");
+                        }
+                    });
+                }
+                Err(error) => log::error!("Failed to send native notification: {error}"),
+            }
+        });
+        return Ok(());
+    }
 
     #[cfg(not(mobile))]
     {
@@ -2899,6 +2938,15 @@ async fn send_native_notification(
         log::warn!("Native notifications not supported on mobile");
         Err("Native notifications not supported on mobile".to_string())
     }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NativeNotificationTarget {
+    project_id: Option<String>,
+    worktree_id: Option<String>,
+    worktree_path: Option<String>,
+    session_id: String,
 }
 
 fn should_send_native_notification(background_only: bool, window_focused: Option<bool>) -> bool {

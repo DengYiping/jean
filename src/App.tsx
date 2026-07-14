@@ -56,6 +56,7 @@ import { useBackgroundInvestigation } from './hooks/useBackgroundInvestigation'
 import { useAutoArchiveOnMerge } from './hooks/useAutoArchiveOnMerge'
 import { useMagicPromptAutoDefaults } from './hooks/useMagicPromptAutoDefaults'
 import { useExternalLinkInterceptor } from './hooks/useExternalLinkInterceptor'
+import { useNativeNotificationNavigation } from './hooks/useNativeNotificationNavigation'
 import { usePreferences } from './services/preferences'
 import useStreamingEvents from './components/chat/hooks/useStreamingEvents'
 import { hydrateRunningSnapshot } from './lib/hydrate-running-snapshot'
@@ -557,6 +558,8 @@ function App() {
 
   // Route raw external anchors through the OS/default browser.
   useExternalLinkInterceptor()
+
+  useNativeNotificationNavigation()
 
   // Save reviewing/waiting state immediately (no debounce) to ensure persistence on reload
   useImmediateSessionStateSave()

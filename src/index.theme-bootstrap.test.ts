@@ -12,5 +12,8 @@ describe('initial theme bootstrap', () => {
     expect(bootstrapIndex).toBeLessThan(appIndex)
     expect(source).toContain("matchMedia('(prefers-color-scheme: dark)')")
     expect(source).toContain('classList.add(resolvedTheme)')
+    expect(source).not.toMatch(/html\.dark\s+body/)
+    expect(source).not.toMatch(/html\.dark\s+#root/)
+    expect(source).not.toMatch(/body,\s*#root/)
   })
 })

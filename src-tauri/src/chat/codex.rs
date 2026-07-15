@@ -4459,6 +4459,12 @@ pub fn execute_one_shot_codex(
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
 
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
+
     if let Some(dir) = working_dir {
         cmd.current_dir(dir);
     }
@@ -4578,8 +4584,8 @@ fn wait_for_child_output(
                 let _ = crate::platform::kill_process_tree(child.id());
                 let _ = child.kill();
                 let _ = child.wait();
-                join_output_reader(stdout)?;
-                join_output_reader(stderr)?;
+                drop(stdout);
+                drop(stderr);
                 return Err("Process timed out".to_string());
             }
             Err(error) => {
@@ -4672,6 +4678,23 @@ mod tests {
 
         assert!(output.status.success());
         assert_eq!(output.stdout.len(), 262144);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn one_shot_timeout_does_not_wait_for_orphaned_pipe_holders() {
+        let mut child = std::process::Command::new("sh")
+            .args(["-c", "sleep 1 & wait"])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("spawn child with inherited pipe holder");
+
+        let started_at = std::time::Instant::now();
+        let result = wait_for_child_output(&mut child, std::time::Duration::from_millis(10));
+
+        assert_eq!(result.unwrap_err(), "Process timed out");
+        assert!(started_at.elapsed() < std::time::Duration::from_millis(500));
     }
     use crate::chat::types::{RunEntry, RunStatus};
 

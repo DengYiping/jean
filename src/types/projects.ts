@@ -71,6 +71,12 @@ export interface Project {
   default_editor?: EditorApp | null
   /** Hide this project's GitHub issues and PRs across Jean */
   hide_github_issues_and_prs?: boolean
+  /** Sentry auth token override for this project */
+  sentry_auth_token?: string | null
+  /** Sentry organization slug */
+  sentry_organization_slug?: string | null
+  /** Sentry project slug */
+  sentry_project_slug?: string | null
   /** IDs of linked projects for cross-project context sharing */
   linked_project_ids?: string[]
 }

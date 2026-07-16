@@ -38,4 +38,15 @@ describe('SessionChatModal removal behavior', () => {
       /else\s*\{[\s\S]*?handleArchiveSession\(session\.id\)/
     )
   })
+
+  it('offers to open resumable chat sessions in a separate native client session', () => {
+    const source = readSource('src/components/chat/SessionChatModal.tsx')
+
+    expect(source).toContain('buildNativeClientSessionInput')
+    expect(source).toContain('handleOpenInNativeClient')
+    expect(source).toContain('Open in Native Client')
+    expect(source).toMatch(
+      /reconnectNativeCliSession\(nativeSession, worktreeId, \{[\s\S]*?openModal: false/
+    )
+  })
 })

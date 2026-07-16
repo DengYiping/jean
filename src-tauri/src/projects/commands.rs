@@ -38,6 +38,9 @@ use super::release_notes::{
     build_pr_prompt_context_from_revision_range, build_release_notes_prompt_context,
     format_issue_groups, PrIssueRefsMap,
 };
+use super::sentry_issues::{
+    add_sentry_reference, generate_branch_name_from_sentry_issue, SentryIssueContext,
+};
 use super::slots;
 use super::storage::{get_project_worktrees_dir, load_projects_data, save_projects_data};
 use super::types::{
@@ -683,6 +686,9 @@ pub async fn add_project(
         linear_team_id: None,
         default_editor: None,
         hide_github_issues_and_prs: false,
+        sentry_auth_token: None,
+        sentry_organization_slug: None,
+        sentry_project_slug: None,
         linked_project_ids: Vec::new(),
     };
 
@@ -851,6 +857,9 @@ pub async fn init_project(
         linear_team_id: None,
         default_editor: None,
         hide_github_issues_and_prs: false,
+        sentry_auth_token: None,
+        sentry_organization_slug: None,
+        sentry_project_slug: None,
         linked_project_ids: Vec::new(),
     };
 
@@ -911,6 +920,9 @@ pub async fn clone_project(
         linear_team_id: None,
         default_editor: None,
         hide_github_issues_and_prs: false,
+        sentry_auth_token: None,
+        sentry_organization_slug: None,
+        sentry_project_slug: None,
         linked_project_ids: Vec::new(),
     };
 
@@ -1450,6 +1462,7 @@ pub async fn create_worktree(
     security_context: Option<SecurityAlertContext>,
     advisory_context: Option<AdvisoryContext>,
     linear_context: Option<LinearIssueContext>,
+    sentry_context: Option<SentryIssueContext>,
     custom_name: Option<String>,
     copy_uncommitted_from_path: Option<String>,
     automation_metadata: Option<AutomationWorktreeMetadata>,
@@ -1530,6 +1543,7 @@ pub async fn create_worktree(
                     security_context,
                     advisory_context,
                     linear_context,
+                    sentry_context,
                     Some(auto_open_in_jean),
                 )
                 .await;
@@ -1600,6 +1614,20 @@ pub async fn create_worktree(
             }
         } else {
             linear_branch
+        }
+    } else if let Some(ref ctx) = sentry_context {
+        let sentry_branch = generate_branch_name_from_sentry_issue(&ctx.short_id, &ctx.title);
+        if data.worktree_name_exists(&project_id, &sentry_branch) {
+            let mut counter = 2;
+            loop {
+                let candidate = format!("{sentry_branch}-{counter}");
+                if !data.worktree_name_exists(&project_id, &candidate) {
+                    break candidate;
+                }
+                counter += 1;
+            }
+        } else {
+            sentry_branch
         }
     } else if let Some(ref ctx) = issue_context {
         let issue_branch = generate_branch_name_from_issue(ctx.number, &ctx.title);
@@ -1739,6 +1767,7 @@ pub async fn create_worktree(
     let security_context_clone = security_context.clone();
     let advisory_context_clone = advisory_context.clone();
     let linear_context_clone = linear_context.clone();
+    let sentry_context_clone = sentry_context.clone();
     let copy_uncommitted_from_path_clone = copy_uncommitted_from_path.clone();
     let automation_metadata_clone = automation_metadata.clone();
     let project_worktrees_dir_clone = project_worktrees_dir.clone();
@@ -2418,6 +2447,40 @@ pub async fn create_worktree(
                 }
             }
 
+            if let Some(ctx) = &sentry_context_clone {
+                log::trace!(
+                    "Background: Writing Sentry issue context file for {}",
+                    ctx.short_id
+                );
+                if let Ok(contexts_dir) = get_github_contexts_dir(&app_clone) {
+                    if let Err(e) = std::fs::create_dir_all(&contexts_dir) {
+                        log::warn!("Background: Failed to create git-context directory: {e}");
+                    } else {
+                        let issue_id = ctx.id.replace('/', "-");
+                        let context_file =
+                            contexts_dir.join(format!("{project_name}-sentry-{issue_id}.md"));
+                        if let Err(e) = std::fs::write(&context_file, &ctx.content) {
+                            log::warn!(
+                                "Background: Failed to write Sentry issue context file: {e}"
+                            );
+                        } else {
+                            if let Err(e) = add_sentry_reference(
+                                &app_clone,
+                                &project_name,
+                                &ctx.id,
+                                &worktree_id_clone,
+                            ) {
+                                log::warn!("Background: Failed to add Sentry reference: {e}");
+                            }
+                            log::trace!(
+                                "Background: Sentry issue context file written to {:?}",
+                                context_file
+                            );
+                        }
+                    }
+                }
+            }
+
             // Check for jean.json setup script upfront so we can include it in the
             // initial worktree record. This lets the frontend know a setup script
             // will run (setup_script is set, but setup_output is still None).
@@ -2650,6 +2713,7 @@ pub async fn fork_worktree(app: AppHandle, source_worktree_id: String) -> Result
         None,
         None,
         None,
+        None,
         Some(fork_name),
         Some(source_worktree.path),
         None,
@@ -2867,6 +2931,7 @@ pub async fn create_worktree_from_existing_branch(
     security_context: Option<SecurityAlertContext>,
     advisory_context: Option<AdvisoryContext>,
     linear_context: Option<LinearIssueContext>,
+    sentry_context: Option<SentryIssueContext>,
     auto_open_in_jean: Option<bool>,
 ) -> Result<Worktree, String> {
     log::trace!("Creating worktree from existing branch {branch_name} for project: {project_id}");
@@ -2986,6 +3051,7 @@ pub async fn create_worktree_from_existing_branch(
     let security_context_clone = security_context.clone();
     let advisory_context_clone = advisory_context.clone();
     let linear_context_clone = linear_context.clone();
+    let sentry_context_clone = sentry_context.clone();
 
     // Spawn background thread for git operations
     thread::spawn(move || {
@@ -3348,6 +3414,40 @@ pub async fn create_worktree_from_existing_branch(
                 }
             }
 
+            if let Some(ctx) = &sentry_context_clone {
+                log::trace!(
+                    "Background: Writing Sentry issue context file for {}",
+                    ctx.short_id
+                );
+                if let Ok(contexts_dir) = get_github_contexts_dir(&app_clone) {
+                    if let Err(e) = std::fs::create_dir_all(&contexts_dir) {
+                        log::warn!("Background: Failed to create git-context directory: {e}");
+                    } else {
+                        let issue_id = ctx.id.replace('/', "-");
+                        let context_file =
+                            contexts_dir.join(format!("{project_name}-sentry-{issue_id}.md"));
+                        if let Err(e) = std::fs::write(&context_file, &ctx.content) {
+                            log::warn!(
+                                "Background: Failed to write Sentry issue context file: {e}"
+                            );
+                        } else {
+                            if let Err(e) = add_sentry_reference(
+                                &app_clone,
+                                &project_name,
+                                &ctx.id,
+                                &worktree_id_clone,
+                            ) {
+                                log::warn!("Background: Failed to add Sentry reference: {e}");
+                            }
+                            log::trace!(
+                                "Background: Sentry issue context file written to {:?}",
+                                context_file
+                            );
+                        }
+                    }
+                }
+            }
+
             // Check for jean.json and run setup script
             let (setup_output, setup_script, setup_success) =
                 if let Some(config) = git::read_jean_config(&project_path) {
@@ -3588,6 +3688,7 @@ pub async fn checkout_pr(
                 pr_detail.head_ref_name.clone(),
                 None,
                 Some(pr_context),
+                None,
                 None,
                 None,
                 None,
@@ -6020,6 +6121,9 @@ pub async fn update_project_settings(
     linear_api_key: Option<String>,
     linear_team_id: Option<String>,
     hide_github_issues_and_prs: Option<bool>,
+    sentry_auth_token: Option<String>,
+    sentry_organization_slug: Option<String>,
+    sentry_project_slug: Option<String>,
     linked_project_ids: Option<Vec<String>>,
 ) -> Result<Project, String> {
     log::trace!("Updating settings for project: {project_id}");
@@ -6125,6 +6229,22 @@ pub async fn update_project_settings(
     if let Some(hide) = hide_github_issues_and_prs {
         log::trace!("Updating hide_github_issues_and_prs: {hide}");
         project.hide_github_issues_and_prs = hide;
+    }
+
+    if let Some(token) = sentry_auth_token {
+        let token = token.trim().to_string();
+        log::trace!("Updating Sentry auth token ({} chars)", token.len());
+        project.sentry_auth_token = if token.is_empty() { None } else { Some(token) };
+    }
+
+    if let Some(slug) = sentry_organization_slug {
+        let slug = slug.trim().to_string();
+        project.sentry_organization_slug = if slug.is_empty() { None } else { Some(slug) };
+    }
+
+    if let Some(slug) = sentry_project_slug {
+        let slug = slug.trim().to_string();
+        project.sentry_project_slug = if slug.is_empty() { None } else { Some(slug) };
     }
 
     // Handle linked_project_ids with bidirectional sync
@@ -11950,6 +12070,9 @@ pub async fn create_folder(
         linear_team_id: None,
         default_editor: None,
         hide_github_issues_and_prs: false,
+        sentry_auth_token: None,
+        sentry_organization_slug: None,
+        sentry_project_slug: None,
         linked_project_ids: Vec::new(),
     };
 
@@ -13114,6 +13237,9 @@ mod tests {
             linear_team_id: None,
             default_editor: None,
             hide_github_issues_and_prs: false,
+            sentry_auth_token: None,
+            sentry_organization_slug: None,
+            sentry_project_slug: None,
             linked_project_ids: Vec::new(),
         }
     }

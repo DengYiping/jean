@@ -377,6 +377,7 @@ export const defaultResponses: Record<string, unknown> = {
   list_loaded_security_contexts: [],
   list_loaded_advisory_contexts: [],
   list_loaded_linear_issue_contexts: [],
+  get_sentry_issue_context_contents: [],
   load_issue_context: null,
   load_pr_context: null,
   load_security_alert_context: null,
@@ -390,6 +391,10 @@ export const defaultResponses: Record<string, unknown> = {
   list_linear_issues: { issues: [] },
   search_linear_issues: [],
   get_linear_issue_by_number: null,
+  test_sentry_auth_token: [],
+  list_sentry_projects: [],
+  list_sentry_issues: [],
+  get_sentry_issue: null,
   get_pull_request_review_data: {
     pullRequest: null,
     headCommitSha: '',

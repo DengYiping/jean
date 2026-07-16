@@ -148,6 +148,15 @@ pub struct Project {
     /// Hide this project's GitHub issues and PRs across Jean
     #[serde(default)]
     pub hide_github_issues_and_prs: bool,
+    /// Sentry auth token override for this project (None = use global token)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sentry_auth_token: Option<String>,
+    /// Sentry organization slug used by the Issues API
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sentry_organization_slug: Option<String>,
+    /// Sentry project slug mapped to this Jean project
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sentry_project_slug: Option<String>,
     /// IDs of linked projects for cross-project context sharing
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub linked_project_ids: Vec<String>,

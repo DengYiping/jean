@@ -486,6 +486,9 @@ mod tests {
             linear_team_id: None,
             default_editor: None,
             hide_github_issues_and_prs: false,
+            sentry_auth_token: None,
+            sentry_organization_slug: None,
+            sentry_project_slug: None,
             linked_project_ids: vec![],
         }
     }

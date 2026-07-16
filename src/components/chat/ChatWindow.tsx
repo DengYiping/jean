@@ -255,7 +255,8 @@ export function ChatWindow({
       state.autoInvestigatePRWorktreeIds.has(activeWorktreeId) ||
       state.autoInvestigateSecurityAlertWorktreeIds.has(activeWorktreeId) ||
       state.autoInvestigateAdvisoryWorktreeIds.has(activeWorktreeId) ||
-      state.autoInvestigateLinearIssueWorktreeIds.has(activeWorktreeId)
+      state.autoInvestigateLinearIssueWorktreeIds.has(activeWorktreeId) ||
+      state.autoInvestigateSentryIssueWorktreeIds.has(activeWorktreeId)
     )
   })
 
@@ -2452,6 +2453,8 @@ export function ChatWindow({
       handleInvestigate('advisory')
     } else if (uiStore.consumeAutoInvestigateLinearIssue(activeWorktreeId)) {
       handleInvestigate('linear-issue')
+    } else if (uiStore.consumeAutoInvestigateSentryIssue(activeWorktreeId)) {
+      handleInvestigate('sentry-issue')
     }
   }, [
     activeSessionId,

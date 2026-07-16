@@ -8254,9 +8254,29 @@ pub struct MergePrResponse {
     pub message: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GithubMergeMethods {
+    merge_commit_allowed: bool,
+    squash_merge_allowed: bool,
+}
+
+fn github_pr_merge_method(repo_info: &[u8]) -> Result<&'static str, String> {
+    let methods: GithubMergeMethods = serde_json::from_slice(repo_info)
+        .map_err(|e| format!("Failed to parse repository merge settings: {e}"))?;
+
+    if methods.merge_commit_allowed {
+        Ok("--merge")
+    } else if methods.squash_merge_allowed {
+        Ok("--squash")
+    } else {
+        Err("Repository does not allow merge commits or squash merges".to_string())
+    }
+}
+
 /// Merge the open GitHub PR for the current branch using `gh pr merge`.
 ///
-/// Checks mergeability first via `gh pr view`, then merges with `--merge --delete-branch`.
+/// Checks mergeability first via `gh pr view`, then uses the repository's allowed merge method.
 #[tauri::command]
 pub async fn merge_github_pr(
     app: AppHandle,
@@ -8302,9 +8322,30 @@ pub async fn merge_github_pr(
 
     let title = pr_info["title"].as_str().unwrap_or("").to_string();
 
-    // 2. Merge the PR
+    // 2. Determine whether the repository allows standard or squash merges
+    let repo_output = silent_command(&gh)
+        .args([
+            "repo",
+            "view",
+            "--json",
+            "mergeCommitAllowed,squashMergeAllowed",
+        ])
+        .current_dir(&worktree_path)
+        .output()
+        .map_err(|e| format!("Failed to run gh repo view: {e}"))?;
+
+    if !repo_output.status.success() {
+        let stderr = String::from_utf8_lossy(&repo_output.stderr);
+        return Err(format!(
+            "Failed to read repository merge settings: {stderr}"
+        ));
+    }
+
+    let merge_method = github_pr_merge_method(&repo_output.stdout)?;
+
+    // 3. Merge the PR
     let merge_output = silent_command(&gh)
-        .args(["pr", "merge", "--merge"])
+        .args(["pr", "merge", merge_method])
         .current_dir(&worktree_path)
         .output()
         .map_err(|e| format!("Failed to run gh pr merge: {e}"))?;
@@ -13265,6 +13306,20 @@ mod tests {
         let result = validate_commit_message("fix(chat): preserve mobile toolbar actions");
 
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn github_pr_merge_method_prefers_standard_merge() {
+        let repo_info = br#"{"mergeCommitAllowed":true,"squashMergeAllowed":true}"#;
+
+        assert_eq!(github_pr_merge_method(repo_info).unwrap(), "--merge");
+    }
+
+    #[test]
+    fn github_pr_merge_method_uses_squash_when_standard_merge_is_disabled() {
+        let repo_info = br#"{"mergeCommitAllowed":false,"squashMergeAllowed":true}"#;
+
+        assert_eq!(github_pr_merge_method(repo_info).unwrap(), "--squash");
     }
 
     #[test]

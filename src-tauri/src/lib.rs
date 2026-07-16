@@ -3717,14 +3717,9 @@ pub fn fix_macos_path() {
         if output.status.success() {
             let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !path.is_empty() {
-                // Filter out /Volumes/ paths to avoid macOS TCC permission dialogs
-                // for removable volumes (mounted DMGs, USB drives, network shares)
-                // when Claude CLI or other subprocesses inherit this PATH
-                let filtered_path: String = path
-                    .split(':')
-                    .filter(|p| !p.contains("/Volumes/"))
-                    .collect::<Vec<_>>()
-                    .join(":");
+                // Filter removable volumes and include pnpm 11's global bin path.
+                let filtered_path =
+                    platform::normalize_macos_path(&path, dirs::home_dir().as_deref());
                 std::env::set_var("PATH", &filtered_path);
             }
         }

@@ -26,6 +26,23 @@ fn expand_home_path(path: &str) -> PathBuf {
     PathBuf::from(path)
 }
 
+pub fn normalize_macos_path(path: &str, home: Option<&std::path::Path>) -> String {
+    let mut entries: Vec<String> = path
+        .split(':')
+        .filter(|entry| !entry.contains("/Volumes/"))
+        .map(str::to_string)
+        .collect();
+
+    if let Some(home) = home {
+        let pnpm_bin = home.join("Library/pnpm/bin").to_string_lossy().to_string();
+        if !entries.iter().any(|entry| entry == &pnpm_bin) {
+            entries.push(pnpm_bin);
+        }
+    }
+
+    entries.join(":")
+}
+
 pub fn set_git_binary_override(path: Option<&str>) {
     let override_path = path
         .map(str::trim)
@@ -197,6 +214,7 @@ pub fn raise_fd_limit() {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
     use std::sync::Mutex;
 
     static GIT_OVERRIDE_TEST_LOCK: Mutex<()> = Mutex::new(());
@@ -237,6 +255,29 @@ mod tests {
         set_git_binary_override(Some("   "));
 
         assert_eq!(get_git_binary_override(), None);
+    }
+
+    #[test]
+    fn macos_path_includes_pnpm_global_bin() {
+        let path = normalize_macos_path(
+            "/opt/homebrew/bin:/Users/test/Library/pnpm",
+            Some(Path::new("/Users/test")),
+        );
+
+        assert_eq!(
+            path,
+            "/opt/homebrew/bin:/Users/test/Library/pnpm:/Users/test/Library/pnpm/bin"
+        );
+    }
+
+    #[test]
+    fn macos_path_does_not_duplicate_pnpm_global_bin() {
+        let path = normalize_macos_path(
+            "/Users/test/Library/pnpm/bin:/opt/homebrew/bin",
+            Some(Path::new("/Users/test")),
+        );
+
+        assert_eq!(path, "/Users/test/Library/pnpm/bin:/opt/homebrew/bin");
     }
 
     #[test]

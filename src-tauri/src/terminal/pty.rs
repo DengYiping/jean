@@ -111,6 +111,9 @@ pub fn spawn_terminal(
     command: Option<String>,
     command_args: Option<Vec<String>>,
 ) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    crate::platform::ensure_macos_path();
+
     log::info!(
         "spawn_terminal {terminal_id}: cols={cols}, rows={rows}, cwd={worktree_path}, command={:?}, args={:?}",
         command, command_args

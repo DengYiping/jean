@@ -276,6 +276,8 @@ pub struct AppPreferences {
     pub yolo_effort_level: Option<String>, // Effort level override for yolo mode (Claude adaptive / Codex), None = use session effort
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub linear_api_key: Option<String>, // Global Linear personal API key (inherited by all projects)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sentry_auth_token: Option<String>, // Global Sentry auth token (inherited by all projects)
     #[serde(default = "default_cli_source")]
     pub claude_cli_source: String, // Claude CLI source: "jean" (managed) or "path" (system PATH)
     #[serde(default = "default_cli_source")]
@@ -1225,6 +1227,8 @@ pub struct MagicPrompts {
     #[serde(default)]
     pub investigate_linear_issue: Option<String>,
     #[serde(default)]
+    pub investigate_sentry_issue: Option<String>,
+    #[serde(default)]
     pub review_comments: Option<String>,
     #[serde(default)]
     pub automation_run: Option<String>,
@@ -1653,6 +1657,50 @@ Investigate the loaded Linear {linearWord} ({linearRefs})
         .to_string()
 }
 
+pub(crate) fn default_investigate_sentry_issue_prompt() -> String {
+    r#"<task>
+
+Investigate the loaded Sentry {sentryWord} ({sentryRefs})
+
+</task>
+
+
+<sentry_issue_context>
+
+{sentryContext}
+
+</sentry_issue_context>
+
+
+<instructions>
+
+1. Read the Sentry issue context above carefully, including the latest event, exception, stack trace, tags, frequency, and affected users
+2. Analyze the failure:
+   - What operation failed and under which conditions?
+   - Which stack frames belong to this codebase?
+   - Do the event details reveal malformed input, environment differences, or a dependency failure?
+3. Explore the codebase and trace the failing code path from the relevant application frame
+4. Identify the root cause, contributing conditions, and whether this is a regression
+5. Propose a focused solution:
+   - Specific files and code paths to change
+   - Error handling or observability improvements where relevant
+   - Risks, edge cases, and tests needed to verify the fix
+
+</instructions>
+
+
+<guidelines>
+
+- Treat the embedded Sentry context as the primary evidence; do not assume every frame is application code
+- Distinguish the root cause from symptoms and repeated downstream failures
+- Be thorough but focused - investigate deeply without getting sidetracked
+- If multiple solutions exist, explain the trade-offs
+- Reference specific file paths and line numbers
+
+</guidelines>"#
+        .to_string()
+}
+
 fn default_parallel_execution_prompt() -> String {
     r#"In plan mode, structure plans so subagents can work simultaneously. In build/execute mode, use subagents in parallel for faster implementation.
 
@@ -1766,6 +1814,8 @@ pub struct MagicPromptModels {
     #[serde(default = "default_model")]
     pub investigate_linear_issue_model: String,
     #[serde(default = "default_model")]
+    pub investigate_sentry_issue_model: String,
+    #[serde(default = "default_model")]
     pub review_comments_model: String,
 }
 
@@ -1791,6 +1841,7 @@ impl Default for MagicPromptModels {
             investigate_security_alert_model: default_model(),
             investigate_advisory_model: default_model(),
             investigate_linear_issue_model: default_model(),
+            investigate_sentry_issue_model: default_model(),
             review_comments_model: default_model(),
         }
     }
@@ -1803,7 +1854,7 @@ impl MagicPromptModels {
     fn migrate_legacy_defaults(&mut self) -> bool {
         let new_opus = default_model();
         let new_lightweight = default_lightweight_model();
-        let opus_fields: [&mut String; 10] = [
+        let opus_fields: [&mut String; 11] = [
             &mut self.investigate_issue_model,
             &mut self.investigate_pr_model,
             &mut self.investigate_workflow_run_model,
@@ -1813,6 +1864,7 @@ impl MagicPromptModels {
             &mut self.investigate_security_alert_model,
             &mut self.investigate_advisory_model,
             &mut self.investigate_linear_issue_model,
+            &mut self.investigate_sentry_issue_model,
             &mut self.review_comments_model,
         ];
         let mut changed = false;
@@ -1889,6 +1941,8 @@ pub struct MagicPromptProviders {
     #[serde(default)]
     pub investigate_linear_issue_provider: Option<String>,
     #[serde(default)]
+    pub investigate_sentry_issue_provider: Option<String>,
+    #[serde(default)]
     pub review_comments_provider: Option<String>,
 }
 
@@ -1925,6 +1979,8 @@ pub struct MagicPromptBackends {
     pub investigate_advisory_backend: Option<String>,
     #[serde(default)]
     pub investigate_linear_issue_backend: Option<String>,
+    #[serde(default)]
+    pub investigate_sentry_issue_backend: Option<String>,
     #[serde(default)]
     pub review_comments_backend: Option<String>,
 }
@@ -1963,6 +2019,8 @@ pub struct MagicPromptReasoningEfforts {
     #[serde(default)]
     pub investigate_linear_issue_effort: Option<String>,
     #[serde(default)]
+    pub investigate_sentry_issue_effort: Option<String>,
+    #[serde(default)]
     pub review_comments_effort: Option<String>,
 }
 
@@ -1988,7 +2046,7 @@ impl MagicPrompts {
     /// This ensures users who never customized a prompt get auto-updated defaults.
     fn migrate_defaults(&mut self) -> bool {
         type DefaultEntry<'a> = (fn() -> String, &'a mut Option<String>);
-        let defaults: [DefaultEntry; 19] = [
+        let defaults: [DefaultEntry; 20] = [
             (
                 default_investigate_issue_prompt,
                 &mut self.investigate_issue,
@@ -2027,6 +2085,10 @@ impl MagicPrompts {
             (
                 default_investigate_linear_issue_prompt,
                 &mut self.investigate_linear_issue,
+            ),
+            (
+                default_investigate_sentry_issue_prompt,
+                &mut self.investigate_sentry_issue,
             ),
             (default_automation_run_prompt, &mut self.automation_run),
             (
@@ -2174,6 +2236,7 @@ impl Default for AppPreferences {
             build_effort_level: None,
             yolo_effort_level: None,
             linear_api_key: None,
+            sentry_auth_token: None,
             claude_cli_source: default_cli_source(),
             codex_cli_source: default_cli_source(),
             opencode_cli_source: default_cli_source(),
@@ -4620,6 +4683,12 @@ pub fn run() {
             projects::list_loaded_linear_issue_contexts,
             projects::get_linear_issue_context_contents,
             projects::remove_linear_issue_context,
+            // Sentry commands
+            projects::test_sentry_auth_token,
+            projects::list_sentry_projects,
+            projects::list_sentry_issues,
+            projects::get_sentry_issue,
+            projects::get_sentry_issue_context_contents,
             // GitHub PR commands
             projects::list_github_prs,
             projects::search_github_prs,

@@ -534,6 +534,7 @@ export function useCreateWorktree() {
       securityContext,
       advisoryContext,
       linearContext,
+      sentryContext,
       customName,
       background: _background,
       autoOpenInJean,
@@ -581,6 +582,14 @@ export function useCreateWorktree() {
           createdAt: string
         }[]
       }
+      /** Sentry issue context to attach to the new worktree */
+      sentryContext?: {
+        id: string
+        shortId: string
+        title: string
+        permalink: string
+        content: string
+      }
       /** Custom worktree name (used when retrying after path conflict) */
       customName?: string
       /** When true, skip auto-navigation (CMD+Click from new session modal) */
@@ -610,6 +619,7 @@ export function useCreateWorktree() {
         securityContext,
         advisoryContext,
         linearContext,
+        sentryContext,
         customName,
         autoOpenInJean: autoOpenInJean ?? !_background,
       })
@@ -2804,6 +2814,9 @@ export function useUpdateProjectSettings() {
       linearApiKey,
       linearTeamId,
       hideGithubIssuesAndPRs,
+      sentryAuthToken,
+      sentryOrganizationSlug,
+      sentryProjectSlug,
     }: {
       projectId: string
       name?: string
@@ -2821,6 +2834,9 @@ export function useUpdateProjectSettings() {
       linearApiKey?: string
       linearTeamId?: string
       hideGithubIssuesAndPRs?: boolean
+      sentryAuthToken?: string
+      sentryOrganizationSlug?: string
+      sentryProjectSlug?: string
       linkedProjectIds?: string[]
     }): Promise<Project> => {
       if (!isTauri()) {
@@ -2849,6 +2865,9 @@ export function useUpdateProjectSettings() {
         linearApiKey,
         linearTeamId,
         hideGithubIssuesAndPrs: hideGithubIssuesAndPRs,
+        sentryAuthToken,
+        sentryOrganizationSlug,
+        sentryProjectSlug,
         linkedProjectIds,
       })
       logger.info('Project settings updated', { project })

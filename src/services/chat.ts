@@ -61,9 +61,15 @@ export function cleanupSessionTerminalForRemovedSession(
   return terminalId
 }
 
+interface ReconnectNativeCliSessionOptions {
+  attachToSession?: boolean
+  openModal?: boolean
+}
+
 export async function reconnectNativeCliSession(
   session: Session,
-  worktreeId: string
+  worktreeId: string,
+  options?: ReconnectNativeCliSessionOptions
 ): Promise<void> {
   const resume = getResumeArgs(session)
   if (!resume) {
@@ -73,7 +79,10 @@ export async function reconnectNativeCliSession(
 
   const terminalStore = useTerminalStore.getState()
   const uiStore = useUIStore.getState()
-  const oldTerminalId = uiStore.sessionTerminalIds[session.id]
+  const attachToSession = options?.attachToSession ?? true
+  const oldTerminalId = attachToSession
+    ? uiStore.sessionTerminalIds[session.id]
+    : undefined
   if (oldTerminalId) {
     await invoke('stop_terminal', { terminalId: oldTerminalId }).catch(() => {
       // Terminal may already be stopped.
@@ -87,12 +96,21 @@ export async function reconnectNativeCliSession(
     resume.command,
     session.terminal_label ?? session.name,
     {
-      kind: 'session',
+      kind: attachToSession ? 'session' : 'panel',
       commandArgs: resume.args,
-      activate: false,
-      openPanel: false,
+      activate: !attachToSession,
+      openPanel: !attachToSession,
     }
   )
+
+  if (!attachToSession && options?.openModal) {
+    terminalStore.setModalTerminalOpen(worktreeId, true)
+  }
+
+  if (!attachToSession) {
+    toast.success('Native client session started...')
+    return
+  }
 
   uiStore.setSessionPrimarySurface(session.id, 'terminal')
   uiStore.setSessionTerminalId(session.id, newTerminalId)

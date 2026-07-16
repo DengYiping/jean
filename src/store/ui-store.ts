@@ -62,7 +62,15 @@ interface UIState {
   magicModalOpen: boolean
   resolveConflictsDialogOpen: boolean
   newWorktreeModalOpen: boolean
-  newWorktreeModalDefaultTab: 'quick' | 'issues' | 'prs' | 'security' | null
+  newWorktreeModalDefaultTab:
+    | 'quick'
+    | 'issues'
+    | 'prs'
+    | 'security'
+    | 'branches'
+    | 'linear'
+    | 'sentry'
+    | null
   releaseNotesModalOpen: boolean
   releaseNotesModalMode: ReleaseNotesModalMode
   updatePrModalOpen: boolean
@@ -88,6 +96,8 @@ interface UIState {
   autoInvestigateAdvisoryWorktreeIds: Set<string>
   /** Worktree IDs that should auto-trigger investigate-linear-issue when created */
   autoInvestigateLinearIssueWorktreeIds: Set<string>
+  /** Worktree IDs that should auto-trigger Sentry issue investigation */
+  autoInvestigateSentryIssueWorktreeIds: Set<string>
   /** Counter for background worktree creations (CMD+Click) — skip auto-navigation */
   pendingBackgroundCreations: number
   /** Worktree IDs that should auto-open first session modal when canvas mounts */
@@ -152,7 +162,15 @@ interface UIState {
   setResolveConflictsDialogOpen: (open: boolean) => void
   setNewWorktreeModalOpen: (open: boolean) => void
   setNewWorktreeModalDefaultTab: (
-    tab: 'quick' | 'issues' | 'prs' | 'security' | null
+    tab:
+      | 'quick'
+      | 'issues'
+      | 'prs'
+      | 'security'
+      | 'branches'
+      | 'linear'
+      | 'sentry'
+      | null
   ) => void
   setReleaseNotesModalOpen: (open: boolean) => void
   setReleaseNotesModalMode: (mode: ReleaseNotesModalMode) => void
@@ -186,6 +204,8 @@ interface UIState {
   consumeAutoInvestigateAdvisory: (worktreeId: string) => boolean
   markWorktreeForAutoInvestigateLinearIssue: (worktreeId: string) => void
   consumeAutoInvestigateLinearIssue: (worktreeId: string) => boolean
+  markWorktreeForAutoInvestigateSentryIssue: (worktreeId: string) => void
+  consumeAutoInvestigateSentryIssue: (worktreeId: string) => boolean
   markWorktreeForAutoOpenSession: (
     worktreeId: string,
     sessionId?: string
@@ -275,6 +295,7 @@ export const useUIStore = create<UIState>()(
       autoInvestigateSecurityAlertWorktreeIds: new Set(),
       autoInvestigateAdvisoryWorktreeIds: new Set(),
       autoInvestigateLinearIssueWorktreeIds: new Set(),
+      autoInvestigateSentryIssueWorktreeIds: new Set(),
       pendingBackgroundCreations: 0,
       autoOpenSessionWorktreeIds: new Set(),
       pendingAutoOpenSessionIds: {},
@@ -695,6 +716,39 @@ export const useUIStore = create<UIState>()(
           return true
         }
         return false
+      },
+
+      markWorktreeForAutoInvestigateSentryIssue: worktreeId =>
+        set(
+          state => {
+            if (state.autoInvestigateSentryIssueWorktreeIds.has(worktreeId)) {
+              return state
+            }
+            return {
+              autoInvestigateSentryIssueWorktreeIds: new Set([
+                ...state.autoInvestigateSentryIssueWorktreeIds,
+                worktreeId,
+              ]),
+            }
+          },
+          undefined,
+          'markWorktreeForAutoInvestigateSentryIssue'
+        ),
+
+      consumeAutoInvestigateSentryIssue: worktreeId => {
+        if (!get().autoInvestigateSentryIssueWorktreeIds.has(worktreeId)) {
+          return false
+        }
+        set(
+          state => {
+            const next = new Set(state.autoInvestigateSentryIssueWorktreeIds)
+            next.delete(worktreeId)
+            return { autoInvestigateSentryIssueWorktreeIds: next }
+          },
+          undefined,
+          'consumeAutoInvestigateSentryIssue'
+        )
+        return true
       },
 
       markWorktreeForAutoOpenSession: (worktreeId, sessionId) =>

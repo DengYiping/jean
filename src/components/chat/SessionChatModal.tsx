@@ -191,6 +191,14 @@ function getSessionStatus(
   return computeSessionCardData(session, storeState).status
 }
 
+function buildNativeClientSessionInput(session: Session): Session {
+  return {
+    ...session,
+    primary_surface: 'terminal',
+    terminal_label: session.terminal_label ?? session.name,
+  }
+}
+
 export function SessionChatModal({
   worktreeId,
   worktreePath,
@@ -336,6 +344,17 @@ export function SessionChatModal({
   const currentResumeArgs = currentSession
     ? getResumeArgs(currentSession)
     : null
+
+  const handleOpenInNativeClient = useCallback(
+    (session: Session) => {
+      const nativeSession = buildNativeClientSessionInput(session)
+      void reconnectNativeCliSession(nativeSession, worktreeId, {
+        attachToSession: false,
+        openModal: false,
+      })
+    },
+    [worktreeId]
+  )
 
   // Git status for header badges
   const { data: worktree } = useWorktree(worktreeId)
@@ -1250,6 +1269,18 @@ export function SessionChatModal({
                           Reconnect
                         </DropdownMenuItem>
                       )}
+                    {currentSession?.primary_surface !== 'terminal' &&
+                      currentSession &&
+                      currentResumeArgs && (
+                        <DropdownMenuItem
+                          onSelect={() =>
+                            handleOpenInNativeClient(currentSession)
+                          }
+                        >
+                          <Terminal className="h-4 w-4" />
+                          Open in Native Client
+                        </DropdownMenuItem>
+                      )}
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
                       disabled={!hasRecap}
@@ -1468,6 +1499,17 @@ export function SessionChatModal({
                                 >
                                   <RefreshCw className="mr-2 h-4 w-4" />
                                   Reconnect
+                                </ContextMenuItem>
+                              )}
+                            {session.primary_surface !== 'terminal' &&
+                              resumeArgs && (
+                                <ContextMenuItem
+                                  onSelect={() =>
+                                    handleOpenInNativeClient(session)
+                                  }
+                                >
+                                  <Terminal className="mr-2 h-4 w-4" />
+                                  Open in Native Client
                                 </ContextMenuItem>
                               )}
                             <ContextMenuSeparator />

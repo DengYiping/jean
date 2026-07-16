@@ -337,6 +337,7 @@ async fn create_board_worktree(
         None,
         None,
         None,
+        None,
         Some(format!(
             "agent-{}-{suffix}",
             item.id.chars().take(8).collect::<String>()

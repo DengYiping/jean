@@ -15,13 +15,19 @@ describe('MobileLeftSidebar', () => {
     render(
       <div data-testid="layout-root">
         <div data-testid="main-content">Main content stays put</div>
-        <MobileLeftSidebar open={true} onOpenChange={onOpenChange} width={250} />
+        <MobileLeftSidebar
+          open={true}
+          onOpenChange={onOpenChange}
+          width={250}
+        />
       </div>
     )
 
     const sheet = await screen.findByTestId('mobile-left-sidebar')
     expect(sheet).toBeInTheDocument()
-    expect(await screen.findByTestId('left-sidebar-content')).toBeInTheDocument()
+    expect(
+      await screen.findByTestId('left-sidebar-content')
+    ).toBeInTheDocument()
 
     // Sheet content is portaled (fixed overlay), so main content remains a direct child
     const layoutRoot = screen.getByTestId('layout-root')

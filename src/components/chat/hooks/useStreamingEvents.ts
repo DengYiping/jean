@@ -57,6 +57,11 @@ import {
   type SessionSettingKey,
 } from '@/components/chat/hooks/session-setting-sync'
 import { logger } from '@/lib/logger'
+import {
+  consumeReplayedText,
+  consumeReplayedThinking,
+  consumeReplayedToolBlock,
+} from '@/lib/hydrate-running-snapshot'
 
 interface UseStreamingEventsParams {
   queryClient: QueryClient
@@ -516,10 +521,13 @@ export default function useStreamingEvents({
 
     const unlistenChunk = listen<ChunkEvent>('chat:chunk', event => {
       const { session_id, content } = event.payload
+      const replayFilteredContent = consumeReplayedText(session_id, content)
+      if (!replayFilteredContent) return
       // Ensure session is marked as sending (recovers state after reconnect/refresh)
       addSendingSession(session_id)
       // Accumulate into buffer
-      chunkBuffer[session_id] = (chunkBuffer[session_id] ?? '') + content
+      chunkBuffer[session_id] =
+        (chunkBuffer[session_id] ?? '') + replayFilteredContent
       // Schedule flush on next animation frame (coalesces all chunks in this frame)
       if (chunkRafId === null) {
         chunkRafId = requestAnimationFrame(flushChunkBuffer)
@@ -676,6 +684,7 @@ export default function useStreamingEvents({
       'chat:tool_block',
       event => {
         const { session_id, tool_call_id } = event.payload
+        if (consumeReplayedToolBlock(session_id, tool_call_id)) return
         addToolBlock(session_id, tool_call_id)
       }
     )
@@ -683,7 +692,10 @@ export default function useStreamingEvents({
     // Handle thinking content blocks (extended thinking)
     const unlistenThinking = listen<ThinkingEvent>('chat:thinking', event => {
       const { session_id, content } = event.payload
-      appendThinkingBlock(session_id, content)
+      const replayFilteredContent = consumeReplayedThinking(session_id, content)
+      if (replayFilteredContent) {
+        appendThinkingBlock(session_id, replayFilteredContent)
+      }
     })
 
     // Handle tool result events (tool execution output)

@@ -428,10 +428,10 @@ function App() {
         return { sendingSessionIds: runningSendingIds }
       })
       for (const { sessionId, message } of runningSnapshotMessages) {
-          hydrateRunningSnapshot(sessionId, message, {
-            allowWhileSending: true,
-            dedupeReplayedOutput: true,
-          })
+        hydrateRunningSnapshot(sessionId, message, {
+          allowWhileSending: true,
+          dedupeReplayedOutput: true,
+        })
         queryClient.setQueryData<Session>(
           chatQueryKeys.session(sessionId),
           old =>

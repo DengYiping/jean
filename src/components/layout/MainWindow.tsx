@@ -162,6 +162,7 @@ const CloseWorktreeDialog = lazy(() =>
 )
 import { FloatingDock } from '@/components/ui/floating-dock'
 import { Toaster } from '@/components/ui/sonner'
+import { MobileLeftSidebar } from './MobileLeftSidebar'
 import { BrowserSidePane } from '@/components/browser/BrowserSidePane'
 import { BrowserPanel } from '@/components/browser/BrowserPanel'
 import { useBrowserEvents } from '@/hooks/useBrowserPane'
@@ -267,6 +268,7 @@ export function MainWindow() {
   const leftSidebarVisible = useUIStore(state => state.leftSidebarVisible)
   const leftSidebarSize = useUIStore(state => state.leftSidebarSize)
   const setLeftSidebarSize = useUIStore(state => state.setLeftSidebarSize)
+  const setLeftSidebarVisible = useUIStore(state => state.setLeftSidebarVisible)
   const preferencesOpen = useUIStore(state => state.preferencesOpen)
   const commitModalOpen = useUIStore(state => state.commitModalOpen)
   const onboardingOpen = useUIStore(state => state.onboardingOpen)
@@ -570,6 +572,15 @@ export function MainWindow() {
             {/* Invisible wider hit area for easier clicking */}
             <div className="absolute inset-y-0 -left-1.5 -right-1.5 cursor-col-resize" />
           </div>
+        )}
+
+        {/* Mobile: overlay drawer — does not shift main content; backdrop dismisses */}
+        {isMobile && activeMainView === 'workspace' && isInitialized && (
+          <MobileLeftSidebar
+            open={leftSidebarVisible}
+            onOpenChange={setLeftSidebarVisible}
+            width={leftSidebarSize}
+          />
         )}
 
         {/* Main Content + bottom browser panel stacked vertically */}

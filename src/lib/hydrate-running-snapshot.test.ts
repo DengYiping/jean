@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { useChatStore } from '@/store/chat-store'
 import type { ChatMessage } from '@/types/chat'
-import { hydrateRunningSnapshot } from './hydrate-running-snapshot'
+import {
+  consumeReplayedText,
+  hydrateRunningSnapshot,
+} from './hydrate-running-snapshot'
 
 const assistantMessage = (
   overrides: Partial<ChatMessage> = {}
@@ -89,5 +92,19 @@ describe('hydrateRunningSnapshot', () => {
         input: { command: 'git status' },
       },
     ])
+  })
+
+  it('drops replayed output that is already in the hydrated snapshot', () => {
+    hydrateRunningSnapshot(
+      'session-1',
+      assistantMessage({
+        content_blocks: [{ type: 'text', text: 'hello world' }],
+      }),
+      { dedupeReplayedOutput: true }
+    )
+
+    expect(consumeReplayedText('session-1', 'hello ')).toBe('')
+    expect(consumeReplayedText('session-1', 'world')).toBe('')
+    expect(consumeReplayedText('session-1', ' next')).toBe(' next')
   })
 })

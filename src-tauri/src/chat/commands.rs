@@ -132,6 +132,14 @@ pub(crate) fn resolve_default_backend(app: &AppHandle, worktree_id: Option<&str>
     resolved
 }
 
+fn default_model_for_backend(preferences: &crate::AppPreferences, backend: &Backend) -> String {
+    match backend {
+        Backend::Codex => preferences.selected_codex_model.clone(),
+        Backend::Opencode => preferences.selected_opencode_model.clone(),
+        Backend::Claude => preferences.selected_model.clone(),
+    }
+}
+
 /// Resolve backend for a magic prompt operation.
 /// Priority: per-operation backend > project default > global default > Claude.
 pub(crate) fn resolve_magic_prompt_backend(
@@ -2938,6 +2946,11 @@ pub async fn send_chat_message(
     } else {
         effective_backend
     };
+
+    let model = model.or_else(|| {
+        let preferences = crate::load_preferences_sync(&app).unwrap_or_default();
+        Some(default_model_for_backend(&preferences, &effective_backend))
+    });
 
     // Sync session.backend when model-based resolution overrides it
     // (e.g. user switched from Claude model to Codex model mid-session).
@@ -8233,6 +8246,27 @@ pub async fn list_pending_wakeups() -> Result<Vec<super::wakeup::PendingWakeupEn
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_model_for_backend_uses_jean_preferences() {
+        let mut preferences = crate::AppPreferences::default();
+        preferences.selected_model = "claude-test".to_string();
+        preferences.selected_codex_model = "gpt-test".to_string();
+        preferences.selected_opencode_model = "opencode/test".to_string();
+
+        assert_eq!(
+            default_model_for_backend(&preferences, &Backend::Claude),
+            "claude-test"
+        );
+        assert_eq!(
+            default_model_for_backend(&preferences, &Backend::Codex),
+            "gpt-test"
+        );
+        assert_eq!(
+            default_model_for_backend(&preferences, &Backend::Opencode),
+            "opencode/test"
+        );
+    }
 
     fn test_run(run_id: &str, status: RunStatus) -> RunEntry {
         RunEntry {

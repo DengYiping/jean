@@ -2664,6 +2664,7 @@ pub async fn set_session_last_opened(app: AppHandle, session_id: String) -> Resu
         save_metadata(&app, &metadata)?;
     }
 
+    emit_sessions_cache_invalidation(&app);
     Ok(())
 }
 
@@ -2690,6 +2691,7 @@ pub async fn set_sessions_last_opened_bulk(
         }
     }
 
+    emit_sessions_cache_invalidation(&app);
     Ok(())
 }
 

@@ -23,6 +23,39 @@ import {
   type KeybindingsMap,
 } from '@/types/keybindings'
 
+export function applyCacheInvalidationKeys(
+  queryClient: QueryClient,
+  keys: Iterable<string>
+): void {
+  for (const key of keys) {
+    switch (key) {
+      case 'sessions':
+        queryClient.invalidateQueries({ queryKey: chatQueryKeys.all })
+        queryClient.invalidateQueries({ queryKey: ['all-sessions'] })
+        break
+      case 'projects':
+        queryClient.invalidateQueries({ queryKey: projectsQueryKeys.all })
+        break
+      case 'preferences':
+        queryClient.invalidateQueries({ queryKey: ['preferences'] })
+        break
+      case 'ui-state':
+        queryClient.invalidateQueries({ queryKey: ['ui-state'] })
+        break
+      case 'contexts':
+        queryClient.invalidateQueries({ queryKey: ['contexts'] })
+        queryClient.invalidateQueries({ queryKey: ['saved-contexts'] })
+        break
+      case 'automations':
+        queryClient.invalidateQueries({ queryKey: ['automations'] })
+        break
+      case 'agent-board':
+        queryClient.invalidateQueries({ queryKey: ['agent-board'] })
+        break
+    }
+  }
+}
+
 export function getTerminalShortcutWorktreeId(): string | null {
   const activeElement = document.activeElement
   const terminalFocused =
@@ -874,48 +907,7 @@ export function useMainWindowEventListeners() {
 
           const flushInvalidations = () => {
             flushTimer = null
-            for (const key of pendingKeys) {
-              switch (key) {
-                case 'sessions':
-                  queryClient.invalidateQueries({
-                    queryKey: chatQueryKeys.all,
-                  })
-                  break
-                case 'projects':
-                  queryClient.invalidateQueries({
-                    queryKey: projectsQueryKeys.all,
-                  })
-                  break
-                case 'preferences':
-                  queryClient.invalidateQueries({
-                    queryKey: ['preferences'],
-                  })
-                  break
-                case 'ui-state':
-                  queryClient.invalidateQueries({
-                    queryKey: ['ui-state'],
-                  })
-                  break
-                case 'contexts':
-                  queryClient.invalidateQueries({
-                    queryKey: ['contexts'],
-                  })
-                  queryClient.invalidateQueries({
-                    queryKey: ['saved-contexts'],
-                  })
-                  break
-                case 'automations':
-                  queryClient.invalidateQueries({
-                    queryKey: ['automations'],
-                  })
-                  break
-                case 'agent-board':
-                  queryClient.invalidateQueries({
-                    queryKey: ['agent-board'],
-                  })
-                  break
-              }
-            }
+            applyCacheInvalidationKeys(queryClient, pendingKeys)
             pendingKeys.clear()
           }
 

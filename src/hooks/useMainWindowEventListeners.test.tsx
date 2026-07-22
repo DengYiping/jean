@@ -8,11 +8,14 @@ import { useTerminalStore } from '@/store/terminal-store'
 import { useUIStore } from '@/store/ui-store'
 import {
   addTerminalTabForShortcut,
+  applyCacheInvalidationKeys,
   closeActiveTerminalTabForShortcut,
   getTerminalShortcutWorktreeId,
   switchActiveTerminalTabByIndexForShortcut,
   useMainWindowEventListeners,
 } from './useMainWindowEventListeners'
+import { chatQueryKeys } from '@/services/chat'
+import { projectsQueryKeys } from '@/services/projects'
 
 const { mockInvoke, mockListen, mockDisposeTerminal } = vi.hoisted(() => ({
   mockInvoke: vi.fn().mockResolvedValue(undefined),
@@ -468,5 +471,35 @@ describe('useMainWindowEventListeners terminal shortcuts', () => {
     )
 
     expect(setAddProjectDialogOpen).not.toHaveBeenCalled()
+  })
+})
+
+describe('applyCacheInvalidationKeys', () => {
+  it('refreshes both session queries and the unread-session query', () => {
+    const queryClient = new QueryClient()
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+
+    applyCacheInvalidationKeys(queryClient, ['sessions'])
+
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: chatQueryKeys.all,
+    })
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ['all-sessions'],
+    })
+  })
+
+  it('keeps other cache invalidations unchanged', () => {
+    const queryClient = new QueryClient()
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+
+    applyCacheInvalidationKeys(queryClient, ['projects'])
+
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: projectsQueryKeys.all,
+    })
+    expect(invalidateSpy).not.toHaveBeenCalledWith({
+      queryKey: ['all-sessions'],
+    })
   })
 })

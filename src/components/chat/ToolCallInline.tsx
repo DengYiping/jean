@@ -206,6 +206,8 @@ export function TaskCallInline({
   const subagentType = input.subagent_type as string | undefined
   const description = input.description as string | undefined
   const prompt = input.prompt as string | undefined
+  const report = taskToolCall.output?.trim() || undefined
+  const toolLabel = taskToolCall.name === 'Agent' ? 'Agent' : 'Task'
 
   return (
     <Collapsible
@@ -222,7 +224,7 @@ export function TaskCallInline({
         <CollapsibleTrigger className={TOOL_CALL_ROW_CLASS}>
           <Bot className="h-3.5 w-3.5 shrink-0" />
           <span className="font-medium shrink-0 whitespace-nowrap">
-            {subagentType ? `Task (${subagentType})` : 'Task'}
+            {subagentType ? `${toolLabel} (${subagentType})` : toolLabel}
           </span>
           {description && (
             <code className={TOOL_CALL_DETAIL_PILL_CLASS}>{description}</code>
@@ -262,7 +264,8 @@ export function TaskCallInline({
             {subToolCalls.length > 0 ? (
               <div className="space-y-1">
                 {subToolCalls.map(subTool =>
-                  subTool.name === 'Task' && allToolCalls ? (
+                  (subTool.name === 'Task' || subTool.name === 'Agent') &&
+                  allToolCalls ? (
                     <TaskCallInline
                       key={subTool.id}
                       taskToolCall={subTool}
@@ -290,6 +293,15 @@ export function TaskCallInline({
               <p className="text-xs text-muted-foreground/60 italic">
                 No sub-tools recorded
               </p>
+            )}
+            {report && (
+              <div className="space-y-1">
+                <div className="border-t border-border/30" />
+                <div className="text-xs text-muted-foreground/60">Report:</div>
+                <div className="max-h-64 overflow-y-auto rounded bg-muted/50 p-2 text-xs text-foreground/80">
+                  <Markdown>{report}</Markdown>
+                </div>
+              </div>
             )}
           </div>
         </CollapsibleContent>

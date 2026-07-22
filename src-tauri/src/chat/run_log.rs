@@ -464,6 +464,27 @@ pub fn read_run_log(
     lines.map_err(|e| format!("Failed to read run log: {e}"))
 }
 
+pub(crate) fn tool_result_content_to_string(content: &serde_json::Value) -> String {
+    if let Some(content) = content.as_str() {
+        return content.to_string();
+    }
+
+    content
+        .as_array()
+        .map(|blocks| {
+            blocks
+                .iter()
+                .filter_map(|block| {
+                    (block.get("type").and_then(|value| value.as_str()) == Some("text"))
+                        .then(|| block.get("text").and_then(|value| value.as_str()))
+                        .flatten()
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .unwrap_or_default()
+}
+
 /// Parse JSONL lines and build a ChatMessage
 /// This replicates the parsing logic from execute_claude_streaming
 pub fn parse_run_to_message(lines: &[String], run: &RunEntry) -> Result<ChatMessage, String> {
@@ -723,8 +744,10 @@ pub fn parse_run_to_message(lines: &[String], run: &RunEntry) -> Result<ChatMess
                                     .get("tool_use_id")
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("");
-                                let output =
-                                    block.get("content").and_then(|v| v.as_str()).unwrap_or("");
+                                let output = block
+                                    .get("content")
+                                    .map(tool_result_content_to_string)
+                                    .unwrap_or_default();
                                 let is_error = block
                                     .get("is_error")
                                     .and_then(|v| v.as_bool())
@@ -749,7 +772,7 @@ pub fn parse_run_to_message(lines: &[String], run: &RunEntry) -> Result<ChatMess
                                     tool_calls.iter_mut().find(|t| t.id == tool_id)
                                 {
                                     // Non-Monitor tool: normal output update
-                                    tc.output = Some(output.to_string());
+                                    tc.output = Some(output);
                                 }
                             }
                         }
@@ -1677,7 +1700,7 @@ fn should_use_codex_parser(run: &RunEntry, session_backend: &Backend) -> bool {
 mod tests {
     use super::{
         inspect_partial_cancelled_run_lines, reconcile_partial_cancelled_payload,
-        resolve_run_window, should_use_codex_parser,
+        resolve_run_window, should_use_codex_parser, tool_result_content_to_string,
     };
     use crate::chat::types::{Backend, RunEntry, RunStatus, ToolCall};
 
@@ -1706,6 +1729,18 @@ mod tests {
     #[test]
     fn resolve_run_window_defaults_to_full_history() {
         assert_eq!(resolve_run_window(5, None, None), (0, 5));
+    }
+
+    #[test]
+    fn tool_result_content_to_string_handles_text_blocks() {
+        assert_eq!(
+            tool_result_content_to_string(&serde_json::json!([
+                { "type": "text", "text": "first" },
+                { "type": "image", "source": {} },
+                { "type": "text", "text": "second" }
+            ])),
+            "first\nsecond"
+        );
     }
 
     #[test]

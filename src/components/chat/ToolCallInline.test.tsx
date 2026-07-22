@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@/test/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ToolCallInline } from './ToolCallInline'
+import { TaskCallInline, ToolCallInline } from './ToolCallInline'
 
 vi.mock('@/services/preferences', () => ({
   usePreferences: () => ({ data: undefined }),
@@ -173,5 +173,75 @@ describe('ToolCallInline', () => {
     expect(
       screen.queryByText('019ce313-f81b-76a0-ae2e-831ce6cc72f9: pendingInit')
     ).not.toBeInTheDocument()
+  })
+})
+
+describe('TaskCallInline', () => {
+  it('shows a subagent final report when expanded', () => {
+    render(
+      <TaskCallInline
+        taskToolCall={{
+          id: 'task-1',
+          name: 'Task',
+          input: {
+            description: 'Explore auth',
+            prompt: 'Find how auth works',
+            subagent_type: 'Explore',
+          },
+          output: 'Findings: auth uses JWT middleware.',
+        }}
+        subToolCalls={[]}
+      />
+    )
+
+    expect(screen.getByText('Task (Explore)')).toBeInTheDocument()
+    expect(screen.queryByText('Report:')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button'))
+
+    expect(screen.getByText('Report:')).toBeInTheDocument()
+    expect(
+      screen.getByText('Findings: auth uses JWT middleware.')
+    ).toBeInTheDocument()
+  })
+
+  it('renders Agent calls and nests child agents as task containers', () => {
+    render(
+      <TaskCallInline
+        taskToolCall={{
+          id: 'agent-1',
+          name: 'Agent',
+          input: {
+            description: 'Nested agent',
+            prompt: 'Delegate work',
+            subagent_type: 'general-purpose',
+          },
+          output: 'Nested agent finished.',
+        }}
+        subToolCalls={[
+          {
+            id: 'agent-2',
+            name: 'Agent',
+            input: { description: 'Child agent', prompt: 'Child work' },
+            parent_tool_use_id: 'agent-1',
+          },
+        ]}
+        allToolCalls={[
+          {
+            id: 'agent-2',
+            name: 'Agent',
+            input: { description: 'Child agent', prompt: 'Child work' },
+            parent_tool_use_id: 'agent-1',
+          },
+        ]}
+      />
+    )
+
+    fireEvent.click(screen.getByText('Agent (general-purpose)'))
+
+    expect(screen.getByText('Report:')).toBeInTheDocument()
+    expect(screen.getByText('Nested agent finished.')).toBeInTheDocument()
+    expect(screen.getByText('Agent')).toBeInTheDocument()
+    expect(screen.getByText('Child agent')).toBeInTheDocument()
   })
 })

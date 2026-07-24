@@ -49,6 +49,8 @@ const hoisted = vi.hoisted(() => {
     clearWorktreeLoading: clearWorktreeLoadingMock,
     setActiveWorktree: vi.fn(),
     setPendingMagicCommand: vi.fn(),
+    registerWorktreePath: vi.fn(),
+    setActiveSession: vi.fn(),
   }
 
   return {
@@ -338,5 +340,32 @@ describe('MagicModal', () => {
 
     expect(hoisted.setReleaseNotesModalModeMock).toHaveBeenCalledWith('post')
     expect(hoisted.setMagicModalOpenMock).toHaveBeenCalledWith(false)
+  })
+
+  it('starts a yolo GitHub bug automation session', async () => {
+    hoisted.invokeMock
+      .mockResolvedValueOnce({ id: 'automation-session' })
+      .mockResolvedValueOnce({ id: 'message-1' })
+
+    render(<MagicModal />)
+    fireEvent.click(screen.getByRole('button', { name: /GitHub Bugs/ }))
+
+    await waitFor(() => {
+      expect(hoisted.invokeMock).toHaveBeenNthCalledWith(1, 'create_session', {
+        worktreeId: 'wt-1',
+        worktreePath: '/tmp/worktree',
+        name: 'Automate GitHub bugs',
+      })
+      expect(hoisted.invokeMock).toHaveBeenNthCalledWith(
+        2,
+        'send_chat_message',
+        expect.objectContaining({
+          sessionId: 'automation-session',
+          worktreeId: 'wt-1',
+          executionMode: 'yolo',
+          message: expect.stringContaining('project-1'),
+        })
+      )
+    })
   })
 })

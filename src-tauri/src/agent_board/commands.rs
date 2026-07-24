@@ -1066,6 +1066,7 @@ mod tests {
             stable_slot_id: None,
             branch: "branch".to_string(),
             base_branch: Some("main".to_string()),
+            base_remote: None,
             created_at: 1,
             setup_output: None,
             setup_script: None,

@@ -181,6 +181,9 @@ pub struct Worktree {
     /// Base branch this worktree was created from (None for legacy worktrees or base sessions)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_branch: Option<String>,
+    /// Remote the base branch was taken from when explicitly selected.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_remote: Option<String>,
     /// Unix timestamp when worktree was created
     pub created_at: u64,
     /// Output from setup script (if any)

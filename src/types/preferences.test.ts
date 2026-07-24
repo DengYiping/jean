@@ -3,6 +3,8 @@ import {
   CODEX_DEFAULT_MAGIC_PROMPT_MODELS,
   CODEX_DEFAULT_MAGIC_PROMPT_EFFORTS,
   DEFAULT_AUTOMATION_RUN_PROMPT,
+  DEFAULT_AUTOMATE_GITHUB_BUGS_PROMPT,
+  DEFAULT_AUTOMATE_SECURITY_ADVISORIES_PROMPT,
   DEFAULT_CLAUDE_SYSTEM_PROMPT,
   DEFAULT_CODEX_SYSTEM_PROMPT,
   DEFAULT_MAGIC_PROMPT_EFFORTS,
@@ -53,6 +55,17 @@ describe('magic prompt backend resolution', () => {
 })
 
 describe('preference defaults', () => {
+  it('provides automation prompts for bug and advisory investigations', () => {
+    expect(
+      defaultPreferences.magic_prompt_models.automate_github_bugs_model
+    ).toBe('claude-opus-4-8[1m]')
+    expect(
+      defaultPreferences.magic_prompt_models.automate_security_advisories_model
+    ).toBe('claude-opus-4-8[1m]')
+    expect(DEFAULT_AUTOMATE_GITHUB_BUGS_PROMPT).toContain('list_github_issues')
+    expect(DEFAULT_AUTOMATE_SECURITY_ADVISORIES_PROMPT).toContain('ghsaId')
+  })
+
   it('keeps recap prompting disabled by default', () => {
     expect(defaultPreferences.recap_prompting_enabled).toBe(false)
   })

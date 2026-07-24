@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen } from '@/test/test-utils'
+import { fireEvent, render, screen, waitFor } from '@/test/test-utils'
 import { MessageItem } from './MessageItem'
 import type {
   ChatMessage,
@@ -7,6 +7,23 @@ import type {
   QuestionAnswer,
   ReviewFinding,
 } from '@/types/chat'
+
+const mocks = vi.hoisted(() => ({
+  copyToClipboard: vi.fn(),
+  toastSuccess: vi.fn(),
+  toastError: vi.fn(),
+}))
+
+vi.mock('@/lib/clipboard', () => ({
+  copyToClipboard: mocks.copyToClipboard,
+}))
+
+vi.mock('sonner', () => ({
+  toast: {
+    success: mocks.toastSuccess,
+    error: mocks.toastError,
+  },
+}))
 
 vi.mock('@/services/preferences', () => ({
   usePreferences: () => ({ data: {} }),
@@ -146,6 +163,99 @@ const noopFixAllFindings = async (
 ) => undefined
 
 describe('MessageItem', () => {
+  it('copies an assistant response to the clipboard', async () => {
+    mocks.copyToClipboard.mockResolvedValue(undefined)
+    const message = {
+      ...createPlanMessage(),
+      content: 'This is the assistant response.',
+      tool_calls: [],
+      content_blocks: [],
+    }
+
+    render(
+      <MessageItem
+        message={message}
+        messageIndex={0}
+        totalMessages={1}
+        pendingPlanMessageId={null}
+        hasFollowUpMessage={false}
+        sessionId="session-1"
+        worktreePath="/tmp/worktree"
+        approveShortcut="Cmd+Enter"
+        isSending={false}
+        onPlanApproval={vi.fn()}
+        onQuestionAnswer={noopQuestionAnswer}
+        onQuestionSkip={vi.fn()}
+        onFileClick={vi.fn()}
+        onFixFinding={noopFixFinding}
+        onFixAllFindings={noopFixAllFindings}
+        isQuestionAnswered={vi.fn(() => false)}
+        getSubmittedAnswers={vi.fn(() => undefined)}
+        areQuestionsSkipped={vi.fn(() => false)}
+        isFindingFixed={vi.fn(() => false)}
+      />
+    )
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Copy response to clipboard' })
+    )
+
+    await waitFor(() => {
+      expect(mocks.copyToClipboard).toHaveBeenCalledWith(
+        'This is the assistant response.'
+      )
+      expect(mocks.toastSuccess).toHaveBeenCalledWith(
+        'Response copied to clipboard'
+      )
+    })
+  })
+
+  it('copies text content blocks when the persisted response is empty', async () => {
+    mocks.copyToClipboard.mockResolvedValue(undefined)
+    const message = {
+      ...createPlanMessage(),
+      tool_calls: [],
+      content_blocks: [
+        { type: 'text' as const, text: 'First response block.' },
+        { type: 'text' as const, text: 'Second response block.' },
+      ],
+    }
+
+    render(
+      <MessageItem
+        message={message}
+        messageIndex={0}
+        totalMessages={1}
+        pendingPlanMessageId={null}
+        hasFollowUpMessage={false}
+        sessionId="session-1"
+        worktreePath="/tmp/worktree"
+        approveShortcut="Cmd+Enter"
+        isSending={false}
+        onPlanApproval={vi.fn()}
+        onQuestionAnswer={noopQuestionAnswer}
+        onQuestionSkip={vi.fn()}
+        onFileClick={vi.fn()}
+        onFixFinding={noopFixFinding}
+        onFixAllFindings={noopFixAllFindings}
+        isQuestionAnswered={vi.fn(() => false)}
+        getSubmittedAnswers={vi.fn(() => undefined)}
+        areQuestionsSkipped={vi.fn(() => false)}
+        isFindingFixed={vi.fn(() => false)}
+      />
+    )
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Copy response to clipboard' })
+    )
+
+    await waitFor(() => {
+      expect(mocks.copyToClipboard).toHaveBeenCalledWith(
+        'First response block.\nSecond response block.'
+      )
+    })
+  })
+
   it('hides the inline approve button for persisted approved plan IDs', () => {
     render(
       <MessageItem

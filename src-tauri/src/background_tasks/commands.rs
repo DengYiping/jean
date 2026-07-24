@@ -55,12 +55,14 @@ pub fn set_app_focus_state(
 ///
 /// Pass null/None values to clear the active worktree and stop polling.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn set_active_worktree_for_polling(
     app: AppHandle,
     state: State<'_, BackgroundTaskManager>,
     worktree_id: Option<String>,
     worktree_path: Option<String>,
     base_branch: Option<String>,
+    base_remote: Option<String>,
     pr_number: Option<u32>,
     pr_url: Option<String>,
 ) -> Result<(), String> {
@@ -71,6 +73,7 @@ pub fn set_active_worktree_for_polling(
                 worktree_id: id,
                 worktree_path: path,
                 base_branch: branch,
+                base_remote,
                 pr_number,
                 pr_url,
                 pr_push_remote,
@@ -162,6 +165,8 @@ pub struct PrWorktreeInfo {
     pub worktree_id: String,
     pub worktree_path: String,
     pub base_branch: String,
+    #[serde(default)]
+    pub base_remote: Option<String>,
     pub pr_number: u32,
     pub pr_url: String,
 }
@@ -188,6 +193,7 @@ pub fn set_pr_worktrees_for_polling(
                 worktree_id: w.worktree_id,
                 worktree_path: w.worktree_path,
                 base_branch: w.base_branch,
+                base_remote: w.base_remote,
                 pr_number: Some(w.pr_number),
                 pr_url: Some(w.pr_url),
                 pr_push_remote,
@@ -206,6 +212,8 @@ pub struct AllWorktreeInfo {
     pub worktree_id: String,
     pub worktree_path: String,
     pub base_branch: String,
+    #[serde(default)]
+    pub base_remote: Option<String>,
 }
 
 /// Set all worktrees for background git status sweep polling.
@@ -230,6 +238,7 @@ pub fn set_all_worktrees_for_polling(
                 worktree_id: w.worktree_id,
                 worktree_path: w.worktree_path,
                 base_branch: w.base_branch,
+                base_remote: w.base_remote,
                 pr_number: None,
                 pr_url: None,
                 pr_push_remote,

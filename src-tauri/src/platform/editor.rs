@@ -2,7 +2,7 @@ use std::process::Command;
 
 use crate::CustomEditorConfig;
 
-const SUPPORTED_EDITORS: [&str; 5] = ["zed", "vscode", "cursor", "xcode", "intellij"];
+const SUPPORTED_EDITORS: [&str; 6] = ["zed", "vscode", "vscodium", "cursor", "xcode", "intellij"];
 
 #[derive(Debug, Clone)]
 struct EditorConfig {
@@ -248,6 +248,13 @@ fn builtin_editor_config(editor: &str) -> Option<EditorConfig> {
             vec!["--disable-workspace-trust", "-g", "{path}:{line}"],
             Some("Visual Studio Code"),
         ),
+        "vscodium" => (
+            "VSCodium",
+            "codium",
+            vec!["--disable-workspace-trust", "{path}"],
+            vec!["--disable-workspace-trust", "-g", "{path}:{line}"],
+            Some("VSCodium"),
+        ),
         "cursor" => (
             "Cursor",
             "cursor",
@@ -352,6 +359,7 @@ fn editor_metadata(editor: &str) -> (&'static str, &'static str) {
     match editor {
         "zed" => ("zed", "Zed"),
         "cursor" => ("cursor", "Cursor"),
+        "vscodium" => ("codium", "VSCodium"),
         "xcode" => ("xed", "Xcode"),
         "intellij" => ("idea", "IntelliJ IDEA"),
         _ => ("code", "Visual Studio Code"),
@@ -397,6 +405,17 @@ fn windows_known_editor_paths(editor: &str) -> Vec<std::path::PathBuf> {
                 vec![
                     std::path::PathBuf::from(base).join("Programs/Microsoft VS Code/Code.exe"),
                     std::path::PathBuf::from(base).join("Programs/VS Code/Code.exe"),
+                ]
+            })
+            .flatten()
+            .collect(),
+        "vscodium" => local_app_data
+            .iter()
+            .map(|base| {
+                vec![
+                    std::path::PathBuf::from(base).join("Programs/VSCodium/VSCodium.exe"),
+                    std::path::PathBuf::from(base)
+                        .join("Programs/VSCodium/VSCodium - Insiders.exe"),
                 ]
             })
             .flatten()
@@ -510,6 +529,26 @@ mod tests {
         assert_eq!(
             strings(build_file_open_args(
                 &builtin("vscode"),
+                "/tmp/demo/src/main.ts",
+                Some(42)
+            )),
+            [
+                "--disable-workspace-trust",
+                "-g",
+                "/tmp/demo/src/main.ts:42"
+            ]
+        );
+    }
+
+    #[test]
+    fn vscodium_open_uses_the_vscode_compatible_cli_arguments() {
+        assert_eq!(
+            strings(build_project_open_args(&builtin("vscodium"), "/tmp/demo")),
+            ["--disable-workspace-trust", "/tmp/demo"]
+        );
+        assert_eq!(
+            strings(build_file_open_args(
+                &builtin("vscodium"),
                 "/tmp/demo/src/main.ts",
                 Some(42)
             )),

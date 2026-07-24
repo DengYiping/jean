@@ -124,6 +124,8 @@ export interface Worktree {
   branch: string
   /** Base branch this worktree was created from (undefined for legacy worktrees or base sessions) */
   base_branch?: string
+  /** Remote the base branch was taken from when explicitly selected. */
+  base_remote?: string
   /** Unix timestamp when worktree was created */
   created_at: number
   /** Output from setup script (if any) */

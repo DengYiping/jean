@@ -40,6 +40,7 @@ export const defaultResponses: Record<string, unknown> = {
   // Projects
   list_projects: [project],
   list_worktrees: [worktree1, worktree2],
+  list_remotes_with_branch: ['origin'],
   list_worktree_slots: [],
   reset_worktree_slot: null,
   reset_idle_worktree_slots: null,

@@ -380,8 +380,10 @@ pub async fn dispatch_command(
             let worktree_path: String = field(&args, "worktreePath", "worktree_path")?;
             let diff_type: String = field(&args, "diffType", "diff_type")?;
             let base_branch: Option<String> = field_opt(&args, "baseBranch", "base_branch")?;
+            let base_remote: Option<String> = field_opt(&args, "baseRemote", "base_remote")?;
             let result =
-                crate::projects::get_git_diff(worktree_path, diff_type, base_branch).await?;
+                crate::projects::get_git_diff(worktree_path, diff_type, base_branch, base_remote)
+                    .await?;
             to_value(result)
         }
         "read_git_file_content" => {
@@ -1551,6 +1553,7 @@ pub async fn dispatch_command(
             let worktree_id: Option<String> = field_opt(&args, "worktreeId", "worktree_id")?;
             let worktree_path: Option<String> = field_opt(&args, "worktreePath", "worktree_path")?;
             let base_branch: Option<String> = field_opt(&args, "baseBranch", "base_branch")?;
+            let base_remote: Option<String> = field_opt(&args, "baseRemote", "base_remote")?;
             let pr_number: Option<u32> = field_opt(&args, "prNumber", "pr_number")?;
             let pr_url: Option<String> = field_opt(&args, "prUrl", "pr_url")?;
             let state = app.state::<crate::background_tasks::BackgroundTaskManager>();
@@ -1560,6 +1563,7 @@ pub async fn dispatch_command(
                 worktree_id,
                 worktree_path,
                 base_branch,
+                base_remote,
                 pr_number,
                 pr_url,
             )?;
@@ -1801,6 +1805,12 @@ pub async fn dispatch_command(
         "get_git_remotes" => {
             let repo_path: String = field(&args, "repoPath", "repo_path")?;
             let result = crate::projects::get_git_remotes(repo_path).await?;
+            to_value(result)
+        }
+        "list_remotes_with_branch" => {
+            let repo_path: String = field(&args, "repoPath", "repo_path")?;
+            let branch: String = from_field(&args, "branch")?;
+            let result = crate::projects::list_remotes_with_branch(repo_path, branch).await?;
             to_value(result)
         }
         "get_github_remotes" => {

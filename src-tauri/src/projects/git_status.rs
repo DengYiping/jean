@@ -9,6 +9,7 @@ pub struct ActiveWorktreeInfo {
     pub worktree_id: String,
     pub worktree_path: String,
     pub base_branch: String,
+    pub base_remote: Option<String>,
     /// GitHub PR number (if a PR has been created)
     pub pr_number: Option<u32>,
     /// GitHub PR URL (if a PR has been created)
@@ -25,6 +26,8 @@ pub struct GitBranchStatus {
     pub worktree_id: String,
     pub current_branch: String,
     pub base_branch: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_remote: Option<String>,
     pub behind_count: u32,
     pub ahead_count: u32,
     pub has_updates: bool,
@@ -45,6 +48,10 @@ pub struct GitBranchStatus {
     pub worktree_ahead_count: u32,
     /// Commits in HEAD not yet pushed to origin/{current_branch}
     pub unpushed_count: u32,
+}
+
+pub fn base_ref(base_remote: Option<&str>, base_branch: &str) -> String {
+    format!("{}/{base_branch}", base_remote.unwrap_or("origin"))
 }
 
 /// Fetch the latest changes from origin for a specific branch
@@ -371,9 +378,13 @@ fn get_untracked_files_diff(repo_path: &str) -> Vec<DiffFile> {
 }
 
 /// Get the number of lines added and removed compared to base branch (origin/main)
-fn get_branch_diff_stats(repo_path: &str, base_branch: &str) -> (u32, u32) {
+fn get_branch_diff_stats(
+    repo_path: &str,
+    base_branch: &str,
+    base_remote: Option<&str>,
+) -> (u32, u32) {
     // git diff --numstat origin/main...HEAD shows changes in current branch vs base
-    let origin_ref = format!("origin/{base_branch}");
+    let origin_ref = base_ref(base_remote, base_branch);
     let output = silent_command("git")
         .args(["diff", "--numstat", &format!("{origin_ref}...HEAD")])
         .current_dir(repo_path)
@@ -664,9 +675,11 @@ pub fn get_git_diff(
     repo_path: &str,
     diff_type: &str,
     base_branch: Option<&str>,
+    base_remote: Option<&str>,
 ) -> Result<GitDiff, String> {
     let base = base_branch.unwrap_or("main");
-    let range = format!("origin/{base}...HEAD");
+    let qualified_base = base_ref(base_remote, base);
+    let range = format!("{qualified_base}...HEAD");
 
     let (base_ref, target_ref, args): (String, String, Vec<&str>) = match diff_type {
         "uncommitted" => (
@@ -675,7 +688,7 @@ pub fn get_git_diff(
             vec!["diff", "HEAD", "--unified=3"],
         ),
         "branch" => {
-            let origin_ref = format!("origin/{base}");
+            let origin_ref = qualified_base;
             (
                 origin_ref,
                 "HEAD".to_string(),
@@ -740,16 +753,20 @@ pub fn get_git_diff(
 pub fn get_branch_status(info: &ActiveWorktreeInfo) -> Result<GitBranchStatus, String> {
     let repo_path = &info.worktree_path;
     let base_branch = &info.base_branch;
+    let base_remote = info.base_remote.as_deref();
 
     // Fetch latest from origin for the base branch
     // This is best-effort; if it fails, we'll compare with stale data
-    let _ = fetch_origin_branch(repo_path, base_branch);
+    let _ = match base_remote {
+        Some(remote) => fetch_origin_branch_from_remote(repo_path, remote, base_branch),
+        None => fetch_origin_branch(repo_path, base_branch),
+    };
 
     // Get current branch name
     let current_branch = get_current_branch(repo_path)?;
 
     // Compare HEAD to origin/{base_branch}
-    let origin_ref = format!("origin/{base_branch}");
+    let origin_ref = base_ref(base_remote, base_branch);
 
     // Commits we're behind (commits in origin/base that aren't in HEAD)
     let behind_count = count_commits_between(repo_path, "HEAD", &origin_ref);
@@ -761,7 +778,8 @@ pub fn get_branch_status(info: &ActiveWorktreeInfo) -> Result<GitBranchStatus, S
     let (uncommitted_added, uncommitted_removed) = get_uncommitted_diff_stats(repo_path);
 
     // Get branch diff stats (changes compared to base branch)
-    let (branch_diff_added, branch_diff_removed) = get_branch_diff_stats(repo_path, base_branch);
+    let (branch_diff_added, branch_diff_removed) =
+        get_branch_diff_stats(repo_path, base_branch, base_remote);
 
     // Base branch's own remote sync status
     // Compare local base branch to origin/base_branch
@@ -769,7 +787,12 @@ pub fn get_branch_status(info: &ActiveWorktreeInfo) -> Result<GitBranchStatus, S
     let base_branch_behind_count = count_commits_between(repo_path, base_branch, &origin_ref);
 
     // Commits unique to this worktree (ahead of local base branch)
-    let worktree_ahead_count = count_commits_between(repo_path, base_branch, "HEAD");
+    let worktree_base_ref = if base_remote.is_some() {
+        &origin_ref
+    } else {
+        base_branch
+    };
+    let worktree_ahead_count = count_commits_between(repo_path, worktree_base_ref, "HEAD");
 
     // Commits not yet pushed to the upstream tracking ref
     // Prefers the remembered PR push target (supports fork PRs where @{upstream} points
@@ -828,6 +851,7 @@ pub fn get_branch_status(info: &ActiveWorktreeInfo) -> Result<GitBranchStatus, S
         worktree_id: info.worktree_id.clone(),
         current_branch,
         base_branch: base_branch.clone(),
+        base_remote: info.base_remote.clone(),
         behind_count,
         ahead_count,
         has_updates: behind_count > 0,
@@ -848,11 +872,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn base_ref_uses_the_selected_remote() {
+        assert_eq!(base_ref(None, "main"), "origin/main");
+        assert_eq!(base_ref(Some("fork"), "main"), "fork/main");
+    }
+
+    #[test]
     fn test_git_branch_status_serialization() {
         let status = GitBranchStatus {
             worktree_id: "test-id".to_string(),
             current_branch: "feature/test".to_string(),
             base_branch: "main".to_string(),
+            base_remote: None,
             behind_count: 5,
             ahead_count: 3,
             has_updates: true,

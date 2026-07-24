@@ -496,6 +496,38 @@ pub fn remote_branch_exists(repo_path: &str, branch_name: &str) -> bool {
         .unwrap_or(false)
 }
 
+pub fn remote_tracking_branch_exists(repo_path: &str, remote: &str, branch_name: &str) -> bool {
+    silent_command("git")
+        .args([
+            "rev-parse",
+            "--verify",
+            &format!("refs/remotes/{remote}/{branch_name}"),
+        ])
+        .current_dir(repo_path)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// Parse a known remote-qualified base such as `fork/main`.
+/// Local branches and origin-tracked branches retain their historical handling.
+pub fn split_remote_qualified_base(repo_path: &str, base: &str) -> Option<(String, String)> {
+    if branch_exists(repo_path, base) || remote_branch_exists(repo_path, base) {
+        return None;
+    }
+    let (remote, branch) = base.split_once('/')?;
+    if remote.is_empty()
+        || branch.is_empty()
+        || !get_git_remotes(repo_path)
+            .ok()?
+            .iter()
+            .any(|r| r.name == remote)
+    {
+        return None;
+    }
+    Some((remote.to_string(), branch.to_string()))
+}
+
 /// Check if a repository has any commits
 pub fn has_commits(repo_path: &str) -> bool {
     silent_command("git")

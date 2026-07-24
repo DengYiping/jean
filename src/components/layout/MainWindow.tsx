@@ -344,6 +344,7 @@ export function MainWindow() {
       worktreeId: worktree.id,
       worktreePath: worktree.path,
       baseBranch: worktree.base_branch ?? project.default_branch ?? 'main',
+      baseRemote: worktree.base_remote,
       prNumber: worktree.pr_number,
       prUrl: worktree.pr_url,
     }

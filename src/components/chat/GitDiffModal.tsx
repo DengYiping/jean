@@ -358,7 +358,8 @@ export function GitDiffModal({
         const result = await getGitDiff(
           request.worktreePath,
           request.type,
-          request.baseBranch
+          request.baseBranch,
+          request.baseRemote
         )
         setDiff(result)
         // Invalidate cached file contents since the working tree may have changed

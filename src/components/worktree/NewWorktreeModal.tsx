@@ -305,6 +305,8 @@ export function NewWorktreeModal() {
                 }
                 projectId={data.selectedProjectId}
                 jeanConfig={data.jeanConfig}
+                remotes={data.remotes}
+                defaultBranch={data.selectedProject?.default_branch}
               />
             )}
 

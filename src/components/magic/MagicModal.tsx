@@ -19,6 +19,8 @@ import {
   Undo2,
   Link2,
   Megaphone,
+  Bot,
+  Shield,
 } from 'lucide-react'
 import {
   Dialog,
@@ -59,6 +61,8 @@ import type {
 import type { Session } from '@/types/chat'
 import type { PrDisplayStatus, PrStatusEvent } from '@/types/pr-status'
 import {
+  DEFAULT_AUTOMATE_GITHUB_BUGS_PROMPT,
+  DEFAULT_AUTOMATE_SECURITY_ADVISORIES_PROMPT,
   DEFAULT_RESOLVE_CONFLICTS_PROMPT,
   resolveMagicPromptProvider,
 } from '@/types/preferences'
@@ -92,6 +96,8 @@ type MagicOption =
   | 'release-post'
   | 'investigate-issue'
   | 'investigate-pr'
+  | 'automate-github-bugs'
+  | 'automate-security-advisories'
   | 'merge-pr'
   | 'review-comments'
   | 'revert-last-commit'
@@ -125,6 +131,8 @@ const CANVAS_ALLOWED_OPTIONS = new Set<MagicOption>([
   'ready-for-review',
   'resolve-conflicts',
   'linked-projects',
+  'automate-github-bugs',
+  'automate-security-advisories',
 ])
 
 /** Canvas options that navigate to worktree chat and dispatch a magic-command event */
@@ -285,6 +293,23 @@ function buildMagicColumns(
       ],
     },
     {
+      header: 'Automation',
+      options: [
+        {
+          id: 'automate-github-bugs',
+          label: 'GitHub Bugs',
+          icon: Bot,
+          key: 'J',
+        },
+        {
+          id: 'automate-security-advisories',
+          label: 'Security Advisories',
+          icon: Shield,
+          key: 'Q',
+        },
+      ],
+    },
+    {
       header: 'Investigate',
       options: [
         { id: 'investigate-issue', label: 'Issue', icon: Bug, key: 'I' },
@@ -337,6 +362,8 @@ const KEY_TO_OPTION: Record<string, MagicOption> = {
   x: 'release-post',
   i: 'investigate-issue',
   a: 'investigate-pr',
+  j: 'automate-github-bugs',
+  q: 'automate-security-advisories',
   n: 'merge-pr',
   z: 'revert-last-commit',
 }
@@ -1201,6 +1228,69 @@ ${resolveInstructions}`
 
       if (!selectedWorktreeId) {
         notify('No worktree selected', undefined, { type: 'error' })
+        setMagicModalOpen(false)
+        return
+      }
+
+      if (
+        option === 'automate-github-bugs' ||
+        option === 'automate-security-advisories'
+      ) {
+        if (!worktree?.path || !worktree.project_id) {
+          notify('No worktree selected', undefined, { type: 'error' })
+          setMagicModalOpen(false)
+          return
+        }
+
+        const isBugs = option === 'automate-github-bugs'
+        const prompt = (
+          isBugs
+            ? (preferences?.magic_prompts?.automate_github_bugs ??
+              DEFAULT_AUTOMATE_GITHUB_BUGS_PROMPT)
+            : (preferences?.magic_prompts?.automate_security_advisories ??
+              DEFAULT_AUTOMATE_SECURITY_ADVISORIES_PROMPT)
+        ).replaceAll('{projectId}', worktree.project_id)
+        const newSession = await invoke<Session>('create_session', {
+          worktreeId: selectedWorktreeId,
+          worktreePath: worktree.path,
+          name: isBugs
+            ? 'Automate GitHub bugs'
+            : 'Automate security advisories',
+        })
+        const store = useChatStore.getState()
+        store.registerWorktreePath(selectedWorktreeId, worktree.path)
+        store.setActiveSession(selectedWorktreeId, newSession.id)
+        await invoke('send_chat_message', {
+          sessionId: newSession.id,
+          worktreeId: selectedWorktreeId,
+          worktreePath: worktree.path,
+          message: prompt,
+          model: isBugs
+            ? preferences?.magic_prompt_models.automate_github_bugs_model
+            : preferences?.magic_prompt_models
+                .automate_security_advisories_model,
+          executionMode: 'yolo',
+          effortLevel: isBugs
+            ? (preferences?.magic_prompt_efforts.automate_github_bugs_effort ??
+              undefined)
+            : (preferences?.magic_prompt_efforts
+                .automate_security_advisories_effort ?? undefined),
+          customProfileName: resolveMagicPromptProvider(
+            preferences?.magic_prompt_providers,
+            isBugs
+              ? 'automate_github_bugs_provider'
+              : 'automate_security_advisories_provider',
+            preferences?.default_provider
+          ),
+          backend: isBugs
+            ? (preferences?.magic_prompt_backends
+                ?.automate_github_bugs_backend ?? undefined)
+            : (preferences?.magic_prompt_backends
+                ?.automate_security_advisories_backend ?? undefined),
+        })
+        queryClient.invalidateQueries({
+          queryKey: chatQueryKeys.sessions(selectedWorktreeId),
+        })
         setMagicModalOpen(false)
         return
       }

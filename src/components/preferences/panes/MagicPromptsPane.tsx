@@ -51,6 +51,8 @@ import {
   DEFAULT_RELEASE_NOTES_PROMPT,
   DEFAULT_RELEASE_POST_PROMPT,
   DEFAULT_REVIEW_COMMENTS_PROMPT,
+  DEFAULT_AUTOMATE_GITHUB_BUGS_PROMPT,
+  DEFAULT_AUTOMATE_SECURITY_ADVISORIES_PROMPT,
   DEFAULT_AUTOMATION_RUN_PROMPT,
   DEFAULT_SESSION_NAMING_PROMPT,
   DEFAULT_SESSION_RECAP_PROMPT,
@@ -111,6 +113,37 @@ interface PromptSection {
 }
 
 const PROMPT_SECTIONS: PromptSection[] = [
+  {
+    label: 'Automation',
+    configs: [
+      {
+        key: 'automate_github_bugs',
+        modelKey: 'automate_github_bugs_model',
+        effortKey: 'automate_github_bugs_effort',
+        providerKey: 'automate_github_bugs_provider',
+        backendKey: 'automate_github_bugs_backend',
+        label: 'Automate GitHub Bugs',
+        description:
+          'Triages open bug/fix issues and starts one investigation worktree per valid issue.',
+        variables: [{ name: '{projectId}', description: 'Current project ID' }],
+        defaultValue: DEFAULT_AUTOMATE_GITHUB_BUGS_PROMPT,
+        defaultModel: 'claude-opus-4-8[1m]',
+      },
+      {
+        key: 'automate_security_advisories',
+        modelKey: 'automate_security_advisories_model',
+        effortKey: 'automate_security_advisories_effort',
+        providerKey: 'automate_security_advisories_provider',
+        backendKey: 'automate_security_advisories_backend',
+        label: 'Automate Security Advisories',
+        description:
+          'Triages repository advisories and starts one investigation worktree per actionable GHSA.',
+        variables: [{ name: '{projectId}', description: 'Current project ID' }],
+        defaultValue: DEFAULT_AUTOMATE_SECURITY_ADVISORIES_PROMPT,
+        defaultModel: 'claude-opus-4-8[1m]',
+      },
+    ],
+  },
   {
     label: 'Investigation',
     configs: [

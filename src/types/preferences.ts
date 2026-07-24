@@ -68,6 +68,10 @@ export interface MagicPrompts {
   investigate_sentry_issue: string | null
   /** Prompt for addressing inline PR review comments */
   review_comments: string | null
+  /** Prompt for automating triage of GitHub bug issues */
+  automate_github_bugs: string | null
+  /** Prompt for automating repository security advisories */
+  automate_security_advisories: string | null
   /** Prompt wrapper sent when automation runs start */
   automation_run: string | null
   /** Prompt sent when approving a plan in build mode */
@@ -732,6 +736,26 @@ export const DEFAULT_PLAN_APPROVAL_YOLO_PROMPT = `Plan approved (yolo mode). Beg
 
 export const DEFAULT_PLAN_APPROVAL_CODEX_PROMPT = `Execute the plan you created. Implement all changes described.`
 
+export const DEFAULT_AUTOMATE_GITHUB_BUGS_PROMPT = `<task>Automate triage of open GitHub bug/fix issues for this project, then start an investigation in a separate worktree for each valid issue.</task>
+
+<context>Current projectId: {projectId}. You are an orchestrator: do not implement fixes in this session.</context>
+
+<instructions>
+1. Call list_github_issues with projectId and state="open". Select at most 5 high-confidence bugs/fixes; exclude features, duplicates, closed/obsolete issues, and issues with an existing Jean worktree.
+2. For each remaining issue, call create_worktree with projectId, issueNumber, and action="start_autoinvestigating".
+3. Report started and skipped issues with reasons and any tool errors.
+</instructions>`
+
+export const DEFAULT_AUTOMATE_SECURITY_ADVISORIES_PROMPT = `<task>Automate triage of repository security advisories for this project, then start an investigation in a separate worktree for each actionable advisory.</task>
+
+<context>Current projectId: {projectId}. You are an orchestrator: do not implement fixes in this session.</context>
+
+<instructions>
+1. Call list_security_advisories with projectId and state="all". Select at most 5 actionable advisories; skip resolved, duplicate, or already-investigated GHSA IDs.
+2. For each remaining advisory, call create_worktree with projectId, ghsaId, and action="start_autoinvestigating".
+3. Report started and skipped advisories with reasons and any tool errors.
+</instructions>`
+
 /** Default values for all magic prompts (null = use current app default) */
 export const DEFAULT_MAGIC_PROMPTS: MagicPrompts = {
   investigate_issue: null,
@@ -756,6 +780,8 @@ export const DEFAULT_MAGIC_PROMPTS: MagicPrompts = {
   investigate_linear_issue: null,
   investigate_sentry_issue: null,
   review_comments: null,
+  automate_github_bugs: null,
+  automate_security_advisories: null,
   automation_run: null,
   plan_approval_build: null,
   plan_approval_yolo: null,
@@ -783,6 +809,8 @@ export interface MagicPromptModels {
   investigate_linear_issue_model: MagicPromptModel
   investigate_sentry_issue_model: MagicPromptModel
   review_comments_model: MagicPromptModel
+  automate_github_bugs_model: MagicPromptModel
+  automate_security_advisories_model: MagicPromptModel
 }
 
 /**
@@ -807,6 +835,8 @@ export interface MagicPromptReasoningEfforts {
   investigate_linear_issue_effort: MagicPromptReasoningEffort
   investigate_sentry_issue_effort: MagicPromptReasoningEffort
   review_comments_effort: MagicPromptReasoningEffort
+  automate_github_bugs_effort: MagicPromptReasoningEffort
+  automate_security_advisories_effort: MagicPromptReasoningEffort
 }
 
 /** Default models for each magic prompt */
@@ -828,6 +858,8 @@ export const DEFAULT_MAGIC_PROMPT_MODELS: MagicPromptModels = {
   investigate_linear_issue_model: 'claude-opus-4-8[1m]',
   investigate_sentry_issue_model: 'claude-opus-4-8[1m]',
   review_comments_model: 'claude-opus-4-8[1m]',
+  automate_github_bugs_model: 'claude-opus-4-8[1m]',
+  automate_security_advisories_model: 'claude-opus-4-8[1m]',
 }
 
 /** Codex preset: heavy tasks use top model, light tasks use mini */
@@ -849,6 +881,8 @@ export const CODEX_DEFAULT_MAGIC_PROMPT_MODELS: MagicPromptModels = {
   investigate_linear_issue_model: 'gpt-5.4',
   investigate_sentry_issue_model: 'gpt-5.4',
   review_comments_model: 'gpt-5.4',
+  automate_github_bugs_model: 'gpt-5.4',
+  automate_security_advisories_model: 'gpt-5.4',
 }
 
 /** OpenCode preset for all magic prompts */
@@ -870,6 +904,8 @@ export const OPENCODE_DEFAULT_MAGIC_PROMPT_MODELS: MagicPromptModels = {
   investigate_linear_issue_model: 'opencode/gpt-5.3-codex',
   investigate_sentry_issue_model: 'opencode/gpt-5.3-codex',
   review_comments_model: 'opencode/gpt-5.3-codex',
+  automate_github_bugs_model: 'opencode/gpt-5.3-codex',
+  automate_security_advisories_model: 'opencode/gpt-5.3-codex',
 }
 
 /** Default reasoning efforts for Claude backend (null = use model default) */
@@ -891,6 +927,8 @@ export const DEFAULT_MAGIC_PROMPT_EFFORTS: MagicPromptReasoningEfforts = {
   investigate_linear_issue_effort: null,
   investigate_sentry_issue_effort: null,
   review_comments_effort: null,
+  automate_github_bugs_effort: null,
+  automate_security_advisories_effort: null,
 }
 
 /** Codex preset: heavier reasoning for investigations, lighter for simple generation */
@@ -912,6 +950,8 @@ export const CODEX_DEFAULT_MAGIC_PROMPT_EFFORTS: MagicPromptReasoningEfforts = {
   investigate_linear_issue_effort: 'medium',
   investigate_sentry_issue_effort: 'medium',
   review_comments_effort: 'medium',
+  automate_github_bugs_effort: 'medium',
+  automate_security_advisories_effort: 'medium',
 }
 
 /** OpenCode preset: same as Codex */
@@ -952,6 +992,8 @@ export interface MagicPromptProviders {
   investigate_linear_issue_provider: string | null
   investigate_sentry_issue_provider: string | null
   review_comments_provider: string | null
+  automate_github_bugs_provider: string | null
+  automate_security_advisories_provider: string | null
 }
 
 /** Default providers for each magic prompt (null = use global default_provider) */
@@ -973,6 +1015,8 @@ export const DEFAULT_MAGIC_PROMPT_PROVIDERS: MagicPromptProviders = {
   investigate_linear_issue_provider: null,
   investigate_sentry_issue_provider: null,
   review_comments_provider: null,
+  automate_github_bugs_provider: null,
+  automate_security_advisories_provider: null,
 }
 
 /**
@@ -998,6 +1042,8 @@ export interface MagicPromptBackends {
   investigate_linear_issue_backend: string | null
   investigate_sentry_issue_backend: string | null
   review_comments_backend: string | null
+  automate_github_bugs_backend: string | null
+  automate_security_advisories_backend: string | null
 }
 
 /** Default backends for each magic prompt (null = use project/global default_backend) */
@@ -1019,6 +1065,8 @@ export const DEFAULT_MAGIC_PROMPT_BACKENDS: MagicPromptBackends = {
   investigate_linear_issue_backend: null,
   investigate_sentry_issue_backend: null,
   review_comments_backend: null,
+  automate_github_bugs_backend: null,
+  automate_security_advisories_backend: null,
 }
 
 function makeBackendsPreset(backend: string): MagicPromptBackends {
@@ -1040,6 +1088,8 @@ function makeBackendsPreset(backend: string): MagicPromptBackends {
     investigate_linear_issue_backend: backend,
     investigate_sentry_issue_backend: backend,
     review_comments_backend: backend,
+    automate_github_bugs_backend: backend,
+    automate_security_advisories_backend: backend,
   }
 }
 
@@ -1737,7 +1787,13 @@ const allTerminalOptions: {
 export const terminalOptions: { value: TerminalApp; label: string }[] =
   allTerminalOptions.filter(opt => opt.platforms.includes(getCurrentPlatform()))
 
-export type BuiltinEditorId = 'zed' | 'vscode' | 'cursor' | 'xcode' | 'intellij'
+export type BuiltinEditorId =
+  | 'zed'
+  | 'vscode'
+  | 'vscodium'
+  | 'cursor'
+  | 'xcode'
+  | 'intellij'
 
 export type EditorApp = BuiltinEditorId | (string & {})
 
@@ -1768,6 +1824,16 @@ export const builtinEditorConfigs: EditorConfigOption[] = [
     label: 'VS Code',
     platforms: ['mac', 'windows', 'linux'],
     command: 'code',
+    args: ['--disable-workspace-trust', '{path}'],
+    supports_line_number: true,
+    line_number_args: ['--disable-workspace-trust', '-g', '{path}:{line}'],
+    builtin: true,
+  },
+  {
+    value: 'vscodium',
+    label: 'VSCodium',
+    platforms: ['mac', 'windows', 'linux'],
+    command: 'codium',
     args: ['--disable-workspace-trust', '{path}'],
     supports_line_number: true,
     line_number_args: ['--disable-workspace-trust', '-g', '{path}:{line}'],

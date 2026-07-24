@@ -96,4 +96,5 @@ export interface DiffRequest {
   type: 'uncommitted' | 'branch'
   worktreePath: string
   baseBranch: string
+  baseRemote?: string
 }

@@ -25,14 +25,20 @@ const RATE_LIMITED_TOOLS: &[&str] = &[
     "archive_worktree",
     "cancel_session_run",
     "clone_project",
+    "create_commit",
+    "create_pull_request",
     "create_session",
     "create_worktree",
     "create_worktree_from_existing_branch",
     "delete_worktree",
+    "detect_open_pr",
     "import_worktree",
     "init_project",
     "link_pr_to_worktree",
+    "merge_pull_request",
     "permanently_delete_worktree",
+    "push_worktree",
+    "run_review",
     "send_chat_message",
     "unarchive_worktree",
 ];
@@ -136,6 +142,14 @@ pub fn handle_protocol_message(
 }
 
 pub fn tool_registry() -> Value {
+    let mut tools = tool_registry_core().as_array().cloned().unwrap_or_default();
+    if let Some(shipping_tools) = tool_registry_shipping().as_array() {
+        tools.extend(shipping_tools.iter().cloned());
+    }
+    Value::Array(tools)
+}
+
+fn tool_registry_core() -> Value {
     json!([
         {"name":"list_projects","description":"List all Jean projects (id, name, path, default_branch).","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},
         {"name":"add_project","description":"Add an existing local git repository as a Jean project.","inputSchema":{"type":"object","properties":{"path":{"type":"string"},"parentId":{"type":"string"}},"required":["path"],"additionalProperties":false}},
@@ -150,7 +164,7 @@ pub fn tool_registry() -> Value {
         {"name":"list_security_issues","description":"List Dependabot security alerts for a project using the same backend command as the UI. Pass projectId; the server resolves the repo path.","inputSchema":{"type":"object","properties":{"projectId":{"type":"string"},"state":{"type":"string","enum":["open","dismissed","fixed","auto_dismissed","all"],"default":"open"}},"required":["projectId"],"additionalProperties":false}},
         {"name":"list_security_advisories","description":"List repository security advisories for a project using the same backend command as the UI. Pass projectId; the server resolves the repo path.","inputSchema":{"type":"object","properties":{"projectId":{"type":"string"},"state":{"type":"string","enum":["draft","published","triage","closed","all"],"default":"all"}},"required":["projectId"],"additionalProperties":false}},
         {"name":"list_linear_issues","description":"List Linear issues for a project using the same backend command as the UI. Pass projectId; Linear API config is resolved from project/global settings.","inputSchema":{"type":"object","properties":{"projectId":{"type":"string"}},"required":["projectId"],"additionalProperties":false}},
-        {"name":"create_worktree","description":"Create a new worktree for a project. Provide issueNumber or prNumber for a GitHub issue/PR, or linearIssueIdentifier (e.g. \"PLA-215\") for a Linear issue; these are mutually exclusive. Jean fetches the chosen context and attaches it to the worktree, reusing the same branch naming and context-loading as the Jean UI. Pass action=\"start_autoinvestigating\" to create a session and start investigating the issue/PR/Linear issue with the Magic Prompts settings default backend/model. This never switches/opens Jean's UI unless the user opens the worktree separately.","inputSchema":{"type":"object","properties":{"projectId":{"type":"string"},"baseBranch":{"type":"string"},"customName":{"type":"string"},"issueNumber":{"type":"integer","minimum":1},"prNumber":{"type":"integer","minimum":1},"linearIssueIdentifier":{"type":"string","description":"Linear issue identifier like \"PLA-215\". Mutually exclusive with issueNumber/prNumber."},"action":{"type":"string","enum":["start_autoinvestigating"]}},"required":["projectId"],"additionalProperties":false}},
+        {"name":"create_worktree","description":"Create a new worktree for a project. Provide issueNumber, prNumber, linearIssueIdentifier, or ghsaId for a repository security advisory; these are mutually exclusive. Jean fetches the chosen context and attaches it to the worktree. Pass action=\"start_autoinvestigating\" to create a session and start investigating it. This never switches/opens Jean's UI unless the user opens the worktree separately.","inputSchema":{"type":"object","properties":{"projectId":{"type":"string"},"baseBranch":{"type":"string"},"customName":{"type":"string"},"issueNumber":{"type":"integer","minimum":1},"prNumber":{"type":"integer","minimum":1},"linearIssueIdentifier":{"type":"string"},"ghsaId":{"type":"string","description":"Repository security advisory identifier like GHSA-xxxx-xxxx-xxxx."},"action":{"type":"string","enum":["start_autoinvestigating"]}},"required":["projectId"],"additionalProperties":false}},
         {"name":"create_worktree_from_existing_branch","description":"Create a Jean worktree from an existing local or remote-tracking branch. Does not open Jean's UI.","inputSchema":{"type":"object","properties":{"projectId":{"type":"string"},"branchName":{"type":"string"}},"required":["projectId","branchName"],"additionalProperties":false}},
         {"name":"import_worktree","description":"Import an existing git worktree/directory on disk into a Jean project.","inputSchema":{"type":"object","properties":{"projectId":{"type":"string"},"path":{"type":"string"}},"required":["projectId","path"],"additionalProperties":false}},
         {"name":"rename_worktree","description":"Rename a worktree's display name in Jean.","inputSchema":{"type":"object","properties":{"worktreeId":{"type":"string"},"newName":{"type":"string"}},"required":["worktreeId","newName"],"additionalProperties":false}},
@@ -168,6 +182,17 @@ pub fn tool_registry() -> Value {
         {"name":"get_worktree_changes","description":"Get a bounded summary of a worktree's git changes: porcelain status, ahead/behind counts, diff stats, and changed files. Does not return full diffs.","inputSchema":{"type":"object","properties":{"worktreeId":{"type":"string"},"maxFiles":{"type":"integer","minimum":1,"maximum":500,"default":100}},"required":["worktreeId"],"additionalProperties":false}},
         {"name":"get_worktree_diff","description":"Get a bounded unified git diff for a worktree. diffType is uncommitted (HEAD vs working tree) or branch (origin/base...HEAD). Optional path limits to one pathspec; maxBytes is capped.","inputSchema":{"type":"object","properties":{"worktreeId":{"type":"string"},"diffType":{"type":"string","enum":["uncommitted","branch"],"default":"uncommitted"},"path":{"type":"string"},"maxBytes":{"type":"integer","minimum":1,"maximum":200000,"default":60000}},"required":["worktreeId"],"additionalProperties":false}},
         {"name":"get_current_context","description":"Return the calling session's context: sessionId, worktreeId, projectId, projectPath, projectName. Use this so the agent knows what 'this project' refers to without guessing.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}}
+    ])
+}
+
+fn tool_registry_shipping() -> Value {
+    json!([
+        {"name":"create_commit","description":"Stage changes and create a git commit with an AI-generated message. Optional push after commit. Use specificFiles to stage only selected paths; omit to stage all.","inputSchema":{"type":"object","properties":{"worktreeId":{"type":"string"},"push":{"type":"boolean","default":false},"remote":{"type":"string"},"prNumber":{"type":"integer","minimum":1},"specificFiles":{"type":"array","items":{"type":"string"}},"customPrompt":{"type":"string"},"model":{"type":"string"},"reasoningEffort":{"type":"string"}},"required":["worktreeId"],"additionalProperties":false}},
+        {"name":"push_worktree","description":"Push the current branch for a worktree. Optionally pass prNumber for PR-aware push.","inputSchema":{"type":"object","properties":{"worktreeId":{"type":"string"},"remote":{"type":"string"},"prNumber":{"type":"integer","minimum":1}},"required":["worktreeId"],"additionalProperties":false}},
+        {"name":"detect_open_pr","description":"Detect and link the GitHub pull request for a worktree's current branch in Jean. Returns the PR or an error when none exists.","inputSchema":{"type":"object","properties":{"worktreeId":{"type":"string"}},"required":["worktreeId"],"additionalProperties":false}},
+        {"name":"create_pull_request","description":"Create a GitHub PR for the worktree with AI-generated title and body. Stages and commits uncommitted changes when needed, then pushes the branch.","inputSchema":{"type":"object","properties":{"worktreeId":{"type":"string"},"sessionId":{"type":"string"},"customPrompt":{"type":"string"},"model":{"type":"string"},"reasoningEffort":{"type":"string"}},"required":["worktreeId"],"additionalProperties":false}},
+        {"name":"merge_pull_request","description":"Merge the open GitHub PR for the worktree's current branch using the repository's allowed merge method.","inputSchema":{"type":"object","properties":{"worktreeId":{"type":"string"}},"required":["worktreeId"],"additionalProperties":false}},
+        {"name":"run_review","description":"Run Jean's AI code review on the worktree branch. Does not commit or open a PR.","inputSchema":{"type":"object","properties":{"worktreeId":{"type":"string"},"customPrompt":{"type":"string"},"model":{"type":"string"},"reasoningEffort":{"type":"string"}},"required":["worktreeId"],"additionalProperties":false}}
     ])
 }
 
@@ -301,6 +326,154 @@ async fn run_tool(
 
             Ok(result)
         }
+        "create_commit" => {
+            let worktree_id = require_str(&args, "worktreeId")?;
+            let worktree_path = resolve_worktree_path(app, &worktree_id)?;
+            let push = args
+                .get("push")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false);
+            let remote = optional_str(&args, "remote");
+            let pr_number = args
+                .get("prNumber")
+                .or_else(|| args.get("pr_number"))
+                .and_then(|value| value.as_u64())
+                .map(|number| number as u32);
+            let specific_files = args
+                .get("specificFiles")
+                .or_else(|| args.get("specific_files"))
+                .and_then(|value| value.as_array())
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|item| item.as_str().map(str::to_string))
+                        .collect::<Vec<_>>()
+                })
+                .filter(|files| !files.is_empty());
+            let custom_prompt = optional_str(&args, "customPrompt")
+                .or_else(|| optional_str(&args, "custom_prompt"));
+            let model = optional_str(&args, "model");
+            let reasoning_effort = optional_str(&args, "reasoningEffort")
+                .or_else(|| optional_str(&args, "reasoning_effort"));
+            let mut payload = serde_json::Map::new();
+            payload.insert("worktreePath".to_string(), Value::String(worktree_path));
+            payload.insert("push".to_string(), Value::Bool(push));
+            if let Some(remote) = remote {
+                payload.insert("remote".to_string(), Value::String(remote));
+            }
+            if let Some(pr_number) = pr_number {
+                payload.insert("prNumber".to_string(), json!(pr_number));
+            }
+            if let Some(files) = specific_files {
+                payload.insert("specificFiles".to_string(), json!(files));
+            }
+            if let Some(prompt) = custom_prompt {
+                payload.insert("customPrompt".to_string(), Value::String(prompt));
+            }
+            if let Some(model) = model {
+                payload.insert("model".to_string(), Value::String(model));
+            }
+            if let Some(effort) = reasoning_effort {
+                payload.insert("reasoningEffort".to_string(), Value::String(effort));
+            }
+            dispatch_command(app, "create_commit_with_ai", Value::Object(payload))
+                .await
+                .map_err(ToolError::internal)
+        }
+        "push_worktree" => {
+            let worktree_id = require_str(&args, "worktreeId")?;
+            let worktree_path = resolve_worktree_path(app, &worktree_id)?;
+            let remote = optional_str(&args, "remote");
+            let pr_number = args
+                .get("prNumber")
+                .or_else(|| args.get("pr_number"))
+                .and_then(|value| value.as_u64())
+                .map(|number| number as u32);
+            let mut payload = serde_json::Map::new();
+            payload.insert("worktreePath".to_string(), Value::String(worktree_path));
+            if let Some(remote) = remote {
+                payload.insert("remote".to_string(), Value::String(remote));
+            }
+            if let Some(pr_number) = pr_number {
+                payload.insert("prNumber".to_string(), json!(pr_number));
+            }
+            dispatch_command(app, "git_push", Value::Object(payload))
+                .await
+                .map_err(ToolError::internal)
+        }
+        "detect_open_pr" => {
+            let worktree_id = require_str(&args, "worktreeId")?;
+            let worktree_path = resolve_worktree_path(app, &worktree_id)?;
+            dispatch_command(
+                app,
+                "detect_and_link_pr",
+                json!({ "worktreeId": worktree_id, "worktreePath": worktree_path }),
+            )
+            .await
+            .map_err(ToolError::internal)
+        }
+        "create_pull_request" => {
+            let worktree_id = require_str(&args, "worktreeId")?;
+            let worktree_path = resolve_worktree_path(app, &worktree_id)?;
+            let session_id =
+                optional_str(&args, "sessionId").or_else(|| optional_str(&args, "session_id"));
+            let custom_prompt = optional_str(&args, "customPrompt")
+                .or_else(|| optional_str(&args, "custom_prompt"));
+            let model = optional_str(&args, "model");
+            let reasoning_effort = optional_str(&args, "reasoningEffort")
+                .or_else(|| optional_str(&args, "reasoning_effort"));
+            let mut payload = serde_json::Map::new();
+            payload.insert("worktreePath".to_string(), Value::String(worktree_path));
+            if let Some(session_id) = session_id {
+                payload.insert("sessionId".to_string(), Value::String(session_id));
+            }
+            if let Some(prompt) = custom_prompt {
+                payload.insert("customPrompt".to_string(), Value::String(prompt));
+            }
+            if let Some(model) = model {
+                payload.insert("model".to_string(), Value::String(model));
+            }
+            if let Some(effort) = reasoning_effort {
+                payload.insert("reasoningEffort".to_string(), Value::String(effort));
+            }
+            dispatch_command(app, "create_pr_with_ai_content", Value::Object(payload))
+                .await
+                .map_err(ToolError::internal)
+        }
+        "merge_pull_request" => {
+            let worktree_id = require_str(&args, "worktreeId")?;
+            let worktree_path = resolve_worktree_path(app, &worktree_id)?;
+            dispatch_command(
+                app,
+                "merge_github_pr",
+                json!({ "worktreePath": worktree_path }),
+            )
+            .await
+            .map_err(ToolError::internal)
+        }
+        "run_review" => {
+            let worktree_id = require_str(&args, "worktreeId")?;
+            let worktree_path = resolve_worktree_path(app, &worktree_id)?;
+            let custom_prompt = optional_str(&args, "customPrompt")
+                .or_else(|| optional_str(&args, "custom_prompt"));
+            let model = optional_str(&args, "model");
+            let reasoning_effort = optional_str(&args, "reasoningEffort")
+                .or_else(|| optional_str(&args, "reasoning_effort"));
+            let mut payload = serde_json::Map::new();
+            payload.insert("worktreePath".to_string(), Value::String(worktree_path));
+            if let Some(prompt) = custom_prompt {
+                payload.insert("magicPrompt".to_string(), Value::String(prompt));
+            }
+            if let Some(model) = model {
+                payload.insert("model".to_string(), Value::String(model));
+            }
+            if let Some(effort) = reasoning_effort {
+                payload.insert("reasoningEffort".to_string(), Value::String(effort));
+            }
+            dispatch_command(app, "run_review_with_ai", Value::Object(payload))
+                .await
+                .map_err(ToolError::internal)
+        }
         "get_project_context" => {
             let project_id = require_str(&args, "projectId")?;
             get_project_context(app, &project_id)
@@ -393,10 +566,18 @@ async fn run_tool(
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
                 .map(str::to_string);
+            let ghsa_id = args
+                .get("ghsaId")
+                .or_else(|| args.get("ghsa_id"))
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string);
             validate_create_worktree_inputs(
                 issue_number.is_some(),
                 pr_number.is_some(),
                 linear_identifier.is_some(),
+                ghsa_id.is_some(),
                 action,
             )?;
 
@@ -414,7 +595,8 @@ async fn run_tool(
             // causes the normal UI path to create its default session in addition to
             // the autoinvestigation session, so keep MCP-created worktrees background-only.
             payload.insert("autoOpenInJean".to_string(), Value::Bool(false));
-            let project_path = if issue_number.is_some() || pr_number.is_some() {
+            let project_path = if issue_number.is_some() || pr_number.is_some() || ghsa_id.is_some()
+            {
                 Some(resolve_project_path(app, &project_id)?)
             } else {
                 None
@@ -474,6 +656,30 @@ async fn run_tool(
                         "comments": detail.get("comments").cloned().unwrap_or(json!([])),
                         "reviews": detail.get("reviews").cloned().unwrap_or(json!([])),
                         "diff": Value::Null,
+                    }),
+                );
+            }
+            if let Some(ref ghsa_id) = ghsa_id {
+                let project_path = project_path.clone().ok_or_else(|| {
+                    ToolError::internal("missing project_path for advisory fetch")
+                })?;
+                let detail = dispatch_command(
+                    app,
+                    "get_repository_advisory",
+                    json!({ "projectPath": project_path, "ghsaId": ghsa_id }),
+                )
+                .await
+                .map_err(ToolError::internal)?;
+                payload.insert(
+                    "advisoryContext".to_string(),
+                    json!({
+                        "ghsaId": detail.get("ghsaId").cloned().unwrap_or(json!(ghsa_id)),
+                        "severity": detail.get("severity").cloned().unwrap_or(json!("unknown")),
+                        "summary": detail.get("summary").cloned().unwrap_or(Value::Null),
+                        "description": detail.get("description").cloned().unwrap_or(json!("")),
+                        "cveId": detail.get("cveId").cloned().unwrap_or(Value::Null),
+                        "vulnerabilities": detail.get("vulnerabilities").cloned().unwrap_or(json!([])),
+                        "htmlUrl": detail.get("htmlUrl").cloned().unwrap_or(Value::Null),
                     }),
                 );
             }
@@ -550,6 +756,8 @@ async fn run_tool(
                     InvestigationKind::Issue
                 } else if linear_identifier.is_some() {
                     InvestigationKind::Linear
+                } else if ghsa_id.is_some() {
+                    InvestigationKind::Advisory
                 } else {
                     InvestigationKind::Pr
                 };
@@ -940,6 +1148,7 @@ fn validate_create_worktree_inputs(
     has_issue: bool,
     has_pr: bool,
     has_linear: bool,
+    has_advisory: bool,
     action: Option<&str>,
 ) -> Result<(), ToolError> {
     if has_issue && has_pr {
@@ -952,9 +1161,19 @@ fn validate_create_worktree_inputs(
             "Pass a GitHub issueNumber/prNumber or a linearIssueIdentifier, not both",
         ));
     }
-    if action == Some("start_autoinvestigating") && !has_issue && !has_pr && !has_linear {
+    if has_advisory && (has_issue || has_pr || has_linear) {
         return Err(ToolError::invalid_params(
-            "action=start_autoinvestigating requires issueNumber, prNumber, or linearIssueIdentifier",
+            "Pass a GitHub issueNumber/prNumber, linearIssueIdentifier, or ghsaId, not both",
+        ));
+    }
+    if action == Some("start_autoinvestigating")
+        && !has_issue
+        && !has_pr
+        && !has_linear
+        && !has_advisory
+    {
+        return Err(ToolError::invalid_params(
+            "action=start_autoinvestigating requires issueNumber, prNumber, linearIssueIdentifier, or ghsaId",
         ));
     }
     Ok(())
@@ -973,6 +1192,7 @@ enum InvestigationKind {
     Issue,
     Pr,
     Linear,
+    Advisory,
 }
 
 #[derive(Debug)]
@@ -1112,13 +1332,31 @@ pub async fn start_background_investigation_impl(
         Some(false),
     )
     .await?;
-    let session_id = sessions
+    let session_id = match sessions
         .active_session_id
         .clone()
         .or_else(|| sessions.sessions.first().map(|session| session.id.clone()))
-        .ok_or_else(|| {
-            format!("Background investigation: no session found for worktree {worktree_id}")
-        })?;
+    {
+        Some(id) => id,
+        None => crate::chat::create_session(
+            app.clone(),
+            worktree_id.clone(),
+            worktree_path.clone(),
+            None,
+            Some(backend.clone()),
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .map_err(|error| {
+            format!(
+                "Background investigation: failed to create session for worktree {worktree_id}: {error}"
+            )
+        })?
+        .id,
+    };
 
     crate::chat::set_session_model(
         app.clone(),
@@ -1161,6 +1399,8 @@ pub async fn start_background_investigation_impl(
     // Persist before returning so a transient send race or app reload cannot
     // leave the newly-created session without its investigation prompt. The
     // backend queue drain starts immediately and requeues lost send races.
+    // The set_session_* calls materialize metadata for newly-created sessions,
+    // allowing enqueue_message to persist the prompt immediately.
     crate::chat::enqueue_message(
         app.clone(),
         worktree_id.clone(),
@@ -1245,6 +1485,7 @@ fn resolve_investigation_selection(
             .magic_prompt_models
             .investigate_linear_issue_model
             .clone(),
+        InvestigationKind::Advisory => prefs.magic_prompt_models.investigate_advisory_model.clone(),
     };
     let magic_backend = match kind {
         InvestigationKind::Issue => prefs
@@ -1258,6 +1499,10 @@ fn resolve_investigation_selection(
         InvestigationKind::Linear => prefs
             .magic_prompt_backends
             .investigate_linear_issue_backend
+            .as_deref(),
+        InvestigationKind::Advisory => prefs
+            .magic_prompt_backends
+            .investigate_advisory_backend
             .as_deref(),
     };
     let provider = match kind {
@@ -1276,6 +1521,11 @@ fn resolve_investigation_selection(
             .investigate_linear_issue_provider
             .clone()
             .or_else(|| prefs.default_provider.clone()),
+        InvestigationKind::Advisory => prefs
+            .magic_prompt_providers
+            .investigate_advisory_provider
+            .clone()
+            .or_else(|| prefs.default_provider.clone()),
     };
     let effort = match kind {
         InvestigationKind::Issue => prefs.magic_prompt_efforts.investigate_issue_effort.clone(),
@@ -1283,6 +1533,10 @@ fn resolve_investigation_selection(
         InvestigationKind::Linear => prefs
             .magic_prompt_efforts
             .investigate_linear_issue_effort
+            .clone(),
+        InvestigationKind::Advisory => prefs
+            .magic_prompt_efforts
+            .investigate_advisory_effort
             .clone(),
     }
     .or_else(|| Some(prefs.default_codex_reasoning_effort.clone()));
@@ -1365,6 +1619,22 @@ fn build_investigation_prompt(
                 .replace("{linearWord}", "issue")
                 .replace("{linearRefs}", &identifier)
                 .replace("{linearContext}", "")
+        }
+        InvestigationKind::Advisory => {
+            let ghsa_id = worktree
+                .get("advisory_ghsa_id")
+                .or_else(|| worktree.get("advisoryGhsaId"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("the loaded security advisory");
+            let template = prefs
+                .magic_prompts
+                .investigate_advisory
+                .clone()
+                .filter(|p| !p.trim().is_empty())
+                .unwrap_or_else(crate::default_investigate_advisory_prompt);
+            template
+                .replace("{advisoryWord}", "advisory")
+                .replace("{advisoryRefs}", ghsa_id)
         }
     }
 }
@@ -1519,13 +1789,19 @@ mod tests {
             create_worktree["inputSchema"]["properties"]["linearIssueIdentifier"]["type"],
             "string"
         );
+        assert_eq!(
+            create_worktree["inputSchema"]["properties"]["ghsaId"]["type"],
+            "string"
+        );
     }
 
     #[test]
     fn validate_create_worktree_inputs_rejects_mixed_context_sources() {
-        assert!(validate_create_worktree_inputs(true, true, false, None).is_err());
-        assert!(validate_create_worktree_inputs(true, false, true, None).is_err());
+        assert!(validate_create_worktree_inputs(true, true, false, false, None).is_err());
+        assert!(validate_create_worktree_inputs(true, false, true, false, None).is_err());
+        assert!(validate_create_worktree_inputs(true, false, false, true, None).is_err());
         assert!(validate_create_worktree_inputs(
+            false,
             false,
             false,
             false,
@@ -1533,6 +1809,15 @@ mod tests {
         )
         .is_err());
         assert!(validate_create_worktree_inputs(
+            false,
+            false,
+            true,
+            false,
+            Some("start_autoinvestigating")
+        )
+        .is_ok());
+        assert!(validate_create_worktree_inputs(
+            false,
             false,
             false,
             true,
@@ -1619,6 +1904,57 @@ mod tests {
         assert!(list_archived["inputSchema"]["properties"]
             .get("projectId")
             .is_some());
+    }
+
+    #[test]
+    fn tool_registry_includes_worktree_shipping_tools() {
+        let tools = tool_registry();
+        let names: std::collections::HashSet<&str> = tools
+            .as_array()
+            .expect("tools array")
+            .iter()
+            .filter_map(|item| item.get("name").and_then(|name| name.as_str()))
+            .collect();
+
+        for expected in [
+            "create_commit",
+            "push_worktree",
+            "detect_open_pr",
+            "create_pull_request",
+            "merge_pull_request",
+            "run_review",
+        ] {
+            assert!(names.contains(expected), "missing MCP tool {expected}");
+        }
+
+        let create_commit = find_tool(&tools, "create_commit");
+        assert_eq!(
+            create_commit["inputSchema"]["required"],
+            json!(["worktreeId"])
+        );
+        assert_eq!(
+            create_commit["inputSchema"]["properties"]["push"]["type"],
+            "boolean"
+        );
+
+        let create_pr = find_tool(&tools, "create_pull_request");
+        assert!(create_pr["inputSchema"]["properties"]
+            .get("sessionId")
+            .is_some());
+
+        for limited in [
+            "create_commit",
+            "create_pull_request",
+            "detect_open_pr",
+            "merge_pull_request",
+            "push_worktree",
+            "run_review",
+        ] {
+            assert!(
+                RATE_LIMITED_TOOLS.contains(&limited),
+                "shipping tool {limited} must be rate-limited"
+            );
+        }
     }
 
     #[test]

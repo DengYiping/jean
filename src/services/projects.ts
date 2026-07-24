@@ -2208,6 +2208,28 @@ export function useGitHubRemotes(repoPath: string | null, enabled: boolean) {
   })
 }
 
+export interface ProjectRemote {
+  name: string
+}
+
+export function useProjectRemotes(
+  repoPath: string | null | undefined,
+  branch: string | null | undefined
+) {
+  return useQuery({
+    queryKey: ['project-remotes', repoPath ?? null, branch ?? null] as const,
+    queryFn: () =>
+      repoPath && branch
+        ? invoke<string[]>('list_remotes_with_branch', {
+            repoPath,
+            branch,
+          }).then(names => names.map(name => ({ name })))
+        : [],
+    enabled: isTauri() && !!repoPath && !!branch,
+    staleTime: 30_000,
+  })
+}
+
 /**
  * Hook to open a worktree in Finder
  */

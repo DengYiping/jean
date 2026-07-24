@@ -106,6 +106,7 @@ describe('git-status service', () => {
         worktreeId: 'wt-123',
         worktreePath: '/path/to/worktree',
         baseBranch: 'main',
+        baseRemote: 'fork',
         prNumber: 42,
         prUrl: 'https://github.com/org/repo/pull/42',
       }
@@ -118,6 +119,7 @@ describe('git-status service', () => {
           worktreeId: 'wt-123',
           worktreePath: '/path/to/worktree',
           baseBranch: 'main',
+          baseRemote: 'fork',
           prNumber: 42,
           prUrl: 'https://github.com/org/repo/pull/42',
         }
@@ -135,6 +137,7 @@ describe('git-status service', () => {
           worktreeId: null,
           worktreePath: null,
           baseBranch: null,
+          baseRemote: null,
           prNumber: null,
           prUrl: null,
         }
@@ -158,6 +161,7 @@ describe('git-status service', () => {
           worktreeId: 'wt-123',
           worktreePath: '/path/to/worktree',
           baseBranch: 'main',
+          baseRemote: null,
           prNumber: null,
           prUrl: null,
         }

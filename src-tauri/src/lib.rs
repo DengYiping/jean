@@ -1231,6 +1231,10 @@ pub struct MagicPrompts {
     #[serde(default)]
     pub review_comments: Option<String>,
     #[serde(default)]
+    pub automate_github_bugs: Option<String>,
+    #[serde(default)]
+    pub automate_security_advisories: Option<String>,
+    #[serde(default)]
     pub automation_run: Option<String>,
     #[serde(default)]
     pub plan_approval_build: Option<String>,
@@ -1817,6 +1821,10 @@ pub struct MagicPromptModels {
     pub investigate_sentry_issue_model: String,
     #[serde(default = "default_model")]
     pub review_comments_model: String,
+    #[serde(default = "default_model")]
+    pub automate_github_bugs_model: String,
+    #[serde(default = "default_model")]
+    pub automate_security_advisories_model: String,
 }
 
 fn default_lightweight_model() -> String {
@@ -1843,6 +1851,8 @@ impl Default for MagicPromptModels {
             investigate_linear_issue_model: default_model(),
             investigate_sentry_issue_model: default_model(),
             review_comments_model: default_model(),
+            automate_github_bugs_model: default_model(),
+            automate_security_advisories_model: default_model(),
         }
     }
 }
@@ -1944,6 +1954,10 @@ pub struct MagicPromptProviders {
     pub investigate_sentry_issue_provider: Option<String>,
     #[serde(default)]
     pub review_comments_provider: Option<String>,
+    #[serde(default)]
+    pub automate_github_bugs_provider: Option<String>,
+    #[serde(default)]
+    pub automate_security_advisories_provider: Option<String>,
 }
 
 /// Per-prompt backend overrides for magic prompts (None = use project/global default_backend)
@@ -1983,6 +1997,10 @@ pub struct MagicPromptBackends {
     pub investigate_sentry_issue_backend: Option<String>,
     #[serde(default)]
     pub review_comments_backend: Option<String>,
+    #[serde(default)]
+    pub automate_github_bugs_backend: Option<String>,
+    #[serde(default)]
+    pub automate_security_advisories_backend: Option<String>,
 }
 
 /// Per-prompt reasoning effort overrides for magic prompts (None = use model default)
@@ -2022,6 +2040,10 @@ pub struct MagicPromptReasoningEfforts {
     pub investigate_sentry_issue_effort: Option<String>,
     #[serde(default)]
     pub review_comments_effort: Option<String>,
+    #[serde(default)]
+    pub automate_github_bugs_effort: Option<String>,
+    #[serde(default)]
+    pub automate_security_advisories_effort: Option<String>,
 }
 
 impl MagicPrompts {
@@ -4621,6 +4643,7 @@ pub fn run() {
             projects::open_branch_on_github,
             projects::remove_git_remote,
             projects::get_git_remotes,
+            projects::list_remotes_with_branch,
             projects::get_github_remotes,
             projects::get_github_branch_url,
             projects::get_github_repo_url,

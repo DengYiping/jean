@@ -34,6 +34,7 @@ export function usePrWorktreeSweep(projects: Project[] | undefined) {
         worktreeId: string
         worktreePath: string
         baseBranch: string
+        baseRemote?: string
         prNumber: number
         prUrl: string
       }[] = []
@@ -42,6 +43,7 @@ export function usePrWorktreeSweep(projects: Project[] | undefined) {
         worktreeId: string
         worktreePath: string
         baseBranch: string
+        baseRemote?: string
       }[] = []
 
       for (const project of projects) {
@@ -60,6 +62,7 @@ export function usePrWorktreeSweep(projects: Project[] | undefined) {
             worktreeId: w.id,
             worktreePath: w.path,
             baseBranch: w.base_branch ?? project.default_branch ?? 'main',
+            baseRemote: w.base_remote,
           })
 
           // PR worktrees for PR status sweep
@@ -68,6 +71,7 @@ export function usePrWorktreeSweep(projects: Project[] | undefined) {
               worktreeId: w.id,
               worktreePath: w.path,
               baseBranch: w.base_branch ?? project.default_branch ?? 'main',
+              baseRemote: w.base_remote,
               prNumber: w.pr_number,
               prUrl: w.pr_url,
             })

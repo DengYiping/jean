@@ -64,6 +64,7 @@ export interface WorktreePollingInfo {
   worktreeId: string
   worktreePath: string
   baseBranch: string
+  baseRemote?: string
   /** GitHub PR number (if a PR has been created) */
   prNumber?: number
   /** GitHub PR URL (if a PR has been created) */
@@ -97,6 +98,7 @@ export async function setActiveWorktreeForPolling(
       worktreeId: info.worktreeId,
       worktreePath: info.worktreePath,
       baseBranch: info.baseBranch,
+      baseRemote: info.baseRemote ?? null,
       prNumber: info.prNumber ?? null,
       prUrl: info.prUrl ?? null,
     })
@@ -105,6 +107,7 @@ export async function setActiveWorktreeForPolling(
       worktreeId: null,
       worktreePath: null,
       baseBranch: null,
+      baseRemote: null,
       prNumber: null,
       prUrl: null,
     })
@@ -508,6 +511,7 @@ export async function setAllWorktreesForPolling(
     worktreeId: string
     worktreePath: string
     baseBranch: string
+    baseRemote?: string
   }[]
 ): Promise<void> {
   if (!isTauri()) return
@@ -519,6 +523,7 @@ export async function setPrWorktreesForPolling(
     worktreeId: string
     worktreePath: string
     baseBranch: string
+    baseRemote?: string
     prNumber: number
     prUrl: string
   }[]
@@ -548,7 +553,8 @@ export async function triggerImmediateRemotePoll(): Promise<void> {
 export async function getGitDiff(
   worktreePath: string,
   diffType: 'uncommitted' | 'branch',
-  baseBranch?: string
+  baseBranch?: string,
+  baseRemote?: string
 ): Promise<GitDiff> {
   if (!isTauri()) {
     throw new Error('Git diff only available in Tauri')
@@ -557,6 +563,7 @@ export async function getGitDiff(
     worktreePath,
     diffType,
     baseBranch,
+    baseRemote,
   })
 }
 
@@ -855,6 +862,7 @@ export function useWorktreePolling(info: WorktreePollingInfo | null) {
       info?.worktreeId !== prevInfo?.worktreeId ||
       info?.worktreePath !== prevInfo?.worktreePath ||
       info?.baseBranch !== prevInfo?.baseBranch ||
+      info?.baseRemote !== prevInfo?.baseRemote ||
       info?.prNumber !== prevInfo?.prNumber ||
       info?.prUrl !== prevInfo?.prUrl
 

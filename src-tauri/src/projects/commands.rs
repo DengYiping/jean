@@ -1065,6 +1065,7 @@ pub async fn get_worktree_changes(
             worktree_id: worktree.id.clone(),
             worktree_path: worktree.path.clone(),
             base_branch: base_branch.clone(),
+            base_remote: worktree.base_remote.clone(),
             pr_number: worktree.pr_number,
             pr_url: worktree.pr_url.clone(),
             pr_push_remote: worktree.pr_push_remote.clone(),
@@ -1111,6 +1112,7 @@ pub async fn get_worktree_diff(
         .clamp(1, MAX_DIFF_BYTES);
     let (worktree, project_default_branch) =
         resolve_worktree_and_project_default(&app, &worktree_id)?;
+    let base_remote = worktree.base_remote.clone();
     let base_branch = worktree.base_branch.unwrap_or(project_default_branch);
     let mut args = match diff_type.as_str() {
         "uncommitted" => vec![
@@ -1121,7 +1123,10 @@ pub async fn get_worktree_diff(
         "branch" => vec![
             "diff".to_string(),
             "--unified=3".to_string(),
-            format!("origin/{base_branch}...HEAD"),
+            format!(
+                "{}...HEAD",
+                crate::projects::git_status::base_ref(base_remote.as_deref(), &base_branch)
+            ),
         ],
         other => {
             return Err(format!(
@@ -1479,9 +1484,26 @@ pub async fn create_worktree(
         .ok_or_else(|| format!("Project not found: {project_id}"))?
         .clone();
 
-    // Use provided base branch or project's default branch, with validation
+    // A remote-qualified base (`fork/main`) keeps its remote so later status
+    // and diff calculations compare to the same starting point.
     let preferred_base = base_branch.unwrap_or_else(|| project.default_branch.clone());
-    let base = git::get_valid_base_branch(&project.path, &preferred_base)?;
+    let (base_remote, preferred_base) =
+        match git::split_remote_qualified_base(&project.path, &preferred_base) {
+            Some((remote, branch)) => {
+                if !git::remote_tracking_branch_exists(&project.path, &remote, &branch) {
+                    return Err(format!(
+                        "Base branch '{remote}/{branch}' not found locally. Fetch '{remote}' first."
+                    ));
+                }
+                (Some(remote), branch)
+            }
+            None => (None, preferred_base),
+        };
+    let base = if base_remote.is_some() {
+        preferred_base
+    } else {
+        git::get_valid_base_branch(&project.path, &preferred_base)?
+    };
 
     // Resolve auto-pull preference now (async), but defer the actual pull to background thread
     let should_auto_pull = if pr_context.is_none() {
@@ -1706,6 +1728,7 @@ pub async fn create_worktree(
         stable_slot_id: slot_reservation.as_ref().map(|slot| slot.slot_id.clone()),
         branch: name.clone(),
         base_branch: Some(base.clone()),
+        base_remote: base_remote.clone(),
         created_at,
         setup_output: None,
         setup_script: None,
@@ -1761,6 +1784,7 @@ pub async fn create_worktree(
     let worktree_path_clone = worktree_path_str.clone();
     let slot_reservation_clone = slot_reservation.clone();
     let base_clone = base.clone();
+    let base_remote_clone = base_remote.clone();
     let issue_context_clone = issue_context.clone();
     let pr_context_clone = pr_context.clone();
     let related_pr_context_clone = related_pr_context.clone();
@@ -1788,7 +1812,12 @@ pub async fn create_worktree(
             // If the base is only available as a remote-tracking branch (e.g. stacking on a
             // PR head that wasn't fetched locally), also use the origin/<base> ref.
             let has_local_branch = git::branch_exists(&project_path, &base_clone);
-            let effective_base = if should_auto_pull {
+            let effective_base = if let Some(remote) = base_remote_clone.as_deref() {
+                if let Err(e) = git::git_fetch(&project_path, &base_clone, Some(remote)) {
+                    log::warn!("Failed to fetch {remote}/{base_clone}: {e}");
+                }
+                format!("{remote}/{base_clone}")
+            } else if should_auto_pull {
                 log::trace!("Fetching base branch {base_clone} before worktree creation");
                 match git::git_fetch(&project_path, &base_clone, None) {
                     Ok(_) => {
@@ -2511,6 +2540,7 @@ pub async fn create_worktree(
                         .map(|slot| slot.slot_id.clone()),
                     branch: final_branch.clone(),
                     base_branch: Some(base_clone.clone()),
+                    base_remote: base_remote_clone.clone(),
                     created_at,
                     setup_output: None,
                     setup_script: pending_setup_script.clone(),
@@ -2820,6 +2850,7 @@ pub async fn fork_session_to_worktree(
             .base_branch
             .clone()
             .or(Some(project.default_branch.clone())),
+        base_remote: source_worktree.base_remote.clone(),
         created_at,
         setup_output: None,
         setup_script: None,
@@ -2995,6 +3026,7 @@ pub async fn create_worktree_from_existing_branch(
         stable_slot_id: slot_reservation.as_ref().map(|slot| slot.slot_id.clone()),
         branch: name.clone(),
         base_branch: Some(branch_name.clone()),
+        base_remote: None,
         created_at,
         setup_output: None,
         setup_script: None,
@@ -3494,6 +3526,7 @@ pub async fn create_worktree_from_existing_branch(
                         .map(|slot| slot.slot_id.clone()),
                     branch: branch_name_clone.clone(),
                     base_branch: Some(branch_name_clone.clone()),
+                    base_remote: None,
                     created_at,
                     setup_output,
                     setup_script,
@@ -3811,6 +3844,7 @@ pub async fn checkout_pr(
         stable_slot_id: None,
         branch: pr_detail.head_ref_name.clone(), // Use PR's actual branch name
         base_branch: None,
+        base_remote: None,
         created_at,
         setup_output: None,
         setup_script: None,
@@ -4126,6 +4160,7 @@ pub async fn checkout_pr(
                     stable_slot_id: None,
                     branch: actual_branch.clone(),
                     base_branch: None,
+                    base_remote: None,
                     created_at,
                     setup_output,
                     setup_script,
@@ -4535,6 +4570,7 @@ pub async fn create_base_session(app: AppHandle, project_id: String) -> Result<W
         stable_slot_id: None,
         branch: project.default_branch.clone(),
         base_branch: None,
+        base_remote: None,
         created_at: now(),
         setup_output: None,
         setup_script: None,
@@ -5026,6 +5062,7 @@ pub async fn import_worktree(
         stable_slot_id: None,
         branch,
         base_branch: None,
+        base_remote: None,
         created_at: now(),
         setup_output: None,
         setup_script: None,
@@ -5600,6 +5637,18 @@ pub async fn remove_git_remote(repo_path: String, remote_name: String) -> Result
 pub async fn get_git_remotes(repo_path: String) -> Result<Vec<git::GitRemote>, String> {
     log::trace!("Getting git remotes for: {repo_path}");
     git::get_git_remotes(&repo_path)
+}
+
+#[tauri::command]
+pub async fn list_remotes_with_branch(
+    repo_path: String,
+    branch: String,
+) -> Result<Vec<String>, String> {
+    Ok(git::get_git_remotes(&repo_path)?
+        .into_iter()
+        .filter(|remote| git::remote_tracking_branch_exists(&repo_path, &remote.name, &branch))
+        .map(|remote| remote.name)
+        .collect())
 }
 
 /// Get all GitHub remotes for a repository
@@ -7073,10 +7122,16 @@ pub async fn get_git_diff(
     worktree_path: String,
     diff_type: String,
     base_branch: Option<String>,
+    base_remote: Option<String>,
 ) -> Result<super::git_status::GitDiff, String> {
     log::trace!("Getting {diff_type} diff for {worktree_path}");
 
-    super::git_status::get_git_diff(&worktree_path, &diff_type, base_branch.as_deref())
+    super::git_status::get_git_diff(
+        &worktree_path,
+        &diff_type,
+        base_branch.as_deref(),
+        base_remote.as_deref(),
+    )
 }
 
 /// Read file contents from a specific git ref for diff preview.
@@ -12404,6 +12459,7 @@ pub async fn fetch_worktrees_status(app: AppHandle, project_id: String) -> Resul
                 worktree_id: worktree.id.clone(),
                 worktree_path: worktree.path.clone(),
                 base_branch,
+                base_remote: worktree.base_remote.clone(),
                 pr_number: worktree.pr_number,
                 pr_url: worktree.pr_url.clone(),
                 pr_push_remote: worktree.pr_push_remote.clone(),
@@ -13215,6 +13271,7 @@ mod tests {
             stable_slot_id: None,
             branch: branch.to_string(),
             base_branch: None,
+            base_remote: None,
             created_at: 0,
             setup_output: None,
             setup_script: None,

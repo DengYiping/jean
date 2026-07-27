@@ -477,7 +477,7 @@ fn default_syntax_theme_light() -> String {
 }
 
 fn default_file_edit_mode() -> String {
-    "external".to_string() // Default to external editor (VS Code, etc.)
+    "inline".to_string() // Default to Jean's inline editor
 }
 
 fn default_session_recap_enabled() -> bool {

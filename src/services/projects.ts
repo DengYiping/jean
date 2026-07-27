@@ -961,7 +961,7 @@ function handleWorktreeReady(
   }
 
   // Fire-and-forget: detect and link PR if not already linked
-  if (!worktree.pr_url) {
+  if (!worktree.pr_number && !worktree.pr_url) {
     invoke<DetectPrResponse | null>('detect_and_link_pr', {
       worktreeId: worktree.id,
       worktreePath: worktree.path,

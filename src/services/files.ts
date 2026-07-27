@@ -20,7 +20,7 @@ export function useWorktreeFiles(worktreePath: string | null) {
   return useQuery({
     queryKey: fileQueryKeys.worktreeFiles(worktreePath ?? ''),
     queryFn: async (): Promise<WorktreeFile[]> => {
-      if (!isTauri() || !worktreePath) {
+      if (!worktreePath) {
         return []
       }
 

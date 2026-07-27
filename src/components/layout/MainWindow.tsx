@@ -18,6 +18,7 @@ import { CommandPalette } from '@/components/command-palette/CommandPalette'
 import { QuitConfirmationDialog } from './QuitConfirmationDialog'
 import { BranchConflictDialog } from '@/components/worktree/BranchConflictDialog'
 import { TeardownOutputDialog } from '@/components/worktree/TeardownOutputDialog'
+import { FileBrowserDialog } from '@/components/file-browser/FileBrowserDialog'
 
 // Lazy-loaded heavy modals (code splitting)
 const LeftSideBar = lazy(() =>
@@ -757,6 +758,7 @@ export function MainWindow() {
       )}
       <BranchConflictDialog />
       <TeardownOutputDialog />
+      <FileBrowserDialog />
       <Toaster
         position="bottom-right"
         offset={toasterOffset}

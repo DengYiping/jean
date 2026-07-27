@@ -134,7 +134,7 @@ export function FileContentModal({ filePath, onClose }: FileContentModalProps) {
       : (preferences?.syntax_theme_light ?? 'github-light')
 
   // Get file edit mode from preferences
-  const fileEditMode = preferences?.file_edit_mode ?? 'external'
+  const fileEditMode = preferences?.file_edit_mode ?? 'inline'
 
   const loadFileContent = useCallback(async (path: string) => {
     setIsLoading(true)
@@ -178,7 +178,7 @@ export function FileContentModal({ filePath, onClose }: FileContentModalProps) {
 
   // Handle save
   const handleSave = useCallback(async () => {
-    if (!filePath || !editedContent) return
+    if (!filePath || editedContent === null) return
 
     setIsSaving(true)
     try {

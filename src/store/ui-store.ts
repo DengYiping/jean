@@ -136,6 +136,8 @@ interface UIState {
   /** When non-null, shows the update available modal */
   updateModalVersion: string | null
   chatSearchOpen: boolean
+  fileBrowserOpen: boolean
+  setFileBrowserOpen: (open: boolean) => void
   toggleLeftSidebar: () => void
   setLeftSidebarVisible: (visible: boolean) => void
   setLeftSidebarSize: (size: number) => void
@@ -315,6 +317,7 @@ export const useUIStore = create<UIState>()(
       pendingUpdateVersion: null,
       updateModalVersion: null,
       chatSearchOpen: false,
+      fileBrowserOpen: false,
       githubDashboardOpen: false,
       toggleLeftSidebar: () =>
         set(
@@ -329,6 +332,9 @@ export const useUIStore = create<UIState>()(
           undefined,
           'setLeftSidebarVisible'
         ),
+
+      setFileBrowserOpen: open =>
+        set({ fileBrowserOpen: open }, undefined, 'setFileBrowserOpen'),
 
       toggleRightSidebar: () =>
         set(

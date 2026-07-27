@@ -1331,6 +1331,7 @@ export const fileEditModeOptions: { value: FileEditMode; label: string }[] = [
 
 export type ClaudeModel =
   | 'claude-fable-5'
+  | 'claude-opus-5'
   | 'claude-sonnet-5'
   | 'claude-opus-4-8'
   | 'claude-opus-4-8[1m]'
@@ -1352,6 +1353,7 @@ export type ClaudeModel =
 
 export const modelOptions: { value: ClaudeModel; label: string }[] = [
   { value: 'claude-fable-5', label: 'Claude Fable 5' },
+  { value: 'claude-opus-5', label: 'Claude Opus 5' },
   { value: 'claude-sonnet-5', label: 'Claude Sonnet 5' },
   { value: 'claude-opus-4-8[1m]', label: 'Claude Opus 4.8 (1M)' },
   { value: 'claude-opus-4-7', label: 'Claude Opus 4.7' },
@@ -2234,7 +2236,7 @@ export const defaultPreferences: AppPreferences = {
   magic_prompt_providers: DEFAULT_MAGIC_PROMPT_PROVIDERS,
   magic_prompt_backends: DEFAULT_MAGIC_PROMPT_BACKENDS,
   magic_prompt_efforts: DEFAULT_MAGIC_PROMPT_EFFORTS,
-  file_edit_mode: 'external',
+  file_edit_mode: 'inline',
   ai_language: '', // Default: empty (Claude's default behavior)
   allow_web_tools_in_plan_mode: true, // Default: enabled
   waiting_sound: 'none',

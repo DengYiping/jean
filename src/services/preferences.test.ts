@@ -61,10 +61,11 @@ const createWrapper = (queryClient: QueryClient) => {
 }
 
 describe('model option helpers', () => {
-  it('offers Claude Sonnet 5 and normalizes the legacy sonnet alias', () => {
-    expect(modelOptions.map(option => option.value)).toContain(
-      'claude-sonnet-5'
+  it('offers Claude Opus 5 and normalizes the legacy sonnet alias', () => {
+    expect(modelOptions.map(option => option.value)).toEqual(
+      expect.arrayContaining(['claude-opus-5', 'claude-sonnet-5'])
     )
+    expect(normalizeClaudeModel('claude-opus-5')).toBe('claude-opus-5')
     expect(normalizeClaudeModel('sonnet')).toBe('claude-sonnet-5')
     expect(normalizeClaudeModel('claude-sonnet-5')).toBe('claude-sonnet-5')
     expect(normalizeClaudeModel('claude-sonnet-4-6')).toBe('claude-sonnet-4-6')

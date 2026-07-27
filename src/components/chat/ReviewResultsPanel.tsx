@@ -1,4 +1,4 @@
-import { useState, useCallback, memo } from 'react'
+import { useState, useCallback, useEffect, memo } from 'react'
 import { useChatStore } from '@/store/chat-store'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Button } from '@/components/ui/button'
@@ -132,6 +132,8 @@ interface FindingCardProps {
   index: number
   isFixed: boolean
   isFixing: boolean
+  isSelected: boolean
+  onSelectedChange: (checked: boolean) => void
   onFix: (
     finding: ReviewFinding,
     index: number,
@@ -146,6 +148,8 @@ const FindingCard = memo(function FindingCard({
   index,
   isFixed,
   isFixing,
+  isSelected,
+  onSelectedChange,
   onFix,
 }: FindingCardProps) {
   const [isExpanded, setIsExpanded] = useState(false)
@@ -177,6 +181,15 @@ const FindingCard = memo(function FindingCard({
         {/* Header */}
         <CollapsibleTrigger asChild>
           <div className="flex w-full items-center gap-2 px-4 py-3 cursor-pointer hover:bg-muted/50 transition-colors">
+            {canFix && !isFixed && (
+              <input
+                type="checkbox"
+                aria-label={`Select ${finding.title}`}
+                checked={isSelected}
+                onClick={event => event.stopPropagation()}
+                onChange={event => onSelectedChange(event.target.checked)}
+              />
+            )}
             <ChevronRight
               className={cn(
                 'h-4 w-4 shrink-0 transition-transform text-muted-foreground',
@@ -330,6 +343,7 @@ export function ReviewResultsPanel({
 }: ReviewResultsPanelProps) {
   const [fixingIndices, setFixingIndices] = useState<Set<number>>(new Set())
   const [isFixingAll, setIsFixingAll] = useState(false)
+  const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set())
 
   const reviewResults = useChatStore(
     state => state.reviewResults[sessionId]
@@ -337,6 +351,17 @@ export function ReviewResultsPanel({
   const fixedReviewFindings = useChatStore(
     state => state.fixedReviewFindings[sessionId]
   )
+
+  useEffect(() => {
+    if (!reviewResults) return
+    setSelectedIndices(
+      new Set(
+        reviewResults.findings.flatMap((finding, index) =>
+          finding.severity === 'praise' ? [] : [index]
+        )
+      )
+    )
+  }, [reviewResults])
 
   // Check if a finding is fixed
   const isFindingFixed = useCallback(
@@ -444,6 +469,39 @@ Please apply all these fixes to the codebase.`
     [reviewResults, sessionId, isFindingFixed, onSendFix]
   )
 
+  const handleSendSelected = useCallback(
+    (separately: boolean) => {
+      if (!reviewResults || !onSendFix) return
+      const findings = reviewResults.findings
+        .map((finding, index) => ({ finding, index }))
+        .filter(
+          ({ finding, index }) =>
+            finding.severity !== 'praise' &&
+            selectedIndices.has(index) &&
+            !isFindingFixed(finding, index)
+        )
+      if (findings.length === 0) return
+
+      const messages = findings.map(
+        ({ finding }) =>
+          `Fix the following code review finding:\n\n**File:** ${finding.file}\n**Line:** ${finding.line ?? 'N/A'}\n**Issue:** ${finding.title}\n\n${finding.description}\n\n**Suggested fix:**\n${finding.suggestion ?? '(Please determine the best fix)'}\n\nPlease apply this fix to the file.`
+      )
+      const { markReviewFindingFixed } = useChatStore.getState()
+      for (const { finding, index } of findings) {
+        markReviewFindingFixed(sessionId, getReviewFindingKey(finding, index))
+      }
+      if (separately) {
+        messages.forEach(message => onSendFix(message, 'build'))
+      } else {
+        onSendFix(
+          `Fix the following ${messages.length} code review findings:\n\n${messages.join('\n\n---\n\n')}`,
+          'build'
+        )
+      }
+    },
+    [reviewResults, selectedIndices, isFindingFixed, onSendFix, sessionId]
+  )
+
   if (!reviewResults) {
     return <EmptyState isReviewing={isReviewing} />
   }
@@ -468,6 +526,14 @@ Please apply all these fixes to the codebase.`
   const fixedCount = reviewResults.findings.filter(
     (f, i) => f.severity !== 'praise' && isFindingFixed(f, i)
   ).length
+  const selectedCount = [...selectedIndices].filter(index => {
+    const finding = reviewResults.findings[index]
+    return (
+      finding !== undefined &&
+      finding.severity !== 'praise' &&
+      !isFindingFixed(finding, index)
+    )
+  }).length
 
   return (
     <div className="relative flex h-full flex-col bg-background border-l">
@@ -525,6 +591,25 @@ Please apply all these fixes to the codebase.`
           {/* Fix All buttons */}
           {unfixedCount > 0 && (
             <div className="grid grid-cols-1 gap-2">
+              <Button
+                onClick={() => handleSendSelected(false)}
+                disabled={selectedCount === 0}
+                size="sm"
+                className="justify-start"
+              >
+                <MessageSquare className="h-3.5 w-3.5" />
+                Send selected to chat ({selectedCount})
+              </Button>
+              <Button
+                onClick={() => handleSendSelected(true)}
+                disabled={selectedCount === 0}
+                size="sm"
+                variant="outline"
+                className="justify-start"
+              >
+                <MessageSquare className="h-3.5 w-3.5" />
+                Send selected separately ({selectedCount})
+              </Button>
               <Button
                 onClick={() => handleFixAll('build')}
                 disabled={isFixingAll}
@@ -611,6 +696,15 @@ Please apply all these fixes to the codebase.`
                   index={originalIndex}
                   isFixed={isFindingFixed(finding, originalIndex)}
                   isFixing={fixingIndices.has(originalIndex)}
+                  isSelected={selectedIndices.has(originalIndex)}
+                  onSelectedChange={checked =>
+                    setSelectedIndices(current => {
+                      const next = new Set(current)
+                      if (checked) next.add(originalIndex)
+                      else next.delete(originalIndex)
+                      return next
+                    })
+                  }
                   onFix={handleFixFinding}
                 />
               )

@@ -13,6 +13,7 @@ import { useUIStore } from '@/store/ui-store'
 import { useCommandContext } from '@/lib/commands'
 import {
   ArrowUpCircle,
+  FolderTree,
   Github,
   PanelLeft,
   PanelLeftClose,
@@ -37,7 +38,8 @@ export function TitleBar({
   title = 'Jean',
   hideTitle = false,
 }: TitleBarProps) {
-  const { leftSidebarVisible, toggleLeftSidebar } = useUIStore()
+  const { leftSidebarVisible, toggleLeftSidebar, setFileBrowserOpen } =
+    useUIStore()
   const commandContext = useCommandContext()
   const { data: preferences } = usePreferences()
   const isMobile = useIsMobile()
@@ -101,6 +103,20 @@ export function TitleBar({
                 {sidebarShortcut}
               </kbd>
             </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                onClick={() => setFileBrowserOpen(true)}
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 rounded-none text-foreground/70 hover:text-foreground"
+                aria-label="Browse files"
+              >
+                <FolderTree className="size-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Browse files</TooltipContent>
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>

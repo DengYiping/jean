@@ -6,6 +6,7 @@ export interface AutomationScheduleFields {
   interval: number
   time: string
   weekdays: WeekdayCode[]
+  excludedWeekdays: WeekdayCode[]
   runWindowEnabled: boolean
   runWindowStartHour: number
   runWindowEndHour: number
@@ -29,6 +30,7 @@ export function defaultScheduleFields(): AutomationScheduleFields {
     interval: 1,
     time: '09:00',
     weekdays: ['MO'],
+    excludedWeekdays: [],
     runWindowEnabled: false,
     runWindowStartHour: 9,
     runWindowEndHour: 17,
@@ -70,12 +72,19 @@ export function parseSchedule(
     .filter((day): day is WeekdayCode =>
       WEEKDAYS.some(option => option.code === day)
     )
+  const excludedWeekdays = (parts.get('EXDAY') ?? '')
+    .split(',')
+    .map(day => day.trim().toUpperCase())
+    .filter((day): day is WeekdayCode =>
+      WEEKDAYS.some(option => option.code === day)
+    )
 
   return {
     frequency,
     interval,
     time: `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`,
     weekdays: weekdays.length > 0 ? weekdays : defaults.weekdays,
+    excludedWeekdays,
     runWindowEnabled:
       (frequency === 'hourly' || frequency === 'minutely') &&
       runWindowStartHour != null &&
@@ -88,18 +97,22 @@ export function parseSchedule(
 export function buildScheduleRRule(schedule: AutomationScheduleFields): string {
   const [hour, minute] = schedule.time.split(':').map(Number)
 
+  let rrule: string
   if (schedule.frequency === 'minutely') {
-    return `FREQ=MINUTELY;INTERVAL=${schedule.interval}`
+    rrule = `FREQ=MINUTELY;INTERVAL=${schedule.interval}`
+  } else if (schedule.frequency === 'hourly') {
+    rrule = `FREQ=HOURLY;INTERVAL=${schedule.interval};BYMINUTE=${minute || 0}`
+  } else if (schedule.frequency === 'daily') {
+    rrule = `FREQ=DAILY;INTERVAL=${schedule.interval};BYHOUR=${hour || 0};BYMINUTE=${minute || 0}`
+  } else {
+    const weekdays =
+      schedule.weekdays.length > 0 ? schedule.weekdays.join(',') : 'MO'
+    rrule = `FREQ=WEEKLY;INTERVAL=${schedule.interval};BYDAY=${weekdays};BYHOUR=${hour || 0};BYMINUTE=${minute || 0}`
   }
-  if (schedule.frequency === 'hourly') {
-    return `FREQ=HOURLY;INTERVAL=${schedule.interval};BYMINUTE=${minute || 0}`
-  }
-  if (schedule.frequency === 'daily') {
-    return `FREQ=DAILY;INTERVAL=${schedule.interval};BYHOUR=${hour || 0};BYMINUTE=${minute || 0}`
-  }
-  const weekdays =
-    schedule.weekdays.length > 0 ? schedule.weekdays.join(',') : 'MO'
-  return `FREQ=WEEKLY;INTERVAL=${schedule.interval};BYDAY=${weekdays};BYHOUR=${hour || 0};BYMINUTE=${minute || 0}`
+
+  return schedule.excludedWeekdays.length > 0
+    ? `${rrule};EXDAY=${schedule.excludedWeekdays.join(',')}`
+    : rrule
 }
 
 export function getRunWindowPayload(schedule: AutomationScheduleFields): {

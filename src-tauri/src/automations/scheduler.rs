@@ -613,6 +613,7 @@ struct ParsedSchedule {
     byhour: Option<u32>,
     byminute: Option<u32>,
     byday: Vec<Weekday>,
+    excluded_days: Vec<Weekday>,
     run_window: Option<RunWindow>,
 }
 
@@ -641,6 +642,7 @@ impl ParsedSchedule {
         let mut byhour = None;
         let mut byminute = None;
         let mut byday = Vec::new();
+        let mut excluded_days = Vec::new();
 
         for component in rrule.split(';') {
             let (key, value) = component
@@ -677,6 +679,12 @@ impl ParsedSchedule {
                         .map(parse_weekday)
                         .collect::<Result<Vec<_>, _>>()?;
                 }
+                "EXDAY" => {
+                    excluded_days = value
+                        .split(',')
+                        .map(parse_weekday)
+                        .collect::<Result<Vec<_>, _>>()?;
+                }
                 "WKST" => {}
                 other => return Err(format!("Unsupported RRULE field: {other}")),
             }
@@ -690,6 +698,11 @@ impl ParsedSchedule {
         if matches!(frequency, Frequency::Weekly) && byday.is_empty() {
             return Err("Weekly schedules require BYDAY.".to_string());
         }
+        if matches!(frequency, Frequency::Weekly)
+            && byday.iter().all(|day| excluded_days.contains(day))
+        {
+            return Err("Weekly schedules cannot exclude every selected weekday.".to_string());
+        }
 
         Ok(Self {
             frequency,
@@ -697,6 +710,7 @@ impl ParsedSchedule {
             byhour,
             byminute,
             byday,
+            excluded_days,
             run_window,
         })
     }
@@ -733,6 +747,9 @@ impl ParsedSchedule {
                     continue;
                 }
             }
+            if self.excluded_days.contains(&candidate.weekday()) {
+                continue;
+            }
             if candidate.timestamp() > current.timestamp() {
                 return Ok(candidate.timestamp() as u64);
             }
@@ -759,6 +776,9 @@ impl ParsedSchedule {
                     .and_then(|value| value.with_second(0))
                     .ok_or_else(|| "Failed to build hourly schedule.".to_string())?;
                 if candidate.timestamp() > current.timestamp() {
+                    if self.excluded_days.contains(&candidate.weekday()) {
+                        continue;
+                    }
                     return Ok(candidate.timestamp() as u64);
                 }
             }
@@ -776,6 +796,9 @@ impl ParsedSchedule {
 
         for day_offset in 0..=(366 * 5) {
             let candidate_date = base + Duration::days(day_offset.into());
+            if self.excluded_days.contains(&candidate_date.weekday()) {
+                continue;
+            }
             let mut hour = run_window.start_hour;
 
             while hour < run_window.end_hour {
@@ -802,6 +825,9 @@ impl ParsedSchedule {
             if days_since_epoch(candidate_date) % self.interval as i64 != 0 {
                 continue;
             }
+            if self.excluded_days.contains(&candidate_date.weekday()) {
+                continue;
+            }
             let candidate = candidate_date
                 .and_hms_opt(target_hour, target_minute, 0)
                 .and_then(localize_naive)
@@ -820,6 +846,9 @@ impl ParsedSchedule {
         for offset in 0..=(366 * 5) {
             let candidate_date = base + Duration::days(offset.into());
             if !self.byday.contains(&candidate_date.weekday()) {
+                continue;
+            }
+            if self.excluded_days.contains(&candidate_date.weekday()) {
                 continue;
             }
             if weeks_since_epoch(candidate_date) % self.interval as i64 != 0 {
@@ -966,6 +995,27 @@ mod tests {
         .expect("schedule")
         .expect("next");
         assert!(next > 1_710_000_000);
+    }
+
+    #[test]
+    fn skips_excluded_weekdays() {
+        let current = Local
+            .with_ymd_and_hms(2026, 4, 10, 10, 0, 0)
+            .single()
+            .expect("current");
+        let next = compute_next_run_at(
+            "FREQ=DAILY;INTERVAL=1;BYHOUR=9;BYMINUTE=0;EXDAY=SA,SU",
+            None,
+            None,
+            current.timestamp() as u64,
+        )
+        .expect("schedule")
+        .expect("next");
+        let next = Local
+            .timestamp_opt(next as i64, 0)
+            .single()
+            .expect("next ts");
+        assert_eq!(next.weekday(), Weekday::Mon);
     }
 
     #[test]

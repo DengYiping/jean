@@ -63,4 +63,15 @@ describe('automation schedule helpers', () => {
       run_window_end_hour: 17,
     })
   })
+
+  it('builds and parses excluded weekdays', () => {
+    const schedule = parseSchedule(
+      'FREQ=DAILY;INTERVAL=1;BYHOUR=9;BYMINUTE=0;EXDAY=SA,SU'
+    )
+
+    expect(schedule.excludedWeekdays).toEqual(['SA', 'SU'])
+    expect(buildScheduleRRule(schedule)).toBe(
+      'FREQ=DAILY;INTERVAL=1;BYHOUR=9;BYMINUTE=0;EXDAY=SA,SU'
+    )
+  })
 })

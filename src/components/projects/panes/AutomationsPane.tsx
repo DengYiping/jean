@@ -86,6 +86,7 @@ interface AutomationFormState {
   interval: number
   time: string
   weekdays: WeekdayCode[]
+  excludedWeekdays: WeekdayCode[]
   runWindowEnabled: boolean
   runWindowStartHour: number
   runWindowEndHour: number
@@ -116,6 +117,7 @@ function emptyForm(worktrees: Worktree[]): AutomationFormState {
     interval: schedule.interval,
     time: schedule.time,
     weekdays: schedule.weekdays,
+    excludedWeekdays: schedule.excludedWeekdays,
     runWindowEnabled: schedule.runWindowEnabled,
     runWindowStartHour: schedule.runWindowStartHour,
     runWindowEndHour: schedule.runWindowEndHour,
@@ -153,6 +155,7 @@ function fromAutomation(
     interval: schedule.interval,
     time: schedule.time,
     weekdays: schedule.weekdays,
+    excludedWeekdays: schedule.excludedWeekdays,
     runWindowEnabled: schedule.runWindowEnabled,
     runWindowStartHour: schedule.runWindowStartHour,
     runWindowEndHour: schedule.runWindowEndHour,
@@ -968,6 +971,39 @@ export function AutomationsPane({
                   </div>
                 </div>
               )}
+
+              <div className="space-y-2">
+                <Label>Exclude days</Label>
+                <div className="flex flex-wrap gap-2 rounded-md border p-3">
+                  {WEEKDAYS.map(day => {
+                    const excluded = form.excludedWeekdays.includes(day.code)
+                    return (
+                      <button
+                        key={day.code}
+                        type="button"
+                        className={cn(
+                          'rounded-md border px-3 py-1.5 text-sm transition-colors',
+                          excluded
+                            ? 'border-primary bg-primary/10 text-primary'
+                            : 'border-border bg-background text-muted-foreground'
+                        )}
+                        onClick={() =>
+                          setForm(current => ({
+                            ...current,
+                            excludedWeekdays: excluded
+                              ? current.excludedWeekdays.filter(
+                                  code => code !== day.code
+                                )
+                              : [...current.excludedWeekdays, day.code],
+                          }))
+                        }
+                      >
+                        {day.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
 
               <div className="rounded-md border bg-muted/20 p-3 text-xs text-muted-foreground">
                 <div>RRULE</div>

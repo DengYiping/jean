@@ -4,6 +4,12 @@ import { useChatStore } from '@/store/chat-store'
 import { ReviewResultsPanel } from './ReviewResultsPanel'
 import type { ReviewResponse } from '@/types/projects'
 
+let codeReviewFixMode = 'build'
+
+vi.mock('@/services/preferences', () => ({
+  usePreferences: () => ({ data: { code_review_fix_mode: codeReviewFixMode } }),
+}))
+
 const reviewResults: ReviewResponse = {
   summary: 'Found issues to fix.',
   approval_status: 'changes_requested',
@@ -21,6 +27,7 @@ const reviewResults: ReviewResponse = {
 
 describe('ReviewResultsPanel', () => {
   beforeEach(() => {
+    codeReviewFixMode = 'build'
     useChatStore.setState({
       reviewResults: { 'session-1': reviewResults },
       fixedReviewFindings: {},
@@ -49,5 +56,18 @@ describe('ReviewResultsPanel', () => {
 
     expect(onSendFix).toHaveBeenCalledTimes(1)
     expect(onSendFix.mock.calls[0]?.[1]).toBe('build')
+  })
+
+  it('uses the configured mode for selected findings', () => {
+    codeReviewFixMode = 'yolo'
+    const onSendFix = vi.fn()
+
+    render(<ReviewResultsPanel sessionId="session-1" onSendFix={onSendFix} />)
+
+    fireEvent.click(
+      screen.getByRole('button', { name: /send selected to chat/i })
+    )
+
+    expect(onSendFix.mock.calls[0]?.[1]).toBe('yolo')
   })
 })

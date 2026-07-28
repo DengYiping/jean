@@ -1425,6 +1425,33 @@ export const MagicPromptsPane: React.FC<MagicPromptsPaneProps> = ({
                 </Select>
               </>
             )}
+            {selectedConfig.key === 'code_review' && (
+              <>
+                <span className="text-xs text-muted-foreground">Fix mode</span>
+                <Select
+                  value={preferences?.code_review_fix_mode ?? 'build'}
+                  onValueChange={code_review_fix_mode =>
+                    patchPreferences.mutate({
+                      code_review_fix_mode: code_review_fix_mode as
+                        | 'build'
+                        | 'yolo',
+                    })
+                  }
+                >
+                  <SelectTrigger
+                    aria-label="Code review fix mode"
+                    size="sm"
+                    className="w-[120px] text-xs"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="build">Build</SelectItem>
+                    <SelectItem value="yolo">Yolo</SelectItem>
+                  </SelectContent>
+                </Select>
+              </>
+            )}
             <Button
               variant="outline"
               size="sm"

@@ -51,6 +51,7 @@ const hoisted = vi.hoisted(() => {
     setPendingMagicCommand: vi.fn(),
     registerWorktreePath: vi.fn(),
     setActiveSession: vi.fn(),
+    setEnabledMcpServers: vi.fn(),
   }
 
   return {
@@ -343,9 +344,20 @@ describe('MagicModal', () => {
   })
 
   it('starts a yolo GitHub bug automation session', async () => {
-    hoisted.invokeMock
-      .mockResolvedValueOnce({ id: 'automation-session' })
-      .mockResolvedValueOnce({ id: 'message-1' })
+    hoisted.invokeMock.mockImplementation(command => {
+      if (command === 'create_session') return { id: 'automation-session' }
+      if (command === 'get_mcp_servers') {
+        return [
+          {
+            name: 'jean',
+            backend: 'claude',
+            disabled: false,
+            config: { type: 'stdio', command: 'jean' },
+          },
+        ]
+      }
+      return { id: 'message-1' }
+    })
 
     render(<MagicModal />)
     fireEvent.click(screen.getByRole('button', { name: /GitHub Bugs/ }))
@@ -356,16 +368,22 @@ describe('MagicModal', () => {
         worktreePath: '/tmp/worktree',
         name: 'Automate GitHub bugs',
       })
-      expect(hoisted.invokeMock).toHaveBeenNthCalledWith(
-        2,
+      expect(hoisted.invokeMock).toHaveBeenCalledWith(
         'send_chat_message',
         expect.objectContaining({
           sessionId: 'automation-session',
           worktreeId: 'wt-1',
           executionMode: 'yolo',
           message: expect.stringContaining('project-1'),
+          mcpConfig: expect.stringContaining('jean'),
         })
       )
+      expect(hoisted.invokeMock).toHaveBeenCalledWith('update_session_state', {
+        worktreeId: 'wt-1',
+        worktreePath: '/tmp/worktree',
+        sessionId: 'automation-session',
+        enabledMcpServers: ['claude:jean'],
+      })
     })
   })
 })

@@ -24,6 +24,7 @@ import {
 import { ModalCloseButton } from '@/components/ui/modal-close-button'
 import type { ReviewFinding, ReviewResponse } from '@/types/projects'
 import { cn } from '@/lib/utils'
+import { usePreferences } from '@/services/preferences'
 
 interface ReviewResultsPanelProps {
   sessionId: string
@@ -344,6 +345,8 @@ export function ReviewResultsPanel({
   const [fixingIndices, setFixingIndices] = useState<Set<number>>(new Set())
   const [isFixingAll, setIsFixingAll] = useState(false)
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set())
+  const { data: preferences } = usePreferences()
+  const fixMode = preferences?.code_review_fix_mode ?? 'build'
 
   const reviewResults = useChatStore(
     state => state.reviewResults[sessionId]
@@ -491,15 +494,22 @@ Please apply all these fixes to the codebase.`
         markReviewFindingFixed(sessionId, getReviewFindingKey(finding, index))
       }
       if (separately) {
-        messages.forEach(message => onSendFix(message, 'build'))
+        messages.forEach(message => onSendFix(message, fixMode))
       } else {
         onSendFix(
           `Fix the following ${messages.length} code review findings:\n\n${messages.join('\n\n---\n\n')}`,
-          'build'
+          fixMode
         )
       }
     },
-    [reviewResults, selectedIndices, isFindingFixed, onSendFix, sessionId]
+    [
+      reviewResults,
+      selectedIndices,
+      isFindingFixed,
+      onSendFix,
+      sessionId,
+      fixMode,
+    ]
   )
 
   if (!reviewResults) {

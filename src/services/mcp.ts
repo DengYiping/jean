@@ -234,6 +234,52 @@ export function buildMcpConfigJson(
   return JSON.stringify({ mcpServers })
 }
 
+export function resolveEnabledMcpServers(options: {
+  availableServers: McpServerInfo[]
+  projectEnabled?: string[] | null
+  globalEnabled?: string[]
+  knownServers?: string[]
+}): string[] {
+  const enabled = options.projectEnabled ?? options.globalEnabled ?? []
+  const newlyEnabled = getNewServersToAutoEnable(
+    options.availableServers,
+    enabled,
+    options.knownServers ?? []
+  )
+  return newlyEnabled.length > 0 ? [...enabled, ...newlyEnabled] : enabled
+}
+
+export async function resolveMcpConfigForSend(options: {
+  worktreePath: string
+  backend: CliBackend
+  projectEnabled?: string[] | null
+  globalEnabled?: string[]
+  knownServers?: string[]
+}): Promise<{ mcpConfig?: string; enabledServers: string[] }> {
+  try {
+    const availableServers = await invoke<McpServerInfo[]>('get_mcp_servers', {
+      backend: options.backend,
+      worktreePath: options.worktreePath,
+    })
+    const enabledServers = resolveEnabledMcpServers({
+      availableServers,
+      projectEnabled: options.projectEnabled,
+      globalEnabled: options.globalEnabled,
+      knownServers: options.knownServers,
+    })
+    return {
+      enabledServers,
+      mcpConfig: buildMcpConfigJson(
+        availableServers,
+        enabledServers,
+        options.backend
+      ),
+    }
+  } catch {
+    return { enabledServers: [] }
+  }
+}
+
 // MCP servers are identified by "backend:name" composite keys to avoid
 // collisions when different backends have servers with the same name.
 export function mcpKey(backend: string, name: string): string {

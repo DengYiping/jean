@@ -32,6 +32,7 @@ import { useUIStore } from '@/store/ui-store'
 import { useProjectsStore } from '@/store/projects-store'
 import { useChatStore } from '@/store/chat-store'
 import { useWorktree, useProjects } from '@/services/projects'
+import { resolveMcpConfigForSend } from '@/services/mcp'
 import { useLoadedIssueContexts, useLoadedPRContexts } from '@/services/github'
 import { usePreferences } from '@/services/preferences'
 import { invoke, listen } from '@/lib/transport'
@@ -65,6 +66,7 @@ import {
   DEFAULT_AUTOMATE_SECURITY_ADVISORIES_PROMPT,
   DEFAULT_RESOLVE_CONFLICTS_PROMPT,
   resolveMagicPromptProvider,
+  type CliBackend,
 } from '@/types/preferences'
 import { useRemotePicker } from '@/hooks/useRemotePicker'
 import { chatQueryKeys } from '@/services/chat'
@@ -1258,8 +1260,30 @@ ${resolveInstructions}`
             : 'Automate security advisories',
         })
         const store = useChatStore.getState()
+        const backend = ((isBugs
+          ? preferences?.magic_prompt_backends?.automate_github_bugs_backend
+          : preferences?.magic_prompt_backends
+              ?.automate_security_advisories_backend) ??
+          project?.default_backend ??
+          preferences?.default_backend ??
+          'claude') as CliBackend
+        const { mcpConfig, enabledServers } = await resolveMcpConfigForSend({
+          worktreePath: worktree.path,
+          backend,
+          projectEnabled: project?.enabled_mcp_servers,
+          globalEnabled: preferences?.default_enabled_mcp_servers,
+          knownServers:
+            project?.known_mcp_servers ?? preferences?.known_mcp_servers,
+        })
         store.registerWorktreePath(selectedWorktreeId, worktree.path)
         store.setActiveSession(selectedWorktreeId, newSession.id)
+        store.setEnabledMcpServers(newSession.id, enabledServers)
+        await invoke('update_session_state', {
+          worktreeId: selectedWorktreeId,
+          worktreePath: worktree.path,
+          sessionId: newSession.id,
+          enabledMcpServers: enabledServers,
+        })
         await invoke('send_chat_message', {
           sessionId: newSession.id,
           worktreeId: selectedWorktreeId,
@@ -1282,11 +1306,8 @@ ${resolveInstructions}`
               : 'automate_security_advisories_provider',
             preferences?.default_provider
           ),
-          backend: isBugs
-            ? (preferences?.magic_prompt_backends
-                ?.automate_github_bugs_backend ?? undefined)
-            : (preferences?.magic_prompt_backends
-                ?.automate_security_advisories_backend ?? undefined),
+          backend,
+          mcpConfig,
         })
         queryClient.invalidateQueries({
           queryKey: chatQueryKeys.sessions(selectedWorktreeId),

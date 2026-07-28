@@ -158,6 +158,8 @@ pub struct AppPreferences {
     pub magic_prompt_backends: MagicPromptBackends, // Per-prompt backend overrides (None = use project/global default_backend)
     #[serde(default)]
     pub magic_prompt_efforts: MagicPromptReasoningEfforts, // Per-prompt reasoning effort overrides
+    #[serde(default = "default_code_review_fix_mode")]
+    pub code_review_fix_mode: String, // Default mode for selected code-review findings
     #[serde(default)]
     pub magic_models_auto_initialized: bool, // Whether magic prompt models were auto-set based on installed backends
     #[serde(default = "default_file_edit_mode")]
@@ -541,6 +543,10 @@ fn default_codex_reasoning_effort() -> String {
 }
 
 fn default_codex_goal_execution_mode() -> String {
+    "build".to_string()
+}
+
+fn default_code_review_fix_mode() -> String {
     "build".to_string()
 }
 
@@ -2198,6 +2204,7 @@ impl Default for AppPreferences {
             magic_prompt_providers: MagicPromptProviders::default(),
             magic_prompt_backends: MagicPromptBackends::default(),
             magic_prompt_efforts: MagicPromptReasoningEfforts::default(),
+            code_review_fix_mode: default_code_review_fix_mode(),
             magic_models_auto_initialized: false,
             file_edit_mode: default_file_edit_mode(),
             ai_language: String::new(),

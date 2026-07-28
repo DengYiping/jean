@@ -4657,6 +4657,7 @@ pub fn run() {
             projects::list_worktree_files,
             projects::get_project_branches,
             projects::update_project_settings,
+            projects::update_all_primary_branches,
             projects::get_jean_config,
             projects::save_jean_config,
             projects::get_pr_prompt,

@@ -631,6 +631,74 @@ pub async fn list_projects(app: AppHandle) -> Result<Vec<Project>, String> {
     Ok(projects)
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateAllPrimaryBranchesResponse {
+    pub updated: Vec<String>,
+    pub skipped: usize,
+    pub failures: Vec<ProjectBranchUpdateFailure>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectBranchUpdateFailure {
+    pub project_name: String,
+    pub error: String,
+}
+
+/// Update the main or master branch for every non-folder project.
+#[tauri::command]
+pub async fn update_all_primary_branches(
+    app: AppHandle,
+) -> Result<UpdateAllPrimaryBranchesResponse, String> {
+    let projects = load_projects_data(&app)?.projects;
+    let mut updated = Vec::new();
+    let mut failures = Vec::new();
+    let mut skipped = 0;
+
+    for project in projects {
+        if project.is_folder || !matches!(project.default_branch.as_str(), "main" | "master") {
+            skipped += 1;
+            continue;
+        }
+
+        match git::get_current_branch(&project.path) {
+            Ok(branch) if branch == project.default_branch => {}
+            Ok(branch) => {
+                failures.push(ProjectBranchUpdateFailure {
+                    project_name: project.name,
+                    error: format!(
+                        "Expected {} to be checked out, but found {branch}",
+                        project.default_branch
+                    ),
+                });
+                continue;
+            }
+            Err(error) => {
+                failures.push(ProjectBranchUpdateFailure {
+                    project_name: project.name,
+                    error,
+                });
+                continue;
+            }
+        }
+
+        match git::git_pull(&project.path, &project.default_branch, None) {
+            Ok(_) => updated.push(project.name),
+            Err(error) => failures.push(ProjectBranchUpdateFailure {
+                project_name: project.name,
+                error,
+            }),
+        }
+    }
+
+    Ok(UpdateAllPrimaryBranchesResponse {
+        updated,
+        skipped,
+        failures,
+    })
+}
+
 /// Add a new project from a git repository path
 #[tauri::command]
 pub async fn add_project(

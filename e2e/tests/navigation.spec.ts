@@ -47,6 +47,14 @@ test.describe('Navigation', () => {
     ).toBeVisible({ timeout: 3000 })
   })
 
+  test('updates all main and master project branches', async ({ mockPage }) => {
+    await mockPage
+      .getByRole('button', { name: 'Update all main and master branches' })
+      .click()
+
+    await expect(mockPage.getByText('Updated 1 project')).toBeVisible()
+  })
+
   test('right-click worktree can fork it', async ({ mockPage }) => {
     await expect(mockPage.getByText('Test Project')).toBeVisible({
       timeout: 5000,

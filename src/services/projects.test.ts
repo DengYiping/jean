@@ -7,6 +7,7 @@ import {
   useReorderWorktrees,
   usePackageScripts,
   useSwitchWorktreeBaseBranch,
+  useUpdateAllPrimaryBranches,
   useUpdateProjectSettings,
   useWorktree,
 } from './projects'
@@ -102,6 +103,28 @@ describe('projects service', () => {
     })
     expect(mockInvoke).toHaveBeenCalledWith('get_package_scripts', {
       worktreePath: '/repo',
+    })
+  })
+
+  it('updates all main and master project branches through the shared transport', async () => {
+    const queryClient = createTestQueryClient()
+    mockInvoke.mockResolvedValue({
+      updated: ['Jean'],
+      skipped: 1,
+      failures: [],
+    })
+
+    const { result } = renderHook(() => useUpdateAllPrimaryBranches(), {
+      wrapper: createWrapper(queryClient),
+    })
+
+    await act(async () => {
+      await result.current.mutateAsync()
+    })
+
+    expect(mockInvoke).toHaveBeenCalledWith('update_all_primary_branches')
+    expect(toast.success).toHaveBeenCalledWith('Updated 1 project', {
+      description: 'Skipped 1 project without a main or master branch.',
     })
   })
 

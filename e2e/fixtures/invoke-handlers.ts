@@ -245,6 +245,11 @@ export const defaultResponses: Record<string, unknown> = {
   trigger_immediate_git_poll: null,
   trigger_immediate_remote_poll: null,
   fetch_worktrees_status: null,
+  update_all_primary_branches: {
+    updated: ['Test Project'],
+    skipped: 0,
+    failures: [],
+  },
   git_pull_upstream: 'Already up to date.',
   get_git_diff: {
     diff_type: 'uncommitted',

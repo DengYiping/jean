@@ -303,6 +303,11 @@ pub async fn dispatch_command(
             emit_cache_invalidation(app, &["projects"]);
             to_value(result)
         }
+        "update_all_primary_branches" => {
+            let result = crate::projects::update_all_primary_branches(app.clone()).await?;
+            emit_cache_invalidation(app, &["projects"]);
+            to_value(result)
+        }
         "reorder_projects" => {
             let project_ids: Vec<String> = field(&args, "projectIds", "project_ids")?;
             crate::projects::reorder_projects(app.clone(), project_ids).await?;

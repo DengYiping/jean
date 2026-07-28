@@ -50,6 +50,12 @@ export const projectsQueryKeys = {
     [...projectsQueryKeys.all, 'worktree-slots', projectId] as const,
 }
 
+export interface UpdateAllPrimaryBranchesResult {
+  updated: string[]
+  skipped: number
+  failures: { projectName: string; error: string }[]
+}
+
 // ============================================================================
 // Project Queries
 // ============================================================================
@@ -227,6 +233,44 @@ export function useResetIdleWorktreeSlots() {
 // ============================================================================
 // Project Mutations
 // ============================================================================
+
+export function useUpdateAllPrimaryBranches() {
+  return useMutation({
+    mutationFn: () =>
+      invoke<UpdateAllPrimaryBranchesResult>('update_all_primary_branches'),
+    onSuccess: ({ updated, skipped, failures }) => {
+      const projectCount = updated.length
+      const description = [
+        skipped > 0
+          ? `Skipped ${skipped} project${skipped === 1 ? '' : 's'} without a main or master branch.`
+          : null,
+        failures.length > 0
+          ? `Failed to update ${failures.length} project${failures.length === 1 ? '' : 's'}.`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(' ')
+
+      if (failures.length > 0) {
+        toast.warning(
+          `Updated ${projectCount} project${projectCount === 1 ? '' : 's'}`,
+          { description }
+        )
+        return
+      }
+
+      toast.success(
+        `Updated ${projectCount} project${projectCount === 1 ? '' : 's'}`,
+        { description: description || undefined }
+      )
+    },
+    onError: error => {
+      toast.error('Failed to update project branches', {
+        description: error instanceof Error ? error.message : String(error),
+      })
+    },
+  })
+}
 
 /**
  * After adding a project, auto-create and open the base session

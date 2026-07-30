@@ -34,7 +34,33 @@ test('Dockerfile builds and runs jean-server headlessly as non-root user', () =>
   )
 })
 
-test('jean-server is outside the desktop Tauri package so macOS universal bundling ignores it', () => {
+/** Shared assertions: server images ship GitHub CLI from the official apt repo. */
+function assertServerImageInstallsGh(dockerfile) {
+  assert.match(
+    dockerfile,
+    /cli\.github\.com\/packages\/githubcli-archive-keyring\.gpg/
+  )
+  assert.match(dockerfile, /cli\.github\.com\/packages stable main/)
+  assert.match(
+    dockerfile,
+    /apt-get update && apt-get install -y --no-install-recommends gh/
+  )
+  // Keep gh install in the same runtime package layer (no extra FROM/RUN stage).
+  assert.match(
+    dockerfile,
+    /openssh-client[\s\S]*githubcli-archive-keyring[\s\S]*apt-get install -y --no-install-recommends gh[\s\S]*useradd/
+  )
+}
+
+test('Dockerfile.server installs GitHub CLI for onboarding and PATH tools', () => {
+  assertServerImageInstallsGh(read('Dockerfile.server'))
+})
+
+test('Dockerfile.server-runtime installs GitHub CLI for onboarding and PATH tools', () => {
+  assertServerImageInstallsGh(read('Dockerfile.server-runtime'))
+})
+
+test('jean-server depends only on the Tauri-free shared core', () => {
   const cargoToml = read('src-tauri/Cargo.toml')
   const serverCargoToml = read('src-server/Cargo.toml')
 

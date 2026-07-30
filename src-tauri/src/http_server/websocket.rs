@@ -32,6 +32,11 @@ fn command_should_run_on_blocking_pool(command: &str) -> bool {
     )
 }
 
+/// Commands that must preserve WebSocket receive order.
+fn command_must_run_in_ws_order(command: &str) -> bool {
+    matches!(command, "terminal_write")
+}
+
 async fn dispatch_invoke_response(
     app: AppHandle,
     id: String,
@@ -85,9 +90,50 @@ fn spawn_dispatch_response(
     });
 }
 
+fn spawn_ordered_dispatch_response(
+    app: AppHandle,
+    id: String,
+    command: String,
+    args: Value,
+    tx: mpsc::UnboundedSender<String>,
+    previous: Option<tokio::task::JoinHandle<()>>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        if let Some(previous) = previous {
+            let _ = previous.await;
+        }
+        let resp = dispatch_invoke_response(app, id, command, args).await;
+        if let Ok(json) = serde_json::to_string(&resp) {
+            let _ = tx.send(json);
+        }
+    })
+}
+
+fn dispatch_client_invoke(
+    app: &AppHandle,
+    id: String,
+    command: String,
+    args: Value,
+    resp_tx: &mpsc::UnboundedSender<String>,
+    ordered_tail: &mut Option<tokio::task::JoinHandle<()>>,
+) {
+    if command_must_run_in_ws_order(&command) {
+        *ordered_tail = Some(spawn_ordered_dispatch_response(
+            app.clone(),
+            id,
+            command,
+            args,
+            resp_tx.clone(),
+            ordered_tail.take(),
+        ));
+    } else {
+        spawn_dispatch_response(app.clone(), id, command, args, resp_tx.clone());
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::command_should_run_on_blocking_pool;
+    use super::{command_must_run_in_ws_order, command_should_run_on_blocking_pool};
 
     #[test]
     fn commit_generation_runs_on_blocking_pool() {
@@ -105,6 +151,12 @@ mod tests {
     #[test]
     fn lightweight_session_creation_stays_on_async_runtime() {
         assert!(!command_should_run_on_blocking_pool("create_session"));
+    }
+
+    #[test]
+    fn terminal_input_writes_run_in_websocket_order() {
+        assert!(command_must_run_in_ws_order("terminal_write"));
+        assert!(!command_must_run_in_ws_order("terminal_resize"));
     }
 }
 
@@ -174,6 +226,7 @@ pub async fn handle_ws_connection(
     // Channel for command dispatch responses. Unbounded because command
     // responses are infrequent (user-initiated) and must never be dropped.
     let (resp_tx, mut resp_rx) = mpsc::unbounded_channel::<String>();
+    let mut ordered_dispatch_tail: Option<tokio::task::JoinHandle<()>> = None;
 
     // Heartbeat: server-driven ping every PING_INTERVAL. If no inbound
     // traffic (pong, text, ping) for PONG_TIMEOUT, treat connection as dead
@@ -207,12 +260,13 @@ pub async fn handle_ws_connection(
                             Ok(WsClientMessage::Invoke { id, command, args }) => {
                                 // Spawn dispatch as a separate task so the
                                 // select loop stays free to drain events.
-                                spawn_dispatch_response(
-                                    app.clone(),
+                                dispatch_client_invoke(
+                                    &app,
                                     id,
                                     command,
                                     args,
-                                    resp_tx.clone(),
+                                    &resp_tx,
+                                    &mut ordered_dispatch_tail,
                                 );
                             }
                             Ok(WsClientMessage::Replay { session_id, last_seq }) => {
@@ -241,12 +295,13 @@ pub async fn handle_ws_connection(
                                 // Try legacy format (no "type" field — old clients send bare invoke)
                                 match serde_json::from_str::<InvokeRequest>(&text) {
                                     Ok(req) => {
-                                        spawn_dispatch_response(
-                                            app.clone(),
+                                        dispatch_client_invoke(
+                                            &app,
                                             req.id,
                                             req.command,
                                             req.args,
-                                            resp_tx.clone(),
+                                            &resp_tx,
+                                            &mut ordered_dispatch_tail,
                                         );
                                     }
                                     Err(_) => {

@@ -6,6 +6,8 @@ import type {
   ReviewFinding,
 } from '@/types/chat'
 import { MessageItem } from './MessageItem'
+import { getProviderChangeBeforeMessage } from './message-settings-labels'
+import { ProviderChangeSeparator } from './ProviderChangeSeparator'
 import { getAssistantDurationMs } from './time-utils'
 
 interface MessageListProps {
@@ -110,6 +112,18 @@ export const MessageList = memo(function MessageList({
     return map
   }, [messages])
 
+  const providerChangeMap = useMemo(() => {
+    const map = new Map<
+      number,
+      ReturnType<typeof getProviderChangeBeforeMessage>
+    >()
+    for (let i = 0; i < messages.length; i++) {
+      const change = getProviderChangeBeforeMessage(messages, i)
+      if (change) map.set(i, change)
+    }
+    return map
+  }, [messages])
+
   if (messages.length === 0) return null
 
   return (
@@ -122,9 +136,13 @@ export const MessageList = memo(function MessageList({
           index,
           completedDurationMs
         )
+        const providerChange = providerChangeMap.get(index)
 
         return (
           <div key={message.id}>
+            {providerChange && (
+              <ProviderChangeSeparator change={providerChange} />
+            )}
             <MessageItem
               message={message}
               getMessages={getMessages}

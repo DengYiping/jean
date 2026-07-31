@@ -48,6 +48,12 @@ test.describe('Navigation', () => {
   })
 
   test('updates all main and master project branches', async ({ mockPage }) => {
+    const projectsHeader = mockPage.getByText('PROJECTS')
+    if (!(await projectsHeader.isVisible().catch(() => false))) {
+      await mockPage.keyboard.press('Meta+b')
+      await mockPage.waitForTimeout(500)
+    }
+
     await mockPage
       .getByRole('button', { name: 'Update all main and master branches' })
       .click()

@@ -16,6 +16,8 @@ import type {
   ReviewFinding,
 } from '@/types/chat'
 import { MessageItem } from './MessageItem'
+import { getProviderChangeBeforeMessage } from './message-settings-labels'
+import { ProviderChangeSeparator } from './ProviderChangeSeparator'
 import { getAssistantDurationMs } from './time-utils'
 
 /** Number of messages to render initially (from the end) */
@@ -204,6 +206,18 @@ export const VirtualizedMessageList = memo(
         return map
       }, [messages])
 
+      const providerChangeMap = useMemo(() => {
+        const map = new Map<
+          number,
+          ReturnType<typeof getProviderChangeBeforeMessage>
+        >()
+        for (let i = 0; i < messages.length; i++) {
+          const change = getProviderChangeBeforeMessage(messages, i)
+          if (change) map.set(i, change)
+        }
+        return map
+      }, [messages])
+
       // Load more messages when scrolling near the top.
       // Uses flushSync so state update + DOM commit + scroll correction happen in one task.
       const loadMore = useCallback(() => {
@@ -321,6 +335,7 @@ export const VirtualizedMessageList = memo(
               globalIndex,
               completedDurationMs
             )
+            const providerChange = providerChangeMap.get(globalIndex)
 
             return (
               <div
@@ -333,6 +348,9 @@ export const VirtualizedMessageList = memo(
                   globalIndex === messages.length - 1 && isSending ? '' : 'pb-4'
                 }
               >
+                {providerChange && (
+                  <ProviderChangeSeparator change={providerChange} />
+                )}
                 <MessageItem
                   message={message}
                   getMessages={getMessages}

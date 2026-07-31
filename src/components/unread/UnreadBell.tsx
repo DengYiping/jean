@@ -230,7 +230,7 @@ export function UnreadBell({ title, hideTitle }: UnreadBellProps) {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <div className="card-border-spin">
+        <div>
           <button
             type="button"
             className="relative z-[1] flex items-center gap-1.5 truncate rounded-md bg-background px-1.5 text-sm font-medium text-yellow-400 cursor-pointer"

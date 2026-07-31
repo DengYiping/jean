@@ -72,6 +72,20 @@ function renderCompact(
 }
 
 describe('CompactMessageList', () => {
+  it('shows a provider separator between prompts using different backends', () => {
+    renderCompact([
+      message('user-1', 'user', 100, 'hello', { model: 'claude-sonnet-4' }),
+      message('assistant-1', 'assistant', 101, 'hi'),
+      message('user-2', 'user', 102, 'continue', { model: 'codex-mini' }),
+    ])
+
+    expect(
+      screen.getByRole('separator', {
+        name: 'Provider changed from Claude to Codex',
+      })
+    ).toBeVisible()
+  })
+
   it('renders a single pure text assistant response once instead of as activity plus text', () => {
     renderCompact([
       message('user-1', 'user', 100, 'hello'),

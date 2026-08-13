@@ -10,19 +10,16 @@ use super::pty::{
     kill_all_terminals as pty_kill_all_terminals, kill_terminal, resize_terminal, spawn_terminal,
     write_to_terminal,
 };
-use super::registry::{get_all_terminal_ids, has_terminal, TERMINAL_SESSIONS};
+use super::registry::{
+    get_all_terminal_ids, has_terminal, list_live_terminal_meta, TERMINAL_SESSIONS,
+};
+use super::run_env::{
+    assemble_run_environments, LiveCommandTerminal, ProjectRef, RunEnvironmentFilter,
+    RunEnvironmentsResult, WorktreeRef,
+};
+use super::types::TerminalPortInfo;
 use crate::platform::silent_command;
 use crate::projects::git::read_jean_config_for_worktree;
-
-/// A TCP port that a terminal's child process is listening on
-#[derive(Clone, Serialize, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct TerminalPortInfo {
-    pub terminal_id: String,
-    pub port: u16,
-    pub process_name: String,
-    pub local_address: String,
-}
 
 #[derive(Clone, Serialize, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -165,6 +162,68 @@ pub async fn get_ports(
     read_jean_config_for_worktree(&worktree_path, project_path.as_deref())
         .and_then(|config| config.ports)
         .unwrap_or_default()
+}
+
+/// Snapshot of active Jean Run-command / panel-command terminals and their ports.
+#[tauri::command]
+pub async fn get_run_environments(
+    app: AppHandle,
+    worktree_id: Option<String>,
+    project_id: Option<String>,
+) -> Result<RunEnvironmentsResult, String> {
+    let data = crate::projects::storage::load_projects_data(&app)
+        .map_err(|e| format!("load_projects_data: {e}"))?;
+    let live = list_live_terminal_meta()
+        .into_iter()
+        .filter_map(|meta| {
+            let command = meta.command.filter(|command| !command.trim().is_empty())?;
+            Some(LiveCommandTerminal {
+                terminal_id: meta.terminal_id,
+                worktree_path: meta.worktree_path,
+                command,
+                command_args: meta.command_args,
+            })
+        })
+        .collect::<Vec<_>>();
+    let worktrees = data
+        .worktrees
+        .iter()
+        .map(|worktree| WorktreeRef {
+            id: worktree.id.clone(),
+            name: worktree.name.clone(),
+            path: worktree.path.clone(),
+            project_id: worktree.project_id.clone(),
+            is_base: worktree.session_type == crate::projects::types::SessionType::Base,
+        })
+        .collect::<Vec<_>>();
+    let projects = data
+        .projects
+        .iter()
+        .map(|project| ProjectRef {
+            id: project.id.clone(),
+            name: project.name.clone(),
+        })
+        .collect::<Vec<_>>();
+
+    let mut configured_ports = HashMap::new();
+    for worktree in &worktrees {
+        let ports = get_ports(worktree.path.clone(), None).await;
+        if !ports.is_empty() {
+            configured_ports.insert(worktree.id.clone(), ports);
+        }
+    }
+
+    Ok(assemble_run_environments(
+        &live,
+        &get_terminal_listening_ports().await,
+        &worktrees,
+        &projects,
+        &configured_ports,
+        &RunEnvironmentFilter {
+            worktree_id,
+            project_id,
+        },
+    ))
 }
 
 /// Get the build script from jean.json for a worktree

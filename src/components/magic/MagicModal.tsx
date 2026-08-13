@@ -31,7 +31,7 @@ import {
 import { useUIStore } from '@/store/ui-store'
 import { useProjectsStore } from '@/store/projects-store'
 import { useChatStore } from '@/store/chat-store'
-import { useWorktree, useProjects } from '@/services/projects'
+import { clearWorktreePr, useWorktree, useProjects } from '@/services/projects'
 import { resolveMcpConfigForSend } from '@/services/mcp'
 import { useLoadedIssueContexts, useLoadedPRContexts } from '@/services/github'
 import { usePreferences } from '@/services/preferences'
@@ -88,6 +88,7 @@ type MagicOption =
   | 'pull-upstream'
   | 'push'
   | 'open-pr'
+  | 'unlink-pr'
   | 'draft-pr'
   | 'update-pr'
   | 'ready-for-review'
@@ -122,6 +123,7 @@ const CANVAS_ALLOWED_OPTIONS = new Set<MagicOption>([
   'pull-upstream',
   'push',
   'open-pr',
+  'unlink-pr',
   'draft-pr',
   'update-pr',
   'review',
@@ -248,6 +250,16 @@ function buildMagicColumns(
                 label: 'Create Draft',
                 icon: GitPullRequest,
                 key: 'Y',
+              },
+            ]
+          : []),
+        ...(hasOpenPr
+          ? [
+              {
+                id: 'unlink-pr' as const,
+                label: 'Unlink PR',
+                icon: GitPullRequest,
+                key: '—',
               },
             ]
           : []),
@@ -1230,6 +1242,35 @@ ${resolveInstructions}`
 
       if (!selectedWorktreeId) {
         notify('No worktree selected', undefined, { type: 'error' })
+        setMagicModalOpen(false)
+        return
+      }
+
+      if (option === 'unlink-pr') {
+        if (!worktree?.pr_number) {
+          notify('No PR linked to this worktree', undefined, { type: 'error' })
+          setMagicModalOpen(false)
+          return
+        }
+
+        try {
+          await clearWorktreePr(selectedWorktreeId)
+          queryClient.invalidateQueries({
+            queryKey: projectsQueryKeys.worktrees(worktree.project_id),
+          })
+          queryClient.invalidateQueries({
+            queryKey: [
+              ...projectsQueryKeys.all,
+              'worktree',
+              selectedWorktreeId,
+            ],
+          })
+          triggerImmediateGitPoll()
+          fetchWorktreesStatus(worktree.project_id)
+          toast.success(`Unlinked PR #${worktree.pr_number}`)
+        } catch (error) {
+          toast.error(`Failed to unlink PR: ${error}`)
+        }
         setMagicModalOpen(false)
         return
       }

@@ -181,7 +181,8 @@ fn tool_registry_core() -> Value {
         {"name":"read_session_messages","description":"Read recent messages from a session (most recent first). Use limit to cap returned messages.","inputSchema":{"type":"object","properties":{"sessionId":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":200,"default":50}},"required":["sessionId"],"additionalProperties":false}},
         {"name":"get_worktree_changes","description":"Get a bounded summary of a worktree's git changes: porcelain status, ahead/behind counts, diff stats, and changed files. Does not return full diffs.","inputSchema":{"type":"object","properties":{"worktreeId":{"type":"string"},"maxFiles":{"type":"integer","minimum":1,"maximum":500,"default":100}},"required":["worktreeId"],"additionalProperties":false}},
         {"name":"get_worktree_diff","description":"Get a bounded unified git diff for a worktree. diffType is uncommitted (HEAD vs working tree) or branch (origin/base...HEAD). Optional path limits to one pathspec; maxBytes is capped.","inputSchema":{"type":"object","properties":{"worktreeId":{"type":"string"},"diffType":{"type":"string","enum":["uncommitted","branch"],"default":"uncommitted"},"path":{"type":"string"},"maxBytes":{"type":"integer","minimum":1,"maximum":200000,"default":60000}},"required":["worktreeId"],"additionalProperties":false}},
-        {"name":"get_current_context","description":"Return the calling session's context: sessionId, worktreeId, projectId, projectPath, projectName. Use this so the agent knows what 'this project' refers to without guessing.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}}
+        {"name":"get_current_context","description":"Return the calling session's context: sessionId, worktreeId, projectId, projectPath, projectName. Use this so the agent knows what 'this project' refers to without guessing.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},
+        {"name":"get_run_environments","description":"List active Jean Run-command / panel-command environments with their worktree identity, startup command, ports, and http URL. Optional worktreeId or projectId filters.","inputSchema":{"type":"object","properties":{"worktreeId":{"type":"string"},"projectId":{"type":"string"}},"additionalProperties":false}}
     ])
 }
 
@@ -1002,6 +1003,19 @@ async fn run_tool(
                     "path": path,
                     "maxBytes": max_bytes
                 }),
+            )
+            .await
+            .map_err(ToolError::internal)
+        }
+        "get_run_environments" => {
+            let worktree_id =
+                optional_str(&args, "worktreeId").or_else(|| optional_str(&args, "worktree_id"));
+            let project_id =
+                optional_str(&args, "projectId").or_else(|| optional_str(&args, "project_id"));
+            dispatch_command(
+                app,
+                "get_run_environments",
+                json!({ "worktreeId": worktree_id, "projectId": project_id }),
             )
             .await
             .map_err(ToolError::internal)
@@ -1904,6 +1918,18 @@ mod tests {
         assert!(list_archived["inputSchema"]["properties"]
             .get("projectId")
             .is_some());
+    }
+
+    #[test]
+    fn tool_registry_exposes_run_environments_without_required_filters() {
+        let run_environments = find_tool(&tool_registry(), "get_run_environments");
+        assert!(run_environments["inputSchema"]["properties"]
+            .get("worktreeId")
+            .is_some());
+        assert!(run_environments["inputSchema"]["properties"]
+            .get("projectId")
+            .is_some());
+        assert!(run_environments["inputSchema"].get("required").is_none());
     }
 
     #[test]

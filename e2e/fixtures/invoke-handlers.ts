@@ -335,6 +335,7 @@ export const defaultResponses: Record<string, unknown> = {
   },
   get_worktree_changes: { files: [], truncated: false },
   get_worktree_diff: { diff: '', truncated: false },
+  get_run_environments: { environments: [] },
   list_sessions_summary: [],
   get_session_status: { status: 'idle' },
 

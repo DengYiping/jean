@@ -234,6 +234,9 @@ pub fn spawn_terminal(
         child,
         cols,
         rows,
+        worktree_path,
+        command,
+        command_args,
     };
     register_terminal(session);
 

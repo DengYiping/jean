@@ -2058,6 +2058,13 @@ pub async fn dispatch_command(
             let result = crate::terminal::get_terminal_listening_ports().await;
             to_value(result)
         }
+        "get_run_environments" => {
+            let worktree_id: Option<String> = field_opt(&args, "worktreeId", "worktree_id")?;
+            let project_id: Option<String> = field_opt(&args, "projectId", "project_id")?;
+            let result =
+                crate::terminal::get_run_environments(app.clone(), worktree_id, project_id).await?;
+            to_value(result)
+        }
         "get_build_script" => {
             let worktree_path: String = field(&args, "worktreePath", "worktree_path")?;
             let project_path: Option<String> = field_opt(&args, "projectPath", "project_path")?;

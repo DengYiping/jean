@@ -4775,6 +4775,7 @@ pub fn run() {
             terminal::get_run_scripts,
             terminal::get_package_scripts,
             terminal::get_ports,
+            terminal::get_run_environments,
             terminal::get_build_script,
             terminal::kill_all_terminals,
             // Browser commands (native-only — not exposed via http_server::dispatch)

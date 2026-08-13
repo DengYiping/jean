@@ -6926,6 +6926,29 @@ pub async fn detect_and_link_pr(
 ) -> Result<Option<DetectPrResponse>, String> {
     log::trace!("Detecting PR for worktree {worktree_id} at {worktree_path}");
 
+    if let Ok(mut data) = load_projects_data(&app) {
+        let (cleared_pr_link, is_base_session) = data
+            .worktrees
+            .iter_mut()
+            .find(|worktree| worktree.id == worktree_id)
+            .map(|worktree| {
+                (
+                    clear_invalid_base_pr_link(worktree),
+                    worktree.session_type == SessionType::Base,
+                )
+            })
+            .unwrap_or((false, false));
+
+        if cleared_pr_link {
+            save_projects_data(&app, &data)?;
+            log::warn!("Removed invalid PR link from base session {worktree_id}");
+        }
+
+        if is_base_session {
+            return Ok(None);
+        }
+    }
+
     let gh = resolve_gh_binary(&app);
     let view_output = silent_command(&gh)
         .args(["pr", "view", "--json", "number,url,title"])
@@ -6980,6 +7003,26 @@ pub async fn detect_and_link_pr(
     }
 
     Ok(None)
+}
+
+fn clear_invalid_base_pr_link(worktree: &mut Worktree) -> bool {
+    if worktree.session_type != SessionType::Base {
+        return false;
+    }
+
+    let had_pr_link = worktree.pr_number.is_some()
+        || worktree.pr_url.is_some()
+        || worktree.pr_push_remote.is_some()
+        || worktree.pr_push_branch.is_some();
+    if had_pr_link {
+        worktree.pr_number = None;
+        worktree.pr_url = None;
+        worktree.pr_push_remote = None;
+        worktree.pr_push_branch = None;
+        worktree.cached_pr_status = None;
+        worktree.cached_check_status = None;
+    }
+    had_pr_link
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -9014,7 +9057,16 @@ fn push_for_commit(
     remote: Option<&str>,
     pr_number: Option<u32>,
 ) -> Result<(bool, bool), String> {
-    match pr_number {
+    let mut data = load_projects_data(app)?;
+    let effective_pr_number = effective_pr_number_for_push(&data, repo_path, pr_number);
+    if let Some(worktree) = data.worktrees.iter_mut().find(|w| w.path == repo_path) {
+        if clear_invalid_base_pr_link(worktree) {
+            save_projects_data(app, &data)?;
+            log::warn!("Removed invalid PR link from base session before commit push");
+        }
+    }
+
+    match effective_pr_number {
         Some(pr) => {
             let result = git::git_push_to_pr(app, repo_path, pr, &resolve_gh_binary(app))?;
             Ok((result.fell_back, result.permission_denied))
@@ -10598,6 +10650,17 @@ fn persist_pr_push_target(
     Ok(())
 }
 
+fn effective_pr_number_for_push(
+    data: &ProjectsData,
+    worktree_path: &str,
+    requested_pr_number: Option<u32>,
+) -> Option<u32> {
+    match data.worktrees.iter().find(|w| w.path == worktree_path) {
+        Some(worktree) if worktree.session_type == SessionType::Base => None,
+        _ => requested_pr_number,
+    }
+}
+
 /// Push current branch to remote. If pr_number is provided, uses PR-aware push
 /// that handles fork remotes and uses --force-with-lease.
 #[tauri::command]
@@ -10607,8 +10670,17 @@ pub async fn git_push(
     pr_number: Option<u32>,
     remote: Option<String>,
 ) -> Result<GitPushResponse, String> {
-    log::trace!("Pushing changes for worktree: {worktree_path}, pr_number: {pr_number:?}, remote: {remote:?}");
-    match pr_number {
+    let mut data = load_projects_data(&app)?;
+    let effective_pr_number = effective_pr_number_for_push(&data, &worktree_path, pr_number);
+    if let Some(worktree) = data.worktrees.iter_mut().find(|w| w.path == worktree_path) {
+        if clear_invalid_base_pr_link(worktree) {
+            save_projects_data(&app, &data)?;
+            log::warn!("Removed invalid PR link from base session before push");
+        }
+    }
+
+    log::trace!("Pushing changes for worktree: {worktree_path}, pr_number: {pr_number:?}, effective_pr_number: {effective_pr_number:?}, remote: {remote:?}");
+    match effective_pr_number {
         Some(pr) => {
             let result = git::git_push_to_pr(&app, &worktree_path, pr, &resolve_gh_binary(&app))?;
             if let (Some(pushed_remote), Some(pushed_branch)) =
@@ -13376,6 +13448,59 @@ mod tests {
             automation_name: None,
             automation_owned: false,
         }
+    }
+
+    #[test]
+    fn base_session_never_uses_pr_aware_push() {
+        let mut base = test_worktree("base", "project-1", "main");
+        base.session_type = SessionType::Base;
+        base.pr_number = Some(9822);
+        let data = ProjectsData {
+            projects: vec![],
+            worktrees: vec![base],
+            worktree_slots: vec![],
+        };
+
+        assert_eq!(
+            effective_pr_number_for_push(&data, "/tmp/base", Some(9822)),
+            None
+        );
+    }
+
+    #[test]
+    fn regular_worktree_keeps_pr_aware_push() {
+        let mut worktree = test_worktree("feature", "project-1", "feature");
+        worktree.pr_number = Some(42);
+        let data = ProjectsData {
+            projects: vec![],
+            worktrees: vec![worktree],
+            worktree_slots: vec![],
+        };
+
+        assert_eq!(
+            effective_pr_number_for_push(&data, "/tmp/feature", Some(42)),
+            Some(42)
+        );
+    }
+
+    #[test]
+    fn clearing_base_pr_link_removes_pr_metadata_and_statuses() {
+        let mut base = test_worktree("base", "project-1", "main");
+        base.session_type = SessionType::Base;
+        base.pr_number = Some(9822);
+        base.pr_url = Some("https://github.com/acme/app/pull/9822".to_string());
+        base.pr_push_remote = Some("contributor".to_string());
+        base.pr_push_branch = Some("main".to_string());
+        base.cached_pr_status = Some("open".to_string());
+        base.cached_check_status = Some("success".to_string());
+
+        assert!(clear_invalid_base_pr_link(&mut base));
+        assert_eq!(base.pr_number, None);
+        assert_eq!(base.pr_url, None);
+        assert_eq!(base.pr_push_remote, None);
+        assert_eq!(base.pr_push_branch, None);
+        assert_eq!(base.cached_pr_status, None);
+        assert_eq!(base.cached_check_status, None);
     }
 
     fn test_project(id: &str, default_branch: &str) -> Project {

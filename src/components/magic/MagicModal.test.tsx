@@ -143,6 +143,8 @@ vi.mock('@/services/projects', () => ({
     all: ['projects'],
     worktrees: (projectId: string) => ['projects', 'worktrees', projectId],
   },
+  clearWorktreePr: (worktreeId: string) =>
+    hoisted.invokeMock('clear_worktree_pr', { worktreeId }),
 }))
 
 vi.mock('@/services/github', () => ({
@@ -254,6 +256,23 @@ describe('MagicModal', () => {
     expect(
       screen.getByRole('button', { name: /ready for review/i })
     ).toBeVisible()
+  })
+
+  it('unlinks a linked PR', async () => {
+    hoisted.setCurrentWorktree({
+      ...getCurrentWorktree(),
+      pr_number: 42,
+      pr_url: 'https://github.com/test/repo/pull/42',
+    })
+
+    render(<MagicModal />)
+    fireEvent.click(screen.getByRole('button', { name: /unlink pr/i }))
+
+    await waitFor(() => {
+      expect(hoisted.invokeMock).toHaveBeenCalledWith('clear_worktree_pr', {
+        worktreeId: 'wt-1',
+      })
+    })
   })
 
   it('keeps O mapped to normal PR creation', async () => {

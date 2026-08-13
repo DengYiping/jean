@@ -1,6 +1,7 @@
 mod commands;
 mod pty;
 mod registry;
+mod run_env;
 mod types;
 
 // Re-export commands for registration in lib.rs

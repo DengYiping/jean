@@ -19,6 +19,7 @@ import { QuitConfirmationDialog } from './QuitConfirmationDialog'
 import { BranchConflictDialog } from '@/components/worktree/BranchConflictDialog'
 import { TeardownOutputDialog } from '@/components/worktree/TeardownOutputDialog'
 import { FileBrowserDialog } from '@/components/file-browser/FileBrowserDialog'
+import { FileContentModal } from '@/components/chat/FileContentModal'
 
 // Lazy-loaded heavy modals (code splitting)
 const LeftSideBar = lazy(() =>
@@ -298,6 +299,8 @@ export function MainWindow() {
   const cliLoginModalOpen = useUIStore(state => state.cliLoginModalOpen)
   const updateModalVersion = useUIStore(state => state.updateModalVersion)
   const githubDashboardOpen = useUIStore(state => state.githubDashboardOpen)
+  const viewingFilePath = useUIStore(state => state.viewingFilePath)
+  const setViewingFilePath = useUIStore(state => state.setViewingFilePath)
   const newSessionModeTarget = useUIStore(state => state.newSessionModeTarget)
   const selectedWorktreeId = useProjectsStore(state => state.selectedWorktreeId)
   const addProjectDialogOpen = useProjectsStore(
@@ -759,6 +762,12 @@ export function MainWindow() {
       <BranchConflictDialog />
       <TeardownOutputDialog />
       <FileBrowserDialog />
+      {viewingFilePath && (
+        <FileContentModal
+          filePath={viewingFilePath}
+          onClose={() => setViewingFilePath(null)}
+        />
+      )}
       <Toaster
         position="bottom-right"
         offset={toasterOffset}

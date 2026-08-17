@@ -137,7 +137,9 @@ interface UIState {
   updateModalVersion: string | null
   chatSearchOpen: boolean
   fileBrowserOpen: boolean
+  viewingFilePath: string | null
   setFileBrowserOpen: (open: boolean) => void
+  setViewingFilePath: (path: string | null) => void
   toggleLeftSidebar: () => void
   setLeftSidebarVisible: (visible: boolean) => void
   setLeftSidebarSize: (size: number) => void
@@ -318,6 +320,7 @@ export const useUIStore = create<UIState>()(
       updateModalVersion: null,
       chatSearchOpen: false,
       fileBrowserOpen: false,
+      viewingFilePath: null,
       githubDashboardOpen: false,
       toggleLeftSidebar: () =>
         set(
@@ -335,6 +338,9 @@ export const useUIStore = create<UIState>()(
 
       setFileBrowserOpen: open =>
         set({ fileBrowserOpen: open }, undefined, 'setFileBrowserOpen'),
+
+      setViewingFilePath: path =>
+        set({ viewingFilePath: path }, undefined, 'setViewingFilePath'),
 
       toggleRightSidebar: () =>
         set(

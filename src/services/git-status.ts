@@ -23,6 +23,13 @@ import type {
   Worktree,
 } from '@/types/projects'
 import type { GitDiff, CommitHistoryResult } from '@/types/git-diff'
+import { queryClient } from '@/lib/query-client'
+
+function invalidateJeanConfigQueries() {
+  queryClient.invalidateQueries({ queryKey: ['run-scripts'] })
+  queryClient.invalidateQueries({ queryKey: ['ports'] })
+  queryClient.invalidateQueries({ queryKey: ['jean-config'] })
+}
 
 // ============================================================================
 // Types
@@ -268,6 +275,7 @@ async function performGitSync(opts: GitSyncOptions): Promise<void> {
   try {
     await runSync()
     await triggerImmediateGitPoll()
+    invalidateJeanConfigQueries()
     if (projectId) fetchWorktreesStatus(projectId)
     toast.success(successMessage, { id: toastId })
   } catch (error) {
@@ -298,6 +306,7 @@ async function performGitSync(opts: GitSyncOptions): Promise<void> {
         toast.loading('Restoring stashed changes...', { id: toastId })
         await gitStashPop(worktreePath)
         await triggerImmediateGitPoll()
+        invalidateJeanConfigQueries()
         if (projectId) fetchWorktreesStatus(projectId)
         toast.success(autoStashSuccessMessage, { id: toastId })
       } catch (stashError) {

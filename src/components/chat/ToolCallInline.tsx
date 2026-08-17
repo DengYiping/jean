@@ -40,7 +40,7 @@ import {
 } from '@/components/ui/collapsible'
 
 export const TOOL_CALL_ROW_CLASS =
-  'flex min-h-9 w-full items-center gap-1.5 px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-muted/50 select-none min-w-0'
+  'tool-call-row flex min-h-9 w-full items-center gap-1.5 px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-muted/50 select-none min-w-0'
 
 export const TOOL_CALL_DETAIL_PILL_CLASS =
   'min-w-0 max-w-[55%] sm:max-w-full truncate rounded px-1 text-[0.6875rem] font-sans leading-none'
@@ -88,6 +88,7 @@ export function ToolCallInline({
   } = display
 
   const handleFileClick = (e: React.MouseEvent) => {
+    e.preventDefault()
     e.stopPropagation()
     if (filePath && onFileClick) {
       onFileClick(filePath)

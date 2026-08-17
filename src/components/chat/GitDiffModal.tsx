@@ -89,11 +89,12 @@ import {
   AlertDialogAction,
 } from '@/components/ui/alert-dialog'
 import { useTheme } from '@/hooks/use-theme'
-import { useUIStore } from '@/store/ui-store'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { usePreferences } from '@/services/preferences'
 import { CommitsTabView } from './CommitsTabView'
 import { OpenFileInEditorButton } from '@/components/open-in/OpenFileInEditorButton'
+import { convertProjectFileSrc } from '@/lib/transport'
+import { useUIStore } from '@/store/ui-store'
 import {
   MemoizedFileDiff,
   getStatusColor,
@@ -1040,6 +1041,20 @@ export function GitDiffModal({
       }
 
       if (isSelectedFileBinary) {
+        const isImage = /\.(png|jpe?g|gif|webp|svg|bmp|ico|avif)$/i.test(
+          selectedFile.fileName
+        )
+        if (isImage && !isSelectedFileDeleted && selectedFilePath) {
+          return (
+            <div className="flex w-full justify-center bg-black/5 p-3">
+              <img
+                src={convertProjectFileSrc(selectedFilePath)}
+                alt={`Preview ${selectedFile.fileName}`}
+                className="max-h-[70vh] max-w-full object-contain"
+              />
+            </div>
+          )
+        }
         return (
           <div className="px-4 py-8 text-center text-muted-foreground text-sm">
             Binary file - cannot display as text.
@@ -1119,6 +1134,7 @@ export function GitDiffModal({
     viewMode,
     isSelectedFileDeleted,
     isSelectedFileBinary,
+    selectedFilePath,
     isLoadingFileContent,
     selectedFileContents,
     selectedTouchedLines,

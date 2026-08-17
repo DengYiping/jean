@@ -2138,21 +2138,73 @@ pub fn read_jean_config(worktree_path: &str) -> Option<JeanConfig> {
     }
 }
 
-/// Read jean.json for a worktree, falling back to the project root config.
-///
-/// Worktree config wins when present. The fallback keeps Jean-managed scripts
-/// available when jean.json exists only in the base project directory.
+/// Read jean.json for a worktree, preferring the newest project-level copy.
 pub fn read_jean_config_for_worktree(
     worktree_path: &str,
     project_path: Option<&str>,
 ) -> Option<JeanConfig> {
-    read_jean_config(worktree_path).or_else(|| {
-        let project_path = project_path?;
-        if Path::new(project_path) == Path::new(worktree_path) {
-            return None;
-        }
-        read_jean_config(project_path)
+    let worktree = jean_config_candidate(worktree_path);
+    let project = project_path
+        .filter(|path| {
+            path.trim_end_matches(['/', '\\']) != worktree_path.trim_end_matches(['/', '\\'])
+        })
+        .and_then(jean_config_candidate);
+    pick_newest_jean_config(worktree, project).map(|candidate| candidate.config)
+}
+
+struct JeanConfigCandidate {
+    config: JeanConfig,
+    dirty: bool,
+    committed_at: Option<u64>,
+}
+
+fn jean_config_candidate(path: &str) -> Option<JeanConfigCandidate> {
+    Some(JeanConfigCandidate {
+        config: read_jean_config(path)?,
+        dirty: jean_json_is_dirty(path),
+        committed_at: jean_json_committed_at(path),
     })
+}
+
+fn pick_newest_jean_config(
+    worktree: Option<JeanConfigCandidate>,
+    project: Option<JeanConfigCandidate>,
+) -> Option<JeanConfigCandidate> {
+    match (worktree, project) {
+        (None, None) => None,
+        (Some(only), None) | (None, Some(only)) => Some(only),
+        (Some(worktree), Some(project)) => Some(match (project.dirty, worktree.dirty) {
+            (true, false) => project,
+            (false, true) => worktree,
+            _ if project.committed_at.unwrap_or(0) >= worktree.committed_at.unwrap_or(0) => project,
+            _ => worktree,
+        }),
+    }
+}
+
+fn jean_json_is_dirty(repo_path: &str) -> bool {
+    silent_command("git")
+        .args([
+            "status",
+            "--porcelain",
+            "--untracked-files=normal",
+            "--",
+            "jean.json",
+        ])
+        .current_dir(repo_path)
+        .output()
+        .map(|output| !output.status.success() || !output.stdout.is_empty())
+        .unwrap_or(true)
+}
+
+fn jean_json_committed_at(repo_path: &str) -> Option<u64> {
+    let output = silent_command("git")
+        .args(["log", "-1", "--format=%ct", "--", "jean.json"])
+        .current_dir(repo_path)
+        .output()
+        .ok()?;
+    output.status.success().then_some(())?;
+    String::from_utf8_lossy(&output.stdout).trim().parse().ok()
 }
 
 /// Run a setup script in a worktree directory
@@ -2992,7 +3044,7 @@ mod tests {
     }
 
     #[test]
-    fn test_read_jean_config_for_worktree_prefers_worktree_config() {
+    fn test_read_jean_config_for_worktree_prefers_dirty_project_config() {
         let temp = TempDir::new().unwrap();
         let project = temp.path().join("project");
         let worktree = temp.path().join("worktree");
@@ -3009,10 +3061,10 @@ mod tests {
 
         assert_eq!(
             config.scripts.run.unwrap().into_vec(),
-            vec!["npm run dev".to_string()]
+            vec!["bun run dev".to_string()]
         );
-        assert_eq!(config.scripts.build, Some("npm run build".to_string()));
-        assert_eq!(config.ports.unwrap()[0].port, 4000);
+        assert_eq!(config.scripts.build, Some("bun run build".to_string()));
+        assert_eq!(config.ports.unwrap()[0].port, 3000);
     }
 
     #[test]

@@ -2248,7 +2248,7 @@ export function useGitHubRemotes(repoPath: string | null, enabled: boolean) {
       return invoke<GitHubRemote[]>('get_github_remotes', { repoPath })
     },
     enabled: enabled && repoPath !== null,
-    staleTime: 30_000,
+    staleTime: 0,
   })
 }
 
@@ -2503,7 +2503,7 @@ function useJeanScript(
       return normalizedScript
     },
     enabled: !!worktreePath,
-    staleTime: 30_000, // Cache for 30 seconds
+    staleTime: 0,
   })
 }
 
@@ -2529,7 +2529,7 @@ export function useRunScripts(
       return scripts
     },
     enabled: !!worktreePath,
-    staleTime: 30_000, // Cache for 30 seconds
+    staleTime: 0,
   })
 }
 
@@ -2551,7 +2551,7 @@ export function useRunScript(
       return scripts[0]?.trim() || null
     },
     enabled: !!worktreePath,
-    staleTime: 30_000,
+    staleTime: 0,
   })
 }
 
@@ -2580,7 +2580,7 @@ export function usePackageScripts(worktreePath: string | null) {
       return invoke<PackageScript[]>('get_package_scripts', { worktreePath })
     },
     enabled: !!worktreePath,
-    staleTime: 30_000,
+    staleTime: 0,
   })
 }
 

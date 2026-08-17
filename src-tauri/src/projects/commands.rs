@@ -2582,7 +2582,8 @@ pub async fn create_worktree(
             // initial worktree record. This lets the frontend know a setup script
             // will run (setup_script is set, but setup_output is still None).
             let pending_setup_script =
-                git::read_jean_config(&project_path).and_then(|config| config.scripts.setup);
+                git::read_jean_config_for_worktree(&worktree_path_clone, Some(&project_path))
+                    .and_then(|config| config.scripts.setup);
 
             // Save to storage and emit worktree:created BEFORE running setup script
             // so the UI can open immediately and the user can start typing.
@@ -3549,28 +3550,29 @@ pub async fn create_worktree_from_existing_branch(
             }
 
             // Check for jean.json and run setup script
-            let (setup_output, setup_script, setup_success) =
-                if let Some(config) = git::read_jean_config(&project_path) {
-                    if let Some(script) = config.scripts.setup {
-                        log::trace!("Background: Found jean.json with setup script, executing...");
-                        match git::run_setup_script(
-                            &worktree_path_clone,
-                            &project_path,
-                            &name_clone,
-                            &script,
-                        ) {
-                            Ok(output) => (Some(output), Some(script), Some(true)),
-                            Err(e) => {
-                                log::warn!("Background: Setup script failed (continuing): {e}");
-                                (Some(e), Some(script), Some(false))
-                            }
+            let (setup_output, setup_script, setup_success) = if let Some(config) =
+                git::read_jean_config_for_worktree(&worktree_path_clone, Some(&project_path))
+            {
+                if let Some(script) = config.scripts.setup {
+                    log::trace!("Background: Found jean.json with setup script, executing...");
+                    match git::run_setup_script(
+                        &worktree_path_clone,
+                        &project_path,
+                        &name_clone,
+                        &script,
+                    ) {
+                        Ok(output) => (Some(output), Some(script), Some(true)),
+                        Err(e) => {
+                            log::warn!("Background: Setup script failed (continuing): {e}");
+                            (Some(e), Some(script), Some(false))
                         }
-                    } else {
-                        (None, None, None)
                     }
                 } else {
                     (None, None, None)
-                };
+                }
+            } else {
+                (None, None, None)
+            };
 
             // Save to storage
             if let Ok(mut data) = load_projects_data(&app_clone) {
@@ -4121,28 +4123,29 @@ pub async fn checkout_pr(
             );
 
             // Check for jean.json and run setup script
-            let (setup_output, setup_script, setup_success) =
-                if let Some(config) = git::read_jean_config(&worktree_path_clone) {
-                    if let Some(script) = config.scripts.setup {
-                        log::trace!("Background: Found jean.json with setup script, executing...");
-                        match git::run_setup_script(
-                            &worktree_path_clone,
-                            &project_path,
-                            &actual_branch,
-                            &script,
-                        ) {
-                            Ok(output) => (Some(output), Some(script), Some(true)),
-                            Err(e) => {
-                                log::warn!("Background: Setup script failed (continuing): {e}");
-                                (Some(e), Some(script), Some(false))
-                            }
+            let (setup_output, setup_script, setup_success) = if let Some(config) =
+                git::read_jean_config_for_worktree(&worktree_path_clone, Some(&project_path))
+            {
+                if let Some(script) = config.scripts.setup {
+                    log::trace!("Background: Found jean.json with setup script, executing...");
+                    match git::run_setup_script(
+                        &worktree_path_clone,
+                        &project_path,
+                        &actual_branch,
+                        &script,
+                    ) {
+                        Ok(output) => (Some(output), Some(script), Some(true)),
+                        Err(e) => {
+                            log::warn!("Background: Setup script failed (continuing): {e}");
+                            (Some(e), Some(script), Some(false))
                         }
-                    } else {
-                        (None, None, None)
                     }
                 } else {
                     (None, None, None)
-                };
+                }
+            } else {
+                (None, None, None)
+            };
 
             // Write PR context file to shared git-context directory
             if let Ok(repo_id) = get_repo_identifier(&project_path) {
@@ -4362,10 +4365,7 @@ pub async fn delete_worktree(app: AppHandle, worktree_id: String) -> Result<(), 
 
     log::trace!("Found project: id={}, path={}", project.id, project.path);
 
-    // Read jean.json teardown script — try worktree first, fall back to project root
-    // (worktree has jean.json if committed; project root always has it if saved via UI)
-    let teardown_script = git::read_jean_config(&worktree.path)
-        .or_else(|| git::read_jean_config(&project.path))
+    let teardown_script = git::read_jean_config_for_worktree(&worktree.path, Some(&project.path))
         .and_then(|config| config.scripts.teardown);
 
     if let Some(slot_id) = worktree.stable_slot_id.clone() {

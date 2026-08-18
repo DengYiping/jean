@@ -7,9 +7,10 @@ import type {
   RepositoryAdvisory,
 } from '@/types/github'
 import type { LinearIssue } from '@/types/linear'
+import type { SentryIssue } from '@/types/sentry'
 import type { SessionWithContext } from '../LoadContextItems'
 
-type TabId = 'issues' | 'prs' | 'security' | 'contexts' | 'linear'
+type TabId = 'issues' | 'prs' | 'security' | 'contexts' | 'linear' | 'sentry'
 
 interface UseLoadContextKeyboardOptions {
   activeTab: TabId
@@ -19,6 +20,7 @@ interface UseLoadContextKeyboardOptions {
   filteredSecurityAlerts: DependabotAlert[]
   filteredAdvisories: RepositoryAdvisory[]
   filteredLinearIssues: LinearIssue[]
+  filteredSentryIssues: SentryIssue[]
   filteredContexts: SavedContext[]
   filteredEntries: AllSessionsEntry[]
   selectedIndex: number
@@ -32,6 +34,7 @@ interface UseLoadContextKeyboardOptions {
   onSelectAdvisory: (advisory: RepositoryAdvisory) => void
   onPreviewAdvisory: (advisory: RepositoryAdvisory) => void
   onSelectLinearIssue: (issue: LinearIssue) => void
+  onSelectSentryIssue: (issue: SentryIssue) => void
   onAttachContext: (ctx: SavedContext) => void
   onSessionClick: (s: SessionWithContext) => void
   onTabChange: (tab: TabId) => void
@@ -45,6 +48,7 @@ export function useLoadContextKeyboard({
   filteredSecurityAlerts,
   filteredAdvisories,
   filteredLinearIssues,
+  filteredSentryIssues,
   filteredContexts,
   filteredEntries,
   selectedIndex,
@@ -58,6 +62,7 @@ export function useLoadContextKeyboard({
   onSelectAdvisory,
   onPreviewAdvisory,
   onSelectLinearIssue,
+  onSelectSentryIssue,
   onAttachContext,
   onSessionClick,
   onTabChange,
@@ -78,6 +83,11 @@ export function useLoadContextKeyboard({
           if (!nextTab) return
           e.preventDefault()
           onTabChange(nextTab)
+          return
+        }
+        if (key === '6') {
+          e.preventDefault()
+          onTabChange('sentry')
           return
         }
       }
@@ -212,6 +222,26 @@ export function useLoadContextKeyboard({
         }
       }
 
+      if (activeTab === 'sentry' && filteredSentryIssues.length > 0) {
+        if (key === 'arrowdown') {
+          e.preventDefault()
+          setSelectedIndex(
+            Math.min(selectedIndex + 1, filteredSentryIssues.length - 1)
+          )
+          return
+        }
+        if (key === 'arrowup') {
+          e.preventDefault()
+          setSelectedIndex(Math.max(selectedIndex - 1, 0))
+          return
+        }
+        if (key === 'enter' && filteredSentryIssues[selectedIndex]) {
+          e.preventDefault()
+          onSelectSentryIssue(filteredSentryIssues[selectedIndex])
+          return
+        }
+      }
+
       // List navigation for contexts tab (saved contexts + sessions)
       if (activeTab === 'contexts') {
         const totalItems =
@@ -263,6 +293,7 @@ export function useLoadContextKeyboard({
       filteredSecurityAlerts,
       filteredAdvisories,
       filteredLinearIssues,
+      filteredSentryIssues,
       filteredContexts,
       filteredEntries,
       selectedIndex,
@@ -276,6 +307,7 @@ export function useLoadContextKeyboard({
       onSelectAdvisory,
       onPreviewAdvisory,
       onSelectLinearIssue,
+      onSelectSentryIssue,
       onAttachContext,
       onSessionClick,
       onTabChange,

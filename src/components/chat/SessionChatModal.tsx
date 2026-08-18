@@ -654,7 +654,7 @@ export function SessionChatModal({
       })
   }, [isOpen, worktreeId, worktreePath])
 
-  // Sorted sessions for tab order (waiting → review → idle)
+  // Keep actionable sessions visible, then surface the most recent work.
   const sortedSessions = useMemo(() => {
     const priority: Record<string, number> = {
       waiting: 0,
@@ -665,8 +665,8 @@ export function SessionChatModal({
       const pa = priority[getSessionStatus(a, storeState)] ?? 2
       const pb = priority[getSessionStatus(b, storeState)] ?? 2
       if (pa !== pb) return pa - pb
-      // Stable secondary sort: oldest first (consistent across refetches)
-      return a.created_at - b.created_at
+      if (a.updated_at !== b.updated_at) return b.updated_at - a.updated_at
+      return b.created_at - a.created_at
     })
   }, [sessions, storeState])
 

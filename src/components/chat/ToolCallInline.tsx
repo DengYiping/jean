@@ -1154,7 +1154,9 @@ function getToolDisplay(
         label: 'Report Findings',
         detail: `${count} finding${count === 1 ? '' : 's'}`,
         expandedContent:
-          count > 0 ? JSON.stringify(findings, null, 2) : 'No findings reported',
+          count > 0
+            ? JSON.stringify(findings, null, 2)
+            : 'No findings reported',
       }
     }
 

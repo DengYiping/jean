@@ -25,6 +25,8 @@ export type NotificationSound = string
  * string = user customization (preserved across updates).
  */
 export interface MagicPrompts {
+  /** Prompt for smoke testing the current work */
+  smoke_test: string | null
   /** Prompt for investigating GitHub issues */
   investigate_issue: string | null
   /** Prompt for investigating GitHub pull requests */
@@ -759,7 +761,18 @@ export const DEFAULT_AUTOMATE_SECURITY_ADVISORIES_PROMPT = `<task>Automate triag
 </instructions>`
 
 /** Default values for all magic prompts (null = use current app default) */
+export const DEFAULT_SMOKE_TEST_PROMPT = `Smoke test the feature or fix developed in source session {source_session_id}.
+
+1. Use the Jean MCP read_session_messages tool with sessionId {source_session_id} to identify the requested behavior and expected result.
+2. Inspect the current worktree path, branch, git status, changed files, and diff.
+3. Call the Jean MCP get_run_environments tool for the current worktree before starting a server. Reuse an existing environment when available. If none is running, call start_run_environment. Do not guess a port or launch a duplicate server.
+4. Run relevant automated tests and test every applicable API, MCP, desktop, web, and mobile interface.
+5. Exercise the main path, important edge cases, validation errors, and failure recovery. Clean up temporary resources.
+
+Report the source session, worktree and branch tested, server command/URL/port, automated results, scenarios tested, failures/skipped checks, cleanup result, and final verdict. Do not claim success when an applicable critical scenario could not be tested.`
+
 export const DEFAULT_MAGIC_PROMPTS: MagicPrompts = {
+  smoke_test: null,
   investigate_issue: null,
   investigate_pr: null,
   pr_content: null,
@@ -794,6 +807,7 @@ export const DEFAULT_MAGIC_PROMPTS: MagicPrompts = {
  * Per-prompt model overrides. Field names use snake_case to match Rust struct exactly.
  */
 export interface MagicPromptModels {
+  smoke_test_model: MagicPromptModel
   investigate_issue_model: MagicPromptModel
   investigate_pr_model: MagicPromptModel
   investigate_workflow_run_model: MagicPromptModel
@@ -820,6 +834,7 @@ export interface MagicPromptModels {
  * Field names use snake_case to match Rust struct exactly.
  */
 export interface MagicPromptReasoningEfforts {
+  smoke_test_effort: MagicPromptReasoningEffort
   investigate_issue_effort: MagicPromptReasoningEffort
   investigate_pr_effort: MagicPromptReasoningEffort
   investigate_workflow_run_effort: MagicPromptReasoningEffort
@@ -843,6 +858,7 @@ export interface MagicPromptReasoningEfforts {
 
 /** Default models for each magic prompt */
 export const DEFAULT_MAGIC_PROMPT_MODELS: MagicPromptModels = {
+  smoke_test_model: 'claude-opus-4-8[1m]',
   investigate_issue_model: 'claude-opus-4-8[1m]',
   investigate_pr_model: 'claude-opus-4-8[1m]',
   investigate_workflow_run_model: 'claude-opus-4-8[1m]',
@@ -866,6 +882,7 @@ export const DEFAULT_MAGIC_PROMPT_MODELS: MagicPromptModels = {
 
 /** Codex preset: heavy tasks use top model, light tasks use mini */
 export const CODEX_DEFAULT_MAGIC_PROMPT_MODELS: MagicPromptModels = {
+  smoke_test_model: 'gpt-5.4',
   investigate_issue_model: 'gpt-5.4',
   investigate_pr_model: 'gpt-5.4',
   investigate_workflow_run_model: 'gpt-5.4',
@@ -889,6 +906,7 @@ export const CODEX_DEFAULT_MAGIC_PROMPT_MODELS: MagicPromptModels = {
 
 /** OpenCode preset for all magic prompts */
 export const OPENCODE_DEFAULT_MAGIC_PROMPT_MODELS: MagicPromptModels = {
+  smoke_test_model: 'opencode/gpt-5.3-codex',
   investigate_issue_model: 'opencode/gpt-5.3-codex',
   investigate_pr_model: 'opencode/gpt-5.3-codex',
   investigate_workflow_run_model: 'opencode/gpt-5.3-codex',
@@ -912,6 +930,7 @@ export const OPENCODE_DEFAULT_MAGIC_PROMPT_MODELS: MagicPromptModels = {
 
 /** Default reasoning efforts for Claude backend (null = use model default) */
 export const DEFAULT_MAGIC_PROMPT_EFFORTS: MagicPromptReasoningEfforts = {
+  smoke_test_effort: null,
   investigate_issue_effort: null,
   investigate_pr_effort: null,
   investigate_workflow_run_effort: null,
@@ -935,6 +954,7 @@ export const DEFAULT_MAGIC_PROMPT_EFFORTS: MagicPromptReasoningEfforts = {
 
 /** Codex preset: heavier reasoning for investigations, lighter for simple generation */
 export const CODEX_DEFAULT_MAGIC_PROMPT_EFFORTS: MagicPromptReasoningEfforts = {
+  smoke_test_effort: 'medium',
   investigate_issue_effort: 'medium',
   investigate_pr_effort: 'medium',
   investigate_workflow_run_effort: 'medium',
@@ -977,6 +997,7 @@ export const magicPromptReasoningOptions: {
  * Field names use snake_case to match Rust struct exactly.
  */
 export interface MagicPromptProviders {
+  smoke_test_provider: string | null
   investigate_issue_provider: string | null
   investigate_pr_provider: string | null
   investigate_workflow_run_provider: string | null
@@ -1000,6 +1021,7 @@ export interface MagicPromptProviders {
 
 /** Default providers for each magic prompt (null = use global default_provider) */
 export const DEFAULT_MAGIC_PROMPT_PROVIDERS: MagicPromptProviders = {
+  smoke_test_provider: null,
   investigate_issue_provider: null,
   investigate_pr_provider: null,
   investigate_workflow_run_provider: null,
@@ -1027,6 +1049,7 @@ export const DEFAULT_MAGIC_PROMPT_PROVIDERS: MagicPromptProviders = {
  * Field names use snake_case to match Rust struct exactly.
  */
 export interface MagicPromptBackends {
+  smoke_test_backend: string | null
   investigate_issue_backend: string | null
   investigate_pr_backend: string | null
   investigate_workflow_run_backend: string | null
@@ -1050,6 +1073,7 @@ export interface MagicPromptBackends {
 
 /** Default backends for each magic prompt (null = use project/global default_backend) */
 export const DEFAULT_MAGIC_PROMPT_BACKENDS: MagicPromptBackends = {
+  smoke_test_backend: null,
   investigate_issue_backend: null,
   investigate_pr_backend: null,
   investigate_workflow_run_backend: null,
@@ -1073,6 +1097,7 @@ export const DEFAULT_MAGIC_PROMPT_BACKENDS: MagicPromptBackends = {
 
 function makeBackendsPreset(backend: string): MagicPromptBackends {
   return {
+    smoke_test_backend: backend,
     investigate_issue_backend: backend,
     investigate_pr_backend: backend,
     investigate_workflow_run_backend: backend,

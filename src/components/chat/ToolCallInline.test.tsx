@@ -73,7 +73,9 @@ describe('ToolCallInline', () => {
 
     fireEvent.click(screen.getByRole('button'))
 
-    expect(screen.getByText(/The request can fail silently/)).toBeInTheDocument()
+    expect(
+      screen.getByText(/The request can fail silently/)
+    ).toBeInTheDocument()
     expect(screen.getByText(/The failure path has no test/)).toBeInTheDocument()
   })
 

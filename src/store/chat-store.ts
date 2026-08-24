@@ -457,6 +457,7 @@ interface ChatUIState {
     toolCallId: string,
     answers: QuestionAnswer[]
   ) => void
+  clearQuestionAnswer: (sessionId: string, toolCallId: string) => void
   isQuestionAnswered: (sessionId: string, toolCallId: string) => boolean
   getSubmittedAnswers: (
     sessionId: string,
@@ -1922,6 +1923,31 @@ export const useChatStore = create<ChatUIState>()(
           },
           undefined,
           'markQuestionAnswered'
+        ),
+
+      clearQuestionAnswer: (sessionId, toolCallId) =>
+        set(
+          state => {
+            const answered = state.answeredQuestions[sessionId]
+            const submitted = state.submittedAnswers[sessionId]
+            if (!answered?.has(toolCallId) && !submitted?.[toolCallId])
+              return state
+            const nextAnswered = new Set(answered ?? [])
+            nextAnswered.delete(toolCallId)
+            const { [toolCallId]: _, ...nextSubmitted } = submitted ?? {}
+            return {
+              answeredQuestions: {
+                ...state.answeredQuestions,
+                [sessionId]: nextAnswered,
+              },
+              submittedAnswers: {
+                ...state.submittedAnswers,
+                [sessionId]: nextSubmitted,
+              },
+            }
+          },
+          undefined,
+          'clearQuestionAnswer'
         ),
 
       isQuestionAnswered: (sessionId, toolCallId) => {

@@ -21,6 +21,7 @@ import {
   Megaphone,
   Bot,
   Shield,
+  FlaskConical,
 } from 'lucide-react'
 import {
   Dialog,
@@ -104,6 +105,7 @@ type MagicOption =
   | 'merge-pr'
   | 'review-comments'
   | 'revert-last-commit'
+  | 'smoke-test'
 
 type ReviewSource = 'ai' | 'coderabbit-cli' | 'coderabbit-pr'
 
@@ -234,6 +236,12 @@ function buildMagicColumns(
   ]
 
   const right: MagicSection[] = [
+    {
+      header: 'Test',
+      options: [
+        { id: 'smoke-test', label: 'Smoke Test', icon: FlaskConical, key: '' },
+      ],
+    },
     {
       header: 'Pull Request',
       options: [

@@ -23,6 +23,12 @@ import {
   type KeybindingsMap,
 } from '@/types/keybindings'
 
+interface RunEnvironmentStartedEvent {
+  worktreeId: string
+  terminalId: string
+  command: string
+}
+
 export function applyCacheInvalidationKeys(
   queryClient: QueryClient,
   keys: Iterable<string>
@@ -727,6 +733,18 @@ export function useMainWindowEventListeners() {
     const setupMenuListeners = async () => {
       logger.debug('Setting up menu event listeners')
       const unlisteners = await Promise.all([
+        listen<RunEnvironmentStartedEvent>('run-environment:started', event => {
+          const { worktreeId, terminalId, command } = event.payload
+          const terminals = useTerminalStore.getState()
+          terminals.registerStartedRun(worktreeId, terminalId, command)
+          const uiState = useUIStore.getState()
+          if (
+            uiState.sessionChatModalOpen &&
+            uiState.sessionChatModalWorktreeId === worktreeId
+          ) {
+            terminals.setModalTerminalOpen(worktreeId, true)
+          }
+        }),
         listen('menu-about', async () => {
           logger.debug('About menu event received')
           if (!isNativeApp()) return

@@ -2384,6 +2384,7 @@ export function ChatWindow({
     handleInvestigate,
     handleInvestigateWorkflowRun,
     handleReviewComments,
+    handleSmokeTest,
   } = useInvestigateHandlers({
     activeSessionId,
     activeWorktreeId,
@@ -2428,6 +2429,7 @@ export function ChatWindow({
     handleInvestigateWorkflowRun,
     handleInvestigate,
     handleReviewComments,
+    handleSmokeTest,
     isModal,
     sessionModalOpen,
   })

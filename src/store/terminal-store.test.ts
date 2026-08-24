@@ -66,6 +66,23 @@ describe('TerminalStore', () => {
   })
 
   describe('terminal instance management', () => {
+    it('registers a run terminal started through MCP', () => {
+      useTerminalStore
+        .getState()
+        .registerStartedRun('worktree-1', 'run-from-mcp', 'bun run dev')
+
+      const state = useTerminalStore.getState()
+      expect(state.terminals['worktree-1']).toEqual([
+        expect.objectContaining({
+          id: 'run-from-mcp',
+          kind: 'panel',
+          command: 'bun run dev',
+        }),
+      ])
+      expect(state.runningTerminals.has('run-from-mcp')).toBe(true)
+      expect(state.activeTerminalIds['worktree-1']).toBe('run-from-mcp')
+    })
+
     it('adds a terminal and returns ID', () => {
       const { addTerminal } = useTerminalStore.getState()
 

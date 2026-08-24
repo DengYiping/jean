@@ -11,6 +11,7 @@ use serde_json::{json, Value};
 use tauri::AppHandle;
 
 use crate::http_server::dispatch::dispatch_command;
+use crate::http_server::EmitExt;
 
 pub const MCP_PROTOCOL_VERSION: &str = "2024-11-05";
 pub const JEAN_MCP_STDIO_ARG: &str = "--jean-mcp-stdio";
@@ -40,6 +41,7 @@ const RATE_LIMITED_TOOLS: &[&str] = &[
     "push_worktree",
     "run_review",
     "send_chat_message",
+    "start_run_environment",
     "unarchive_worktree",
 ];
 const DEFAULT_MCP_DIFF_MAX_BYTES: usize = 60_000;
@@ -182,7 +184,8 @@ fn tool_registry_core() -> Value {
         {"name":"get_worktree_changes","description":"Get a bounded summary of a worktree's git changes: porcelain status, ahead/behind counts, diff stats, and changed files. Does not return full diffs.","inputSchema":{"type":"object","properties":{"worktreeId":{"type":"string"},"maxFiles":{"type":"integer","minimum":1,"maximum":500,"default":100}},"required":["worktreeId"],"additionalProperties":false}},
         {"name":"get_worktree_diff","description":"Get a bounded unified git diff for a worktree. diffType is uncommitted (HEAD vs working tree) or branch (origin/base...HEAD). Optional path limits to one pathspec; maxBytes is capped.","inputSchema":{"type":"object","properties":{"worktreeId":{"type":"string"},"diffType":{"type":"string","enum":["uncommitted","branch"],"default":"uncommitted"},"path":{"type":"string"},"maxBytes":{"type":"integer","minimum":1,"maximum":200000,"default":60000}},"required":["worktreeId"],"additionalProperties":false}},
         {"name":"get_current_context","description":"Return the calling session's context: sessionId, worktreeId, projectId, projectPath, projectName. Use this so the agent knows what 'this project' refers to without guessing.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},
-        {"name":"get_run_environments","description":"List active Jean Run-command / panel-command environments with their worktree identity, startup command, ports, and http URL. Optional worktreeId or projectId filters.","inputSchema":{"type":"object","properties":{"worktreeId":{"type":"string"},"projectId":{"type":"string"}},"additionalProperties":false}}
+        {"name":"get_run_environments","description":"List active Jean Run-command / panel-command environments with their worktree identity, startup command, ports, and http URL. Optional worktreeId or projectId filters.","inputSchema":{"type":"object","properties":{"worktreeId":{"type":"string"},"projectId":{"type":"string"}},"additionalProperties":false}},
+        {"name":"start_run_environment","description":"Start or reuse a Jean-managed Run environment for a worktree using a run command configured in jean.json. When command is omitted, uses the first configured run command. Returns the environment identity, command, running state, ports, and URL when detected.","inputSchema":{"type":"object","properties":{"worktreeId":{"type":"string","description":"Worktree whose configured Run environment should start."},"command":{"type":"string","description":"Optional exact jean.json run command to start. Must be one of the configured run commands."}},"required":["worktreeId"],"additionalProperties":false}}
     ])
 }
 
@@ -1020,6 +1023,117 @@ async fn run_tool(
             .await
             .map_err(ToolError::internal)
         }
+        "start_run_environment" => {
+            let worktree_id = require_str(&args, "worktreeId")?;
+            ensure_mcp_worktree_not_archived(app, &worktree_id)?;
+            let worktree_path = resolve_worktree_path(app, &worktree_id)?;
+            let requested_command = optional_str(&args, "command");
+
+            let existing = dispatch_command(
+                app,
+                "get_run_environments",
+                json!({ "worktreeId": worktree_id }),
+            )
+            .await
+            .map_err(ToolError::internal)?;
+            if let Some(environment) = existing["environments"].as_array().and_then(|items| {
+                items.iter().find(|environment| {
+                    environment["running"].as_bool() == Some(true)
+                        && requested_command
+                            .as_deref()
+                            .is_none_or(|command| environment["command"].as_str() == Some(command))
+                })
+            }) {
+                return Ok(json!({
+                    "started": false,
+                    "reused": true,
+                    "environment": environment,
+                }));
+            }
+
+            let scripts = dispatch_command(
+                app,
+                "get_run_scripts",
+                json!({ "worktreePath": worktree_path }),
+            )
+            .await
+            .map_err(ToolError::internal)?;
+            let scripts = scripts
+                .as_array()
+                .ok_or_else(|| ToolError::internal("Invalid run-script response"))?;
+            let command = match requested_command {
+                Some(command)
+                    if scripts
+                        .iter()
+                        .any(|script| script.as_str() == Some(&command)) =>
+                {
+                    command
+                }
+                Some(command) => {
+                    return Err(ToolError::invalid_params(format!(
+                        "Run command is not configured in jean.json: {command}"
+                    )));
+                }
+                None => scripts
+                    .first()
+                    .and_then(Value::as_str)
+                    .map(ToOwned::to_owned)
+                    .ok_or_else(|| {
+                        ToolError::invalid_params(
+                            "No run command configured in jean.json for this worktree",
+                        )
+                    })?,
+            };
+
+            let terminal_id = format!("run-{}", uuid::Uuid::new_v4());
+            dispatch_command(
+                app,
+                "start_terminal",
+                json!({
+                    "terminalId": terminal_id,
+                    "worktreePath": worktree_path,
+                    "cols": 80,
+                    "rows": 24,
+                    "command": command,
+                    "commandArgs": null,
+                }),
+            )
+            .await
+            .map_err(ToolError::internal)?;
+
+            let environments = dispatch_command(
+                app,
+                "get_run_environments",
+                json!({ "worktreeId": worktree_id }),
+            )
+            .await
+            .map_err(ToolError::internal)?;
+            let environment = environments["environments"]
+                .as_array()
+                .and_then(|items| {
+                    items
+                        .iter()
+                        .find(|environment| environment["terminalId"] == terminal_id)
+                })
+                .cloned()
+                .ok_or_else(|| ToolError::internal("Started Run environment was not found"))?;
+
+            app.emit_all(
+                "run-environment:started",
+                &json!({
+                    "worktreeId": worktree_id,
+                    "terminalId": terminal_id,
+                    "command": command,
+                }),
+            )
+            .map_err(ToolError::internal)?;
+
+            Ok(json!({
+                "started": true,
+                "reused": false,
+                "environment": environment,
+            }))
+        }
         "get_current_context" => {
             if source == "anon" {
                 return Err(no_current_context_error(source));
@@ -1695,6 +1809,20 @@ fn resolve_worktree_path(app: &AppHandle, worktree_id: &str) -> Result<String, T
         .ok_or_else(|| ToolError::invalid_params(format!("Unknown worktreeId: {worktree_id}")))
 }
 
+fn ensure_mcp_worktree_not_archived(app: &AppHandle, worktree_id: &str) -> Result<(), ToolError> {
+    let data = crate::projects::storage::load_projects_data(app)
+        .map_err(|e| ToolError::internal(format!("load_projects_data: {e}")))?;
+    let worktree = data
+        .find_worktree(worktree_id)
+        .ok_or_else(|| ToolError::invalid_params(format!("Unknown worktreeId: {worktree_id}")))?;
+    if worktree.archived_at.is_some() {
+        return Err(ToolError::invalid_params(format!(
+            "Cannot start a Run environment for archived worktree: {worktree_id}"
+        )));
+    }
+    Ok(())
+}
+
 fn resolve_worktree_project(
     app: &AppHandle,
     worktree_id: &str,
@@ -1930,6 +2058,13 @@ mod tests {
             .get("projectId")
             .is_some());
         assert!(run_environments["inputSchema"].get("required").is_none());
+
+        let start_run = find_tool(&tool_registry(), "start_run_environment");
+        assert_eq!(start_run["inputSchema"]["required"], json!(["worktreeId"]));
+        assert!(start_run["inputSchema"]["properties"]
+            .get("command")
+            .is_some());
+        assert!(RATE_LIMITED_TOOLS.contains(&"start_run_environment"));
     }
 
     #[test]

@@ -1191,6 +1191,8 @@ fn default_auto_archive_on_pr_merged() -> bool {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct MagicPrompts {
     #[serde(default)]
+    pub smoke_test: Option<String>,
+    #[serde(default)]
     pub investigate_issue: Option<String>,
     #[serde(default)]
     pub investigate_pr: Option<String>,
@@ -1794,6 +1796,8 @@ Use the Jean-local history below to reconstruct context before answering the use
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MagicPromptModels {
     #[serde(default = "default_model")]
+    pub smoke_test_model: String,
+    #[serde(default = "default_model")]
     pub investigate_issue_model: String,
     #[serde(default = "default_model")]
     pub investigate_pr_model: String,
@@ -1840,6 +1844,7 @@ fn default_lightweight_model() -> String {
 impl Default for MagicPromptModels {
     fn default() -> Self {
         Self {
+            smoke_test_model: default_model(),
             investigate_issue_model: default_model(),
             investigate_pr_model: default_model(),
             investigate_workflow_run_model: default_model(),
@@ -1870,7 +1875,8 @@ impl MagicPromptModels {
     fn migrate_legacy_defaults(&mut self) -> bool {
         let new_opus = default_model();
         let new_lightweight = default_lightweight_model();
-        let opus_fields: [&mut String; 11] = [
+        let opus_fields: [&mut String; 12] = [
+            &mut self.smoke_test_model,
             &mut self.investigate_issue_model,
             &mut self.investigate_pr_model,
             &mut self.investigate_workflow_run_model,
@@ -1927,6 +1933,8 @@ pub fn is_codex_model(model: &str) -> bool {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MagicPromptProviders {
     #[serde(default)]
+    pub smoke_test_provider: Option<String>,
+    #[serde(default)]
     pub investigate_issue_provider: Option<String>,
     #[serde(default)]
     pub investigate_pr_provider: Option<String>,
@@ -1970,6 +1978,8 @@ pub struct MagicPromptProviders {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MagicPromptBackends {
     #[serde(default)]
+    pub smoke_test_backend: Option<String>,
+    #[serde(default)]
     pub investigate_issue_backend: Option<String>,
     #[serde(default)]
     pub investigate_pr_backend: Option<String>,
@@ -2012,6 +2022,8 @@ pub struct MagicPromptBackends {
 /// Per-prompt reasoning effort overrides for magic prompts (None = use model default)
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MagicPromptReasoningEfforts {
+    #[serde(default)]
+    pub smoke_test_effort: Option<String>,
     #[serde(default)]
     pub investigate_issue_effort: Option<String>,
     #[serde(default)]

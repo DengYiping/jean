@@ -75,6 +75,11 @@ interface TerminalState {
 
   // Start a run command (creates new terminal with command)
   startRun: (worktreeId: string, command: string) => string
+  registerStartedRun: (
+    worktreeId: string,
+    terminalId: string,
+    command: string
+  ) => void
 
   // Close all terminals for a worktree (returns terminal IDs that need to be stopped)
   closeAllTerminals: (worktreeId: string) => string[]
@@ -317,6 +322,38 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     // No existing running terminal, create a new one (addTerminal sets terminalPanelOpen)
     return get().addTerminal(worktreeId, command)
   },
+
+  registerStartedRun: (worktreeId, terminalId, command) =>
+    set(state => {
+      const terminals = state.terminals[worktreeId] ?? []
+      const runningTerminals = new Set(state.runningTerminals)
+      runningTerminals.add(terminalId)
+      return {
+        terminals: terminals.some(terminal => terminal.id === terminalId)
+          ? state.terminals
+          : {
+              ...state.terminals,
+              [worktreeId]: [
+                ...terminals,
+                {
+                  id: terminalId,
+                  worktreeId,
+                  command,
+                  commandArgs: null,
+                  label: getFilename(command) || command,
+                  kind: 'panel',
+                },
+              ],
+            },
+        activeTerminalIds: {
+          ...state.activeTerminalIds,
+          [worktreeId]: terminalId,
+        },
+        runningTerminals,
+        terminalVisible: true,
+        terminalPanelOpen: { ...state.terminalPanelOpen, [worktreeId]: true },
+      }
+    }),
 
   closeAllTerminals: worktreeId => {
     const state = get()

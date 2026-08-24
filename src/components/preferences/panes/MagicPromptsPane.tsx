@@ -37,6 +37,7 @@ import {
 } from '@/components/chat/toolbar/toolbar-options'
 import {
   DEFAULT_INVESTIGATE_ISSUE_PROMPT,
+  DEFAULT_SMOKE_TEST_PROMPT,
   DEFAULT_INVESTIGATE_PR_PROMPT,
   DEFAULT_PR_CONTENT_PROMPT,
   DEFAULT_COMMIT_MESSAGE_PROMPT,
@@ -320,6 +321,24 @@ const PROMPT_SECTIONS: PromptSection[] = [
   {
     label: 'Git Operations',
     configs: [
+      {
+        key: 'smoke_test',
+        modelKey: 'smoke_test_model',
+        effortKey: 'smoke_test_effort',
+        providerKey: 'smoke_test_provider',
+        backendKey: 'smoke_test_backend',
+        label: 'Smoke Test',
+        description:
+          'Prompt for testing the current work through available interfaces.',
+        variables: [
+          {
+            name: '{source_session_id}',
+            description: 'Session containing the work to test',
+          },
+        ],
+        defaultValue: DEFAULT_SMOKE_TEST_PROMPT,
+        defaultModel: 'claude-opus-4-8[1m]',
+      },
       {
         key: 'code_review',
         modelKey: 'code_review_model',

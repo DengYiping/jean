@@ -1048,11 +1048,10 @@ export function useInvestigateHandlers({
     const worktreePath = activeWorktreePathRef.current
     if (!worktreeId || !worktreePath) return
 
-    const sourceSessionId = activeSessionId ?? 'unavailable'
     const prompt = (
       preferences?.magic_prompts?.smoke_test?.trim() ||
       DEFAULT_SMOKE_TEST_PROMPT
-    ).replaceAll('{source_session_id}', sourceSessionId)
+    ).replaceAll('{worktree_id}', worktreeId)
     const model =
       preferences?.magic_prompt_models?.smoke_test_model ??
       selectedModelRef.current

@@ -61,8 +61,15 @@ describe('preference defaults', () => {
     expect(defaultPreferences.magic_prompt_models.smoke_test_model).toBe(
       'claude-opus-4-8[1m]'
     )
-    expect(DEFAULT_SMOKE_TEST_PROMPT).toContain('{source_session_id}')
+    expect(DEFAULT_SMOKE_TEST_PROMPT).toContain('{worktree_id}')
+    expect(DEFAULT_SMOKE_TEST_PROMPT).not.toContain('{source_session_id}')
     expect(DEFAULT_SMOKE_TEST_PROMPT).toContain('start_run_environment')
+    expect(DEFAULT_SMOKE_TEST_PROMPT).toContain(
+      'Wait for the environment to become ready and stable'
+    )
+    expect(DEFAULT_SMOKE_TEST_PROMPT).toContain(
+      'Discover and prepare the prerequisites for realistic testing'
+    )
   })
 
   it('provides automation prompts for bug and advisory investigations', () => {

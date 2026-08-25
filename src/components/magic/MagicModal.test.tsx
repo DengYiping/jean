@@ -1,4 +1,5 @@
 import type { HTMLAttributes, ReactNode } from 'react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@/test/test-utils'
 import { MagicModal } from './MagicModal'
@@ -20,6 +21,8 @@ const hoisted = vi.hoisted(() => {
   const setReleaseNotesModalModeMock = vi.fn()
   const setWorktreeLoadingMock = vi.fn()
   const clearWorktreeLoadingMock = vi.fn()
+  const setActiveWorktreeMock = vi.fn()
+  const setPendingMagicCommandMock = vi.fn()
   const triggerImmediateGitPollMock = vi.fn()
   const fetchWorktreesStatusMock = vi.fn()
 
@@ -47,8 +50,8 @@ const hoisted = vi.hoisted(() => {
     activeSessionIds: { 'wt-1': 'session-1' as string | undefined },
     setWorktreeLoading: setWorktreeLoadingMock,
     clearWorktreeLoading: clearWorktreeLoadingMock,
-    setActiveWorktree: vi.fn(),
-    setPendingMagicCommand: vi.fn(),
+    setActiveWorktree: setActiveWorktreeMock,
+    setPendingMagicCommand: setPendingMagicCommandMock,
     registerWorktreePath: vi.fn(),
     setActiveSession: vi.fn(),
     setEnabledMcpServers: vi.fn(),
@@ -61,6 +64,8 @@ const hoisted = vi.hoisted(() => {
     setReleaseNotesModalModeMock,
     setWorktreeLoadingMock,
     clearWorktreeLoadingMock,
+    setActiveWorktreeMock,
+    setPendingMagicCommandMock,
     triggerImmediateGitPollMock,
     fetchWorktreesStatusMock,
     uiStore,
@@ -360,6 +365,24 @@ describe('MagicModal', () => {
 
     expect(hoisted.setReleaseNotesModalModeMock).toHaveBeenCalledWith('post')
     expect(hoisted.setMagicModalOpenMock).toHaveBeenCalledWith(false)
+  })
+
+  it('allows smoke test from the worktree canvas without an existing session', async () => {
+    hoisted.chatStore.activeSessionIds = { 'wt-1': undefined }
+    const user = userEvent.setup()
+    render(<MagicModal />)
+
+    const smokeTest = screen.getByRole('button', { name: /smoke test/i })
+    expect(smokeTest).toBeEnabled()
+    await user.click(smokeTest)
+
+    expect(hoisted.setActiveWorktreeMock).toHaveBeenCalledWith(
+      'wt-1',
+      '/tmp/worktree'
+    )
+    expect(hoisted.setPendingMagicCommandMock).toHaveBeenCalledWith({
+      command: 'smoke-test',
+    })
   })
 
   it('starts a yolo GitHub bug automation session', async () => {

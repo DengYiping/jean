@@ -139,10 +139,14 @@ const CANVAS_ALLOWED_OPTIONS = new Set<MagicOption>([
   'linked-projects',
   'automate-github-bugs',
   'automate-security-advisories',
+  'smoke-test',
 ])
 
 /** Canvas options that navigate to worktree chat and dispatch a magic-command event */
-const CANVAS_NAVIGATE_AND_DISPATCH_OPTIONS = new Set<MagicOption>(['merge'])
+const CANVAS_NAVIGATE_AND_DISPATCH_OPTIONS = new Set<MagicOption>([
+  'merge',
+  'smoke-test',
+])
 
 interface MagicOptionItem {
   id: MagicOption

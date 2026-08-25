@@ -104,6 +104,40 @@ describe('useInvestigateHandlers', () => {
     })
   })
 
+  it('uses the worktree ID rather than the active session in smoke test prompts', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    })
+    const { params, sendMessage } = createInvestigateHookParams({
+      activeSessionId: 'base-session',
+      createSession: {
+        mutate: vi.fn(
+          (
+            _args: { worktreeId: string; worktreePath: string },
+            options?: { onSuccess?: (session: { id: string }) => void }
+          ) => options?.onSuccess?.({ id: 'smoke-session' })
+        ),
+      },
+    })
+    const { result } = renderHook(() => useInvestigateHandlers(params), {
+      wrapper: createWrapper(queryClient),
+    })
+
+    await act(async () => {
+      await result.current.handleSmokeTest()
+    })
+
+    const sent = vi.mocked(sendMessage.mutate).mock.calls[0]?.[0] as {
+      message: string
+    }
+    expect(sent.message).toContain('wt-1')
+    expect(sent.message).not.toContain('{worktree_id}')
+    expect(sent.message).not.toContain('base-session')
+  })
+
   it('uses the saved review comments effort override when sending', async () => {
     const queryClient = new QueryClient({
       defaultOptions: {

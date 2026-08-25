@@ -646,7 +646,7 @@ pub struct ProjectBranchUpdateFailure {
     pub error: String,
 }
 
-/// Update the main or master branch for every non-folder project.
+/// Update the base branch for every non-folder project.
 #[tauri::command]
 pub async fn update_all_primary_branches(
     app: AppHandle,
@@ -657,7 +657,7 @@ pub async fn update_all_primary_branches(
     let mut skipped = 0;
 
     for project in projects {
-        if project.is_folder || !matches!(project.default_branch.as_str(), "main" | "master") {
+        if project.is_folder {
             skipped += 1;
             continue;
         }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Folder, Archive, Briefcase, RefreshCw } from 'lucide-react'
+import { Plus, Folder, Archive, Briefcase } from 'lucide-react'
 import { useSidebarWidth } from '@/components/layout/SidebarWidthContext'
 import {
   DropdownMenu,
@@ -7,11 +7,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import {
-  useProjects,
-  useCreateFolder,
-  useUpdateAllPrimaryBranches,
-} from '@/services/projects'
+import { useProjects, useCreateFolder } from '@/services/projects'
 import { useProjectsStore } from '@/store/projects-store'
 import { ProjectTree } from './ProjectTree'
 import { useInstalledBackends } from '@/hooks/useInstalledBackends'
@@ -21,7 +17,6 @@ export function ProjectsSidebar() {
   const { data: projects = [], isLoading } = useProjects()
   const { setAddProjectDialogOpen } = useProjectsStore()
   const createFolder = useCreateFolder()
-  const updateAllPrimaryBranches = useUpdateAllPrimaryBranches()
   const sidebarWidth = useSidebarWidth()
   const [backendCheckReady, setBackendCheckReady] = useState(false)
   useEffect(() => scheduleIdleWork(() => setBackendCheckReady(true), 1500), [])
@@ -94,18 +89,6 @@ export function ProjectsSidebar() {
         >
           {!isNarrow && <Archive className="size-3.5" />}
           Archived
-        </button>
-        <button
-          type="button"
-          className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg text-sm text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-          onClick={() => updateAllPrimaryBranches.mutate()}
-          disabled={updateAllPrimaryBranches.isPending}
-          aria-label="Update all main and master branches"
-        >
-          <RefreshCw
-            className={`size-3.5 ${updateAllPrimaryBranches.isPending ? 'animate-spin' : ''}`}
-          />
-          {!isNarrow && 'Update'}
         </button>
       </div>
     </div>

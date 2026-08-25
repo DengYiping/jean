@@ -242,7 +242,7 @@ export function useUpdateAllPrimaryBranches() {
       const projectCount = updated.length
       const description = [
         skipped > 0
-          ? `Skipped ${skipped} project${skipped === 1 ? '' : 's'} without a main or master branch.`
+          ? `Skipped ${skipped} folder${skipped === 1 ? '' : 's'}.`
           : null,
         failures.length > 0
           ? `Failed to update ${failures.length} project${failures.length === 1 ? '' : 's'}.`
@@ -265,7 +265,7 @@ export function useUpdateAllPrimaryBranches() {
       )
     },
     onError: error => {
-      toast.error('Failed to update project branches', {
+      toast.error('Failed to update base worktrees', {
         description: error instanceof Error ? error.message : String(error),
       })
     },

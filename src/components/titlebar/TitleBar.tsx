@@ -17,9 +17,11 @@ import {
   Github,
   PanelLeft,
   PanelLeftClose,
+  RefreshCw,
   Settings,
 } from 'lucide-react'
 import { usePreferences } from '@/services/preferences'
+import { useUpdateAllPrimaryBranches } from '@/services/projects'
 import { formatShortcutDisplay, DEFAULT_KEYBINDINGS } from '@/types/keybindings'
 import { isNativeApp } from '@/lib/environment'
 import { UnreadBell } from '@/components/unread/UnreadBell'
@@ -42,6 +44,7 @@ export function TitleBar({
     useUIStore()
   const commandContext = useCommandContext()
   const { data: preferences } = usePreferences()
+  const updateAllPrimaryBranches = useUpdateAllPrimaryBranches()
   const isMobile = useIsMobile()
 
   const sidebarShortcut = formatShortcutDisplay(
@@ -138,6 +141,26 @@ export function TitleBar({
                 )}
               </kbd>
             </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                onClick={() => updateAllPrimaryBranches.mutate()}
+                variant="ghost"
+                size="icon"
+                disabled={updateAllPrimaryBranches.isPending}
+                className="h-6 w-6 rounded-none text-foreground/70 hover:text-foreground"
+                aria-label="Update all base worktrees"
+              >
+                <RefreshCw
+                  className={cn(
+                    'size-3.5',
+                    updateAllPrimaryBranches.isPending && 'animate-spin'
+                  )}
+                />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Update all base worktrees</TooltipContent>
           </Tooltip>
         </div>
       </div>

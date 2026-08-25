@@ -106,7 +106,7 @@ describe('projects service', () => {
     })
   })
 
-  it('updates all main and master project branches through the shared transport', async () => {
+  it('updates all base worktrees through the shared transport', async () => {
     const queryClient = createTestQueryClient()
     mockInvoke.mockResolvedValue({
       updated: ['Jean'],
@@ -124,7 +124,7 @@ describe('projects service', () => {
 
     expect(mockInvoke).toHaveBeenCalledWith('update_all_primary_branches')
     expect(toast.success).toHaveBeenCalledWith('Updated 1 project', {
-      description: 'Skipped 1 project without a main or master branch.',
+      description: 'Skipped 1 folder.',
     })
   })
 

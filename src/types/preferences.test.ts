@@ -13,6 +13,7 @@ import {
   DEFAULT_MAGIC_PROMPT_PROVIDERS,
   DEFAULT_OPENCODE_SYSTEM_PROMPT,
   DEFAULT_PROVIDER_SWITCH_HANDOFF_PROMPT,
+  DEFAULT_SMOKE_TEST_PROMPT,
   defaultPreferences,
   getCodexFastInfo,
   magicPromptReasoningOptions,
@@ -55,6 +56,22 @@ describe('magic prompt backend resolution', () => {
 })
 
 describe('preference defaults', () => {
+  it('provides configurable smoke test defaults', () => {
+    expect(defaultPreferences.magic_prompts.smoke_test).toBeNull()
+    expect(defaultPreferences.magic_prompt_models.smoke_test_model).toBe(
+      'claude-opus-4-8[1m]'
+    )
+    expect(DEFAULT_SMOKE_TEST_PROMPT).toContain('{worktree_id}')
+    expect(DEFAULT_SMOKE_TEST_PROMPT).not.toContain('{source_session_id}')
+    expect(DEFAULT_SMOKE_TEST_PROMPT).toContain('start_run_environment')
+    expect(DEFAULT_SMOKE_TEST_PROMPT).toContain(
+      'Wait for the environment to become ready and stable'
+    )
+    expect(DEFAULT_SMOKE_TEST_PROMPT).toContain(
+      'Discover and prepare the prerequisites for realistic testing'
+    )
+  })
+
   it('provides automation prompts for bug and advisory investigations', () => {
     expect(
       defaultPreferences.magic_prompt_models.automate_github_bugs_model

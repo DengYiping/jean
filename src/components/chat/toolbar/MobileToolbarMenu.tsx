@@ -9,6 +9,7 @@ import {
   ChevronRight,
   ClipboardList,
   Eye,
+  FlaskConical,
   FolderOpen,
   GitBranch,
   GitBranchPlus,
@@ -302,6 +303,24 @@ export function MobileToolbarMenu({
           align={isMobile ? 'end' : 'start'}
           className="w-56"
         >
+          <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            Test
+          </div>
+          <DropdownMenuItem
+            onClick={() => {
+              setMenuOpen(false)
+              window.dispatchEvent(
+                new CustomEvent('magic-command', {
+                  detail: { command: 'smoke-test' },
+                })
+              )
+            }}
+          >
+            <FlaskConical className="h-4 w-4" />
+            Smoke Test
+          </DropdownMenuItem>
+
+          <DropdownMenuSeparator />
           <DropdownMenuItem
             onClick={() => {
               setMenuOpen(false)

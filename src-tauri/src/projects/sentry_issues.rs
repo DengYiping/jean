@@ -465,6 +465,7 @@ pub async fn load_sentry_issue_context(
     add_sentry_reference(&app, &config.project_name, &context.id, &session_id)?;
     Ok(context)
 }
+#[tauri::command]
 pub async fn get_sentry_issue_context_contents(
     app: AppHandle,
     session_id: String,

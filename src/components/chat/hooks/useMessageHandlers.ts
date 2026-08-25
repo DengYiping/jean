@@ -407,6 +407,7 @@ export function useMessageHandlers({
       // Mark as answered so it becomes read-only (also stores answers for collapsed view)
       const {
         markQuestionAnswered,
+        clearQuestionAnswer,
         addSendingSession,
         removeSendingSession,
         setSelectedModel,
@@ -435,6 +436,7 @@ export function useMessageHandlers({
           rpcId,
           answers: formatAnswersForCodexRequestUserInput(questions, answers),
         }).catch(err => {
+          clearQuestionAnswer(sessionId, toolCallId)
           removeSendingSession(sessionId)
           setWaitingForInput(sessionId, true)
           logger.error(
@@ -540,6 +542,7 @@ export function useMessageHandlers({
 
       const {
         markQuestionAnswered,
+        clearQuestionAnswer,
         setQuestionsSkipped,
         addSendingSession,
         clearToolCalls,
@@ -572,6 +575,7 @@ export function useMessageHandlers({
             []
           ),
         }).catch(err => {
+          clearQuestionAnswer(sessionId, toolCallId)
           removeSendingSession(sessionId)
           setWaitingForInput(sessionId, true)
           logger.error(

@@ -19,6 +19,7 @@ import {
   DEFAULT_INVESTIGATE_WORKFLOW_RUN_PROMPT,
   DEFAULT_INVESTIGATE_LINEAR_ISSUE_PROMPT,
   DEFAULT_INVESTIGATE_SENTRY_ISSUE_PROMPT,
+  DEFAULT_SMOKE_TEST_PROMPT,
   isMagicPromptModelCompatibleWithBackend,
   OPENCODE_DEFAULT_MAGIC_PROMPT_MODELS,
   resolveMagicPromptBackend,
@@ -1042,9 +1043,139 @@ export function useInvestigateHandlers({
     ]
   )
 
+  const handleSmokeTest = useCallback(async () => {
+    const worktreeId = activeWorktreeIdRef.current
+    const worktreePath = activeWorktreePathRef.current
+    if (!worktreeId || !worktreePath) return
+
+    const prompt = (
+      preferences?.magic_prompts?.smoke_test?.trim() ||
+      DEFAULT_SMOKE_TEST_PROMPT
+    ).replaceAll('{worktree_id}', worktreeId)
+    const model =
+      preferences?.magic_prompt_models?.smoke_test_model ??
+      selectedModelRef.current
+    const provider = resolveMagicPromptProvider(
+      preferences?.magic_prompt_providers,
+      'smoke_test_provider',
+      preferences?.default_provider
+    )
+    const backend =
+      resolveMagicPromptBackend(
+        preferences?.magic_prompt_backends,
+        'smoke_test_backend',
+        preferences?.default_backend
+      ) ?? resolveBackend(model)
+    const effort = preferences?.magic_prompt_efforts?.smoke_test_effort ?? null
+    const effortLevel =
+      effort === 'low' || effort === 'medium' || effort === 'high'
+        ? effort
+        : undefined
+    const { customProfileName } = resolveCustomProfile(model, provider)
+
+    try {
+      const session = createSession.mutateAsync
+        ? await createSession.mutateAsync({ worktreeId, worktreePath })
+        : await new Promise<{ id: string }>((resolve, reject) =>
+            createSession.mutate(
+              { worktreeId, worktreePath },
+              { onSuccess: resolve, onError: reject }
+            )
+          )
+      const store = useChatStore.getState()
+      if (activeSessionId)
+        store.copySessionSettings(activeSessionId, session.id)
+      store.setActiveSession(worktreeId, session.id)
+      store.setLastSentMessage(session.id, prompt)
+      store.setError(session.id, null)
+      store.addSendingSession(session.id)
+      store.setSelectedBackend(session.id, backend)
+      store.setSelectedModel(session.id, model)
+      store.setSelectedProvider(session.id, provider)
+      store.setExecutionMode(session.id, 'yolo')
+      store.setExecutingMode(session.id, 'yolo')
+      if (effortLevel) store.setEffortLevel(session.id, effortLevel)
+
+      setSessionProvider.mutate({
+        sessionId: session.id,
+        worktreeId,
+        worktreePath,
+        provider,
+      })
+      setSessionBackend.mutate({
+        sessionId: session.id,
+        worktreeId,
+        worktreePath,
+        backend,
+      })
+      setSessionModel.mutate({
+        sessionId: session.id,
+        worktreeId,
+        worktreePath,
+        model,
+      })
+      if (effortLevel)
+        setSessionEffortLevel.mutate({
+          sessionId: session.id,
+          worktreeId,
+          worktreePath,
+          effortLevel,
+        })
+      queryClient.invalidateQueries({
+        queryKey: chatQueryKeys.sessions(worktreeId),
+      })
+      sendMessage.mutate(
+        {
+          sessionId: session.id,
+          worktreeId,
+          worktreePath,
+          message: prompt,
+          model,
+          executionMode: 'yolo',
+          effortLevel,
+          mcpConfig: buildMcpConfigJson(
+            mcpServersDataRef.current ?? [],
+            enabledMcpServersRef.current,
+            backend
+          ),
+          customProfileName,
+          parallelExecutionPrompt: resolveParallelExecutionPromptForSession(
+            session.id,
+            preferences
+          ),
+          chromeEnabled: preferences?.chrome_enabled ?? false,
+          aiLanguage: preferences?.ai_language,
+          backend,
+        },
+        { onSettled: () => inputRef.current?.focus() }
+      )
+    } catch (error) {
+      console.error('[SMOKE-TEST] Failed to create session:', error)
+      toast.error(`Failed to create smoke test session: ${error}`)
+    }
+  }, [
+    activeSessionId,
+    activeWorktreeIdRef,
+    activeWorktreePathRef,
+    createSession,
+    enabledMcpServersRef,
+    inputRef,
+    mcpServersDataRef,
+    preferences,
+    queryClient,
+    resolveCustomProfile,
+    selectedModelRef,
+    sendMessage,
+    setSessionBackend,
+    setSessionEffortLevel,
+    setSessionModel,
+    setSessionProvider,
+  ])
+
   return {
     handleInvestigate,
     handleInvestigateWorkflowRun,
     handleReviewComments,
+    handleSmokeTest,
   }
 }

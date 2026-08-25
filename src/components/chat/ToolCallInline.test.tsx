@@ -41,6 +41,44 @@ describe('ToolCallInline', () => {
     expect(expandedContent).toBeInTheDocument()
   })
 
+  it('renders Claude code-review findings without the unhandled fallback', () => {
+    render(
+      <ToolCallInline
+        toolCall={{
+          id: 'tool-report-findings-1',
+          name: 'ReportFindings',
+          input: {
+            findings: [
+              {
+                file: 'src/example.ts',
+                line: 42,
+                category: 'correctness',
+                summary: 'The request can fail silently.',
+              },
+              {
+                file: 'src/other.ts',
+                line: 10,
+                category: 'testing',
+                summary: 'The failure path has no test.',
+              },
+            ],
+          },
+        }}
+      />
+    )
+
+    expect(screen.getByText('Report Findings')).toBeInTheDocument()
+    expect(screen.getByText('2 findings')).toBeInTheDocument()
+    expect(screen.queryByText(/unhandled tool/i)).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button'))
+
+    expect(
+      screen.getByText(/The request can fail silently/)
+    ).toBeInTheDocument()
+    expect(screen.getByText(/The failure path has no test/)).toBeInTheDocument()
+  })
+
   it('renders Codex file changes with the upstream inline diff view', () => {
     render(
       <ToolCallInline

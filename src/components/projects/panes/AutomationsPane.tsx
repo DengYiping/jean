@@ -37,6 +37,11 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import {
+  EFFORT_LEVEL_OPTIONS,
+  OPENCODE_MODEL_OPTIONS,
+} from '@/components/chat/toolbar/toolbar-options'
+import { formatOpencodeModelLabel } from '@/components/chat/toolbar/toolbar-utils'
+import {
   useAutomations,
   useCleanupAutomationThreads,
   useCreateAutomation,
@@ -46,12 +51,20 @@ import {
   useRunAutomationNow,
   useUpdateAutomation,
 } from '@/services/automations'
+import {
+  getCatalogModelOptions,
+  getCodexModelOptions,
+  useModelCatalog,
+} from '@/services/model-catalog'
+import { useAvailableOpencodeModels } from '@/services/opencode-cli'
+import { usePreferences } from '@/services/preferences'
 import { useWorktrees } from '@/services/projects'
 import type {
   Automation,
   AutomationStatus,
   AutomationTargetMode,
 } from '@/types/automations'
+import { codexReasoningOptions } from '@/types/preferences'
 import type {
   Backend,
   EffortLevel,
@@ -97,6 +110,12 @@ function defaultTargetIds(worktrees: Worktree[]): string[] {
   const ready = worktrees.filter(worktree => !worktree.archived_at)
   const base = ready.find(worktree => worktree.session_type === 'base')
   return base ? [base.id] : ready[0] ? [ready[0].id] : []
+}
+
+export function effortOptionsForBackend(
+  backend: Backend
+): { value: EffortLevel; label: string }[] {
+  return backend === 'claude' ? EFFORT_LEVEL_OPTIONS : codexReasoningOptions
 }
 
 function emptyForm(worktrees: Worktree[]): AutomationFormState {
@@ -228,6 +247,8 @@ export function AutomationsPane({
   const runAutomationNow = useRunAutomationNow()
   const pauseAutomation = usePauseAutomation()
   const resumeAutomation = useResumeAutomation()
+  const { data: preferences } = usePreferences()
+  const { data: modelCatalog } = useModelCatalog()
 
   const activeWorktrees = useMemo(
     () => worktrees.filter(worktree => !worktree.archived_at),
@@ -265,6 +286,44 @@ export function AutomationsPane({
 
   const scheduleRRule = useMemo(() => buildScheduleRRule(form), [form])
   const runWindowSummary = useMemo(() => formatRunWindowSummary(form), [form])
+
+  const { data: availableOpencodeModels } = useAvailableOpencodeModels({
+    enabled: form.backend === 'opencode',
+  })
+
+  const modelOptions = useMemo<{ value: string; label: string }[]>(() => {
+    let options: { value: string; label: string }[]
+    if (form.backend === 'codex') {
+      options = getCodexModelOptions(
+        modelCatalog,
+        preferences?.custom_codex_models ?? []
+      )
+    } else if (form.backend === 'opencode') {
+      const models = availableOpencodeModels?.length
+        ? availableOpencodeModels
+        : OPENCODE_MODEL_OPTIONS.map(option => option.value)
+      options = models.map(value => ({
+        value,
+        label: formatOpencodeModelLabel(value),
+      }))
+    } else {
+      options = getCatalogModelOptions(modelCatalog, 'claude')
+    }
+
+    const selected = form.model.trim()
+    if (selected && !options.some(option => option.value === selected)) {
+      options = [...options, { value: selected, label: selected }]
+    }
+    return options
+  }, [
+    availableOpencodeModels,
+    form.backend,
+    form.model,
+    modelCatalog,
+    preferences?.custom_codex_models,
+  ])
+
+  const effortOptions = effortOptionsForBackend(form.backend)
 
   const isDirty = useMemo(() => {
     if (!selectedAutomation) {
@@ -626,10 +685,25 @@ export function AutomationsPane({
                   <Select
                     value={form.backend}
                     onValueChange={value =>
-                      setForm(current => ({
-                        ...current,
-                        backend: value as Backend,
-                      }))
+                      setForm(current => {
+                        const backend = value as Backend
+                        const validEffortLevels = new Set<string>([
+                          'off',
+                          ...effortOptionsForBackend(backend).map(
+                            option => option.value
+                          ),
+                        ])
+                        return {
+                          ...current,
+                          backend,
+                          model: '',
+                          effortLevel:
+                            current.effortLevel &&
+                            !validEffortLevels.has(current.effortLevel)
+                              ? ''
+                              : current.effortLevel,
+                        }
+                      })
                     }
                   >
                     <SelectTrigger>
@@ -667,18 +741,28 @@ export function AutomationsPane({
 
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="automation-model">Model</Label>
-                  <Input
-                    id="automation-model"
-                    value={form.model}
-                    onChange={event =>
+                  <Label>Model</Label>
+                  <Select
+                    value={form.model || '__inherit__'}
+                    onValueChange={value =>
                       setForm(current => ({
                         ...current,
-                        model: event.target.value,
+                        model: value === '__inherit__' ? '' : value,
                       }))
                     }
-                    placeholder="Optional"
-                  />
+                  >
+                    <SelectTrigger aria-label="Model">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__inherit__">Inherit</SelectItem>
+                      {modelOptions.map(option => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="automation-provider">Provider Profile</Label>
@@ -722,7 +806,9 @@ export function AutomationsPane({
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Effort</Label>
+                  <Label>
+                    {form.backend === 'claude' ? 'Effort' : 'Reasoning Effort'}
+                  </Label>
                   <Select
                     value={form.effortLevel || '__none__'}
                     onValueChange={value =>
@@ -739,10 +825,11 @@ export function AutomationsPane({
                     <SelectContent>
                       <SelectItem value="__none__">Inherit</SelectItem>
                       <SelectItem value="off">Off</SelectItem>
-                      <SelectItem value="low">Low</SelectItem>
-                      <SelectItem value="medium">Medium</SelectItem>
-                      <SelectItem value="high">High</SelectItem>
-                      <SelectItem value="max">Max</SelectItem>
+                      {effortOptions.map(option => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>

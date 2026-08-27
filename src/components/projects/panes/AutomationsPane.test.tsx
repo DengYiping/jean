@@ -4,7 +4,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@/test/test-utils'
 import type { Automation } from '@/types/automations'
 import type { Worktree } from '@/types/projects'
-import { AutomationsPane, buildAutomationInput } from './AutomationsPane'
+import {
+  AutomationsPane,
+  buildAutomationInput,
+  effortOptionsForBackend,
+} from './AutomationsPane'
 
 const mockUseAutomations = vi.fn()
 const mockUseCreateAutomation = vi.fn()
@@ -146,9 +150,79 @@ describe('buildAutomationInput', () => {
   })
 })
 
+describe('effortOptionsForBackend', () => {
+  it('includes Claude-only effort levels for the Claude backend', () => {
+    const values = effortOptionsForBackend('claude').map(option => option.value)
+    expect(values).toEqual(
+      expect.arrayContaining([
+        'low',
+        'medium',
+        'high',
+        'xhigh',
+        'max',
+        'ultracode',
+      ])
+    )
+  })
+
+  it('uses codex reasoning efforts for codex and opencode backends', () => {
+    const codexValues = effortOptionsForBackend('codex').map(
+      option => option.value
+    )
+    expect(codexValues).toEqual(['low', 'medium', 'high', 'xhigh', 'max'])
+    expect(
+      effortOptionsForBackend('opencode').map(option => option.value)
+    ).toEqual(codexValues)
+  })
+})
+
 describe('AutomationsPane', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+  })
+
+  it('shows the selected automation model in the model dropdown', () => {
+    mockUseAutomations.mockReturnValue({
+      data: [createAutomation({ model: 'gpt-5.5' })],
+    })
+    mockUseWorktrees.mockReturnValue({ data: worktrees })
+    mockUseCreateAutomation.mockReturnValue(mutationStub)
+    mockUseCleanupAutomationThreads.mockReturnValue(mutationStub)
+    mockUseDeleteAutomation.mockReturnValue(mutationStub)
+    mockUsePauseAutomation.mockReturnValue(mutationStub)
+    mockUseResumeAutomation.mockReturnValue(mutationStub)
+    mockUseRunAutomationNow.mockReturnValue(mutationStub)
+    mockUseUpdateAutomation.mockReturnValue(mutationStub)
+
+    render(<AutomationsPane projectId="project-1" projectPath="/tmp/project" />)
+
+    fireEvent.click(screen.getByText(/Pull in latest change from upstream/i))
+
+    expect(screen.getByRole('combobox', { name: /model/i })).toHaveTextContent(
+      'GPT 5.5'
+    )
+  })
+
+  it('keeps unknown automation models selectable in the model dropdown', () => {
+    mockUseAutomations.mockReturnValue({
+      data: [createAutomation({ model: 'my-custom-model' })],
+    })
+    mockUseWorktrees.mockReturnValue({ data: worktrees })
+    mockUseCreateAutomation.mockReturnValue(mutationStub)
+    mockUseCleanupAutomationThreads.mockReturnValue(mutationStub)
+    mockUseDeleteAutomation.mockReturnValue(mutationStub)
+    mockUsePauseAutomation.mockReturnValue(mutationStub)
+    mockUseResumeAutomation.mockReturnValue(mutationStub)
+    mockUseRunAutomationNow.mockReturnValue(mutationStub)
+    mockUseUpdateAutomation.mockReturnValue(mutationStub)
+
+    render(<AutomationsPane projectId="project-1" projectPath="/tmp/project" />)
+
+    fireEvent.click(screen.getByText(/Pull in latest change from upstream/i))
+
+    expect(screen.getByRole('combobox', { name: /model/i })).toHaveTextContent(
+      'my-custom-model'
+    )
   })
 
   it('stacks the status badge below long titles on narrow layouts', () => {

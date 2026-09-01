@@ -12997,12 +12997,24 @@ pub async fn set_codex_skill_enabled(
     Ok(response.effective_enabled)
 }
 
-/// Collect skills from a directory into a map (later inserts override earlier ones)
+const MAX_SKILL_DIRECTORY_DEPTH: usize = 8;
+
+/// Collect skills from a directory into a map (later inserts override earlier ones).
+/// Category directories are traversed recursively, but a directory containing a
+/// `SKILL.md` is treated as a skill root and its children are not visited.
 fn collect_skills_from_dir(
     dir: &std::path::Path,
     skills: &mut std::collections::HashMap<String, ClaudeSkill>,
 ) {
-    if !dir.exists() {
+    collect_skills_from_dir_inner(dir, skills, 0);
+}
+
+fn collect_skills_from_dir_inner(
+    dir: &std::path::Path,
+    skills: &mut std::collections::HashMap<String, ClaudeSkill>,
+    depth: usize,
+) {
+    if depth > MAX_SKILL_DIRECTORY_DEPTH {
         return;
     }
 
@@ -13014,22 +13026,48 @@ fn collect_skills_from_dir(
         }
     };
 
+    let mut entries: Vec<_> = entries
+        .filter_map(|entry| match entry {
+            Ok(entry) => Some(entry),
+            Err(error) => {
+                log::warn!("Failed to read directory entry in {dir:?}: {error}");
+                None
+            }
+        })
+        .collect();
+    entries.sort_by_key(|entry| entry.file_name());
+
     for entry in entries {
-        let entry = match entry {
-            Ok(entry) => entry,
-            Err(e) => {
-                log::warn!("Failed to read directory entry: {e}");
+        let entry_depth = depth + 1;
+        if entry_depth > MAX_SKILL_DIRECTORY_DEPTH {
+            continue;
+        }
+
+        let file_type = match entry.file_type() {
+            Ok(file_type) => file_type,
+            Err(error) => {
+                log::warn!("Failed to read file type for {:?}: {error}", entry.path());
                 continue;
             }
         };
-
         let path = entry.path();
-        if !path.is_dir() {
+        if !file_type.is_dir() || file_type.is_symlink() {
             continue;
         }
 
         let skill_file = path.join("SKILL.md");
-        if !skill_file.exists() {
+        let is_skill_file = match std::fs::symlink_metadata(&skill_file) {
+            Ok(metadata) => metadata.file_type().is_file() && !metadata.file_type().is_symlink(),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+            Err(error) => {
+                log::warn!("Failed to inspect skill file {skill_file:?}: {error}");
+                false
+            }
+        };
+        if !is_skill_file {
+            if entry_depth < MAX_SKILL_DIRECTORY_DEPTH {
+                collect_skills_from_dir_inner(&path, skills, entry_depth);
+            }
             continue;
         }
 
@@ -13449,6 +13487,50 @@ mod tests {
             automation_name: None,
             automation_owned: false,
         }
+    }
+
+    #[test]
+    fn skill_discovery_finds_nested_skills_without_descending_into_skill_roots() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let root = temp.path().join("skills");
+        let flat = root.join("flat");
+        let nested = root.join("engineering/testing/tdd");
+        let child = flat.join("child");
+        std::fs::create_dir_all(&flat).expect("flat skill dir");
+        std::fs::create_dir_all(&nested).expect("nested skill dir");
+        std::fs::create_dir_all(&child).expect("nested child skill dir");
+        std::fs::write(flat.join("SKILL.md"), "# Flat skill\n").expect("flat skill");
+        std::fs::write(nested.join("SKILL.md"), "# TDD\n").expect("nested skill");
+        std::fs::write(child.join("SKILL.md"), "# Child\n").expect("child skill");
+
+        let mut skills = std::collections::HashMap::new();
+        collect_skills_from_dir(&root, &mut skills);
+
+        assert_eq!(skills.len(), 2);
+        assert_eq!(
+            skills.get("tdd").map(|skill| PathBuf::from(&skill.path)),
+            Some(nested.join("SKILL.md"))
+        );
+        assert!(!skills.contains_key("child"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn skill_discovery_does_not_follow_symlinks() {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir().expect("temp dir");
+        let root = temp.path().join("skills");
+        let outside = temp.path().join("outside-skill");
+        std::fs::create_dir_all(&root).expect("skills root");
+        std::fs::create_dir_all(&outside).expect("outside skill dir");
+        std::fs::write(outside.join("SKILL.md"), "# Outside\n").expect("outside skill");
+        symlink(&outside, root.join("linked-directory")).expect("directory symlink");
+
+        let mut skills = std::collections::HashMap::new();
+        collect_skills_from_dir(&root, &mut skills);
+
+        assert!(skills.is_empty());
     }
 
     #[test]

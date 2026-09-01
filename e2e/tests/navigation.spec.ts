@@ -47,7 +47,7 @@ test.describe('Navigation', () => {
     ).toBeVisible({ timeout: 3000 })
   })
 
-  test('updates all main and master project branches', async ({ mockPage }) => {
+  test('updates all base worktrees', async ({ mockPage }) => {
     const projectsHeader = mockPage.getByText('PROJECTS')
     if (!(await projectsHeader.isVisible().catch(() => false))) {
       await mockPage.keyboard.press('Meta+b')
@@ -55,7 +55,7 @@ test.describe('Navigation', () => {
     }
 
     await mockPage
-      .getByRole('button', { name: 'Update all main and master branches' })
+      .getByRole('button', { name: 'Update all base worktrees' })
       .click()
 
     await expect(mockPage.getByText('Updated 1 project')).toBeVisible()

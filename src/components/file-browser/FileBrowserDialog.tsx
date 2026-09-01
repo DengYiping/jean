@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { File, FolderTree } from 'lucide-react'
+import { File, Folder, FolderTree } from 'lucide-react'
 import { useUIStore } from '@/store/ui-store'
 import { useProjectsStore } from '@/store/projects-store'
 import { useWorktree } from '@/services/projects'
@@ -21,18 +21,27 @@ export function FileBrowserDialog() {
   const { data: worktree } = useWorktree(worktreeId)
   const { data: files = [] } = useWorktreeFiles(worktree?.path ?? null)
   const [query, setQuery] = useState('')
+  const [folderPath, setFolderPath] = useState('')
   const [filePath, setFilePath] = useState<string | null>(null)
   const matchingFiles = useMemo(
     () =>
-      files.filter(file =>
-        file.relative_path.toLowerCase().includes(query.toLowerCase())
+      files.filter(
+        file =>
+          (!folderPath || file.relative_path.startsWith(`${folderPath}/`)) &&
+          file.relative_path.toLowerCase().includes(query.toLowerCase())
       ),
-    [files, query]
+    [files, folderPath, query]
   )
 
   return (
     <>
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog
+        open={open}
+        onOpenChange={isOpen => {
+          if (!isOpen) setFolderPath('')
+          setOpen(isOpen)
+        }}
+      >
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -46,17 +55,37 @@ export function FileBrowserDialog() {
             placeholder="Filter files"
             autoFocus
           />
+          {folderPath && (
+            <div className="text-sm text-muted-foreground">
+              <button
+                className="hover:text-foreground"
+                onClick={() => setFolderPath('')}
+                aria-label="Show all files"
+              >
+                Files
+              </button>{' '}
+              / {folderPath}
+            </div>
+          )}
           <ScrollArea className="h-[60vh]">
             <div className="space-y-1 pr-3">
               {matchingFiles.map(file => (
                 <button
                   key={file.relative_path}
                   className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
-                  onClick={() =>
-                    setFilePath(`${worktree?.path}/${file.relative_path}`)
-                  }
+                  onClick={() => {
+                    if (file.is_dir) {
+                      setFolderPath(file.relative_path)
+                    } else {
+                      setFilePath(`${worktree?.path}/${file.relative_path}`)
+                    }
+                  }}
                 >
-                  <File className="size-3.5 shrink-0 text-muted-foreground" />
+                  {file.is_dir ? (
+                    <Folder className="size-3.5 shrink-0 text-muted-foreground" />
+                  ) : (
+                    <File className="size-3.5 shrink-0 text-muted-foreground" />
+                  )}
                   {file.relative_path}
                 </button>
               ))}

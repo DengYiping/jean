@@ -2,6 +2,7 @@ import { codexModelOptions, type ClaudeModel } from '@/types/preferences'
 import type { EffortLevel, ThinkingLevel } from '@/types/chat'
 
 export const MODEL_OPTIONS: { value: ClaudeModel; label: string }[] = [
+  { value: 'claude-fable-5-1', label: 'Fable 5.1' },
   { value: 'claude-fable-5', label: 'Fable 5' },
   { value: 'claude-opus-5', label: 'Opus 5' },
   { value: 'claude-sonnet-5', label: 'Sonnet 5' },

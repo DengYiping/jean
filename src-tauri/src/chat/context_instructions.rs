@@ -272,6 +272,31 @@ fn collect_context_paths(
     paths
 }
 
+fn format_loaded_context(context_paths: &[std::path::PathBuf]) -> String {
+    let mut content = String::new();
+    for path in context_paths {
+        if let Ok(file_content) = std::fs::read_to_string(path) {
+            if content.is_empty() {
+                content.push_str("# Loaded Context\n\n");
+                content.push_str(
+                    "The following context has been loaded. You should be aware of this when working on this task.\n\n---\n\n",
+                );
+            }
+            content.push_str(&file_content);
+            content.push_str("\n\n---\n\n");
+        }
+    }
+    content
+}
+
+pub fn build_loaded_context_content(
+    app: &tauri::AppHandle,
+    session_id: &str,
+    worktree_id: &str,
+) -> String {
+    format_loaded_context(&collect_context_paths(app, session_id, worktree_id))
+}
+
 pub fn build_combined_terminal_context_content(
     app: &tauri::AppHandle,
     session_id: &str,
@@ -289,18 +314,9 @@ pub fn build_combined_terminal_context_content(
         content.push_str("\n---\n\n");
     }
 
-    let context_paths = collect_context_paths(app, session_id, worktree_id);
-    if !context_paths.is_empty() {
-        content.push_str("# Loaded Context\n\n");
-        content.push_str(
-            "The following context has been loaded. You should be aware of this when working on this task.\n\n---\n\n",
-        );
-        for path in context_paths {
-            if let Ok(file_content) = std::fs::read_to_string(path) {
-                content.push_str(&file_content);
-                content.push_str("\n\n---\n\n");
-            }
-        }
+    let loaded_context = build_loaded_context_content(app, session_id, worktree_id);
+    if !loaded_context.is_empty() {
+        content.push_str(&loaded_context);
     }
 
     content
@@ -360,6 +376,21 @@ pub fn prepare_backend_terminal_context(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn format_loaded_context_inlines_each_context_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let issue = dir.path().join("issue.md");
+        let saved = dir.path().join("saved.md");
+        std::fs::write(&issue, "# Issue\n\nDetails").unwrap();
+        std::fs::write(&saved, "# Saved context\n\nPrior work").unwrap();
+
+        let content = format_loaded_context(&[issue, saved]);
+
+        assert!(content.starts_with("# Loaded Context\n\n"));
+        assert!(content.contains("Details"));
+        assert!(content.contains("Prior work"));
+    }
 
     #[test]
     fn toml_basic_string_escapes_multiline_context() {

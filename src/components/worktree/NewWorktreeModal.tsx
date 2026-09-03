@@ -13,6 +13,22 @@ import { LinearIcon } from '@/components/icons/LinearIcon'
 import type { LucideIcon } from 'lucide-react'
 import { useGhLogin } from '@/hooks/useGhLogin'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
+  CODEX_MODEL_OPTIONS,
+  MODEL_OPTIONS,
+  OPENCODE_MODEL_OPTIONS,
+} from '@/components/chat/toolbar/toolbar-options'
+import {
+  resolveMagicPromptProvider,
+  type MagicPromptModel,
+} from '@/types/preferences'
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -63,6 +79,12 @@ export const TABS: Tab[] = [
   { id: 'sentry', label: 'Sentry', key: '7', icon: Bug },
 ]
 
+const INVESTIGATION_MODEL_OPTIONS = [
+  ...MODEL_OPTIONS,
+  ...CODEX_MODEL_OPTIONS,
+  ...OPENCODE_MODEL_OPTIONS,
+]
+
 export function NewWorktreeModal() {
   const { triggerLogin: triggerGhLogin, isGhInstalled } = useGhLogin()
   const { newWorktreeModalOpen } = useUIStore()
@@ -77,6 +99,10 @@ export function NewWorktreeModal() {
   const [searchQuery, setSearchQuery] = useState('')
   const [includeClosed, setIncludeClosed] = useState(false)
   const [selectedItemIndex, setSelectedItemIndex] = useState(0)
+  const [investigationModel, setInvestigationModel] =
+    useState<MagicPromptModel>('sonnet')
+  const [investigationProvider, setInvestigationProvider] =
+    useState('__anthropic__')
   const [previewItem, setPreviewItem] = useState<{
     type: 'issue' | 'pr' | 'security' | 'advisory'
     number: number
@@ -122,12 +148,22 @@ export function NewWorktreeModal() {
     showIssueSources,
     showGitHubIssuePrSources
   )
-  const handlers = useNewWorktreeHandlers(data, {
-    setActiveTab,
-    setSearchQuery,
-    setSelectedItemIndex,
-    setIncludeClosed,
-  })
+  const handlers = useNewWorktreeHandlers(
+    data,
+    {
+      setActiveTab,
+      setSearchQuery,
+      setSelectedItemIndex,
+      setIncludeClosed,
+    },
+    {
+      model: investigationModel,
+      provider:
+        investigationProvider === '__anthropic__'
+          ? null
+          : investigationProvider,
+    }
+  )
 
   const handlePreviewIssue = (issue: { number: number }) => {
     previewOpenRef.current = true
@@ -203,6 +239,17 @@ export function NewWorktreeModal() {
     const isOpening = newWorktreeModalOpen && !wasOpenRef.current
 
     if (isOpening) {
+      const model =
+        preferences?.magic_prompt_models?.investigate_issue_model ??
+        preferences?.selected_model ??
+        'sonnet'
+      const provider = resolveMagicPromptProvider(
+        preferences?.magic_prompt_providers,
+        'investigate_issue_provider',
+        preferences?.default_provider
+      )
+      setInvestigationModel(model)
+      setInvestigationProvider(provider ?? '__anthropic__')
       const { newWorktreeModalDefaultTab, setNewWorktreeModalDefaultTab } =
         useUIStore.getState()
       const nextTab =
@@ -219,7 +266,7 @@ export function NewWorktreeModal() {
     }
 
     wasOpenRef.current = newWorktreeModalOpen
-  }, [newWorktreeModalOpen, visibleTabIds])
+  }, [newWorktreeModalOpen, preferences, visibleTabIds])
 
   useEffect(() => {
     if (!visibleTabIds.includes(activeTab)) {
@@ -291,6 +338,53 @@ export function NewWorktreeModal() {
             onTabChange={setActiveTab}
             tabs={visibleTabs}
           />
+
+          {(activeTab === 'issues' || activeTab === 'prs') && (
+            <div className="shrink-0 border-b border-border px-3 py-2 flex items-center gap-2">
+              <span className="text-xs text-muted-foreground shrink-0">
+                Investigate with
+              </span>
+              <Select
+                value={investigationProvider}
+                onValueChange={setInvestigationProvider}
+              >
+                <SelectTrigger
+                  className="h-8 min-w-0 flex-1 text-xs"
+                  aria-label="Investigation provider"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__anthropic__">Anthropic</SelectItem>
+                  {(preferences?.custom_cli_profiles ?? []).map(profile => (
+                    <SelectItem key={profile.name} value={profile.name}>
+                      {profile.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                value={investigationModel}
+                onValueChange={value =>
+                  setInvestigationModel(value as MagicPromptModel)
+                }
+              >
+                <SelectTrigger
+                  className="h-8 min-w-0 flex-[1.4] text-xs"
+                  aria-label="Investigation model"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {INVESTIGATION_MODEL_OPTIONS.map(option => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           {/* Tab content */}
           <div className="flex-1 min-h-0 flex flex-col">

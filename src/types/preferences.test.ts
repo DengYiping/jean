@@ -106,6 +106,9 @@ describe('magic prompt model compatibility', () => {
   })
 
   it('accepts Codex models only for the Codex backend', () => {
+    expect(
+      isMagicPromptModelCompatibleWithBackend('gpt-6-astra', 'codex')
+    ).toBe(true)
     expect(isMagicPromptModelCompatibleWithBackend('gpt-5.4', 'codex')).toBe(
       true
     )

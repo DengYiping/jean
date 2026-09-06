@@ -1515,6 +1515,7 @@ export const effortLevelOptions: {
 // =============================================================================
 
 export type KnownCodexModel =
+  | 'gpt-6-astra'
   | 'gpt-5.6-sol'
   | 'gpt-5.6-terra'
   | 'gpt-5.6-luna'
@@ -1539,6 +1540,7 @@ export interface CustomCodexModel {
 }
 
 export const codexModelOptions: { value: KnownCodexModel; label: string }[] = [
+  { value: 'gpt-6-astra', label: 'GPT 6 Astra' },
   { value: 'gpt-5.6-sol', label: 'GPT 5.6 Sol' },
   { value: 'gpt-5.6-terra', label: 'GPT 5.6 Terra' },
   { value: 'gpt-5.6-luna', label: 'GPT 5.6 Luna' },

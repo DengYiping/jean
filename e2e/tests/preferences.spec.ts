@@ -114,7 +114,7 @@ test.describe('Preferences', () => {
       args: {
         patch: {
           codex_model_provider_overrides: {
-            'gpt-5.6-sol': 'openrouter',
+            'gpt-6-astra': 'openrouter',
           },
         },
       },

@@ -76,14 +76,16 @@ describe('model option helpers', () => {
     expect(normalizeClaudeModel('claude-sonnet-4-6')).toBe('claude-sonnet-4-6')
   })
 
-  it('offers canonical GPT 5.6 Codex variants and normalizes deprecated aliases', () => {
+  it('offers GPT 6 Astra and canonical GPT 5.6 Codex variants', () => {
     const values = codexModelOptions.map(option => option.value)
-    expect(values.slice(0, 3)).toEqual([
+    expect(values.slice(0, 4)).toEqual([
+      'gpt-6-astra',
       'gpt-5.6-sol',
       'gpt-5.6-terra',
       'gpt-5.6-luna',
     ])
     expect(values).not.toContain('gpt-5.6')
+    expect(normalizeCodexModel('gpt-6-astra')).toBe('gpt-6-astra')
     expect(normalizeCodexModel('gpt-5.6')).toBe('gpt-5.6-sol')
     expect(normalizeCodexModel('gpt-5.6-fast')).toBe('gpt-5.6-sol-fast')
     expect(normalizeCodexModel('gpt-5-6-sol')).toBe('gpt-5.6-sol')

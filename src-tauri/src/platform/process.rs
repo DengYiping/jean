@@ -6,6 +6,11 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::sync::RwLock;
 
+/// Darwin historically advertised `OPEN_MAX` as 10240. The kernel rejects
+/// `RLIM_INFINITY` and values above `kern.maxfilesperproc` for `RLIMIT_NOFILE`.
+#[cfg(target_os = "macos")]
+const DARWIN_OPEN_MAX: libc::rlim_t = 10_240;
+
 static GIT_BINARY_OVERRIDE: Lazy<RwLock<Option<PathBuf>>> = Lazy::new(|| RwLock::new(None));
 
 fn is_git_program(program: &OsStr) -> bool {
@@ -153,21 +158,18 @@ pub fn raise_fd_limit() {
             rlim_max: 0,
         };
         if libc::getrlimit(libc::RLIMIT_NOFILE, &mut rlim) != 0 {
-            log::warn!(
+            fd_limit_warn(format!(
                 "raise_fd_limit: getrlimit failed: {}",
                 std::io::Error::last_os_error()
-            );
+            ));
             return;
         }
 
         let old_cur = rlim.rlim_cur;
-        let mut target = rlim.rlim_max;
         #[cfg(target_os = "macos")]
-        {
-            if let Some(max_per_proc) = macos_maxfilesperproc() {
-                target = target.min(max_per_proc);
-            }
-        }
+        let target = macos_nofile_target(rlim.rlim_max);
+        #[cfg(not(target_os = "macos"))]
+        let target = rlim.rlim_max;
 
         if old_cur >= target {
             log::info!("raise_fd_limit: soft fd limit already sufficient ({old_cur})");
@@ -176,14 +178,48 @@ pub fn raise_fd_limit() {
 
         rlim.rlim_cur = target;
         if libc::setrlimit(libc::RLIMIT_NOFILE, &rlim) != 0 {
-            log::warn!(
+            #[cfg(target_os = "macos")]
+            if target > DARWIN_OPEN_MAX && old_cur < DARWIN_OPEN_MAX {
+                rlim.rlim_cur = DARWIN_OPEN_MAX;
+                if libc::setrlimit(libc::RLIMIT_NOFILE, &rlim) == 0 {
+                    log::info!(
+                        "raise_fd_limit: raised soft fd limit {old_cur} -> {DARWIN_OPEN_MAX} (OPEN_MAX fallback)"
+                    );
+                    return;
+                }
+            }
+            fd_limit_warn(format!(
                 "raise_fd_limit: setrlimit to {target} failed: {}",
                 std::io::Error::last_os_error()
-            );
+            ));
             return;
         }
 
         log::info!("raise_fd_limit: raised soft fd limit {old_cur} -> {target}");
+    }
+}
+
+#[cfg(unix)]
+fn fd_limit_warn(message: String) {
+    log::warn!("{message}");
+    // `run()` invokes this before Tauri logging is installed, so otherwise a
+    // startup failure would not be visible to desktop users.
+    if !log::log_enabled!(log::Level::Warn) {
+        eprintln!("{message}");
+    }
+}
+
+/// Choose an `RLIMIT_NOFILE` target that macOS accepts. GUI processes can
+/// report an infinite hard limit even though the kernel rejects it.
+#[cfg(target_os = "macos")]
+fn macos_nofile_target(rlim_max: libc::rlim_t) -> libc::rlim_t {
+    if let Some(max_per_proc) = macos_maxfilesperproc() {
+        return rlim_max.min(max_per_proc);
+    }
+    if rlim_max == 0 || rlim_max == libc::RLIM_INFINITY {
+        DARWIN_OPEN_MAX
+    } else {
+        rlim_max.min(DARWIN_OPEN_MAX)
     }
 }
 
@@ -218,6 +254,32 @@ mod tests {
     use std::sync::Mutex;
 
     static GIT_OVERRIDE_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    #[cfg(unix)]
+    fn nofile_limit() -> libc::rlimit {
+        unsafe {
+            let mut rlim = libc::rlimit {
+                rlim_cur: 0,
+                rlim_max: 0,
+            };
+            assert_eq!(libc::getrlimit(libc::RLIMIT_NOFILE, &mut rlim), 0);
+            rlim
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn raise_fd_limit_is_idempotent_and_never_lowers_the_soft_limit() {
+        let before = nofile_limit();
+        raise_fd_limit();
+        let once = nofile_limit();
+        raise_fd_limit();
+        let twice = nofile_limit();
+
+        assert!(once.rlim_cur >= before.rlim_cur);
+        assert_eq!(once.rlim_cur, twice.rlim_cur);
+        assert_eq!(once.rlim_max, twice.rlim_max);
+    }
 
     struct GitOverrideTestGuard;
 

@@ -33,6 +33,7 @@ import { useTheme } from '@/hooks/use-theme'
 import { usePreferences } from '@/services/preferences'
 import type { SyntaxTheme } from '@/types/preferences'
 import { toast } from 'sonner'
+import { FilePathCopyRow } from './FilePathCopyRow'
 
 // Lazy load CodeEditor since it's heavy
 const CodeEditor = lazy(() =>
@@ -301,9 +302,7 @@ export function FileContentModal({ filePath, onClose }: FileContentModalProps) {
             )}
           </div>
           {filePath && (
-            <span className="text-muted-foreground font-normal text-xs truncate">
-              {filePath}
-            </span>
+            <FilePathCopyRow filePath={filePath} pathClassName="truncate" />
           )}
         </DialogTitle>
         <DialogDescription className="sr-only">

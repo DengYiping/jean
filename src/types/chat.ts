@@ -516,12 +516,14 @@ export interface ErrorEvent {
 }
 
 /**
- * Event payload for cancellation from Rust (user pressed Escape)
+ * Event payload for cancellation from Rust (user pressed Escape).
+ * undo_send only indicates whether the user turn should be removed from
+ * history; a prompt with no streamed output may still be restored when false.
  */
 export interface CancelledEvent {
   session_id: string
   worktree_id: string // Kept for backward compatibility
-  undo_send: boolean // True if user message should be restored to input (instant cancellation)
+  undo_send: boolean
   emitted_at_ms: number
 }
 

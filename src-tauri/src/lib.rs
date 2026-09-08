@@ -4046,6 +4046,11 @@ fn handle_cli_command(command: CliCommand) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // macOS GUI and host-process launches can inherit a low open-file limit.
+    // Raise it before the MCP stdio early return so every Jean host mode and
+    // its child processes inherit the safer limit.
+    crate::platform::raise_fd_limit();
+
     if std::env::args().any(|arg| arg == jean_mcp_core::JEAN_MCP_STDIO_ARG) {
         if let Err(e) = jean_mcp_stdio::run_stdio_server() {
             eprintln!("Jean MCP server failed: {e}");
@@ -4053,8 +4058,6 @@ pub fn run() {
         }
         return;
     }
-
-    crate::platform::raise_fd_limit();
 
     let cli_args = parse_cli_args();
     if let Some(command) = cli_args.command.clone() {

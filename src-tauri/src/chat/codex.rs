@@ -1485,6 +1485,10 @@ pub(crate) fn process_turn_events(
     let mut received_completed_agent_message = false;
     let mut awaiting_server_response = false;
     let mut initial_event = initial_event;
+    // A newly started turn has no recovery ID until its asynchronous
+    // `turn/start` request resolves. Keep this target current so status
+    // recovery never classifies another turn from the same thread.
+    let mut recovery_turn_id = recovery_turn_id.map(str::to_owned);
 
     // Open output file for history
     let mut output_writer = std::fs::OpenOptions::new()
@@ -1502,6 +1506,7 @@ pub(crate) fn process_turn_events(
                     .and_then(|turn| turn.get("id"))
                     .and_then(|v| v.as_str())
                 {
+                    recovery_turn_id = Some(turn_id.to_string());
                     super::registry::register_codex_turn(
                         session_id.to_string(),
                         thread_id.to_string(),
@@ -1553,8 +1558,11 @@ pub(crate) fn process_turn_events(
                                 }),
                             ) {
                                 Ok(snapshot) => {
-                                    let disposition =
-                                        classify_codex_resume(&snapshot, recovery_turn_id, true);
+                                    let disposition = classify_codex_resume(
+                                        &snapshot,
+                                        recovery_turn_id.as_deref(),
+                                        true,
+                                    );
                                     if disposition == CodexResumeDisposition::Active {
                                         last_activity = Instant::now();
                                         continue;
@@ -1566,7 +1574,7 @@ pub(crate) fn process_turn_events(
                                     if let Err(error) = append_codex_thread_snapshot_to_history_file(
                                         output_file,
                                         &snapshot,
-                                        recovery_turn_id,
+                                        recovery_turn_id.as_deref(),
                                         false,
                                     ) {
                                         log::warn!(
@@ -1578,7 +1586,7 @@ pub(crate) fn process_turn_events(
                                         CodexResumeDisposition::Failed => {
                                             if let Some(turn) = select_codex_recovery_turn(
                                                 &snapshot,
-                                                recovery_turn_id,
+                                                recovery_turn_id.as_deref(),
                                             ) {
                                                 let raw_error = codex_turn_error_message(turn)
                                                     .unwrap_or_else(|| {
@@ -1686,6 +1694,7 @@ pub(crate) fn process_turn_events(
                         .and_then(|t| t.get("id"))
                         .and_then(|v| v.as_str())
                     {
+                        recovery_turn_id = Some(turn_id.to_string());
                         super::registry::register_codex_turn(
                             session_id.to_string(),
                             thread_id.to_string(),

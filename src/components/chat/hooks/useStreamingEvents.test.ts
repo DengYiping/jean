@@ -1314,6 +1314,81 @@ describe('useStreamingEvents question notifications', () => {
     unmount()
   })
 
+  it('clears a restored draft when a normal cancel hydrates a persisted cancelled turn', async () => {
+    const persistedSession = {
+      id: 'session-1',
+      name: 'Codex Session',
+      order: 0,
+      created_at: 1,
+      updated_at: 2,
+      messages: [
+        {
+          id: 'user-1',
+          session_id: 'session-1',
+          role: 'user' as const,
+          content: 'retry me',
+          timestamp: 1,
+          tool_calls: [],
+        },
+        {
+          id: 'cancelled-assistant-1',
+          session_id: 'session-1',
+          role: 'assistant' as const,
+          content: 'Persisted cancelled output.',
+          timestamp: 2,
+          tool_calls: [],
+          cancelled: true,
+        },
+      ],
+    }
+    const getSession = createDeferredPromise<typeof persistedSession>()
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === 'get_session') return getSession.promise
+      return Promise.resolve(undefined)
+    })
+    useChatStore.setState({
+      sessionWorktreeMap: { 'session-1': 'worktree-1' },
+      worktreePaths: { 'worktree-1': '/tmp/worktree-1' },
+      sendStartedAt: { 'session-1': 1 },
+      lastSentMessages: { 'session-1': 'retry me' },
+      inputDrafts: { 'session-1': '' },
+    })
+
+    const { handlers, queryClient, unmount } = await setupHook()
+    queryClient.setQueryData(chatQueryKeys.session('session-1'), {
+      ...persistedSession,
+      messages: [persistedSession.messages[0]],
+    })
+
+    await act(async () => {
+      handlers.get('chat:cancelled')?.({
+        payload: {
+          session_id: 'session-1',
+          worktree_id: 'worktree-1',
+          undo_send: false,
+          emitted_at_ms: Date.now(),
+        },
+      })
+    })
+
+    expect(useChatStore.getState().inputDrafts['session-1']).toBe('retry me')
+    await waitFor(() =>
+      expect(mockInvoke).toHaveBeenCalledWith('get_session', {
+        sessionId: 'session-1',
+        worktreeId: 'worktree-1',
+        worktreePath: '/tmp/worktree-1',
+      })
+    )
+    getSession.resolve(persistedSession)
+    await waitFor(() =>
+      expect(
+        queryClient.getQueryData(chatQueryKeys.session('session-1'))
+      ).toEqual(persistedSession)
+    )
+    expect(useChatStore.getState().inputDrafts['session-1'] ?? '').toBe('')
+    unmount()
+  })
+
   it('waits for cancelled-message persistence before invalidating session lists', async () => {
     const saveCancelledMessage = createDeferredPromise()
     const persistCancelState = createDeferredPromise()

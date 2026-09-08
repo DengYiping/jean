@@ -172,7 +172,7 @@ pub struct ErrorEvent {
 pub struct CancelledEvent {
     pub session_id: String,
     pub worktree_id: String, // Kept for backward compatibility
-    pub undo_send: bool, // True if user message should be restored to input (instant cancellation)
+    pub undo_send: bool,     // True when the user turn should be removed from history
     pub emitted_at_ms: u64,
 }
 

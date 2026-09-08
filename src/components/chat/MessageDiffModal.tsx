@@ -32,6 +32,7 @@ import { getGitDiff } from '@/services/git-status'
 import { isTauri } from '@/services/projects'
 import { invoke } from '@/lib/transport'
 import { isNativeApp } from '@/lib/environment'
+import { FilePathCopyRow } from './FilePathCopyRow'
 
 function DiffBlock({
   fileName,
@@ -279,6 +280,7 @@ export function MessageDiffModal({
         <DialogTitle className="flex items-center gap-2 shrink-0 flex-wrap">
           <FileText className="h-4 w-4 shrink-0" />
           <span className="truncate">{getFilename(filePath)}</span>
+          <FilePathCopyRow filePath={filePath} iconOnly />
 
           {/* View mode toggle */}
           <div className="flex items-center bg-muted rounded-lg p-1 ml-2">

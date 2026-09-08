@@ -8,6 +8,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { getFilename } from '@/lib/path-utils'
 import { InlineFileDiff } from './InlineFileDiff'
+import { FilePathCopyRow } from './FilePathCopyRow'
 
 export interface FileEdit {
   oldString: string
@@ -41,9 +42,7 @@ export function FileEditsDiffModal({
             )}
           </div>
           {filePath && (
-            <span className="text-muted-foreground font-normal text-xs truncate">
-              {filePath}
-            </span>
+            <FilePathCopyRow filePath={filePath} pathClassName="truncate" />
           )}
         </DialogTitle>
         <DialogDescription className="sr-only">

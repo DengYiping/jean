@@ -97,6 +97,72 @@ describe('useBackgroundInvestigation', () => {
     })
   })
 
+  it('creates and opens the returned dedicated session when requested', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    queryClient.setQueryData<Worktree>(
+      [...projectsQueryKeys.all, 'worktree', 'worktree-1'],
+      {
+        id: 'worktree-1',
+        project_id: 'project-1',
+        name: 'Worktree 1',
+        path: '/tmp/worktree-1',
+        branch: 'worktree-1',
+        created_at: 1,
+        order: 0,
+        status: 'ready',
+      }
+    )
+    useChatStore.setState({ activeWorktreeId: 'worktree-1' })
+    useUIStore.setState({
+      autoInvestigateOverrides: {
+        'worktree-1': {
+          forceNewSession: true,
+          openSession: true,
+          prompt: 'Investigate issue #42 with session-only context',
+        },
+      },
+    })
+    vi.mocked(invoke).mockResolvedValue({
+      sessionId: 'session-new',
+      worktreeId: 'worktree-1',
+      status: 'investigation_started',
+    })
+    const onOpen = vi.fn()
+    window.addEventListener('open-session-modal', onOpen)
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
+
+    renderHook(() => useBackgroundInvestigation(), { wrapper })
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith(
+        'start_background_investigation',
+        expect.objectContaining({
+          message: 'Investigate issue #42 with session-only context',
+          forceNewSession: true,
+        })
+      )
+    })
+    await waitFor(() => {
+      expect(onOpen).toHaveBeenCalledWith(
+        expect.objectContaining({
+          detail: {
+            sessionId: 'session-new',
+            worktreeId: 'worktree-1',
+            worktreePath: '/tmp/worktree-1',
+          },
+        })
+      )
+    })
+    expect(useChatStore.getState().getActiveSession('worktree-1')).toBe(
+      'session-new'
+    )
+    window.removeEventListener('open-session-modal', onOpen)
+  })
+
   it('keeps the investigation pending when starting it fails', async () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },

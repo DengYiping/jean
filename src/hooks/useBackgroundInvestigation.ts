@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { invoke } from '@/lib/transport'
 import { useChatStore } from '@/store/chat-store'
-import { useUIStore } from '@/store/ui-store'
+import { useUIStore, type InvestigationOverride } from '@/store/ui-store'
 import { usePreferences } from '@/services/preferences'
 import { chatQueryKeys } from '@/services/chat'
 import { resolveBackend, supportsAdaptiveThinking } from '@/lib/model-utils'
@@ -97,8 +97,11 @@ export function useBackgroundInvestigation(): void {
     let skippedNotReady = 0
 
     const checkCandidate = (worktreeId: string): boolean => {
-      if (worktreeId === activeWorktreeId) return false
-      if (autoOpenSessionWorktreeIds.has(worktreeId)) return false
+      const override = autoInvestigateOverrides[worktreeId]
+      if (worktreeId === activeWorktreeId && !override?.forceNewSession)
+        return false
+      if (autoOpenSessionWorktreeIds.has(worktreeId) && !override?.openSession)
+        return false
       if (!worktreePaths[worktreeId]) return false
       if (!isWorktreeReady(worktreeId)) {
         skippedNotReady++
@@ -388,7 +391,7 @@ async function processBackgroundInvestigation(
   preferences: ReturnType<typeof usePreferences>['data'],
   cliVersion: string | null,
   queryClient: ReturnType<typeof useQueryClient>,
-  override?: { model: string; provider: string | null }
+  override?: InvestigationOverride
 ): Promise<void> {
   const worktreePath = useChatStore.getState().worktreePaths[worktreeId]
   if (!worktreePath) return
@@ -404,7 +407,9 @@ async function processBackgroundInvestigation(
   const projectId = cachedWorktree?.project_id
 
   // Build the investigation prompt
-  const prompt = await buildPrompt(worktreeId, type, preferences, projectId)
+  const prompt =
+    override?.prompt ??
+    (await buildPrompt(worktreeId, type, preferences, projectId))
 
   // Resolve model, provider, backend
   const { modelKey, providerKey, effortKey } = investigationConfig[type]
@@ -414,13 +419,14 @@ async function processBackgroundInvestigation(
     preferences?.magic_prompt_models?.[modelKey] ??
     preferences?.selected_model ??
     'sonnet'
-  const provider = override
-    ? override.provider
-    : resolveMagicPromptProvider(
-        preferences?.magic_prompt_providers,
-        providerKey,
-        preferences?.default_provider
-      )
+  const provider =
+    override?.provider !== undefined
+      ? override.provider
+      : resolveMagicPromptProvider(
+          preferences?.magic_prompt_providers,
+          providerKey,
+          preferences?.default_provider
+        )
   const backend = resolveBackend(selectedModel)
 
   // Resolve custom profile name
@@ -459,6 +465,7 @@ async function processBackgroundInvestigation(
       : undefined,
     chromeEnabled: preferences?.chrome_enabled ?? false,
     aiLanguage: preferences?.ai_language,
+    forceNewSession: override?.forceNewSession,
   })
 
   const sessionId = result.sessionId
@@ -479,6 +486,14 @@ async function processBackgroundInvestigation(
   } = useChatStore.getState()
 
   setActiveSession(worktreeId, sessionId)
+
+  if (override?.openSession) {
+    window.dispatchEvent(
+      new CustomEvent('open-session-modal', {
+        detail: { sessionId, worktreeId, worktreePath },
+      })
+    )
+  }
 
   // Invalidate sessions query so ProjectCanvasView picks up the session
   queryClient.invalidateQueries({

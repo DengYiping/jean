@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react'
 import { invoke } from '@/lib/transport'
 import { toast } from 'sonner'
 import { logger } from '@/lib/logger'
-import { useUIStore } from '@/store/ui-store'
+import { useUIStore, type InvestigationOverride } from '@/store/ui-store'
 import { useProjectsStore } from '@/store/projects-store'
 import { useChatStore } from '@/store/chat-store'
 import { githubQueryKeys } from '@/services/github'
@@ -36,12 +36,13 @@ interface Setters {
 export function useNewWorktreeHandlers(
   data: Data,
   setters: Setters,
-  investigationOverride?: { model: string; provider: string | null }
+  investigationOverride?: InvestigationOverride
 ) {
   const {
     queryClient,
     selectedProjectId,
     selectedProject,
+    worktrees,
     hasBaseSession,
     baseSession,
     createWorktree,
@@ -356,6 +357,81 @@ export function useNewWorktreeHandlers(
       createWorktree,
       handleOpenChange,
       investigationOverride,
+    ]
+  )
+
+  const handleInvestigateIssueInNewSession = useCallback(
+    async (issue: GitHubIssue) => {
+      const projectPath = selectedProject?.path
+      if (!selectedProjectId || !projectPath) {
+        toast.error('No project selected')
+        return
+      }
+
+      setCreatingFromNumber(issue.number)
+      try {
+        const chatStore = useChatStore.getState()
+        const currentWorktreeId =
+          chatStore.activeWorktreeId ??
+          useProjectsStore.getState().selectedWorktreeId
+        let targetWorktree = worktrees?.find(
+          worktree =>
+            worktree.id === currentWorktreeId &&
+            worktree.project_id === selectedProjectId
+        )
+        if (!targetWorktree) {
+          targetWorktree =
+            baseSession ??
+            (await createBaseSession.mutateAsync(selectedProjectId))
+        }
+
+        const issueDetail = await invoke<
+          GitHubIssue & {
+            comments: {
+              body: string
+              author: { login: string }
+              created_at: string
+            }[]
+          }
+        >('get_github_issue', { issueNumber: issue.number, projectPath })
+        const issuePrompt = (
+          investigationOverride?.promptTemplate ??
+          'Investigate the loaded GitHub {issueWord} ({issueRefs})'
+        )
+          .replace(/\{issueWord\}/g, 'issue')
+          .replace(/\{issueRefs\}/g, `#${issue.number}`)
+        const comments = (issueDetail.comments ?? [])
+          .map(
+            comment =>
+              `Comment by @${comment.author.login}:\n${comment.body || '(empty)'}`
+          )
+          .join('\n\n')
+        const prompt = `${issuePrompt}\n\n## GitHub issue #${issue.number}: ${issueDetail.title}\n\n${issueDetail.body || '(No description provided)'}${comments ? `\n\n## Comments\n\n${comments}` : ''}`
+
+        chatStore.registerWorktreePath(targetWorktree.id, targetWorktree.path)
+        useProjectsStore.getState().selectWorktree(targetWorktree.id)
+        useUIStore
+          .getState()
+          .markWorktreeForAutoInvestigate(targetWorktree.id, {
+            ...investigationOverride,
+            forceNewSession: true,
+            prompt,
+            openSession: true,
+          })
+        handleOpenChange(false)
+      } catch (error) {
+        toast.error(`Failed to start issue investigation: ${error}`)
+        setCreatingFromNumber(null)
+      }
+    },
+    [
+      selectedProjectId,
+      selectedProject,
+      worktrees,
+      baseSession,
+      createBaseSession,
+      investigationOverride,
+      handleOpenChange,
     ]
   )
 
@@ -1375,6 +1451,7 @@ export function useNewWorktreeHandlers(
     handleSelectBranch,
     handleSelectIssue,
     handleSelectIssueAndInvestigate,
+    handleInvestigateIssueInNewSession,
     handleBulkInvestigateIssues,
     handleSelectPR,
     handleSelectPRAndInvestigate,

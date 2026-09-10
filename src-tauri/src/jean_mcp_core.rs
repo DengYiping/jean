@@ -1376,6 +1376,7 @@ async fn start_autoinvestigating(
         Some(prefs.chrome_enabled),
         Some(prefs.ai_language.clone()),
         parallel_execution_prompt,
+        Some(false),
         Some(source.to_string()),
     )
     .await
@@ -1450,6 +1451,7 @@ pub async fn start_background_investigation_impl(
     chrome_enabled: Option<bool>,
     ai_language: Option<String>,
     parallel_execution_prompt: Option<String>,
+    force_new_session: Option<bool>,
     source: Option<String>,
 ) -> Result<BackgroundInvestigationResult, String> {
     let sessions = crate::chat::get_sessions(
@@ -1460,11 +1462,14 @@ pub async fn start_background_investigation_impl(
         Some(false),
     )
     .await?;
-    let session_id = match sessions
-        .active_session_id
-        .clone()
-        .or_else(|| sessions.sessions.first().map(|session| session.id.clone()))
-    {
+    let session_id = match if force_new_session.unwrap_or(false) {
+        None
+    } else {
+        sessions
+            .active_session_id
+            .clone()
+            .or_else(|| sessions.sessions.first().map(|session| session.id.clone()))
+    } {
         Some(id) => id,
         None => crate::chat::create_session(
             app.clone(),
@@ -1561,6 +1566,7 @@ pub async fn start_background_investigation(
     chrome_enabled: Option<bool>,
     ai_language: Option<String>,
     parallel_execution_prompt: Option<String>,
+    force_new_session: Option<bool>,
 ) -> Result<BackgroundInvestigationResult, String> {
     start_background_investigation_impl(
         &app,
@@ -1575,6 +1581,7 @@ pub async fn start_background_investigation(
         chrome_enabled,
         ai_language,
         parallel_execution_prompt,
+        force_new_session,
         Some("ui".to_string()),
     )
     .await

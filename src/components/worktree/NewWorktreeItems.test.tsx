@@ -1,8 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import userEvent from '@testing-library/user-event'
 import { fireEvent, render, screen } from '@/test/test-utils'
-import { PRItem, SecurityAlertItem } from './NewWorktreeItems'
-import type { DependabotAlert, GitHubPullRequest } from '@/types/github'
+import { IssueItem, PRItem, SecurityAlertItem } from './NewWorktreeItems'
+import type {
+  DependabotAlert,
+  GitHubIssue,
+  GitHubPullRequest,
+} from '@/types/github'
 
 const { openExternalMock, mobileState } = vi.hoisted(() => ({
   openExternalMock: vi.fn(),
@@ -136,6 +140,45 @@ const alert: DependabotAlert = {
   createdAt: '2026-01-01T00:00:00Z',
   htmlUrl: 'https://github.com/example/repo/security/dependabot/12',
 }
+
+const issue: GitHubIssue = {
+  number: 42,
+  title: 'Keep issue labels clickable when adding session actions',
+  body: 'Issue body',
+  state: 'OPEN',
+  created_at: '2026-03-24T12:00:00Z',
+  author: { login: 'octocat', avatarUrl: null },
+  labels: [{ name: 'bug', color: 'ff0000' }],
+}
+
+it('keeps label filtering and exposes investigate in a new session on desktop', async () => {
+  const user = userEvent.setup()
+  const onLabelClick = vi.fn()
+  const onInvestigateInNewSession = vi.fn()
+
+  render(
+    <IssueItem
+      issue={issue}
+      index={0}
+      isSelected={false}
+      isCreating={false}
+      onMouseEnter={vi.fn()}
+      onClick={vi.fn()}
+      onInvestigate={vi.fn()}
+      onInvestigateInNewSession={onInvestigateInNewSession}
+      onPreview={vi.fn()}
+      onLabelClick={onLabelClick}
+    />
+  )
+
+  await user.click(
+    screen.getByRole('button', { name: /investigate in new session/i })
+  )
+  await user.click(screen.getByText('bug'))
+
+  expect(onInvestigateInNewSession).toHaveBeenCalledOnce()
+  expect(onLabelClick).toHaveBeenCalledWith('bug')
+})
 
 describe('NewWorktreeItems mobile actions', () => {
   beforeEach(() => {

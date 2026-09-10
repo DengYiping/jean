@@ -1138,6 +1138,8 @@ pub async fn dispatch_command(
                 "parallelExecutionPrompt",
                 "parallel_execution_prompt",
             )?;
+            let force_new_session: Option<bool> =
+                field_opt(&args, "forceNewSession", "force_new_session")?;
             let result = crate::jean_mcp_core::start_background_investigation(
                 app.clone(),
                 worktree_id,
@@ -1151,6 +1153,7 @@ pub async fn dispatch_command(
                 chrome_enabled,
                 ai_language,
                 parallel_execution_prompt,
+                force_new_session,
             )
             .await?;
             to_value(result)

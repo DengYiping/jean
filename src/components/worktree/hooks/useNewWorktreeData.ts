@@ -283,6 +283,7 @@ export function useNewWorktreeData(
     queryClient,
     selectedProjectId,
     selectedProject,
+    worktrees,
     hasBaseSession,
     baseSession,
     jeanConfig,

@@ -33,6 +33,18 @@ export type ReleaseNotesModalMode = 'notes' | 'post'
 export type NewSessionModeOrigin = 'chat' | 'modal' | 'canvas'
 export type NewSessionModeIntent = 'picker' | 'default'
 
+export interface InvestigationOverride {
+  model?: string
+  provider?: string | null
+  /** Create a dedicated session instead of reusing the worktree's active one. */
+  forceNewSession?: boolean
+  /** A one-off prompt whose context must not be persisted on the worktree. */
+  prompt?: string
+  promptTemplate?: string
+  /** Open the exact session created for this investigation. */
+  openSession?: boolean
+}
+
 export interface NewSessionModeTarget {
   worktreeId: string
   worktreePath: string
@@ -98,10 +110,7 @@ interface UIState {
   autoInvestigateLinearIssueWorktreeIds: Set<string>
   /** Worktree IDs that should auto-trigger Sentry issue investigation */
   autoInvestigateSentryIssueWorktreeIds: Set<string>
-  autoInvestigateOverrides: Record<
-    string,
-    { model: string; provider: string | null }
-  >
+  autoInvestigateOverrides: Record<string, InvestigationOverride>
   /** Counter for background worktree creations (CMD+Click) — skip auto-navigation */
   pendingBackgroundCreations: number
   /** Worktree IDs that should auto-open first session modal when canvas mounts */
@@ -204,12 +213,12 @@ interface UIState {
   consumePendingBackgroundCreation: () => boolean
   markWorktreeForAutoInvestigate: (
     worktreeId: string,
-    override?: { model: string; provider: string | null }
+    override?: InvestigationOverride
   ) => void
   consumeAutoInvestigate: (worktreeId: string) => boolean
   markWorktreeForAutoInvestigatePR: (
     worktreeId: string,
-    override?: { model: string; provider: string | null }
+    override?: InvestigationOverride
   ) => void
   consumeAutoInvestigatePR: (worktreeId: string) => boolean
   markWorktreeForAutoInvestigateSecurityAlert: (worktreeId: string) => void

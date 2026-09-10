@@ -1192,6 +1192,67 @@ pub async fn create_session(
     Ok(session)
 }
 
+/// Fork a completed Codex conversation into a new Jean session in the same worktree.
+#[tauri::command]
+pub async fn fork_codex_session(
+    app: AppHandle,
+    worktree_id: String,
+    worktree_path: String,
+    session_id: String,
+    name: Option<String>,
+) -> Result<Session, String> {
+    let source = load_sessions(&app, &worktree_path, &worktree_id)?
+        .find_session(&session_id)
+        .cloned()
+        .ok_or_else(|| format!("Session not found: {session_id}"))?;
+    if source.backend != Backend::Codex {
+        return Err("Only Codex sessions can be forked".to_string());
+    }
+    let thread_id = source
+        .codex_thread_id
+        .ok_or_else(|| "This Codex session has no conversation to fork yet".to_string())?;
+
+    super::codex_server::ensure_running(&app)?;
+    let fork = super::codex_server::send_request(
+        "thread/fork",
+        serde_json::json!({ "threadId": thread_id, "cwd": worktree_path }),
+    );
+    super::codex_server::decrement_usage_count();
+    let forked_thread_id = fork?
+        .get("thread")
+        .and_then(|thread| thread.get("id"))
+        .and_then(|id| id.as_str())
+        .ok_or_else(|| "Codex fork response missing thread id".to_string())?
+        .to_string();
+
+    let fork_name = name.or_else(|| Some(format!("{} (fork)", source.name)));
+    let session = create_session(
+        app.clone(),
+        worktree_id.clone(),
+        worktree_path.clone(),
+        fork_name,
+        Some("codex".to_string()),
+        None,
+        None,
+        None,
+        None,
+    )
+    .await?;
+    with_sessions_mut(&app, &worktree_path, &worktree_id, |sessions| {
+        let session = sessions
+            .find_session_mut(&session.id)
+            .ok_or_else(|| "Forked session disappeared".to_string())?;
+        session.codex_thread_id = Some(forked_thread_id.clone());
+        Ok(())
+    })?;
+    with_existing_metadata_mut(&app, &session.id, |metadata| {
+        metadata.backend = Backend::Codex;
+        metadata.codex_thread_id = Some(forked_thread_id);
+    })?;
+    emit_sessions_cache_invalidation(&app);
+    Ok(session)
+}
+
 fn initial_session_name_and_naming_state(
     name: Option<String>,
     session_number: u32,

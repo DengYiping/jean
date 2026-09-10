@@ -53,7 +53,6 @@ use super::types::{
 use crate::chat::types::{Session, SessionMetadata, WorktreeSessions};
 use crate::claude_cli::resolve_cli_binary;
 use crate::coderabbit_cli::resolve_coderabbit_binary;
-use crate::codex_cli::resolve_cli_binary as resolve_codex_cli_binary;
 use crate::gh_cli::{build_gh_command, config::resolve_gh_binary};
 use crate::http_server::EmitExt;
 use crate::platform::silent_command;
@@ -9613,6 +9612,7 @@ fn emit_review_progress(
     );
 }
 
+#[allow(dead_code)]
 fn extract_codex_review_structured_output(output: &str) -> Result<String, String> {
     let mut last_agent_message = None;
 
@@ -9683,99 +9683,16 @@ fn execute_codex_review(
     working_dir: Option<&std::path::Path>,
     review_run_id: Option<&str>,
 ) -> Result<String, String> {
-    let cli_path = resolve_codex_cli_binary(app);
-    if !cli_path.exists() {
-        return Err("Codex CLI not installed".to_string());
-    }
-
-    let schema_file = std::env::temp_dir().join(format!(
-        "jean-codex-review-schema-{}.json",
-        std::process::id()
-    ));
-    std::fs::write(&schema_file, REVIEW_SCHEMA)
-        .map_err(|e| format!("Failed to write schema file: {e}"))?;
-
-    let (actual_model, is_fast) = crate::chat::codex::split_fast_model(model);
-
-    let mut cmd = crate::platform::silent_command(&cli_path);
-    cmd.args([
-        "exec",
-        "--json",
-        "--model",
-        actual_model,
-        "--sandbox",
-        "read-only",
-        "--output-schema",
-    ]);
-    if is_fast {
-        cmd.args(["-c", "service_tier=\"fast\""]);
-    }
-    cmd.arg(&schema_file);
-    if let Some(dir) = working_dir {
-        cmd.arg("--cd");
-        cmd.arg(dir);
-        cmd.current_dir(dir);
-    } else {
-        cmd.arg("--skip-git-repo-check");
-    }
-    cmd.arg("-");
-    cmd.stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
-
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("Failed to spawn Codex CLI: {e}"))?;
-
-    if let Some(run_id) = review_run_id {
-        register_review_process(run_id, child.id());
-    }
-
-    let write_result = if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(prompt.as_bytes())
-    } else {
-        Err(std::io::Error::other("Failed to open stdin"))
-    };
-    if let Err(e) = write_result {
-        if let Some(run_id) = review_run_id {
-            let _ = take_review_process_pid(run_id);
-        }
-        let _ = std::fs::remove_file(&schema_file);
-        return Err(format!("Failed to write to stdin: {e}"));
-    }
-
-    let output_result = child.wait_with_output();
-    let cancelled = review_run_id
-        .map(|run_id| take_review_process_pid(run_id).is_none())
-        .unwrap_or(false);
-    let _ = std::fs::remove_file(&schema_file);
-
-    let output = match output_result {
-        Ok(output) => output,
-        Err(e) => {
-            if cancelled {
-                return Err("Review cancelled".to_string());
-            }
-            return Err(format!("Failed to wait for Codex CLI: {e}"));
-        }
-    };
-
-    if !output.status.success() {
-        if cancelled {
-            return Err("Review cancelled".to_string());
-        }
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        return Err(format!(
-            "Codex CLI failed (exit {}): stderr={}, stdout={}",
-            output.status,
-            stderr.trim(),
-            stdout.trim()
-        ));
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    extract_codex_review_structured_output(&stdout)
+    let schema = serde_json::from_str(REVIEW_SCHEMA)
+        .map_err(|error| format!("Invalid Codex review schema: {error}"))?;
+    crate::chat::codex::execute_codex_structured_via_server(
+        app,
+        prompt,
+        model,
+        working_dir,
+        schema,
+        review_run_id,
+    )
 }
 
 /// Execute Claude CLI to generate a code review
@@ -10749,7 +10666,7 @@ mod coderabbit_review_tests {
 #[tauri::command]
 pub async fn cancel_review_with_ai(review_run_id: String) -> Result<bool, String> {
     let Some(pid) = take_review_process_pid(&review_run_id) else {
-        return Ok(false);
+        return crate::chat::codex::cancel_codex_structured_review(&review_run_id);
     };
 
     if pid == 0 || pid == 1 {

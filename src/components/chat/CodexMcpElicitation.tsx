@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Markdown } from '@/components/ui/markdown'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { openExternal } from '@/lib/platform'
 import type { CodexMcpElicitation } from '@/types/chat'
 
 type PrimitiveFieldSchema =
@@ -591,6 +592,21 @@ export function CodexMcpElicitation({
         </div>
       ) : null}
 
+      {elicitation.url ? (
+        <div className="mt-4 rounded border border-border/60 bg-muted/30 p-3 text-xs text-muted-foreground">
+          Complete the authorization in your browser, then return here and
+          continue this request.
+          <Button
+            size="sm"
+            variant="outline"
+            className="mt-2"
+            onClick={() => void openExternal(elicitation.url!)}
+          >
+            Open authorization page
+          </Button>
+        </div>
+      ) : null}
+
       <div className="mt-4 flex gap-2">
         <Button
           size="sm"
@@ -599,12 +615,12 @@ export function CodexMcpElicitation({
               sessionId,
               elicitation.rpc_id,
               'accept',
-              buildAcceptContent(schema, values)
+              elicitation.url ? null : buildAcceptContent(schema, values)
             )
           }
           disabled={Object.keys(validationErrors).length > 0}
         >
-          Approve
+          {elicitation.url ? 'Continue' : 'Approve'}
         </Button>
         <Button
           size="sm"

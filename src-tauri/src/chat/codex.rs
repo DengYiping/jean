@@ -17,6 +17,12 @@ use crate::http_server::EmitExt;
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use std::sync::Mutex;
+
+use once_cell::sync::Lazy;
+
+static STRUCTURED_REVIEW_TURNS: Lazy<Mutex<HashMap<String, (String, String)>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
 
 const DEFAULT_CODEX_SYSTEM_PROMPT: &str = "\
 ## Plan Mode\n\
@@ -752,6 +758,157 @@ pub fn execute_codex_compact_via_server(
     super::registry::unregister_codex_turn(session_id);
 
     Ok(response)
+}
+
+/// Run a read-only, schema-constrained one-off turn through the shared
+/// app-server. This keeps reviews on the same authentication, provider, and
+/// transport as interactive Codex sessions.
+pub fn execute_codex_structured_via_server(
+    app: &tauri::AppHandle,
+    prompt: &str,
+    model: &str,
+    working_dir: Option<&std::path::Path>,
+    output_schema: serde_json::Value,
+    review_run_id: Option<&str>,
+) -> Result<String, String> {
+    use super::codex_server::{self, ServerEvent, SessionContext};
+
+    let cwd = working_dir.unwrap_or_else(|| Path::new("/"));
+    codex_server::ensure_running(app)?;
+    let thread_id = match start_new_thread(
+        cwd,
+        Some(model),
+        None,
+        Some("plan"),
+        false,
+        None,
+        false,
+        None,
+    ) {
+        Ok(thread_id) => thread_id,
+        Err(error) => {
+            codex_server::decrement_usage_count();
+            return Err(error);
+        }
+    };
+
+    let (event_tx, event_rx) = std::sync::mpsc::channel();
+    let registration_id = codex_server::register_session(
+        &thread_id,
+        SessionContext {
+            registration_id: 0,
+            session_id: format!("codex-structured-{}", uuid::Uuid::new_v4()),
+            worktree_id: String::new(),
+            event_tx,
+        },
+    );
+    let mut params = build_turn_start_params(
+        &thread_id,
+        prompt,
+        cwd,
+        Some(model),
+        Some("plan"),
+        None,
+        &[],
+    );
+    // A structured review is read-only but is not a plan-mode interaction.
+    params
+        .as_object_mut()
+        .expect("turn params object")
+        .remove("collaborationMode");
+    params["outputSchema"] = output_schema;
+
+    let start = codex_server::send_request("turn/start", params);
+    let turn_id = start.and_then(|response| {
+        response
+            .get("turn")
+            .and_then(|turn| turn.get("id"))
+            .and_then(|id| id.as_str())
+            .map(ToString::to_string)
+            .ok_or_else(|| "Codex review start response missing turn id".to_string())
+    });
+    let turn_id = match turn_id {
+        Ok(turn_id) => turn_id,
+        Err(error) => {
+            codex_server::unregister_session(&thread_id, registration_id);
+            return Err(error);
+        }
+    };
+    if let Some(review_run_id) = review_run_id {
+        STRUCTURED_REVIEW_TURNS
+            .lock()
+            .unwrap()
+            .insert(review_run_id.to_string(), (thread_id.clone(), turn_id));
+    }
+
+    let result = (|| {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15 * 60);
+        let mut final_message = None;
+        loop {
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            if remaining.is_zero() {
+                break Err("Codex structured turn timed out".to_string());
+            }
+            match event_rx.recv_timeout(remaining.min(std::time::Duration::from_secs(1))) {
+                Ok(ServerEvent::Notification { method, params }) if method == "item/completed" => {
+                    let item = params.get("item").unwrap_or(&serde_json::Value::Null);
+                    if item.get("type").and_then(|value| value.as_str()) == Some("agentMessage") {
+                        final_message = item
+                            .get("text")
+                            .and_then(|value| value.as_str())
+                            .map(ToString::to_string);
+                    }
+                }
+                Ok(ServerEvent::Notification { method, params }) if method == "turn/completed" => {
+                    let turn = params.get("turn").unwrap_or(&serde_json::Value::Null);
+                    if turn.get("status").and_then(|value| value.as_str()) == Some("completed") {
+                        break final_message.ok_or_else(|| {
+                            "Codex review returned no structured response".to_string()
+                        });
+                    }
+                    break Err(format_codex_user_error(
+                        turn.get("error")
+                            .and_then(|error| error.get("message"))
+                            .and_then(|value| value.as_str())
+                            .unwrap_or("Codex review failed"),
+                    ));
+                }
+                Ok(ServerEvent::ServerRequest { id, method, .. }) => {
+                    let _ = codex_server::send_error(
+                        id,
+                        &format!("Jean cannot approve {method} in a read-only review"),
+                    );
+                }
+                Ok(ServerEvent::ServerDied) => {
+                    break Err("Codex server connection lost during review".to_string())
+                }
+                Ok(_) | Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    break Err("Codex review event stream closed".to_string())
+                }
+            }
+        }
+    })();
+    if let Some(review_run_id) = review_run_id {
+        STRUCTURED_REVIEW_TURNS
+            .lock()
+            .unwrap()
+            .remove(review_run_id);
+    }
+    codex_server::unregister_session(&thread_id, registration_id);
+    result
+}
+
+pub fn cancel_codex_structured_review(review_run_id: &str) -> Result<bool, String> {
+    let Some((thread_id, turn_id)) = STRUCTURED_REVIEW_TURNS
+        .lock()
+        .unwrap()
+        .remove(review_run_id)
+    else {
+        return Ok(false);
+    };
+    super::codex_server::interrupt_turn(&thread_id, &turn_id)?;
+    Ok(true)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2243,6 +2400,44 @@ fn process_server_notification(
                 );
             }
         }
+        "thread/name/updated" => {
+            if let Some(name) = params.get("threadName").and_then(|value| value.as_str()) {
+                let _ = app.emit_all(
+                    "chat:codex_thread_name_updated",
+                    &serde_json::json!({
+                        "session_id": session_id,
+                        "worktree_id": worktree_id,
+                        "name": name,
+                    }),
+                );
+            }
+        }
+        "model/rerouted" => {
+            let _ = app.emit_all(
+                "chat:codex_model_rerouted",
+                &serde_json::json!({
+                    "session_id": session_id,
+                    "worktree_id": worktree_id,
+                    "from_model": params.get("fromModel"),
+                    "to_model": params.get("toModel"),
+                    "reason": params.get("reason"),
+                }),
+            );
+        }
+        "modelProvider/authRecoveryStarted" => {
+            let message = params
+                .get("message")
+                .and_then(|value| value.as_str())
+                .unwrap_or("Codex is recovering authentication.");
+            let _ = app.emit_all("chat:codex_notice", &serde_json::json!({ "session_id": session_id, "message": message, "level": "info" }));
+        }
+        "modelProvider/authRecoveryCompleted" => {
+            let message = params
+                .get("message")
+                .and_then(|value| value.as_str())
+                .unwrap_or("Codex authentication recovery completed.");
+            let _ = app.emit_all("chat:codex_notice", &serde_json::json!({ "session_id": session_id, "message": message, "level": "info" }));
+        }
         "item/reasoning/textDelta" | "item/reasoning/summaryTextDelta" => {
             // Streaming reasoning/thinking text
             if let Some(delta) = params.get("delta").and_then(|v| v.as_str()) {
@@ -2928,27 +3123,6 @@ fn handle_approval_request(
             );
         }
         "mcpServer/elicitation/request" => {
-            let mode = params.get("mode").and_then(|v| v.as_str()).unwrap_or("");
-            if mode == "url" {
-                let _ = super::codex_server::send_response(
-                    rpc_id,
-                    serde_json::json!({
-                        "action": "cancel",
-                        "content": serde_json::Value::Null,
-                        "_meta": serde_json::Value::Null,
-                    }),
-                );
-                let _ = app.emit_all(
-                    "chat:error",
-                    &ErrorEvent {
-                        session_id: session_id.to_string(),
-                        worktree_id: worktree_id.to_string(),
-                        error: "Codex MCP URL-based elicitation is not supported yet.".to_string(),
-                    },
-                );
-                return;
-            }
-
             let elicitation = PendingCodexMcpElicitation {
                 rpc_id,
                 thread_id: params
@@ -3018,12 +3192,27 @@ fn handle_approval_request(
                 },
             );
         }
-        _ => {
-            log::debug!("Unknown approval request method: {method}");
-            // Auto-accept unknown approvals to avoid blocking
-            let _ = super::codex_server::send_response(
+        "item/permissions/requestApproval" => {
+            // Permission-profile grants have a method-specific response shape.
+            // Do not turn an unfamiliar request into an implicit approval.
+            let _ = super::codex_server::send_error(
                 rpc_id,
-                serde_json::json!({"decision": "accept"}),
+                "Jean does not yet support permission-profile approvals",
+            );
+            let _ = app.emit_all(
+                "chat:error",
+                &ErrorEvent {
+                    session_id: session_id.to_string(),
+                    worktree_id: worktree_id.to_string(),
+                    error: "Codex requested a permission profile that Jean cannot approve yet. The request was declined.".to_string(),
+                },
+            );
+        }
+        _ => {
+            log::warn!("Rejecting unsupported Codex server request: {method}");
+            let _ = super::codex_server::send_error(
+                rpc_id,
+                &format!("Jean does not support the Codex request method {method}"),
             );
         }
     }

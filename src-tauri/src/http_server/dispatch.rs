@@ -1224,6 +1224,21 @@ pub async fn dispatch_command(
             .await?;
             to_value(result)
         }
+        "fork_codex_session" => {
+            let worktree_id: String = field(&args, "worktreeId", "worktree_id")?;
+            let worktree_path: String = field(&args, "worktreePath", "worktree_path")?;
+            let session_id: String = field(&args, "sessionId", "session_id")?;
+            let name: Option<String> = from_field_opt(&args, "name")?;
+            let result = crate::chat::fork_codex_session(
+                app.clone(),
+                worktree_id,
+                worktree_path,
+                session_id,
+                name,
+            )
+            .await?;
+            to_value(result)
+        }
         "rename_session" => {
             let worktree_id: String = field(&args, "worktreeId", "worktree_id")?;
             let worktree_path: String = field(&args, "worktreePath", "worktree_path")?;

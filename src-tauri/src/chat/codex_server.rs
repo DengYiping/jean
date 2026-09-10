@@ -52,6 +52,10 @@ pub struct SessionContext {
 type PendingRequestSender = tokio::sync::oneshot::Sender<Result<Value, String>>;
 type PendingRequests = Arc<Mutex<HashMap<u64, PendingRequestSender>>>;
 
+/// App-server RPCs are expected to acknowledge promptly. A bounded wait keeps a
+/// wedged child process from leaving a Jean session permanently stuck.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+
 /// The app-server process and its communication channels.
 struct CodexAppServerInner {
     child: Child,
@@ -348,7 +352,16 @@ fn ensure_running_inner(app: &AppHandle) -> Result<(), String> {
 
     // Perform initialization handshake (must be done while holding the lock
     // to prevent other threads from sending requests before init completes)
-    do_initialize(&guard)?;
+    if let Err(error) = do_initialize(&guard) {
+        // Do not retain a half-initialized singleton. Without this cleanup,
+        // later calls see a live child and skip the required handshake.
+        if let Some(mut failed_server) = guard.take() {
+            let _ = failed_server.child.kill();
+            let _ = failed_server.child.wait();
+        }
+        remove_pid_file();
+        return Err(error);
+    }
 
     Ok(())
 }
@@ -456,14 +469,24 @@ pub fn send_request(method: &str, params: Value) -> Result<Value, String> {
     // Register response handler BEFORE writing (prevent race with reader thread)
     let (tx, rx) = tokio::sync::oneshot::channel();
     server.pending_requests.lock().unwrap().insert(id, tx);
+    let pending_requests = server.pending_requests.clone();
 
     write_message(&server.stdin_writer, &request)?;
 
     // Drop the server lock before blocking
     drop(guard);
 
-    rx.blocking_recv()
-        .map_err(|_| format!("Response channel dropped for {method}"))?
+    match wait_for_response_with_timeout(rx, REQUEST_TIMEOUT) {
+        Ok(response) => response,
+        Err(error) => {
+            // The reader may still receive a late response; removing the
+            // callback prevents an unbounded pending-request registry.
+            pending_requests.lock().unwrap().remove(&id);
+            Err(format!(
+                "Codex app-server request {method} timed out: {error}"
+            ))
+        }
+    }
 }
 
 fn wait_for_response_with_timeout<T>(
@@ -501,6 +524,21 @@ pub fn send_response(id: u64, result: Value) -> Result<(), String> {
         "result": result,
     });
 
+    write_message(&server.stdin_writer, &response)
+}
+
+/// Reject a server-initiated request that Jean cannot safely fulfill.
+///
+/// JSON-RPC errors are preferable to guessing a response shape: app-server
+/// request methods can carry security-sensitive, method-specific payloads.
+pub fn send_error(id: u64, message: &str) -> Result<(), String> {
+    let guard = CODEX_SERVER.lock().unwrap();
+    let server = guard.as_ref().ok_or("Codex app-server not running")?;
+    let response = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "error": { "code": -32601, "message": message },
+    });
     write_message(&server.stdin_writer, &response)
 }
 
@@ -770,16 +808,18 @@ fn reader_loop(
     log::warn!("Codex app-server stdout EOF — server died");
     server_dead.store(true, Ordering::SeqCst);
 
+    // Wake every synchronous caller. In particular, requests issued while the
+    // child exits used to wait forever because their one-shot sender remained
+    // in the registry.
+    let pending = std::mem::take(&mut *pending_requests.lock().unwrap());
+    for (_, sender) in pending {
+        let _ = sender.send(Err("Codex app-server connection closed".to_string()));
+    }
+
     // Notify all active sessions
     let sessions = active_sessions.lock().unwrap();
     for ctx in sessions.values() {
         let _ = ctx.event_tx.send(ServerEvent::ServerDied);
-    }
-
-    // Fail all pending requests
-    let mut pr = pending_requests.lock().unwrap();
-    for (_id, sender) in pr.drain() {
-        let _ = sender.send(Err("Server died".to_string()));
     }
 
     remove_pid_file();

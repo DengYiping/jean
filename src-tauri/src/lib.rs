@@ -4819,6 +4819,7 @@ pub fn run() {
             chat::get_session,
             chat::get_codex_sub_agents,
             chat::create_session,
+            chat::fork_codex_session,
             chat::rename_session,
             chat::regenerate_session_name,
             chat::update_session_state,

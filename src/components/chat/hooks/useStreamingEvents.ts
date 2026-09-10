@@ -2591,6 +2591,45 @@ export default function useStreamingEvents({
       }
     )
 
+    const unlistenCodexModelRerouted = listen<{
+      session_id: string
+      to_model?: string | null
+      from_model?: string | null
+    }>('chat:codex_model_rerouted', event => {
+      const { session_id, to_model, from_model } = event.payload
+      if (to_model) {
+        useChatStore.getState().setSelectedModel(session_id, to_model)
+      }
+      toast.info(
+        from_model && to_model
+          ? `Codex switched from ${from_model} to ${to_model}`
+          : 'Codex switched models'
+      )
+    })
+
+    const unlistenCodexNotice = listen<{ message: string }>(
+      'chat:codex_notice',
+      event => toast.info(event.payload.message)
+    )
+
+    const unlistenCodexThreadName = listen<{
+      session_id: string
+      worktree_id: string
+      name: string
+    }>('chat:codex_thread_name_updated', event => {
+      const { session_id, worktree_id, name } = event.payload
+      const worktreePath = useChatStore.getState().worktreePaths[worktree_id]
+      if (!worktreePath || !name.trim()) return
+      invoke('rename_session', {
+        worktreeId: worktree_id,
+        worktreePath,
+        sessionId: session_id,
+        newName: name,
+      }).catch(error =>
+        logger.warn('[useStreamingEvents] Failed to sync Codex thread name:', error)
+      )
+    })
+
     return () => {
       // Flush any buffered chunks before tearing down
       if (chunkRafId !== null) {
@@ -2617,6 +2656,9 @@ export default function useStreamingEvents({
       unlistenWakeupFired.then(f => f())
       unlistenSettingChanged.then(f => f())
       unlistenThreadTokenUsage.then(f => f())
+      unlistenCodexModelRerouted.then(f => f())
+      unlistenCodexNotice.then(f => f())
+      unlistenCodexThreadName.then(f => f())
     }
   }, [queryClient, wsConnected])
 }

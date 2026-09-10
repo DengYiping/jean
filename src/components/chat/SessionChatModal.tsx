@@ -49,6 +49,7 @@ import { FailedRunsBadge } from '@/components/shared/FailedRunsBadge'
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
 import { CloseWorktreeDialog } from './CloseWorktreeDialog'
 import { useChatStore } from '@/store/chat-store'
+import { invoke } from '@/lib/transport'
 import { useTerminalStore } from '@/store/terminal-store'
 import { useBrowserStore } from '@/store/browser-store'
 import { useUIStore } from '@/store/ui-store'
@@ -1432,6 +1433,32 @@ export function SessionChatModal({
                               <Pencil className="mr-2 h-4 w-4" />
                               Rename
                             </ContextMenuItem>
+                            {session.backend === 'codex' && (
+                              <ContextMenuItem
+                                onSelect={() => {
+                                  void invoke('fork_codex_session', {
+                                    worktreeId,
+                                    worktreePath,
+                                    sessionId: session.id,
+                                  })
+                                    .then(forked => {
+                                      useChatStore
+                                        .getState()
+                                        .setActiveSession(
+                                          worktreeId,
+                                          (forked as { id: string }).id
+                                        )
+                                      toast.success('Codex conversation forked')
+                                    })
+                                    .catch(error =>
+                                      toast.error(`Failed to fork Codex session: ${error}`)
+                                    )
+                                }}
+                              >
+                                <GitBranchPlus className="mr-2 h-4 w-4" />
+                                Fork conversation
+                              </ContextMenuItem>
+                            )}
                             <ContextMenuItem
                               disabled={
                                 status === 'review' && !!session.review_results

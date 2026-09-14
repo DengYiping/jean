@@ -26,6 +26,8 @@ fn command_should_run_on_blocking_pool(command: &str) -> bool {
             | "install_pi_cli"
             | "install_gh_cli"
             | "install_coderabbit_cli"
+            | "install_agent_browser"
+            | "install_agent_browser_mcp"
             | "update_coderabbit_cli"
             | "run_coderabbit_review"
             | "trigger_coderabbit_pr_review"
@@ -145,6 +147,14 @@ mod tests {
         assert!(command_should_run_on_blocking_pool("get_sessions"));
         assert!(command_should_run_on_blocking_pool(
             "list_native_cli_sessions"
+        ));
+    }
+
+    #[test]
+    fn agent_browser_setup_runs_on_blocking_pool() {
+        assert!(command_should_run_on_blocking_pool("install_agent_browser"));
+        assert!(command_should_run_on_blocking_pool(
+            "install_agent_browser_mcp"
         ));
     }
 

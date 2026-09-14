@@ -578,6 +578,7 @@ export const DEFAULT_CLAUDE_SYSTEM_PROMPT = `### 1. Plan Mode Default
 - Diff behavior between main and your changes when relevant
 - Ask yourself: "Would a staff engineer approve this?"
 - Run tests, check logs, demonstrate correctness
+- For the current selected project, if there is no other browser testing method, use the Agent Browser when it is available.
 
 ### 6. Demand Elegance (Balanced)
 - For non-trivial changes: pause and ask "is there a more elegant way?"

@@ -9,6 +9,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
 
 mod agent_board;
+mod agent_browser;
 mod automations;
 mod background_tasks;
 mod browser;
@@ -3596,6 +3597,35 @@ async fn install_jean_mcp_config(
     jean_mcp_config::install_jean_mcp_config_impl(app, backends, mode).await
 }
 
+#[tauri::command]
+async fn get_agent_browser_status(
+    app: AppHandle,
+) -> Result<agent_browser::AgentBrowserStatus, String> {
+    agent_browser::get_agent_browser_status(app).await
+}
+
+#[tauri::command]
+async fn ensure_agent_browser_profile(
+    app: AppHandle,
+) -> Result<agent_browser::AgentBrowserStatus, String> {
+    agent_browser::ensure_agent_browser_profile(app).await
+}
+
+#[tauri::command]
+async fn install_agent_browser(
+    app: AppHandle,
+) -> Result<agent_browser::AgentBrowserStatus, String> {
+    agent_browser::install_agent_browser(app).await
+}
+
+#[tauri::command]
+async fn install_agent_browser_mcp(
+    app: AppHandle,
+    backends: Option<Vec<String>>,
+) -> Result<Vec<agent_browser::AgentBrowserInstallResult>, String> {
+    agent_browser::install_agent_browser_mcp(app, backends).await
+}
+
 /// Convert a frontend shortcut string (e.g. "mod+shift+m") to Tauri accelerator format (e.g. "CmdOrCtrl+Shift+M")
 #[cfg(target_os = "macos")]
 fn shortcut_to_accelerator(shortcut: &str) -> String {
@@ -4979,6 +5009,10 @@ pub fn run() {
             regenerate_http_token,
             get_jean_mcp_config_snippet,
             install_jean_mcp_config,
+            get_agent_browser_status,
+            ensure_agent_browser_profile,
+            install_agent_browser,
+            install_agent_browser_mcp,
             // OpenCode server commands
             opencode_server::start_opencode_server,
             opencode_server::stop_opencode_server,

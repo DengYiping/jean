@@ -9,6 +9,12 @@ import { toast } from 'sonner'
 const mocks = vi.hoisted(() => ({
   jeanMcpEnabled: true,
   patchPreferencesMutate: vi.fn(),
+  mcpServers: [] as {
+    name: string
+    backend: string
+    config: Record<string, unknown>
+    disabled: boolean
+  }[],
 }))
 
 vi.mock('@/lib/transport', () => ({
@@ -50,7 +56,10 @@ vi.mock('@/hooks/useInstalledBackends', () => ({
 }))
 
 vi.mock('@/services/mcp', () => ({
-  useAllBackendsMcpServers: () => ({ data: [], isLoading: false }),
+  useAllBackendsMcpServers: () => ({
+    data: mocks.mcpServers,
+    isLoading: false,
+  }),
   invalidateAllMcpServers: vi.fn(),
   getNewServersToAutoEnable: vi.fn(() => []),
   useAllBackendsMcpHealth: () => ({
@@ -98,6 +107,7 @@ describe('McpServersPane Jean MCP install', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.jeanMcpEnabled = true
+    mocks.mcpServers = []
     vi.mocked(invoke).mockImplementation(async (command: string) => {
       if (command === 'get_jean_mcp_config_snippet') return snippet
       if (command === 'install_jean_mcp_config') {
@@ -124,6 +134,16 @@ describe('McpServersPane Jean MCP install', () => {
       }
       return null
     })
+  })
+
+  it('shows the CLIs where Jean MCP is already installed', async () => {
+    mocks.mcpServers = [
+      { name: 'jean', backend: 'codex', config: {}, disabled: false },
+      { name: 'another', backend: 'claude', config: {}, disabled: false },
+    ]
+    renderPane()
+    expect(await screen.findByText('Installed in Codex')).toBeInTheDocument()
+    expect(screen.queryByText('Installed in Claude')).not.toBeInTheDocument()
   })
 
   it('shows successful install confirmation on the button instead of a toast', async () => {

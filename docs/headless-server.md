@@ -9,6 +9,10 @@ X/Wayland display.
 
 ## Start locally
 
+## Agent browser
+
+For browser automation with a persistent manual-login profile, open **Settings → MCP Servers → Agent Browser** and select **Install agent-browser**. Jean installs the npm package, Chromium, and MCP configuration for installed Claude, Codex, and OpenCode CLIs. The server host needs `npm` on `PATH`.
+
 When running a debug server binary directly with `cargo build` /
 `./target/debug/jean-server`, build the browser bundle first. Jean embeds
 `dist/` into the server binary at compile time, so production deploys only need

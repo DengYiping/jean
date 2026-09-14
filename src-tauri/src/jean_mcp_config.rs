@@ -346,6 +346,30 @@ fn install_jsonc_server(
     })
 }
 
+/// Install an arbitrary stdio MCP server using the same JSONC-safe, locked,
+/// atomic write path as Jean MCP. Used by Jean-managed integrations.
+pub fn install_jsonc_mcp_server(
+    path: PathBuf,
+    container_key: &str,
+    server_name: &str,
+    value: serde_json::Value,
+) -> Result<(PathBuf, Option<PathBuf>), String> {
+    with_config_lock(&path, || {
+        let content = read_optional(&path)?;
+        let updated = if content.trim().is_empty() {
+            serde_json::to_string_pretty(&json!({
+                container_key: { server_name: value }
+            }))
+            .unwrap_or_default()
+        } else {
+            patch_jsonc_object_property(&content, container_key, server_name, &value)?
+        };
+        validate_jsonc(&updated, &path)?;
+        let backup = write_atomic_with_backup(&path, &updated)?;
+        Ok((path.clone(), backup))
+    })
+}
+
 fn install_codex(entry: &JeanMcpEntry) -> Result<(PathBuf, Option<PathBuf>), String> {
     let home = dirs::home_dir().ok_or_else(|| "Home directory unavailable".to_string())?;
     let path = home.join(".codex").join("config.toml");
@@ -373,7 +397,52 @@ fn install_codex(entry: &JeanMcpEntry) -> Result<(PathBuf, Option<PathBuf>), Str
     })
 }
 
-fn find_opencode_config_path(home: &Path) -> Option<PathBuf> {
+/// Install an arbitrary MCP server in a Codex TOML config while preserving
+/// unrelated TOML structure and comments.
+pub fn install_codex_mcp_server(
+    path: PathBuf,
+    server_name: &str,
+    command: &str,
+    args: &[&str],
+    env: &serde_json::Map<String, serde_json::Value>,
+) -> Result<(PathBuf, Option<PathBuf>), String> {
+    with_config_lock(&path, || {
+        let content = read_optional(&path)?;
+        let mut doc = if content.trim().is_empty() {
+            toml_edit::DocumentMut::new()
+        } else {
+            content
+                .parse::<toml_edit::DocumentMut>()
+                .map_err(|e| format!("Failed to parse Codex TOML {}: {e}", path.display()))?
+        };
+
+        if !doc.as_table().contains_key("mcp_servers") {
+            doc["mcp_servers"] = toml_edit::Item::Table(toml_edit::Table::new());
+        }
+        let mut table = toml_edit::Table::new();
+        table["command"] = toml_edit::value(command);
+        table["args"] = toml_edit::value(toml_edit::Array::from_iter(args.iter().copied()));
+        let mut env_table = toml_edit::InlineTable::new();
+        for (key, value) in env {
+            let value = value
+                .as_str()
+                .ok_or_else(|| format!("MCP environment value for {key} must be a string"))?;
+            env_table.insert(key, value.into());
+        }
+        table["env"] = toml_edit::value(env_table);
+        table["enabled"] = toml_edit::value(true);
+        doc["mcp_servers"][server_name] = toml_edit::Item::Table(table);
+
+        let updated = doc.to_string();
+        updated
+            .parse::<toml_edit::DocumentMut>()
+            .map_err(|e| format!("Generated invalid Codex TOML: {e}"))?;
+        let backup = write_atomic_with_backup(&path, &updated)?;
+        Ok((path.clone(), backup))
+    })
+}
+
+pub fn find_opencode_config_path(home: &Path) -> Option<PathBuf> {
     // OpenCode's current user config lives under ~/.config/opencode.
     // Prefer that over repo/local ~/opencode.json files so automatic install
     // updates the same path advertised in the UI and read by OpenCode.

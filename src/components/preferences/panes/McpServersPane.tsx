@@ -26,6 +26,7 @@ import type { McpHealthStatus } from '@/types/chat'
 import type { CliBackend } from '@/types/preferences'
 import { SettingsSection } from '../SettingsSection'
 import { JeanMcpSection } from './JeanMcpSection'
+import { AgentBrowserSection } from './AgentBrowserSection'
 
 function mcpAuthHint(backend: CliBackend): string {
   switch (backend) {
@@ -201,7 +202,8 @@ export const McpServersPane: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <JeanMcpSection />
+      <JeanMcpSection mcpServers={mcpServers ?? []} />
+      <AgentBrowserSection />
       <SettingsSection
         title="Default MCP Servers"
         anchorId="pref-mcp-section-default-servers"

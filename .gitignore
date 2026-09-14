@@ -31,6 +31,7 @@ dist-ssr
 test-results
 playwright-report
 playwright/.cache
+.ai/todo.md
 
 # Rust build artifacts for standalone server wrapper
 src-server/target/

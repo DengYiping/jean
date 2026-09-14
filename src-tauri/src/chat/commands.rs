@@ -1926,6 +1926,7 @@ pub async fn update_session_state(
     fixed_findings: Option<Vec<String>>,
     pending_permission_denials: Option<Vec<super::types::PermissionDenial>>,
     pending_codex_mcp_elicitations: Option<Vec<super::types::PendingCodexMcpElicitation>>,
+    pending_codex_permission_approvals: Option<Vec<super::types::PendingCodexPermissionApproval>>,
     denied_message_context: Option<Option<super::types::DeniedMessageContext>>,
     is_reviewing: Option<bool>,
     waiting_for_input: Option<bool>,
@@ -1953,7 +1954,8 @@ pub async fn update_session_state(
                     .is_some_and(|mode| mode == "build" || mode == "yolo");
             let was_waiting_for_input = session.waiting_for_input;
             let had_pending_permission_denials = !session.pending_permission_denials.is_empty()
-                || !session.pending_codex_mcp_elicitations.is_empty();
+                || !session.pending_codex_mcp_elicitations.is_empty()
+                || !session.pending_codex_permission_approvals.is_empty();
             if let Some(v) = answered_questions {
                 session.answered_questions = v;
             }
@@ -1968,6 +1970,9 @@ pub async fn update_session_state(
             }
             if let Some(v) = pending_codex_mcp_elicitations {
                 session.pending_codex_mcp_elicitations = v;
+            }
+            if let Some(v) = pending_codex_permission_approvals {
+                session.pending_codex_permission_approvals = v;
             }
             if let Some(v) = denied_message_context {
                 session.denied_message_context = v;
@@ -2015,7 +2020,8 @@ pub async fn update_session_state(
                 session.supervisor_action = v;
             }
             let has_pending_permission_denials = !session.pending_permission_denials.is_empty()
-                || !session.pending_codex_mcp_elicitations.is_empty();
+                || !session.pending_codex_mcp_elicitations.is_empty()
+                || !session.pending_codex_permission_approvals.is_empty();
             let became_waiting_for_input =
                 matches!(waiting_for_input, Some(true)) && !was_waiting_for_input;
             if became_waiting_for_input
@@ -7688,6 +7694,18 @@ pub fn answer_codex_mcp_elicitation(
             "_meta": serde_json::Value::Null,
         }),
     )
+}
+
+/// Grant or decline a pending Codex permission-profile request. Grants are
+/// always limited to the exact server-requested profile and the current turn.
+#[tauri::command]
+pub fn answer_codex_permission_approval(
+    app: AppHandle,
+    session_id: String,
+    rpc_id: u64,
+    grant: bool,
+) -> Result<(), String> {
+    super::codex::answer_codex_permission_approval(&app, session_id, rpc_id, grant)
 }
 
 /// Answer a Codex request_user_input server request.

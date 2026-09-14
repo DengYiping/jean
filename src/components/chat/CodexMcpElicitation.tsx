@@ -600,7 +600,9 @@ export function CodexMcpElicitation({
             size="sm"
             variant="outline"
             className="mt-2"
-            onClick={() => void openExternal(elicitation.url!)}
+            onClick={() => {
+              if (elicitation.url) void openExternal(elicitation.url)
+            }}
           >
             Open authorization page
           </Button>

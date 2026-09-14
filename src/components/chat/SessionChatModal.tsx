@@ -1451,7 +1451,9 @@ export function SessionChatModal({
                                       toast.success('Codex conversation forked')
                                     })
                                     .catch(error =>
-                                      toast.error(`Failed to fork Codex session: ${error}`)
+                                      toast.error(
+                                        `Failed to fork Codex session: ${error}`
+                                      )
                                     )
                                 }}
                               >

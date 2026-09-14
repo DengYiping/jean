@@ -758,6 +758,7 @@ export function useUpdateSessionState() {
       fixedFindings,
       pendingPermissionDenials,
       pendingCodexMcpElicitations,
+      pendingCodexPermissionApprovals,
       deniedMessageContext,
       isReviewing,
       waitingForInput,
@@ -792,6 +793,15 @@ export function useUpdateSessionState() {
         url?: string | null
         elicitation_id?: string | null
       }[]
+      pendingCodexPermissionApprovals?: {
+        rpc_id: number
+        thread_id: string
+        turn_id: string
+        item_id: string
+        cwd: string
+        reason?: string | null
+        permissions: unknown
+      }[]
       deniedMessageContext?: {
         message: string
         model: string
@@ -821,6 +831,7 @@ export function useUpdateSessionState() {
         fixedFindings,
         pendingPermissionDenials,
         pendingCodexMcpElicitations,
+        pendingCodexPermissionApprovals,
         deniedMessageContext,
         isReviewing,
         waitingForInput,

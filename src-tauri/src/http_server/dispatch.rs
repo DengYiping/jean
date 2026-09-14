@@ -2118,6 +2118,13 @@ pub async fn dispatch_command(
                 "pendingCodexMcpElicitations",
                 "pending_codex_mcp_elicitations",
             )?;
+            let pending_codex_permission_approvals: Option<
+                Vec<crate::chat::types::PendingCodexPermissionApproval>,
+            > = field_opt(
+                &args,
+                "pendingCodexPermissionApprovals",
+                "pending_codex_permission_approvals",
+            )?;
             let denied_message_context: Option<Option<crate::chat::types::DeniedMessageContext>> =
                 field_opt(&args, "deniedMessageContext", "denied_message_context")?;
             let is_reviewing: Option<bool> = field_opt(&args, "isReviewing", "is_reviewing")?;
@@ -2168,6 +2175,7 @@ pub async fn dispatch_command(
                 fixed_findings,
                 pending_permission_denials,
                 pending_codex_mcp_elicitations,
+                pending_codex_permission_approvals,
                 denied_message_context,
                 is_reviewing,
                 waiting_for_input,
@@ -2623,6 +2631,13 @@ pub async fn dispatch_command(
             let action: String = from_field(&args, "action")?;
             let content: Option<Value> = field_opt(&args, "content", "content")?;
             crate::chat::answer_codex_mcp_elicitation(session_id, rpc_id, action, content)?;
+            Ok(Value::Null)
+        }
+        "answer_codex_permission_approval" => {
+            let session_id: String = field(&args, "sessionId", "session_id")?;
+            let rpc_id: u64 = field(&args, "rpcId", "rpc_id")?;
+            let grant: bool = from_field(&args, "grant")?;
+            crate::chat::answer_codex_permission_approval(app.clone(), session_id, rpc_id, grant)?;
             Ok(Value::Null)
         }
         "answer_codex_user_input" => {

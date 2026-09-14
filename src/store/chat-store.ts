@@ -19,6 +19,7 @@ import {
   type Todo,
   type QueuedMessage,
   type CodexMcpElicitation,
+  type CodexPermissionApproval,
   type PermissionDenial,
   type ExecutionMode,
   type SessionDigest,
@@ -216,6 +217,7 @@ interface ChatUIState {
 
   // Pending Codex MCP elicitations per session (waiting for user approval/input)
   pendingCodexMcpElicitations: Record<string, CodexMcpElicitation[]>
+  pendingCodexPermissionApprovals: Record<string, CodexPermissionApproval[]>
 
   // The original message context that triggered the denial (for re-send)
   deniedMessageContext: Record<
@@ -587,6 +589,14 @@ interface ChatUIState {
   ) => void
   clearPendingCodexMcpElicitations: (sessionId: string) => void
   getPendingCodexMcpElicitations: (sessionId: string) => CodexMcpElicitation[]
+  setPendingCodexPermissionApprovals: (
+    sessionId: string,
+    approvals: CodexPermissionApproval[]
+  ) => void
+  clearPendingCodexPermissionApprovals: (sessionId: string) => void
+  getPendingCodexPermissionApprovals: (
+    sessionId: string
+  ) => CodexPermissionApproval[]
 
   // Actions - Denied message context (for re-send)
   setDeniedMessageContext: (
@@ -708,6 +718,7 @@ export const useChatStore = create<ChatUIState>()(
       approvedTools: {},
       pendingPermissionDenials: {},
       pendingCodexMcpElicitations: {},
+      pendingCodexPermissionApprovals: {},
       deniedMessageContext: {},
       lastCompaction: {},
       threadTokenUsage: {},
@@ -2667,6 +2678,32 @@ export const useChatStore = create<ChatUIState>()(
 
       getPendingCodexMcpElicitations: sessionId =>
         get().pendingCodexMcpElicitations[sessionId] ?? [],
+
+      setPendingCodexPermissionApprovals: (sessionId, approvals) =>
+        set(
+          state => ({
+            pendingCodexPermissionApprovals: {
+              ...state.pendingCodexPermissionApprovals,
+              [sessionId]: approvals,
+            },
+          }),
+          undefined,
+          'setPendingCodexPermissionApprovals'
+        ),
+
+      clearPendingCodexPermissionApprovals: sessionId =>
+        set(
+          state => {
+            const { [sessionId]: _, ...rest } =
+              state.pendingCodexPermissionApprovals
+            return { pendingCodexPermissionApprovals: rest }
+          },
+          undefined,
+          'clearPendingCodexPermissionApprovals'
+        ),
+
+      getPendingCodexPermissionApprovals: sessionId =>
+        get().pendingCodexPermissionApprovals[sessionId] ?? [],
 
       // Denied message context (for re-send)
       setDeniedMessageContext: (sessionId, context) =>

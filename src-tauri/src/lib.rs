@@ -4851,6 +4851,7 @@ pub fn run() {
             chat::approve_codex_command,
             chat::add_global_command_permission_rule,
             chat::answer_codex_mcp_elicitation,
+            chat::answer_codex_permission_approval,
             chat::answer_codex_user_input,
             chat::steer_codex_turn,
             chat::claim_supervisor_action_trigger,

@@ -81,6 +81,7 @@ import type {
   PendingTextFile,
   SkillReference,
   CodexMcpElicitation as CodexMcpElicitationType,
+  CodexPermissionApproval as CodexPermissionApprovalType,
   PermissionDenial,
   PendingFile,
   SupervisorAction,
@@ -97,6 +98,7 @@ import { buildMessageWithAttachmentRefs } from '@/lib/queued-message'
 import { cn } from '@/lib/utils'
 import { PermissionApproval } from './PermissionApproval'
 import { CodexMcpElicitation } from './CodexMcpElicitation'
+import { CodexPermissionApproval } from './CodexPermissionApproval'
 import { SetupScriptOutput } from './SetupScriptOutput'
 import { TodoWidget } from './TodoWidget'
 import { CodexSubAgentPanel } from './CodexSubAgentPanel'
@@ -219,6 +221,7 @@ const EMPTY_INPUT_DRAFT = ''
 const EMPTY_QUEUED_MESSAGES: QueuedMessage[] = []
 const EMPTY_PERMISSION_DENIALS: PermissionDenial[] = []
 const EMPTY_CODEX_MCP_ELICITATIONS: CodexMcpElicitationType[] = []
+const EMPTY_CODEX_PERMISSION_APPROVALS: CodexPermissionApprovalType[] = []
 
 interface ForkSessionToWorktreeResponse {
   worktree: Worktree
@@ -883,6 +886,50 @@ export function ChatWindow({
       ? (state.pendingCodexMcpElicitations[deferredSessionId] ??
         EMPTY_CODEX_MCP_ELICITATIONS)
       : EMPTY_CODEX_MCP_ELICITATIONS
+  )
+  const pendingCodexPermissionApprovals = useChatStore(state =>
+    deferredSessionId
+      ? (state.pendingCodexPermissionApprovals[deferredSessionId] ??
+        EMPTY_CODEX_PERMISSION_APPROVALS)
+      : EMPTY_CODEX_PERMISSION_APPROVALS
+  )
+  const handleCodexPermissionApprovalRespond = useCallback(
+    async (rpcId: number, grant: boolean) => {
+      if (!activeSessionId) return
+      try {
+        await invoke('answer_codex_permission_approval', {
+          sessionId: activeSessionId,
+          rpcId,
+          grant,
+        })
+        const remaining = useChatStore
+          .getState()
+          .getPendingCodexPermissionApprovals(activeSessionId)
+          .filter(approval => approval.rpc_id !== rpcId)
+        if (remaining.length > 0) {
+          useChatStore
+            .getState()
+            .setPendingCodexPermissionApprovals(activeSessionId, remaining)
+        } else {
+          useChatStore
+            .getState()
+            .clearPendingCodexPermissionApprovals(activeSessionId)
+          const state = useChatStore.getState()
+          if (
+            state.getPendingDenials(activeSessionId).length === 0 &&
+            state.getPendingCodexMcpElicitations(activeSessionId).length === 0
+          ) {
+            state.setWaitingForInput(activeSessionId, false)
+            state.addSendingSession(activeSessionId)
+          }
+        }
+      } catch (error) {
+        toast.error('Could not respond to Codex permission request', {
+          description: error instanceof Error ? error.message : String(error),
+        })
+      }
+    },
+    [activeSessionId]
   )
   const showPermissionApproval = shouldShowPermissionApproval({
     pendingDenialsCount: pendingDenials.length,
@@ -3151,6 +3198,14 @@ export function ChatWindow({
                                 sessionId={activeSessionId}
                                 elicitation={elicitation}
                                 onRespond={handleCodexMcpElicitationRespond}
+                              />
+                            ))}
+                          {activeSessionId &&
+                            pendingCodexPermissionApprovals.map(approval => (
+                              <CodexPermissionApproval
+                                key={approval.rpc_id}
+                                approval={approval}
+                                onRespond={handleCodexPermissionApprovalRespond}
                               />
                             ))}
                         </div>

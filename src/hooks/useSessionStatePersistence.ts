@@ -10,6 +10,7 @@ import {
 } from '@/lib/session-state-hydration'
 import type {
   CodexMcpElicitation,
+  CodexPermissionApproval,
   QuestionAnswer,
   PermissionDenial,
   ExecutionMode,
@@ -62,6 +63,7 @@ interface SessionState {
   fixedFindings: string[]
   pendingPermissionDenials: PermissionDenial[]
   pendingCodexMcpElicitations: CodexMcpElicitation[]
+  pendingCodexPermissionApprovals: CodexPermissionApproval[]
   deniedMessageContext: {
     message: string
     model: string
@@ -174,6 +176,7 @@ export function useSessionStatePersistence() {
         fixedFindings,
         pendingPermissionDenials,
         pendingCodexMcpElicitations,
+        pendingCodexPermissionApprovals,
         deniedMessageContext,
         reviewingSessions,
         waitingForInputSessionIds,
@@ -196,6 +199,8 @@ export function useSessionStatePersistence() {
         pendingPermissionDenials: pendingPermissionDenials[sessionId] ?? [],
         pendingCodexMcpElicitations:
           pendingCodexMcpElicitations[sessionId] ?? [],
+        pendingCodexPermissionApprovals:
+          pendingCodexPermissionApprovals[sessionId] ?? [],
         deniedMessageContext: ctx
           ? {
               message: ctx.message,
@@ -246,6 +251,7 @@ export function useSessionStatePersistence() {
         fixedFindings: state.fixedFindings,
         pendingPermissionDenials: state.pendingPermissionDenials,
         pendingCodexMcpElicitations: state.pendingCodexMcpElicitations,
+        pendingCodexPermissionApprovals: state.pendingCodexPermissionApprovals,
         deniedMessageContext: state.deniedMessageContext,
         isReviewing: state.isReviewing,
         // Only persist waitingForInput when clearing it (user approval action).
@@ -415,6 +421,16 @@ export function useSessionStatePersistence() {
       }
     }
 
+    if (
+      session.pending_codex_permission_approvals &&
+      session.pending_codex_permission_approvals.length > 0
+    ) {
+      updates.pendingCodexPermissionApprovals = {
+        ...currentState.pendingCodexPermissionApprovals,
+        [activeSessionId]: session.pending_codex_permission_approvals,
+      }
+    }
+
     // Load denied message context
     if (session.denied_message_context) {
       updates.deniedMessageContext = {
@@ -569,6 +585,8 @@ export function useSessionStatePersistence() {
       useChatStore.getState().pendingPermissionDenials[sessionId]
     let prevPendingMcpElicitations =
       useChatStore.getState().pendingCodexMcpElicitations[sessionId]
+    let prevPendingPermissionApprovals =
+      useChatStore.getState().pendingCodexPermissionApprovals[sessionId]
     let prevDeniedContext =
       useChatStore.getState().deniedMessageContext[sessionId]
     let prevReviewing = useChatStore.getState().reviewingSessions[sessionId]
@@ -594,6 +612,8 @@ export function useSessionStatePersistence() {
       const currentDenials = state.pendingPermissionDenials[sessionId]
       const currentMcpElicitations =
         state.pendingCodexMcpElicitations[sessionId]
+      const currentPermissionApprovals =
+        state.pendingCodexPermissionApprovals[sessionId]
       const currentDeniedCtx = state.deniedMessageContext[sessionId]
       const currentReviewing = state.reviewingSessions[sessionId]
       const currentWaiting = state.waitingForInputSessionIds[sessionId]
@@ -611,6 +631,7 @@ export function useSessionStatePersistence() {
         currentFixed !== prevFixedFindings ||
         currentDenials !== prevPendingDenials ||
         currentMcpElicitations !== prevPendingMcpElicitations ||
+        currentPermissionApprovals !== prevPendingPermissionApprovals ||
         currentDeniedCtx !== prevDeniedContext ||
         currentReviewing !== prevReviewing ||
         currentWaiting !== prevWaiting ||
@@ -628,6 +649,7 @@ export function useSessionStatePersistence() {
         prevFixedFindings = currentFixed
         prevPendingDenials = currentDenials
         prevPendingMcpElicitations = currentMcpElicitations
+        prevPendingPermissionApprovals = currentPermissionApprovals
         prevDeniedContext = currentDeniedCtx
         prevReviewing = currentReviewing
         prevWaiting = currentWaiting

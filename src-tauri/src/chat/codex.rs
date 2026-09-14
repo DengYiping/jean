@@ -9,9 +9,9 @@
 
 use super::claude::CancelledEvent;
 use super::types::{
-    CodexMcpElicitationEvent, CompactMetadata, ContentBlock, DeniedMessageContext,
-    PendingCodexMcpElicitation, PermissionDenial, PermissionDeniedEvent, SessionMetadata,
-    ThinkingLevel, ToolCall, UsageData,
+    CodexMcpElicitationEvent, CodexPermissionApprovalEvent, CompactMetadata, ContentBlock,
+    DeniedMessageContext, PendingCodexMcpElicitation, PendingCodexPermissionApproval,
+    PermissionDenial, PermissionDeniedEvent, SessionMetadata, ThinkingLevel, ToolCall, UsageData,
 };
 use crate::http_server::EmitExt;
 
@@ -22,6 +22,11 @@ use std::sync::Mutex;
 use once_cell::sync::Lazy;
 
 static STRUCTURED_REVIEW_TURNS: Lazy<Mutex<HashMap<String, (String, String)>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
+/// Live approval profiles are intentionally kept server-side. A browser client
+/// can choose only grant/decline; it cannot substitute a broader profile.
+static PENDING_PERMISSION_PROFILES: Lazy<Mutex<HashMap<(String, u64), serde_json::Value>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
 const DEFAULT_CODEX_SYSTEM_PROMPT: &str = "\
@@ -841,7 +846,7 @@ pub fn execute_codex_structured_via_server(
             .insert(review_run_id.to_string(), (thread_id.clone(), turn_id));
     }
 
-    let result = (|| {
+    let result = {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15 * 60);
         let mut final_message = None;
         loop {
@@ -888,7 +893,7 @@ pub fn execute_codex_structured_via_server(
                 }
             }
         }
-    })();
+    };
     if let Some(review_run_id) = review_run_id {
         STRUCTURED_REVIEW_TURNS
             .lock()
@@ -2967,6 +2972,71 @@ fn persist_pending_codex_mcp_elicitation(
     );
 }
 
+fn persist_pending_codex_permission_approval(
+    metadata: &mut SessionMetadata,
+    approval: &PendingCodexPermissionApproval,
+    attention_updated_at: u64,
+) {
+    metadata
+        .pending_codex_permission_approvals
+        .retain(|existing| existing.rpc_id != approval.rpc_id);
+    metadata
+        .pending_codex_permission_approvals
+        .push(approval.clone());
+    metadata.waiting_for_input = true;
+    metadata.waiting_for_input_type = None;
+    metadata.attention_updated_at = Some(attention_updated_at);
+}
+
+/// Respond to a permission-profile request with either the exact profile
+/// requested by Codex, scoped to this turn, or an empty turn-scoped profile.
+pub fn answer_codex_permission_approval(
+    app: &tauri::AppHandle,
+    session_id: String,
+    rpc_id: u64,
+    grant: bool,
+) -> Result<(), String> {
+    let requested_permissions = PENDING_PERMISSION_PROFILES
+        .lock()
+        .map_err(|_| "Codex permission approval state is unavailable".to_string())?
+        .get(&(session_id.clone(), rpc_id))
+        .cloned();
+    let requested_permissions = requested_permissions.ok_or_else(|| {
+        "This permission request is no longer active; decline it and retry the turn.".to_string()
+    })?;
+    let permissions = if grant {
+        requested_permissions
+    } else {
+        serde_json::json!({})
+    };
+    super::codex_server::send_response(
+        rpc_id,
+        serde_json::json!({ "permissions": permissions, "scope": "turn" }),
+    )?;
+    PENDING_PERMISSION_PROFILES
+        .lock()
+        .map_err(|_| "Codex permission approval state is unavailable".to_string())?
+        .remove(&(session_id.clone(), rpc_id));
+    super::storage::with_existing_metadata_mut(app, &session_id, |metadata| {
+        metadata
+            .pending_codex_permission_approvals
+            .retain(|approval| approval.rpc_id != rpc_id);
+        if metadata.pending_permission_denials.is_empty()
+            && metadata.pending_codex_mcp_elicitations.is_empty()
+            && metadata.pending_codex_permission_approvals.is_empty()
+        {
+            metadata.waiting_for_input = false;
+            metadata.waiting_for_input_type = None;
+        }
+    })
+    .map_err(|error| error.to_string())?;
+    let _ = app.emit_all(
+        "cache:invalidate",
+        &serde_json::json!({ "keys": ["sessions"] }),
+    );
+    Ok(())
+}
+
 /// Handle an approval request from the app-server.
 #[allow(clippy::too_many_arguments)]
 fn handle_approval_request(
@@ -3193,18 +3263,69 @@ fn handle_approval_request(
             );
         }
         "item/permissions/requestApproval" => {
-            // Permission-profile grants have a method-specific response shape.
-            // Do not turn an unfamiliar request into an implicit approval.
-            let _ = super::codex_server::send_error(
+            let approval = PendingCodexPermissionApproval {
                 rpc_id,
-                "Jean does not yet support permission-profile approvals",
-            );
+                thread_id: params
+                    .get("threadId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                turn_id: params
+                    .get("turnId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                item_id: params
+                    .get("itemId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                cwd: params
+                    .get("cwd")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                reason: params
+                    .get("reason")
+                    .and_then(|v| v.as_str())
+                    .map(ToString::to_string),
+                permissions: params
+                    .get("permissions")
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!({})),
+            };
+            if let Ok(mut pending) = PENDING_PERMISSION_PROFILES.lock() {
+                pending.insert(
+                    (session_id.to_string(), rpc_id),
+                    approval.permissions.clone(),
+                );
+            }
+            let attention_updated_at = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            if let Err(err) =
+                super::storage::with_existing_metadata_mut(app, session_id, |metadata| {
+                    persist_pending_codex_permission_approval(
+                        metadata,
+                        &approval,
+                        attention_updated_at,
+                    );
+                })
+            {
+                log::warn!("Failed to persist pending Codex permission profile for session {session_id}: {err}");
+            } else {
+                let _ = app.emit_all(
+                    "cache:invalidate",
+                    &serde_json::json!({ "keys": ["sessions"] }),
+                );
+            }
             let _ = app.emit_all(
-                "chat:error",
-                &ErrorEvent {
+                "chat:codex_permission_approval_request",
+                &CodexPermissionApprovalEvent {
                     session_id: session_id.to_string(),
                     worktree_id: worktree_id.to_string(),
-                    error: "Codex requested a permission profile that Jean cannot approve yet. The request was declined.".to_string(),
+                    approval,
                 },
             );
         }

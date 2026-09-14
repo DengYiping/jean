@@ -334,6 +334,23 @@ pub struct PendingCodexMcpElicitation {
     pub elicitation_id: Option<String>,
 }
 
+/// A pending Codex request to temporarily expand a turn's permission profile.
+///
+/// `permissions` is retained verbatim for display. The response path never
+/// accepts a replacement profile from the client: it grants this exact profile
+/// for the current turn only.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PendingCodexPermissionApproval {
+    pub rpc_id: u64,
+    pub thread_id: String,
+    pub turn_id: String,
+    pub item_id: String,
+    pub cwd: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    pub permissions: serde_json::Value,
+}
+
 /// Payload for permission denied events sent to frontend
 #[derive(Debug, Clone, Serialize)]
 pub struct PermissionDeniedEvent {
@@ -347,6 +364,13 @@ pub struct CodexMcpElicitationEvent {
     pub session_id: String,
     pub worktree_id: String,
     pub elicitation: PendingCodexMcpElicitation,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CodexPermissionApprovalEvent {
+    pub session_id: String,
+    pub worktree_id: String,
+    pub approval: PendingCodexPermissionApproval,
 }
 
 /// Context for a denied message that can be re-sent after permission approval
@@ -603,6 +627,9 @@ pub struct Session {
     /// Pending Codex MCP elicitations awaiting user approval/input
     #[serde(default)]
     pub pending_codex_mcp_elicitations: Vec<PendingCodexMcpElicitation>,
+    /// Pending Codex permission-profile approvals awaiting an explicit response.
+    #[serde(default)]
+    pub pending_codex_permission_approvals: Vec<PendingCodexPermissionApproval>,
     /// Original message context for re-send after permission approval
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub denied_message_context: Option<DeniedMessageContext>,
@@ -867,6 +894,7 @@ impl Session {
             review_results: None,
             pending_permission_denials: vec![],
             pending_codex_mcp_elicitations: vec![],
+            pending_codex_permission_approvals: vec![],
             denied_message_context: None,
             is_reviewing: false,
             waiting_for_input: false,
@@ -1182,6 +1210,7 @@ impl SessionMetadata {
             review_results: self.review_results.clone(),
             pending_permission_denials: self.pending_permission_denials.clone(),
             pending_codex_mcp_elicitations: self.pending_codex_mcp_elicitations.clone(),
+            pending_codex_permission_approvals: self.pending_codex_permission_approvals.clone(),
             denied_message_context: self.denied_message_context.clone(),
             is_reviewing: self.is_reviewing,
             waiting_for_input: self.waiting_for_input,
@@ -1572,6 +1601,8 @@ pub struct SessionMetadata {
     /// Pending Codex MCP elicitations awaiting user approval/input
     #[serde(default)]
     pub pending_codex_mcp_elicitations: Vec<PendingCodexMcpElicitation>,
+    #[serde(default)]
+    pub pending_codex_permission_approvals: Vec<PendingCodexPermissionApproval>,
     /// Original message context for re-send after permission approval
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub denied_message_context: Option<DeniedMessageContext>,
@@ -1745,6 +1776,7 @@ impl SessionMetadata {
             review_results: None,
             pending_permission_denials: vec![],
             pending_codex_mcp_elicitations: vec![],
+            pending_codex_permission_approvals: vec![],
             denied_message_context: None,
             is_reviewing: false,
             waiting_for_input: false,

@@ -466,6 +466,7 @@ export const defaultResponses: Record<string, unknown> = {
   claim_supervisor_action_trigger: null,
   add_global_command_permission_rule: null,
   answer_codex_mcp_elicitation: null,
+  answer_codex_permission_approval: null,
   broadcast_session_setting: null,
   rename_session: null,
   send_chat_message: null,

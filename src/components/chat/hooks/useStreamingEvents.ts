@@ -27,6 +27,7 @@ import type {
   ChunkEvent,
   CodexMcpElicitation,
   CodexMcpElicitationEvent,
+  CodexPermissionApprovalEvent,
   ToolUseEvent,
   ToolBlockEvent,
   ToolResultEvent,
@@ -1077,6 +1078,28 @@ export default function useStreamingEvents({
           })
       }
     )
+
+    const unlistenCodexPermissionApproval =
+      listen<CodexPermissionApprovalEvent>(
+        'chat:codex_permission_approval_request',
+        event => {
+          const { session_id, approval } = event.payload
+          const state = useChatStore.getState()
+          const current =
+            state.pendingCodexPermissionApprovals[session_id] ?? []
+          state.setPendingCodexPermissionApprovals(session_id, [
+            ...current.filter(existing => existing.rpc_id !== approval.rpc_id),
+            approval,
+          ])
+          state.removeSendingSession(session_id)
+          state.setWaitingForInput(session_id, true)
+          playNotificationSound(getWaitingSoundPreference(queryClient))
+          notifySession(queryClient, session_id, 'Needs permission approval')
+          queryClient.invalidateQueries({
+            queryKey: chatQueryKeys.session(session_id),
+          })
+        }
+      )
 
     const unlistenCodexGoal = listen<{
       session_id: string
@@ -2626,7 +2649,10 @@ export default function useStreamingEvents({
         sessionId: session_id,
         newName: name,
       }).catch(error =>
-        logger.warn('[useStreamingEvents] Failed to sync Codex thread name:', error)
+        logger.warn(
+          '[useStreamingEvents] Failed to sync Codex thread name:',
+          error
+        )
       )
     })
 
@@ -2645,6 +2671,7 @@ export default function useStreamingEvents({
       unlistenToolEvent.then(f => f())
       unlistenPermissionDenied.then(f => f())
       unlistenCodexMcpElicitation.then(f => f())
+      unlistenCodexPermissionApproval.then(f => f())
       unlistenCodexGoal.then(f => f())
       unlistenDone.then(f => f())
       unlistenError.then(f => f())

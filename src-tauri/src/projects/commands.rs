@@ -10305,6 +10305,7 @@ async fn update_review_session_state(
         None,
         None,
         None,
+        None,
         is_reviewing,
         None,
         None,

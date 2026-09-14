@@ -213,6 +213,8 @@ export interface Session {
   pending_permission_denials?: PermissionDenial[]
   /** Pending Codex MCP elicitations awaiting user approval/input */
   pending_codex_mcp_elicitations?: CodexMcpElicitation[]
+  /** Pending Codex permission-profile approvals. */
+  pending_codex_permission_approvals?: CodexPermissionApproval[]
   /** Original message context for re-send after permission approval */
   denied_message_context?: DeniedMessageContext
   /** AI code review results for this session */
@@ -610,6 +612,18 @@ export interface CodexMcpElicitation {
   elicitation_id?: string | null
 }
 
+/** A Codex request to temporarily expand this turn's permissions. */
+export interface CodexPermissionApproval {
+  rpc_id: number
+  thread_id: string
+  turn_id: string
+  item_id: string
+  cwd: string
+  reason?: string | null
+  /** Requested network and filesystem permissions, shown read-only. */
+  permissions: unknown
+}
+
 /**
  * Event payload for permission denied from Rust
  * Sent when Claude CLI returns permission_denials (tools that require approval)
@@ -624,6 +638,12 @@ export interface CodexMcpElicitationEvent {
   session_id: string
   worktree_id: string
   elicitation: CodexMcpElicitation
+}
+
+export interface CodexPermissionApprovalEvent {
+  session_id: string
+  worktree_id: string
+  approval: CodexPermissionApproval
 }
 
 // ============================================================================

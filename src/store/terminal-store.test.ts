@@ -371,6 +371,23 @@ describe('TerminalStore', () => {
       const closedIds = closeAllTerminals('worktree-1')
       expect(closedIds).toHaveLength(0)
     })
+
+    it('removes all worktree-keyed terminal state, including the modal flag', () => {
+      useTerminalStore.setState({
+        terminals: { 'worktree-1': [] },
+        activeTerminalIds: { 'worktree-1': '' },
+        terminalPanelOpen: { 'worktree-1': false },
+        modalTerminalOpen: { 'worktree-1': true },
+      })
+
+      useTerminalStore.getState().closeAllTerminals('worktree-1')
+
+      const state = useTerminalStore.getState()
+      expect(state.terminals).not.toHaveProperty('worktree-1')
+      expect(state.activeTerminalIds).not.toHaveProperty('worktree-1')
+      expect(state.terminalPanelOpen).not.toHaveProperty('worktree-1')
+      expect(state.modalTerminalOpen).not.toHaveProperty('worktree-1')
+    })
   })
 
   describe('label generation', () => {

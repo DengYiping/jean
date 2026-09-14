@@ -46,6 +46,53 @@ interface PersistentTerminal {
 // Module-level Map - persists across React mount/unmount cycles
 const instances = new Map<string, PersistentTerminal>()
 
+/** Keep long-lived shell buffers bounded while retaining useful recent output. */
+export const TERMINAL_SCROLLBACK_LINES = 2_000
+/** Batch PTY output so high-volume commands do not force a render per event. */
+export const TERMINAL_OUTPUT_FLUSH_MS = 16
+/** Avoid retaining unbounded output if a renderer cannot keep up. */
+export const MAX_PENDING_TERMINAL_OUTPUT_CHARS = 512 * 1024
+
+const outputBuffers = new Map<
+  string,
+  { data: string; timer: ReturnType<typeof setTimeout> | null }
+>()
+
+function flushTerminalOutput(terminalId: string): void {
+  const buffer = outputBuffers.get(terminalId)
+  if (!buffer) return
+  outputBuffers.delete(terminalId)
+
+  const instance = instances.get(terminalId)
+  if (!instance || !buffer.data) return
+
+  try {
+    instance.terminal.write(buffer.data)
+  } catch {
+    // The terminal may be in the middle of disposal.
+  }
+}
+
+function queueTerminalOutput(terminalId: string, data: string): void {
+  if (!data) return
+
+  const buffer = outputBuffers.get(terminalId) ?? { data: '', timer: null }
+  buffer.data = (buffer.data + data).slice(-MAX_PENDING_TERMINAL_OUTPUT_CHARS)
+  if (buffer.timer === null) {
+    buffer.timer = setTimeout(
+      () => flushTerminalOutput(terminalId),
+      TERMINAL_OUTPUT_FLUSH_MS
+    )
+  }
+  outputBuffers.set(terminalId, buffer)
+}
+
+function discardTerminalOutput(terminalId: string): void {
+  const buffer = outputBuffers.get(terminalId)
+  if (buffer?.timer) clearTimeout(buffer.timer)
+  outputBuffers.delete(terminalId)
+}
+
 /** Register one document/window wake handler that forces all xterm instances
  *  to repaint when the webview resumes from idle/sleep (issue #320).
  *  RAF-based DOM renderer can stall after macOS App Nap or DPMS sleep;
@@ -56,6 +103,9 @@ function ensureWakeHandler(): void {
   wakeHandlerRegistered = true
   const wake = () => {
     if (document.visibilityState !== 'visible') return
+    for (const terminalId of [...outputBuffers.keys()]) {
+      flushTerminalOutput(terminalId)
+    }
     for (const inst of instances.values()) {
       try {
         inst.terminal.refresh(0, Math.max(0, inst.terminal.rows - 1))
@@ -239,6 +289,7 @@ export function getOrCreateTerminal(
   // Create xterm.js Terminal instance
   const terminal = new Terminal({
     cursorBlink: true,
+    scrollback: TERMINAL_SCROLLBACK_LINES,
     fontSize: 13,
     fontFamily:
       'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace',
@@ -306,7 +357,7 @@ export function getOrCreateTerminal(
     listen<TerminalOutputEvent>('terminal:output', event => {
       if (event.payload.terminal_id === terminalId) {
         trackTerminalKeyboardMode(terminalId, event.payload.data)
-        terminal.write(event.payload.data)
+        queueTerminalOutput(terminalId, event.payload.data)
       }
     })
   )
@@ -323,6 +374,8 @@ export function getOrCreateTerminal(
     listen<TerminalStoppedEvent>('terminal:stopped', event => {
       if (event.payload.terminal_id === terminalId) {
         setTerminalRunning(terminalId, false)
+        // Preserve event ordering: render final PTY output before the exit line.
+        flushTerminalOutput(terminalId)
         const exitCode = event.payload.exit_code
         const signal = event.payload.signal
         const exitLabel =
@@ -595,6 +648,7 @@ export async function disposeTerminal(terminalId: string): Promise<void> {
   }
 
   // Dispose xterm.js (clears buffer, removes DOM)
+  discardTerminalOutput(terminalId)
   instance.compositionGuardCleanup?.()
   instance.compositionGuardCleanup = null
   instance.terminal.dispose()

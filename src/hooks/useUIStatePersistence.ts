@@ -16,22 +16,36 @@ import type { UIState } from '@/types/ui-state'
 function debounce<T extends (...args: Parameters<T>) => void>(
   fn: T,
   delay: number
-): T & { cancel: () => void } {
+): T & { cancel: () => void; flush: () => void } {
   let timeoutId: ReturnType<typeof setTimeout> | null = null
+  let pendingArgs: Parameters<T> | null = null
 
   const debounced = ((...args: Parameters<T>) => {
-    if (timeoutId) clearTimeout(timeoutId)
+    if (timeoutId !== null) clearTimeout(timeoutId)
+    pendingArgs = args
     timeoutId = setTimeout(() => {
-      fn(...args)
       timeoutId = null
+      const argsToApply = pendingArgs
+      pendingArgs = null
+      if (argsToApply) fn(...argsToApply)
     }, delay)
-  }) as T & { cancel: () => void }
+  }) as T & { cancel: () => void; flush: () => void }
 
   debounced.cancel = () => {
-    if (timeoutId) {
+    if (timeoutId !== null) {
       clearTimeout(timeoutId)
       timeoutId = null
     }
+    pendingArgs = null
+  }
+
+  debounced.flush = () => {
+    if (timeoutId === null || pendingArgs === null) return
+    clearTimeout(timeoutId)
+    timeoutId = null
+    const argsToApply = pendingArgs
+    pendingArgs = null
+    fn(...argsToApply)
   }
 
   return debounced
@@ -62,9 +76,20 @@ export function useUIStatePersistence() {
     }, 500)
 
     return () => {
+      debouncedSaveRef.current?.flush()
       debouncedSaveRef.current?.cancel()
     }
   }, [saveUIState])
+
+  useEffect(() => {
+    const flushPendingSave = () => debouncedSaveRef.current?.flush()
+    window.addEventListener('beforeunload', flushPendingSave)
+    window.addEventListener('pagehide', flushPendingSave)
+    return () => {
+      window.removeEventListener('beforeunload', flushPendingSave)
+      window.removeEventListener('pagehide', flushPendingSave)
+    }
+  }, [])
 
   // Helper to get current UI state from stores
   // NOTE: Session-specific state (answered_questions, submitted_answers, fixed_findings,
@@ -701,6 +726,7 @@ export function useUIStatePersistence() {
       unsubChat()
       unsubTerminal()
       unsubBrowser()
+      debouncedSaveRef.current?.flush()
       debouncedSaveRef.current?.cancel()
       logger.debug('UI state persistence subscriptions cleaned up')
     }

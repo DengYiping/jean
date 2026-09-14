@@ -20,6 +20,7 @@ import {
 } from '@/lib/transport'
 import { listen } from '@/lib/transport'
 import { useTerminalStore } from '@/store/terminal-store'
+import { shouldAutoCloseTerminal } from '@/lib/terminal-lifecycle'
 import type {
   TerminalOutputEvent,
   TerminalStartedEvent,
@@ -332,17 +333,16 @@ export function getOrCreateTerminal(
         const inst = instances.get(terminalId)
         inst?.onStopped?.(exitCode, signal)
 
-        // Auto-close terminal tab on clean exit:
-        // - code 0 — any terminal
-        // - SIGINT (Ctrl+C) or SIGTERM (graceful stop) — user or system stop
-        // SIGKILL, SIGSEGV, SIGABRT, etc. are NOT clean → mark as failed.
+        // Keep run-command output visible after exit so logs remain available
+        // for inspection. Normal shell tabs still close after a clean exit.
         const isRunTerminal = inst?.command != null
-        const isIntentionalSignal =
-          signal != null &&
-          (signal.includes('Interrupt') || signal.includes('Terminated'))
-        const isCleanExit = exitCode === 0 || isIntentionalSignal
+        const shouldAutoClose = shouldAutoCloseTerminal({
+          exitCode,
+          signal,
+          isRunTerminal,
+        })
 
-        if (isCleanExit && inst) {
+        if (shouldAutoClose && inst) {
           const wId = inst.worktreeId
           setTimeout(() => {
             if (!instances.has(terminalId)) return // Already disposed
@@ -359,9 +359,6 @@ export function getOrCreateTerminal(
               useTerminalStore.getState().setModalTerminalOpen(wId, false)
             }
           }, 0)
-        } else if (isRunTerminal) {
-          // Keep the terminal open so the failure remains inspectable.
-          useTerminalStore.getState().setTerminalRunning(terminalId, false)
         }
       }
     })

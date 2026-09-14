@@ -1314,7 +1314,7 @@ describe('useStreamingEvents question notifications', () => {
     unmount()
   })
 
-  it('clears a restored draft when a normal cancel hydrates a persisted cancelled turn', async () => {
+  it('does not restore a draft when a normal cancel hydrates a persisted cancelled turn', async () => {
     const persistedSession = {
       id: 'session-1',
       name: 'Codex Session',
@@ -1371,7 +1371,7 @@ describe('useStreamingEvents question notifications', () => {
       })
     })
 
-    expect(useChatStore.getState().inputDrafts['session-1']).toBe('retry me')
+    expect(useChatStore.getState().inputDrafts['session-1'] ?? '').toBe('')
     await waitFor(() =>
       expect(mockInvoke).toHaveBeenCalledWith('get_session', {
         sessionId: 'session-1',

@@ -13,25 +13,39 @@ import type { BrowserTab } from '@/types/browser'
 import type { UIState } from '@/types/ui-state'
 
 // Simple debounce implementation
-function debounce<T extends (...args: Parameters<T>) => void>(
-  fn: T,
+function debounce(
+  fn: (state: UIState) => void,
   delay: number
-): T & { cancel: () => void } {
+): ((state: UIState) => void) & { cancel: () => void; flush: () => void } {
   let timeoutId: ReturnType<typeof setTimeout> | null = null
+  let pendingState: UIState | null = null
 
-  const debounced = ((...args: Parameters<T>) => {
-    if (timeoutId) clearTimeout(timeoutId)
+  const debounced = ((state: UIState) => {
+    if (timeoutId !== null) clearTimeout(timeoutId)
+    pendingState = state
     timeoutId = setTimeout(() => {
-      fn(...args)
       timeoutId = null
+      const stateToSave = pendingState
+      pendingState = null
+      if (stateToSave) fn(stateToSave)
     }, delay)
-  }) as T & { cancel: () => void }
+  }) as ((state: UIState) => void) & { cancel: () => void; flush: () => void }
 
   debounced.cancel = () => {
-    if (timeoutId) {
+    if (timeoutId !== null) {
       clearTimeout(timeoutId)
       timeoutId = null
     }
+    pendingState = null
+  }
+
+  debounced.flush = () => {
+    if (timeoutId === null || pendingState === null) return
+    clearTimeout(timeoutId)
+    timeoutId = null
+    const stateToSave = pendingState
+    pendingState = null
+    fn(stateToSave)
   }
 
   return debounced
@@ -50,9 +64,7 @@ export function useUIStatePersistence() {
   const [isInitialized, setIsInitialized] = useState(false)
 
   // Create stable debounced save function
-  const debouncedSaveRef = useRef<ReturnType<
-    typeof debounce<(state: UIState) => void>
-  > | null>(null)
+  const debouncedSaveRef = useRef<ReturnType<typeof debounce> | null>(null)
 
   // Initialize debounced save function
   useEffect(() => {
@@ -62,9 +74,20 @@ export function useUIStatePersistence() {
     }, 500)
 
     return () => {
+      debouncedSaveRef.current?.flush()
       debouncedSaveRef.current?.cancel()
     }
   }, [saveUIState])
+
+  useEffect(() => {
+    const flushPendingSave = () => debouncedSaveRef.current?.flush()
+    window.addEventListener('beforeunload', flushPendingSave)
+    window.addEventListener('pagehide', flushPendingSave)
+    return () => {
+      window.removeEventListener('beforeunload', flushPendingSave)
+      window.removeEventListener('pagehide', flushPendingSave)
+    }
+  }, [])
 
   // Helper to get current UI state from stores
   // NOTE: Session-specific state (answered_questions, submitted_answers, fixed_findings,
@@ -701,6 +724,7 @@ export function useUIStatePersistence() {
       unsubChat()
       unsubTerminal()
       unsubBrowser()
+      debouncedSaveRef.current?.flush()
       debouncedSaveRef.current?.cancel()
       logger.debug('UI state persistence subscriptions cleaned up')
     }

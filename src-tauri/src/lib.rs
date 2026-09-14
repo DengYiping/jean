@@ -9,6 +9,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
 
 mod agent_board;
+mod agent_browser;
 mod automations;
 mod background_tasks;
 mod browser;
@@ -2718,7 +2719,9 @@ async fn save_preferences(app: AppHandle, mut preferences: AppPreferences) -> Re
                 if let Some(parent) = path.parent() {
                     let _ = std::fs::create_dir_all(parent);
                 }
-                if let Err(e) = std::fs::write(&path, &profile.settings_json) {
+                if let Err(e) =
+                    crate::platform::write_file_atomically(&path, profile.settings_json.as_bytes())
+                {
                     log::error!("Failed to write CLI profile '{}': {e}", profile.name);
                 }
             }
@@ -2746,21 +2749,12 @@ async fn save_preferences(app: AppHandle, mut preferences: AppPreferences) -> Re
         format!("Failed to serialize preferences: {e}")
     })?;
 
-    // Write to a temporary file first, then rename (atomic operation)
-    // Use unique temp file to avoid race conditions with concurrent saves
-    let temp_path = prefs_path.with_extension(format!("{}.tmp", uuid::Uuid::new_v4()));
-
-    std::fs::write(&temp_path, json_content).map_err(|e| {
-        log::error!("Failed to write preferences file: {e}");
-        format!("Failed to write preferences file: {e}")
-    })?;
-
-    std::fs::rename(&temp_path, &prefs_path).map_err(|e| {
-        // Clean up temp file on rename failure
-        let _ = std::fs::remove_file(&temp_path);
-        log::error!("Failed to finalize preferences file: {e}");
-        format!("Failed to finalize preferences file: {e}")
-    })?;
+    crate::platform::write_file_atomically(&prefs_path, json_content.as_bytes()).map_err(
+        |error| {
+            log::error!("Failed to save preferences file: {error}");
+            error
+        },
+    )?;
 
     crate::platform::set_git_binary_override(git_cli_override.as_deref());
     log::trace!("Successfully saved preferences to {prefs_path:?}");
@@ -2870,13 +2864,7 @@ async fn save_cli_profile(name: String, settings_json: String) -> Result<String,
         std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create directory: {e}"))?;
     }
 
-    // Atomic write via temp file
-    let temp = path.with_extension("tmp");
-    std::fs::write(&temp, &settings_json).map_err(|e| format!("Failed to write: {e}"))?;
-    std::fs::rename(&temp, &path).map_err(|e| {
-        let _ = std::fs::remove_file(&temp);
-        format!("Failed to finalize: {e}")
-    })?;
+    crate::platform::write_file_atomically(&path, settings_json.as_bytes())?;
 
     let path_str = path.to_string_lossy().to_string();
     log::trace!("Saved CLI profile '{name}' to {path_str}");
@@ -2940,21 +2928,12 @@ async fn save_ui_state(app: AppHandle, ui_state: UIState) -> Result<(), String> 
         format!("Failed to serialize UI state: {e}")
     })?;
 
-    // Write to a temporary file first, then rename (atomic operation)
-    // Use unique temp file to avoid race conditions with concurrent saves
-    let temp_path = state_path.with_extension(format!("{}.tmp", uuid::Uuid::new_v4()));
-
-    std::fs::write(&temp_path, json_content).map_err(|e| {
-        log::error!("Failed to write UI state file: {e}");
-        format!("Failed to write UI state file: {e}")
-    })?;
-
-    std::fs::rename(&temp_path, &state_path).map_err(|e| {
-        // Clean up temp file on rename failure
-        let _ = std::fs::remove_file(&temp_path);
-        log::error!("Failed to finalize UI state file: {e}");
-        format!("Failed to finalize UI state file: {e}")
-    })?;
+    crate::platform::write_file_atomically(&state_path, json_content.as_bytes()).map_err(
+        |error| {
+            log::error!("Failed to save UI state file: {error}");
+            error
+        },
+    )?;
 
     log::trace!("Saved UI state to {state_path:?}");
     Ok(())
@@ -3095,18 +3074,12 @@ async fn save_emergency_data(app: AppHandle, filename: String, data: Value) -> R
         format!("Failed to serialize data: {e}")
     })?;
 
-    // Write to a temporary file first, then rename (atomic operation)
-    let temp_path = file_path.with_extension("tmp");
-
-    std::fs::write(&temp_path, json_content).map_err(|e| {
-        log::error!("Failed to write emergency data file: {e}");
-        format!("Failed to write data file: {e}")
-    })?;
-
-    std::fs::rename(&temp_path, &file_path).map_err(|e| {
-        log::error!("Failed to finalize emergency data file: {e}");
-        format!("Failed to finalize data file: {e}")
-    })?;
+    crate::platform::write_file_atomically(&file_path, json_content.as_bytes()).map_err(
+        |error| {
+            log::error!("Failed to save emergency data file: {error}");
+            error
+        },
+    )?;
 
     log::trace!("Successfully saved emergency data to {file_path:?}");
     Ok(())
@@ -3594,6 +3567,35 @@ async fn install_jean_mcp_config(
     mode: Option<String>,
 ) -> Result<Vec<jean_mcp_config::JeanMcpInstallResult>, String> {
     jean_mcp_config::install_jean_mcp_config_impl(app, backends, mode).await
+}
+
+#[tauri::command]
+async fn get_agent_browser_status(
+    app: AppHandle,
+) -> Result<agent_browser::AgentBrowserStatus, String> {
+    agent_browser::get_agent_browser_status(app).await
+}
+
+#[tauri::command]
+async fn ensure_agent_browser_profile(
+    app: AppHandle,
+) -> Result<agent_browser::AgentBrowserStatus, String> {
+    agent_browser::ensure_agent_browser_profile(app).await
+}
+
+#[tauri::command]
+async fn install_agent_browser(
+    app: AppHandle,
+) -> Result<agent_browser::AgentBrowserStatus, String> {
+    agent_browser::install_agent_browser(app).await
+}
+
+#[tauri::command]
+async fn install_agent_browser_mcp(
+    app: AppHandle,
+    backends: Option<Vec<String>>,
+) -> Result<Vec<agent_browser::AgentBrowserInstallResult>, String> {
+    agent_browser::install_agent_browser_mcp(app, backends).await
 }
 
 /// Convert a frontend shortcut string (e.g. "mod+shift+m") to Tauri accelerator format (e.g. "CmdOrCtrl+Shift+M")
@@ -4980,6 +4982,10 @@ pub fn run() {
             regenerate_http_token,
             get_jean_mcp_config_snippet,
             install_jean_mcp_config,
+            get_agent_browser_status,
+            ensure_agent_browser_profile,
+            install_agent_browser,
+            install_agent_browser_mcp,
             // OpenCode server commands
             opencode_server::start_opencode_server,
             opencode_server::stop_opencode_server,

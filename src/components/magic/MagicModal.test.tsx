@@ -385,6 +385,17 @@ describe('MagicModal', () => {
     })
   })
 
+  it('shows the opt-in GitHub issues check without replacing Smoke Test', () => {
+    render(<MagicModal />)
+
+    expect(
+      screen.getByRole('button', { name: /check github issues/i })
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /smoke test/i })
+    ).toBeInTheDocument()
+  })
+
   it('starts a yolo GitHub bug automation session', async () => {
     hoisted.invokeMock.mockImplementation(command => {
       if (command === 'create_session') return { id: 'automation-session' }

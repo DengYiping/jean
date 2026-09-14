@@ -568,7 +568,7 @@ function migrateKeybindings(
 
 ## Best Practices
 
-1. **Use atomic writes**: Always write to temp file then rename
+1. **Use `platform::write_file_atomically`**: This writes through a unique sibling temp file, syncs it, and uses the correct Windows replacement API. Do not hand-roll `fs::rename` for persisted files.
 2. **Validate inputs**: Check filenames and data before writing
 3. **Handle defaults**: Provide sensible defaults when files don't exist
 4. **Log operations**: Log all file operations for debugging

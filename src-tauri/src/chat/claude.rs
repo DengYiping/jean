@@ -51,6 +51,7 @@ const DEFAULT_CLAUDE_SYSTEM_PROMPT: &str = "\
 - Diff behavior between main and your changes when relevant\n\
 - Ask yourself: \"Would a staff engineer approve this?\"\n\
 - Run tests, check logs, demonstrate correctness\n\
+- For the current selected project, if there is no other browser testing method, use the Agent Browser when it is available.\n\
 \n\
 ### 6. Demand Elegance (Balanced)\n\
 - For non-trivial changes: pause and ask \"is there a more elegant way?\"\n\
@@ -2187,5 +2188,11 @@ mod tests {
         assert!(args.contains(&"mcp__jean-dev__*".to_string()));
         assert!(args.contains(&"mcp__github".to_string()));
         assert!(args.contains(&"mcp__github__*".to_string()));
+    }
+
+    #[test]
+    fn default_prompt_prefers_agent_browser_as_a_fallback() {
+        assert!(DEFAULT_CLAUDE_SYSTEM_PROMPT.contains("use the Agent Browser when it is available"));
+        assert!(DEFAULT_CLAUDE_SYSTEM_PROMPT.contains("no other browser testing method"));
     }
 }

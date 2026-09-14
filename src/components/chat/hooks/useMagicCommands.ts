@@ -25,6 +25,7 @@ interface MagicCommandHandlers {
   handleOpenPr: (draft?: boolean) => void
   handleReview: () => void
   handleForkSession: () => void
+  handleCheckGitHubIssues: () => void
   handleMerge: () => void
   handleMergePr: () => void
   handleResolveConflicts: (override?: ResolveConflictsOverride) => void
@@ -65,6 +66,7 @@ export function useMagicCommands({
   handleOpenPr,
   handleReview,
   handleForkSession,
+  handleCheckGitHubIssues,
   handleMerge,
   handleMergePr,
   handleResolveConflicts,
@@ -88,6 +90,7 @@ export function useMagicCommands({
     handleOpenPr,
     handleReview,
     handleForkSession,
+    handleCheckGitHubIssues,
     handleMerge,
     handleMergePr,
     handleResolveConflicts,
@@ -112,6 +115,7 @@ export function useMagicCommands({
       handleOpenPr,
       handleReview,
       handleForkSession,
+      handleCheckGitHubIssues,
       handleMerge,
       handleMergePr,
       handleResolveConflicts,
@@ -176,6 +180,9 @@ export function useMagicCommands({
           break
         case 'fork-session':
           handlers.handleForkSession()
+          break
+        case 'check-github-issues':
+          handlers.handleCheckGitHubIssues()
           break
         case 'merge':
           handlers.handleMerge()

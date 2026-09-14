@@ -1,9 +1,13 @@
 use std::collections::HashSet;
+use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use once_cell::sync::Lazy;
 use tauri::{AppHandle, Manager};
+use uuid::Uuid;
 
 use super::slots::PRESERVED_SLOT_DIRS;
 use super::types::{Project, ProjectsData, WorktreeSlot, WorktreeSlotState};
@@ -12,6 +16,8 @@ use super::types::{Project, ProjectsData, WorktreeSlot, WorktreeSlotState};
 /// Multiple threads (e.g., fetch_worktrees_status) can call save_projects_data simultaneously,
 /// causing race conditions with the atomic write pattern (temp file + rename).
 static PROJECTS_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+
+const PROJECTS_BACKUP_COUNT: usize = 3;
 
 /// Get the path to the projects.json data file
 pub fn get_projects_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -109,25 +115,194 @@ pub fn sanitize_directory_name(name: &str) -> String {
         .collect()
 }
 
+fn projects_backup_path(path: &Path, generation: usize) -> PathBuf {
+    let filename = path
+        .file_name()
+        .map(|name| name.to_string_lossy())
+        .unwrap_or_else(|| std::borrow::Cow::Borrowed("projects.json"));
+    let suffix = if generation == 0 {
+        ".bak".to_string()
+    } else {
+        format!(".bak.{generation}")
+    };
+    path.with_file_name(format!("{filename}{suffix}"))
+}
+
+fn parse_projects_bytes(path: &Path, contents: &[u8]) -> Result<ProjectsData, String> {
+    serde_json::from_slice(contents).map_err(|error| {
+        log::error!(
+            "Failed to parse projects JSON at {}: {error}",
+            path.display()
+        );
+        format!("Failed to parse projects data: {error}")
+    })
+}
+
+fn recovery_candidates(path: &Path) -> Vec<PathBuf> {
+    let mut candidates = (0..PROJECTS_BACKUP_COUNT)
+        .map(|generation| projects_backup_path(path, generation))
+        .collect::<Vec<_>>();
+    let filename = path
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_else(|| "projects.json".to_string());
+    let legacy_temp = path.with_file_name(format!("{filename}.tmp"));
+    if legacy_temp.is_file() {
+        candidates.push(legacy_temp);
+    }
+    if let Some(parent) = path.parent() {
+        if let Ok(entries) = fs::read_dir(parent) {
+            let mut temp_files = entries
+                .filter_map(Result::ok)
+                .map(|entry| entry.path())
+                .filter(|candidate| {
+                    candidate.is_file()
+                        && candidate
+                            .file_name()
+                            .and_then(|name| name.to_str())
+                            .is_some_and(|name| name.starts_with(&format!("{filename}.tmp-")))
+                })
+                .collect::<Vec<_>>();
+            temp_files.sort_by_key(|candidate| {
+                fs::metadata(candidate)
+                    .and_then(|metadata| metadata.modified())
+                    .ok()
+            });
+            temp_files.reverse();
+            candidates.extend(temp_files);
+        }
+    }
+    candidates
+}
+
+fn preserve_corrupt_projects_file(path: &Path, contents: &[u8]) -> Option<PathBuf> {
+    let filename = path
+        .file_name()
+        .map(|name| name.to_string_lossy())
+        .unwrap_or_else(|| std::borrow::Cow::Borrowed("projects.json"));
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or_default();
+    let corrupt_path =
+        path.with_file_name(format!("{filename}.corrupt-{timestamp}-{}", Uuid::new_v4()));
+    match crate::platform::write_file_atomically(&corrupt_path, contents) {
+        Ok(()) => Some(corrupt_path),
+        Err(error) => {
+            log::warn!(
+                "Failed to preserve corrupt projects file {}: {error}",
+                path.display()
+            );
+            None
+        }
+    }
+}
+
+fn load_projects_file_with_recovery(path: &Path) -> Result<ProjectsData, String> {
+    let (primary_contents, primary_error, primary_missing) = match fs::read(path) {
+        Ok(contents) => match parse_projects_bytes(path, &contents) {
+            Ok(data) => return Ok(data),
+            Err(error) => (Some(contents), error, false),
+        },
+        Err(error) => (
+            None,
+            format!("Failed to read projects file: {error}"),
+            error.kind() == io::ErrorKind::NotFound,
+        ),
+    };
+    let mut recovery_source_found = false;
+    for candidate in recovery_candidates(path) {
+        let contents = match fs::read(&candidate) {
+            Ok(contents) => {
+                recovery_source_found = true;
+                contents
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(error) => {
+                recovery_source_found = true;
+                log::warn!(
+                    "Failed to read projects recovery candidate {}: {error}",
+                    candidate.display()
+                );
+                continue;
+            }
+        };
+        let Ok(data) = parse_projects_bytes(&candidate, &contents) else {
+            log::warn!(
+                "Ignoring invalid projects recovery candidate {}",
+                candidate.display()
+            );
+            continue;
+        };
+        let corrupt_path = primary_contents
+            .as_deref()
+            .and_then(|contents| preserve_corrupt_projects_file(path, contents));
+        crate::platform::write_file_atomically(path, &contents).map_err(|error| {
+            format!(
+                "Recovered projects data from {} but failed to restore {}: {error}",
+                candidate.display(),
+                path.display()
+            )
+        })?;
+        log::warn!(
+            "Recovered projects data from {} into {}{}",
+            candidate.display(),
+            path.display(),
+            corrupt_path
+                .as_ref()
+                .map(|path| format!("; preserved corrupt file at {}", path.display()))
+                .unwrap_or_default()
+        );
+        return Ok(data);
+    }
+    if primary_missing && !recovery_source_found {
+        return Ok(ProjectsData::default());
+    }
+    Err(format!("Projects data is corrupt at {}: {primary_error}. No valid backup could be recovered; the original file was left untouched.", path.display()))
+}
+
+fn rotate_projects_backups(path: &Path, current_contents: &[u8]) -> Result<(), String> {
+    for generation in (1..PROJECTS_BACKUP_COUNT).rev() {
+        let source = projects_backup_path(path, generation - 1);
+        if !source.exists() {
+            continue;
+        }
+        let contents = fs::read(&source).map_err(|error| {
+            format!(
+                "Failed to read projects backup {}: {error}",
+                source.display()
+            )
+        })?;
+        let target = projects_backup_path(path, generation);
+        crate::platform::write_file_atomically(&target, &contents).map_err(|error| {
+            format!(
+                "Failed to rotate projects backup {}: {error}",
+                target.display()
+            )
+        })?;
+    }
+    crate::platform::write_file_atomically(&projects_backup_path(path, 0), current_contents)
+        .map_err(|error| format!("Failed to write projects backup: {error}"))
+}
+
+fn save_projects_data_file(path: &Path, data: &ProjectsData) -> Result<(), String> {
+    let json = serde_json::to_string_pretty(data)
+        .map_err(|error| format!("Failed to serialize projects data: {error}"))?;
+    if path.exists() {
+        rotate_projects_backups(
+            path,
+            &fs::read(path)
+                .map_err(|error| format!("Failed to read projects file before saving: {error}"))?,
+        )?;
+    }
+    crate::platform::write_file_atomically(path, json.as_bytes())
+}
+
 /// Load projects data from disk (internal, no locking)
 fn load_projects_data_internal(app: &AppHandle) -> Result<ProjectsData, String> {
     log::trace!("Loading projects data from disk");
     let path = get_projects_path(app)?;
-
-    if !path.exists() {
-        log::trace!("Projects file not found, returning empty data");
-        return Ok(ProjectsData::default());
-    }
-
-    let contents = std::fs::read_to_string(&path).map_err(|e| {
-        log::error!("Failed to read projects file: {e}");
-        format!("Failed to read projects file: {e}")
-    })?;
-
-    let data: ProjectsData = serde_json::from_str(&contents).map_err(|e| {
-        log::error!("Failed to parse projects JSON: {e}");
-        format!("Failed to parse projects data: {e}")
-    })?;
+    let data = load_projects_file_with_recovery(&path)?;
 
     let original_count = data.worktrees.len();
 
@@ -394,28 +569,12 @@ pub fn load_projects_data(app: &AppHandle) -> Result<ProjectsData, String> {
     load_projects_data_internal(app)
 }
 
-/// Save projects data to disk (internal, no locking - atomic write: temp file + rename)
+/// Save projects data to disk (internal, no locking - durable atomic write with backups)
 fn save_projects_data_internal(app: &AppHandle, data: &ProjectsData) -> Result<(), String> {
     log::trace!("Saving projects data to disk");
     let path = get_projects_path(app)?;
 
-    let json_content = serde_json::to_string_pretty(data).map_err(|e| {
-        log::error!("Failed to serialize projects data: {e}");
-        format!("Failed to serialize projects data: {e}")
-    })?;
-
-    // Write to a temporary file first, then rename (atomic operation)
-    let temp_path = path.with_extension("tmp");
-
-    std::fs::write(&temp_path, json_content).map_err(|e| {
-        log::error!("Failed to write projects file: {e}");
-        format!("Failed to write projects file: {e}")
-    })?;
-
-    std::fs::rename(&temp_path, &path).map_err(|e| {
-        log::error!("Failed to finalize projects file: {e}");
-        format!("Failed to finalize projects file: {e}")
-    })?;
+    save_projects_data_file(&path, data)?;
 
     log::trace!(
         "Saved {} projects and {} worktrees to {path:?}",
@@ -933,5 +1092,59 @@ mod tests {
         let slot = &data.worktree_slots[0];
         assert_eq!(slot.state, WorktreeSlotState::Idle);
         assert_eq!(slot.last_error, None);
+    }
+
+    #[test]
+    fn project_saves_rotate_recoverable_backups() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let path = directory.path().join("projects.json");
+        save_projects_data_file(&path, &ProjectsData::default()).expect("first save");
+        let data = ProjectsData {
+            projects: vec![],
+            worktrees: vec![],
+            worktree_slots: vec![test_slot("slot", "/tmp/slot", WorktreeSlotState::Idle)],
+        };
+        save_projects_data_file(&path, &data).expect("second save");
+        let backup: ProjectsData =
+            serde_json::from_slice(&fs::read(projects_backup_path(&path, 0)).expect("backup"))
+                .expect("valid backup json");
+        assert!(backup.worktree_slots.is_empty());
+    }
+
+    #[test]
+    fn corrupt_projects_file_is_restored_from_backup_and_preserved() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let path = directory.path().join("projects.json");
+        save_projects_data_file(&path, &ProjectsData::default()).expect("first save");
+        let data = ProjectsData {
+            projects: vec![],
+            worktrees: vec![],
+            worktree_slots: vec![test_slot("slot", "/tmp/slot", WorktreeSlotState::Idle)],
+        };
+        save_projects_data_file(&path, &data).expect("second save");
+        fs::write(&path, b"corrupt").expect("corrupt primary");
+
+        let recovered = load_projects_file_with_recovery(&path).expect("recover projects");
+        assert!(recovered.worktree_slots.is_empty());
+        assert!(
+            serde_json::from_slice::<ProjectsData>(&fs::read(&path).expect("restored")).is_ok()
+        );
+        assert!(fs::read_dir(directory.path())
+            .expect("directory")
+            .filter_map(Result::ok)
+            .any(|entry| entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with("projects.json.corrupt-")));
+    }
+
+    #[test]
+    fn corrupt_projects_file_without_recovery_returns_an_error_unchanged() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let path = directory.path().join("projects.json");
+        fs::write(&path, b"corrupt").expect("corrupt primary");
+        let error = load_projects_file_with_recovery(&path).expect_err("corrupt data error");
+        assert!(error.contains("Projects data is corrupt"));
+        assert_eq!(fs::read(&path).expect("primary"), b"corrupt");
     }
 }

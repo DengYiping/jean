@@ -375,6 +375,22 @@ const sectionEntries: PreferenceSearchEntry[] = [
     fallbackAnchorId: 'pref-pane-usage',
   },
   {
+    id: 'mcp-agent-browser',
+    pane: 'mcp-servers',
+    paneTitle: 'MCP Servers',
+    type: 'section',
+    title: 'Agent Browser',
+    sectionTitle: 'MCP Servers',
+    keywords: [
+      'agent browser',
+      'browser automation',
+      'chromium',
+      'login profile',
+    ],
+    anchorId: 'pref-mcp-section-agent-browser',
+    fallbackAnchorId: 'pref-pane-mcp-servers',
+  },
+  {
     id: 'mcp-default-servers',
     pane: 'mcp-servers',
     paneTitle: 'MCP Servers',

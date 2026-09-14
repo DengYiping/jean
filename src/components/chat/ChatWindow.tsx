@@ -140,6 +140,7 @@ import {
 } from './message-content-utils'
 import { useUIStore } from '@/store/ui-store'
 import { buildMcpConfigJson } from '@/services/mcp'
+import { CHECK_GITHUB_ISSUES_PROMPT } from '@/lib/github-discovery-prompt'
 import type { McpServerInfo } from '@/types/chat'
 import { useGitStatus } from '@/services/git-status'
 import { useRemotePicker } from '@/hooks/useRemotePicker'
@@ -1745,6 +1746,28 @@ export function ChatWindow({
     clearChatInputState: () => clearChatInputStateRef.current?.(),
   })
 
+  const handleCheckGitHubIssues = useCallback(() => {
+    sendMessageNow({
+      id: crypto.randomUUID(),
+      message: CHECK_GITHUB_ISSUES_PROMPT,
+      pendingImages: [],
+      pendingFiles: [],
+      skills: [],
+      pendingSkills: [],
+      pendingTextFiles: [],
+      model: selectedModelRef.current,
+      provider: selectedProviderRef.current,
+      executionMode: executionModeRef.current,
+      thinkingLevel: selectedThinkingLevelRef.current,
+      effortLevel: useAdaptiveThinkingRef.current
+        ? selectedEffortLevelRef.current
+        : undefined,
+      mcpConfig: getMcpConfig(),
+      backend: selectedBackendRef.current,
+      queuedAt: Date.now(),
+    })
+  }, [getMcpConfig, sendMessageNow])
+
   const getPendingInputSnapshot =
     useCallback((): PendingInputSnapshot | null => {
       if (!activeSessionId) return null
@@ -2468,6 +2491,7 @@ export function ChatWindow({
     handleOpenPr,
     handleReview: () => setReviewMethodModalOpen(true),
     handleForkSession,
+    handleCheckGitHubIssues,
     handleMerge,
     handleMergePr,
     handleResolveConflicts,

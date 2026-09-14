@@ -363,7 +363,8 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     if (
       terminalIds.length === 0 &&
       !state.activeTerminalIds[worktreeId] &&
-      !(state.terminalPanelOpen[worktreeId] ?? false)
+      !(state.terminalPanelOpen[worktreeId] ?? false) &&
+      !(state.modalTerminalOpen[worktreeId] ?? false)
     ) {
       return []
     }
@@ -374,20 +375,20 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
       newRunning.delete(id)
     }
 
+    const { [worktreeId]: _terminals, ...remainingTerminals } = state.terminals
+    const { [worktreeId]: _activeTerminal, ...activeTerminalIds } =
+      state.activeTerminalIds
+    const { [worktreeId]: _panelOpen, ...terminalPanelOpen } =
+      state.terminalPanelOpen
+    const { [worktreeId]: _modalOpen, ...modalTerminalOpen } =
+      state.modalTerminalOpen
+
     set({
-      terminals: {
-        ...state.terminals,
-        [worktreeId]: [],
-      },
-      activeTerminalIds: {
-        ...state.activeTerminalIds,
-        [worktreeId]: '',
-      },
+      terminals: remainingTerminals,
+      activeTerminalIds,
       runningTerminals: newRunning,
-      terminalPanelOpen: {
-        ...state.terminalPanelOpen,
-        [worktreeId]: false,
-      },
+      terminalPanelOpen,
+      modalTerminalOpen,
       // Don't set terminalVisible=false as that's global and affects other worktrees
     })
 

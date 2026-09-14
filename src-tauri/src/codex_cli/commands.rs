@@ -276,59 +276,19 @@ pub async fn detect_codex_in_path(app: AppHandle) -> Result<CodexPathDetection, 
     let jean_managed_path: Option<std::path::PathBuf> = None;
     log::debug!("detect_codex_in_path: jean_managed_path={jean_managed_path:?}");
 
-    let which_cmd = if cfg!(target_os = "windows") {
-        "where"
-    } else {
-        "which"
-    };
-
-    let output = match silent_command(which_cmd).arg("codex").output() {
-        Ok(output) if output.status.success() => {
-            // On Windows, `where` can return multiple paths; take only the first line
-            let raw = String::from_utf8_lossy(&output.stdout)
-                .lines()
-                .next()
-                .unwrap_or("")
-                .trim()
-                .to_string();
-            log::debug!("detect_codex_in_path: `{which_cmd} codex` found: {raw:?}");
-            raw
-        }
-        Ok(output) => {
-            log::debug!(
-                "detect_codex_in_path: `{which_cmd} codex` exited with status={}, stderr={:?}",
-                output.status,
-                String::from_utf8_lossy(&output.stderr).trim()
-            );
-            return Ok(CodexPathDetection {
-                found: false,
-                path: None,
-                version: None,
-                package_manager: None,
-            });
-        }
-        Err(e) => {
-            log::debug!("detect_codex_in_path: `{which_cmd} codex` failed to execute: {e}");
-            return Ok(CodexPathDetection {
-                found: false,
-                path: None,
-                version: None,
-                package_manager: None,
-            });
-        }
-    };
-
-    if output.is_empty() {
-        log::debug!("detect_codex_in_path: which returned empty output");
+    let Some(found_path) =
+        crate::platform::find_cli_in_host_path("codex", jean_managed_path.as_deref())
+    else {
+        log::debug!("detect_codex_in_path: codex was not found");
         return Ok(CodexPathDetection {
             found: false,
             path: None,
             version: None,
             package_manager: None,
         });
-    }
+    };
 
-    let found_path = std::path::PathBuf::from(&output);
+    let output = found_path.to_string_lossy().to_string();
 
     // Exclude Jean-managed binary
     if let Some(ref jean_path) = jean_managed_path {

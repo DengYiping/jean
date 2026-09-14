@@ -20,6 +20,7 @@ import {
 } from '@/lib/transport'
 import { listen } from '@/lib/transport'
 import { useTerminalStore } from '@/store/terminal-store'
+import { shouldAutoCloseTerminal } from '@/lib/terminal-lifecycle'
 import type {
   TerminalOutputEvent,
   TerminalStartedEvent,
@@ -45,6 +46,53 @@ interface PersistentTerminal {
 // Module-level Map - persists across React mount/unmount cycles
 const instances = new Map<string, PersistentTerminal>()
 
+/** Keep long-lived shell buffers bounded while retaining useful recent output. */
+export const TERMINAL_SCROLLBACK_LINES = 2_000
+/** Batch PTY output so high-volume commands do not force a render per event. */
+export const TERMINAL_OUTPUT_FLUSH_MS = 16
+/** Avoid retaining unbounded output if a renderer cannot keep up. */
+export const MAX_PENDING_TERMINAL_OUTPUT_CHARS = 512 * 1024
+
+const outputBuffers = new Map<
+  string,
+  { data: string; timer: ReturnType<typeof setTimeout> | null }
+>()
+
+function flushTerminalOutput(terminalId: string): void {
+  const buffer = outputBuffers.get(terminalId)
+  if (!buffer) return
+  outputBuffers.delete(terminalId)
+
+  const instance = instances.get(terminalId)
+  if (!instance || !buffer.data) return
+
+  try {
+    instance.terminal.write(buffer.data)
+  } catch {
+    // The terminal may be in the middle of disposal.
+  }
+}
+
+function queueTerminalOutput(terminalId: string, data: string): void {
+  if (!data) return
+
+  const buffer = outputBuffers.get(terminalId) ?? { data: '', timer: null }
+  buffer.data = (buffer.data + data).slice(-MAX_PENDING_TERMINAL_OUTPUT_CHARS)
+  if (buffer.timer === null) {
+    buffer.timer = setTimeout(
+      () => flushTerminalOutput(terminalId),
+      TERMINAL_OUTPUT_FLUSH_MS
+    )
+  }
+  outputBuffers.set(terminalId, buffer)
+}
+
+function discardTerminalOutput(terminalId: string): void {
+  const buffer = outputBuffers.get(terminalId)
+  if (buffer?.timer) clearTimeout(buffer.timer)
+  outputBuffers.delete(terminalId)
+}
+
 /** Register one document/window wake handler that forces all xterm instances
  *  to repaint when the webview resumes from idle/sleep (issue #320).
  *  RAF-based DOM renderer can stall after macOS App Nap or DPMS sleep;
@@ -55,6 +103,9 @@ function ensureWakeHandler(): void {
   wakeHandlerRegistered = true
   const wake = () => {
     if (document.visibilityState !== 'visible') return
+    for (const terminalId of [...outputBuffers.keys()]) {
+      flushTerminalOutput(terminalId)
+    }
     for (const inst of instances.values()) {
       try {
         inst.terminal.refresh(0, Math.max(0, inst.terminal.rows - 1))
@@ -130,6 +181,80 @@ function getTerminalTheme() {
   }
 }
 
+export const SHIFT_ENTER_SEQUENCE = '\x1b[13;2u'
+
+interface TerminalKeyboardState {
+  kittyDepth: number
+  focusReporting: boolean
+  tail: string
+}
+
+const keyboardStates = new Map<string, TerminalKeyboardState>()
+// eslint-disable-next-line no-control-regex -- ESC starts every CSI sequence
+const KITTY_KEYBOARD_SEQUENCE = /\x1b\[([<>=])([0-9;]*)u/g
+// eslint-disable-next-line no-control-regex -- ESC starts every CSI sequence
+const PRIVATE_MODE_SEQUENCE = /\x1b\[\?([0-9;]+)([hl])/g
+// eslint-disable-next-line no-control-regex -- ESC starts every CSI sequence
+const PARTIAL_TAIL = /\x1b\[?[<>=?]?[0-9;]*$/
+
+export function isShiftEnterEvent(event: KeyboardEvent): boolean {
+  return (
+    event.key === 'Enter' &&
+    event.shiftKey &&
+    !event.ctrlKey &&
+    !event.altKey &&
+    !event.metaKey &&
+    !event.isComposing &&
+    event.keyCode !== 229
+  )
+}
+
+export function trackTerminalKeyboardMode(
+  terminalId: string,
+  data: string
+): void {
+  const existing = keyboardStates.get(terminalId)
+  if (!existing?.tail && !data.includes('\x1b')) return
+
+  const state = existing ?? { kittyDepth: 0, focusReporting: false, tail: '' }
+  keyboardStates.set(terminalId, state)
+  const text = state.tail + data
+  for (const [, kind, params] of text.matchAll(KITTY_KEYBOARD_SEQUENCE)) {
+    if (kind === '>') state.kittyDepth += 1
+    else if (kind === '<')
+      state.kittyDepth = Math.max(0, state.kittyDepth - (Number(params) || 1))
+    else
+      state.kittyDepth =
+        Number(params?.split(';')[0]) > 0 ? Math.max(state.kittyDepth, 1) : 0
+  }
+  for (const [, params, action] of text.matchAll(PRIVATE_MODE_SEQUENCE)) {
+    for (const mode of (params ?? '').split(';')) {
+      if (mode === '1004') state.focusReporting = action === 'h'
+    }
+  }
+  state.tail = (text.match(PARTIAL_TAIL)?.[0] ?? '').slice(-32)
+}
+
+export function acceptsModifierEncodedKeys(terminalId: string): boolean {
+  const state = keyboardStates.get(terminalId)
+  return !!state && (state.kittyDepth > 0 || state.focusReporting)
+}
+
+export function handleShiftEnterKey(
+  terminalId: string,
+  event: KeyboardEvent
+): boolean {
+  if (!isShiftEnterEvent(event) || !acceptsModifierEncodedKeys(terminalId))
+    return false
+  if (event.type === 'keydown' && isTransportConnected()) {
+    void invoke('terminal_write', {
+      terminalId,
+      data: SHIFT_ENTER_SEQUENCE,
+    }).catch(console.error)
+  }
+  return true
+}
+
 // TODO: Add memory cap for detached terminals (e.g., 20 max)
 // For now, typical usage won't hit memory limits
 
@@ -164,6 +289,7 @@ export function getOrCreateTerminal(
   // Create xterm.js Terminal instance
   const terminal = new Terminal({
     cursorBlink: true,
+    scrollback: TERMINAL_SCROLLBACK_LINES,
     fontSize: 13,
     fontFamily:
       'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace',
@@ -175,6 +301,10 @@ export function getOrCreateTerminal(
   // combos bubble to the global handler for terminal-specific actions.
   // Ctrl+C/D/Z/L etc. always reach the PTY for terminal signal handling.
   terminal.attachCustomKeyEventHandler(event => {
+    if (handleShiftEnterKey(terminalId, event)) {
+      event.preventDefault()
+      return false
+    }
     if (event.metaKey) {
       const code = event.code
       // CMD+` → toggle terminal panel
@@ -226,7 +356,8 @@ export function getOrCreateTerminal(
   listeners.push(
     listen<TerminalOutputEvent>('terminal:output', event => {
       if (event.payload.terminal_id === terminalId) {
-        terminal.write(event.payload.data)
+        trackTerminalKeyboardMode(terminalId, event.payload.data)
+        queueTerminalOutput(terminalId, event.payload.data)
       }
     })
   )
@@ -243,6 +374,8 @@ export function getOrCreateTerminal(
     listen<TerminalStoppedEvent>('terminal:stopped', event => {
       if (event.payload.terminal_id === terminalId) {
         setTerminalRunning(terminalId, false)
+        // Preserve event ordering: render final PTY output before the exit line.
+        flushTerminalOutput(terminalId)
         const exitCode = event.payload.exit_code
         const signal = event.payload.signal
         const exitLabel =
@@ -253,17 +386,16 @@ export function getOrCreateTerminal(
         const inst = instances.get(terminalId)
         inst?.onStopped?.(exitCode, signal)
 
-        // Auto-close terminal tab on clean exit:
-        // - code 0 — any terminal
-        // - SIGINT (Ctrl+C) or SIGTERM (graceful stop) — user or system stop
-        // SIGKILL, SIGSEGV, SIGABRT, etc. are NOT clean → mark as failed.
+        // Keep run-command output visible after exit so logs remain available
+        // for inspection. Normal shell tabs still close after a clean exit.
         const isRunTerminal = inst?.command != null
-        const isIntentionalSignal =
-          signal != null &&
-          (signal.includes('Interrupt') || signal.includes('Terminated'))
-        const isCleanExit = exitCode === 0 || isIntentionalSignal
+        const shouldAutoClose = shouldAutoCloseTerminal({
+          exitCode,
+          signal,
+          isRunTerminal,
+        })
 
-        if (isCleanExit && inst) {
+        if (shouldAutoClose && inst) {
           const wId = inst.worktreeId
           setTimeout(() => {
             if (!instances.has(terminalId)) return // Already disposed
@@ -280,9 +412,6 @@ export function getOrCreateTerminal(
               useTerminalStore.getState().setModalTerminalOpen(wId, false)
             }
           }, 0)
-        } else if (isRunTerminal) {
-          // Keep the terminal open so the failure remains inspectable.
-          useTerminalStore.getState().setTerminalRunning(terminalId, false)
         }
       }
     })
@@ -505,6 +634,7 @@ export async function disposeTerminal(terminalId: string): Promise<void> {
 
   // Remove from Map first so new lookups don't find a half-disposed instance
   instances.delete(terminalId)
+  keyboardStates.delete(terminalId)
 
   // Await each listener promise then call the returned unlisten function.
   // If listen() hasn't resolved yet this ensures we still unsubscribe.
@@ -518,6 +648,7 @@ export async function disposeTerminal(terminalId: string): Promise<void> {
   }
 
   // Dispose xterm.js (clears buffer, removes DOM)
+  discardTerminalOutput(terminalId)
   instance.compositionGuardCleanup?.()
   instance.compositionGuardCleanup = null
   instance.terminal.dispose()

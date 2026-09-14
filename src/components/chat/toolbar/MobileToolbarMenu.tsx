@@ -3,6 +3,7 @@ import {
   ArrowDownToLine,
   ArrowUpToLine,
   Bot,
+  Bug,
   BookmarkPlus,
   Brain,
   Check,
@@ -318,6 +319,20 @@ export function MobileToolbarMenu({
           >
             <FlaskConical className="h-4 w-4" />
             Smoke Test
+          </DropdownMenuItem>
+
+          <DropdownMenuItem
+            onClick={() => {
+              setMenuOpen(false)
+              window.dispatchEvent(
+                new CustomEvent('magic-command', {
+                  detail: { command: 'check-github-issues' },
+                })
+              )
+            }}
+          >
+            <Bug className="h-4 w-4" />
+            Check GitHub Issues
           </DropdownMenuItem>
 
           <DropdownMenuSeparator />

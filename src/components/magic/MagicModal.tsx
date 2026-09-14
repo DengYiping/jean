@@ -82,6 +82,7 @@ type MagicOption =
   | 'load-context'
   | 'linked-projects'
   | 'fork-session'
+  | 'check-github-issues'
   | 'create-recap'
   | 'commit'
   | 'commit-and-push'
@@ -197,6 +198,12 @@ function buildMagicColumns(
           label: 'Fork Session',
           icon: GitBranchPlus,
           key: 'B',
+        },
+        {
+          id: 'check-github-issues',
+          label: 'Check GitHub Issues',
+          icon: Bug,
+          key: '',
         },
         {
           id: 'create-recap',

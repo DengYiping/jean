@@ -23,6 +23,7 @@ import { useInstalledBackends } from '@/hooks/useInstalledBackends'
 import { invalidateAllMcpServers } from '@/services/mcp'
 import { usePatchPreferences, usePreferences } from '@/services/preferences'
 import type { CliBackend } from '@/types/preferences'
+import type { McpServerInfo } from '@/types/chat'
 import { SettingsSection } from '../SettingsSection'
 
 interface JeanMcpSnippet {
@@ -87,7 +88,9 @@ function installButtonContent(state: InstallState, message: string) {
   }
 }
 
-export const JeanMcpSection: React.FC = () => {
+export const JeanMcpSection: React.FC<{ mcpServers: McpServerInfo[] }> = ({
+  mcpServers,
+}) => {
   const { data: preferences } = usePreferences()
   const patchPreferences = usePatchPreferences()
   const { installedBackends } = useInstalledBackends()
@@ -114,6 +117,12 @@ export const JeanMcpSection: React.FC = () => {
   const modeLabel = (snippet?.mode ?? 'prod') === 'dev' ? 'Dev' : 'Prod'
   const installableBackends = installedBackends.filter(backend =>
     INSTALLABLE_BACKENDS.includes(backend)
+  )
+  const configuredBackends = installableBackends.filter(backend =>
+    mcpServers.some(
+      server =>
+        server.backend === backend && server.name === snippet?.serverName
+    )
   )
 
   const setTemporaryInstallState = useCallback(
@@ -329,6 +338,27 @@ export const JeanMcpSection: React.FC = () => {
                   )}
                 </Button>
               </div>
+              {configuredBackends.length > 0 && (
+                <div
+                  className="flex flex-wrap gap-2"
+                  aria-label="Install status"
+                >
+                  {configuredBackends.map(backend => (
+                    <span
+                      key={backend}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-green-600/30 bg-green-600/10 px-2.5 py-1 text-xs text-green-700 dark:text-green-400"
+                    >
+                      <CheckCircle className="size-3.5" />
+                      Installed in{' '}
+                      {backend === 'claude'
+                        ? 'Claude'
+                        : backend === 'codex'
+                          ? 'Codex'
+                          : 'OpenCode'}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="space-y-2">

@@ -2211,12 +2211,9 @@ export default function useStreamingEvents({
         // Clear compacting state (safety net)
         useChatStore.getState().setCompacting(session_id, false)
 
-        // Restore a prompt with no assistant output, regardless of whether the
-        // backend classified cancellation as undo_send. Normal cancellation
-        // events use undo_send=false once a run has started, but the prompt is
-        // still retryable when nothing was streamed. Skip restoration when
-        // queued messages exist ("Skip to Next") or the user already typed a
-        // newer draft (hydrate persisted cancelled output instead).
+        // Restore the prompt and its attachments only when the backend confirms
+        // that execution did not start. Once execution starts, cancellation must
+        // not copy sent content back into the composer.
         const hasToolCalls = toolCalls && toolCalls.length > 0
         const hasText = !!content && content.trim().length > 0
         const hasThinking = !!streamingThinkingContent[session_id]
@@ -2229,12 +2226,11 @@ export default function useStreamingEvents({
           .getState()
           .inputDrafts[session_id]?.trim()
         const shouldRestoreMessage =
-          !hasQueuedMessages && !hasCurrentDraft && (undo_send || !hasContent)
+          undo_send && !hasQueuedMessages && !hasCurrentDraft
         // Reconcile normal no-output cancels with the backend. Most are hidden
         // there, but a raced persisted cancelled assistant turn must replace
         // the optimistic state so its prompt is not duplicated in the draft.
         const shouldHydrateCancelledFromBackend = !undo_send && !hasContent
-        let restoredDraft: string | null = null
         let persistCancelledMessage: Promise<unknown> = Promise.resolve()
 
         const removeLatestUserMessageFromCache = () => {
@@ -2299,7 +2295,6 @@ export default function useStreamingEvents({
             // Only restore if input is empty (user hasn't typed new content)
             if (!currentDraft.trim()) {
               setInputDraft(session_id, lastMessage)
-              restoredDraft = lastMessage
               // Restore any attachments that were sent with the message
               useChatStore.getState().restoreAttachments(session_id)
               toast.info('Message restored to input')
@@ -2402,17 +2397,6 @@ export default function useStreamingEvents({
                   chatQueryKeys.session(session_id),
                   session
                 )
-                const currentDraft =
-                  useChatStore.getState().inputDrafts[session_id] ?? ''
-                // Backend kept the cancelled turn (frontend missed streamed
-                // output). Drop a composer restore that would duplicate the
-                // prompt, but keep a draft the user typed after cancelling.
-                if (
-                  hydratedCancelledAssistant &&
-                  (!currentDraft.trim() || currentDraft === restoredDraft)
-                ) {
-                  useChatStore.getState().clearInputDraft(session_id)
-                }
               })
             }
           }

@@ -8,6 +8,7 @@ import {
   FolderOpen,
   GitBranch,
   GitPullRequestArrow,
+  Globe,
   Hammer,
   MoreHorizontal,
   Play,
@@ -43,6 +44,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button'
 import type { Worktree } from '@/types/projects'
+import type { PackageScript } from '@/services/projects'
 import { hideGitHubIssuesAndPRs } from '@/types/projects'
 import { getEditorLabel, getTerminalLabel } from '@/types/preferences'
 import { ghCliQueryKeys } from '@/services/gh-cli'
@@ -71,6 +73,10 @@ interface WorktreeDropdownMenuProps {
   branchDiffRemoved?: number
   onUncommittedDiffClick?: () => void
   onBranchDiffClick?: () => void
+  onToggleTerminal?: () => void
+  onToggleBrowser?: () => void
+  packageScripts?: PackageScript[]
+  onRunPackageScript?: (script: PackageScript) => void
 }
 
 const BADGE_STALE_TIME = 5 * 60 * 1000
@@ -85,6 +91,10 @@ export function WorktreeDropdownMenu({
   branchDiffRemoved = 0,
   onUncommittedDiffClick,
   onBranchDiffClick,
+  onToggleTerminal,
+  onToggleBrowser,
+  packageScripts = [],
+  onRunPackageScript,
 }: WorktreeDropdownMenuProps) {
   const queryClient = useQueryClient()
   const { data: projects } = useProjects()
@@ -186,6 +196,7 @@ export function WorktreeDropdownMenu({
             size="icon"
             className="h-6 w-6 text-muted-foreground hover:text-foreground"
             onClick={e => e.stopPropagation()}
+            aria-label="Actions"
           >
             <MoreHorizontal className="h-4 w-4" />
           </Button>
@@ -231,6 +242,40 @@ export function WorktreeDropdownMenu({
               <Hammer className="mr-2 h-4 w-4" />
               Build
             </DropdownMenuItem>
+          )}
+
+          {onToggleTerminal && (
+            <DropdownMenuItem onClick={onToggleTerminal}>
+              <Terminal className="mr-2 h-4 w-4" />
+              Terminal
+            </DropdownMenuItem>
+          )}
+
+          {onToggleBrowser && (
+            <DropdownMenuItem onClick={onToggleBrowser}>
+              <Globe className="mr-2 h-4 w-4" />
+              Browser
+            </DropdownMenuItem>
+          )}
+
+          {packageScripts.length > 0 && onRunPackageScript && (
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <Play className="mr-4 h-4 w-4" />
+                Scripts
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent>
+                {packageScripts.map(script => (
+                  <DropdownMenuItem
+                    key={script.name}
+                    onSelect={() => onRunPackageScript(script)}
+                    className="font-mono text-xs"
+                  >
+                    {script.name}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
           )}
 
           <DropdownMenuItem onClick={handleOpenJeanConfig}>

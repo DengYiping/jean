@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createElement } from 'react'
 import {
   usePreferences,
+  usePatchPreferences,
   useSavePreferences,
   preferencesQueryKeys,
   useAvailableEditors,
@@ -121,6 +122,28 @@ describe('preferences service', () => {
         'preferences',
         'available-editors',
       ])
+    })
+  })
+
+  describe('usePatchPreferences', () => {
+    it('updates cached preferences before the persistence request resolves', () => {
+      queryClient.setQueryData(preferencesQueryKeys.preferences(), {
+        ...defaultPreferences,
+        has_seen_feature_tour: false,
+      })
+      const { result } = renderHook(() => usePatchPreferences(), {
+        wrapper: createWrapper(queryClient),
+      })
+
+      act(() => {
+        result.current.mutate({ has_seen_feature_tour: true })
+      })
+
+      expect(
+        queryClient.getQueryData<AppPreferences>(
+          preferencesQueryKeys.preferences()
+        )?.has_seen_feature_tour
+      ).toBe(true)
     })
   })
 

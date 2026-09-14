@@ -13,39 +13,39 @@ import type { BrowserTab } from '@/types/browser'
 import type { UIState } from '@/types/ui-state'
 
 // Simple debounce implementation
-function debounce<T extends (...args: Parameters<T>) => void>(
-  fn: T,
+function debounce(
+  fn: (state: UIState) => void,
   delay: number
-): T & { cancel: () => void; flush: () => void } {
+): ((state: UIState) => void) & { cancel: () => void; flush: () => void } {
   let timeoutId: ReturnType<typeof setTimeout> | null = null
-  let pendingArgs: Parameters<T> | null = null
+  let pendingState: UIState | null = null
 
-  const debounced = ((...args: Parameters<T>) => {
+  const debounced = ((state: UIState) => {
     if (timeoutId !== null) clearTimeout(timeoutId)
-    pendingArgs = args
+    pendingState = state
     timeoutId = setTimeout(() => {
       timeoutId = null
-      const argsToApply = pendingArgs
-      pendingArgs = null
-      if (argsToApply) fn(...argsToApply)
+      const stateToSave = pendingState
+      pendingState = null
+      if (stateToSave) fn(stateToSave)
     }, delay)
-  }) as T & { cancel: () => void; flush: () => void }
+  }) as ((state: UIState) => void) & { cancel: () => void; flush: () => void }
 
   debounced.cancel = () => {
     if (timeoutId !== null) {
       clearTimeout(timeoutId)
       timeoutId = null
     }
-    pendingArgs = null
+    pendingState = null
   }
 
   debounced.flush = () => {
-    if (timeoutId === null || pendingArgs === null) return
+    if (timeoutId === null || pendingState === null) return
     clearTimeout(timeoutId)
     timeoutId = null
-    const argsToApply = pendingArgs
-    pendingArgs = null
-    fn(...argsToApply)
+    const stateToSave = pendingState
+    pendingState = null
+    fn(stateToSave)
   }
 
   return debounced
@@ -64,9 +64,7 @@ export function useUIStatePersistence() {
   const [isInitialized, setIsInitialized] = useState(false)
 
   // Create stable debounced save function
-  const debouncedSaveRef = useRef<ReturnType<
-    typeof debounce<(state: UIState) => void>
-  > | null>(null)
+  const debouncedSaveRef = useRef<ReturnType<typeof debounce> | null>(null)
 
   // Initialize debounced save function
   useEffect(() => {

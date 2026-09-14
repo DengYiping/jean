@@ -136,6 +136,12 @@ export function usePatchPreferences() {
   const queryClient = useQueryClient()
 
   return useMutation({
+    onMutate: patch => {
+      queryClient.setQueryData<AppPreferences>(
+        preferencesQueryKeys.preferences(),
+        current => (current ? { ...current, ...patch } : current)
+      )
+    },
     mutationFn: async (patch: Partial<AppPreferences>) => {
       if (!isTauri()) {
         logger.debug(

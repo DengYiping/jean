@@ -130,6 +130,80 @@ function getTerminalTheme() {
   }
 }
 
+export const SHIFT_ENTER_SEQUENCE = '\x1b[13;2u'
+
+interface TerminalKeyboardState {
+  kittyDepth: number
+  focusReporting: boolean
+  tail: string
+}
+
+const keyboardStates = new Map<string, TerminalKeyboardState>()
+// eslint-disable-next-line no-control-regex -- ESC starts every CSI sequence
+const KITTY_KEYBOARD_SEQUENCE = /\x1b\[([<>=])([0-9;]*)u/g
+// eslint-disable-next-line no-control-regex -- ESC starts every CSI sequence
+const PRIVATE_MODE_SEQUENCE = /\x1b\[\?([0-9;]+)([hl])/g
+// eslint-disable-next-line no-control-regex -- ESC starts every CSI sequence
+const PARTIAL_TAIL = /\x1b\[?[<>=?]?[0-9;]*$/
+
+export function isShiftEnterEvent(event: KeyboardEvent): boolean {
+  return (
+    event.key === 'Enter' &&
+    event.shiftKey &&
+    !event.ctrlKey &&
+    !event.altKey &&
+    !event.metaKey &&
+    !event.isComposing &&
+    event.keyCode !== 229
+  )
+}
+
+export function trackTerminalKeyboardMode(
+  terminalId: string,
+  data: string
+): void {
+  const existing = keyboardStates.get(terminalId)
+  if (!existing?.tail && !data.includes('\x1b')) return
+
+  const state = existing ?? { kittyDepth: 0, focusReporting: false, tail: '' }
+  keyboardStates.set(terminalId, state)
+  const text = state.tail + data
+  for (const [, kind, params] of text.matchAll(KITTY_KEYBOARD_SEQUENCE)) {
+    if (kind === '>') state.kittyDepth += 1
+    else if (kind === '<')
+      state.kittyDepth = Math.max(0, state.kittyDepth - (Number(params) || 1))
+    else
+      state.kittyDepth =
+        Number(params?.split(';')[0]) > 0 ? Math.max(state.kittyDepth, 1) : 0
+  }
+  for (const [, params, action] of text.matchAll(PRIVATE_MODE_SEQUENCE)) {
+    for (const mode of (params ?? '').split(';')) {
+      if (mode === '1004') state.focusReporting = action === 'h'
+    }
+  }
+  state.tail = (text.match(PARTIAL_TAIL)?.[0] ?? '').slice(-32)
+}
+
+export function acceptsModifierEncodedKeys(terminalId: string): boolean {
+  const state = keyboardStates.get(terminalId)
+  return !!state && (state.kittyDepth > 0 || state.focusReporting)
+}
+
+export function handleShiftEnterKey(
+  terminalId: string,
+  event: KeyboardEvent
+): boolean {
+  if (!isShiftEnterEvent(event) || !acceptsModifierEncodedKeys(terminalId))
+    return false
+  if (event.type === 'keydown' && isTransportConnected()) {
+    void invoke('terminal_write', {
+      terminalId,
+      data: SHIFT_ENTER_SEQUENCE,
+    }).catch(console.error)
+  }
+  return true
+}
+
 // TODO: Add memory cap for detached terminals (e.g., 20 max)
 // For now, typical usage won't hit memory limits
 
@@ -175,6 +249,10 @@ export function getOrCreateTerminal(
   // combos bubble to the global handler for terminal-specific actions.
   // Ctrl+C/D/Z/L etc. always reach the PTY for terminal signal handling.
   terminal.attachCustomKeyEventHandler(event => {
+    if (handleShiftEnterKey(terminalId, event)) {
+      event.preventDefault()
+      return false
+    }
     if (event.metaKey) {
       const code = event.code
       // CMD+` → toggle terminal panel
@@ -226,6 +304,7 @@ export function getOrCreateTerminal(
   listeners.push(
     listen<TerminalOutputEvent>('terminal:output', event => {
       if (event.payload.terminal_id === terminalId) {
+        trackTerminalKeyboardMode(terminalId, event.payload.data)
         terminal.write(event.payload.data)
       }
     })
@@ -505,6 +584,7 @@ export async function disposeTerminal(terminalId: string): Promise<void> {
 
   // Remove from Map first so new lookups don't find a half-disposed instance
   instances.delete(terminalId)
+  keyboardStates.delete(terminalId)
 
   // Await each listener promise then call the returned unlisten function.
   // If listen() hasn't resolved yet this ensures we still unsubscribe.

@@ -841,7 +841,7 @@ pub fn execute_codex_structured_via_server(
             .insert(review_run_id.to_string(), (thread_id.clone(), turn_id));
     }
 
-    let result = (|| {
+    let result = {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15 * 60);
         let mut final_message = None;
         loop {
@@ -888,7 +888,7 @@ pub fn execute_codex_structured_via_server(
                 }
             }
         }
-    })();
+    };
     if let Some(review_run_id) = review_run_id {
         STRUCTURED_REVIEW_TURNS
             .lock()

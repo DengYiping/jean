@@ -47,10 +47,10 @@ pub fn find_cli_in_host_path(tool: &str, jean_managed: Option<&Path>) -> Option<
                 )
             })
             .filter(|path| path.exists());
-        return inherited.or_else(|| {
+        inherited.or_else(|| {
             let shell = super::get_default_shell();
             find_cli_in_unix_login_shell(tool, Path::new(&shell), jean_managed)
-        });
+        })
     }
 
     #[cfg(windows)]

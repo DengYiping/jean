@@ -95,6 +95,24 @@ describe('MobileToolbarMenu', () => {
     expect(onOpenMagicModal).toHaveBeenCalledOnce()
   })
 
+  it('dispatches the opt-in GitHub issues check without replacing Smoke Test', async () => {
+    const user = userEvent.setup()
+    const dispatchSpy = vi.spyOn(window, 'dispatchEvent')
+    render(<MobileToolbarMenu {...createProps()} />)
+
+    await user.click(screen.getByRole('button', { name: 'More actions' }))
+    expect(screen.getByText('Smoke Test')).toBeInTheDocument()
+    await user.click(screen.getByText('Check GitHub Issues'))
+
+    expect(dispatchSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'magic-command',
+        detail: { command: 'check-github-issues' },
+      })
+    )
+    dispatchSpy.mockRestore()
+  })
+
   it('keeps backend switching visible after the session has messages', async () => {
     const user = userEvent.setup()
     render(

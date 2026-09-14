@@ -61,6 +61,7 @@ import {
 import { usePreferences } from '@/services/preferences'
 import {
   useBuildScript,
+  usePackageScripts,
   type PackageScript,
   useProjects,
   useRunScript,
@@ -220,6 +221,7 @@ export function SessionChatModal({
     [sessionsData?.sessions]
   )
   const { data: preferences } = usePreferences()
+  const { data: packageScripts = [] } = usePackageScripts(worktreePath)
   const isBrowserModalOpen = useBrowserStore(
     state => state.modalOpen[worktreeId] ?? false
   )
@@ -842,6 +844,14 @@ export function SessionChatModal({
     [worktreeId]
   )
 
+  const handleToggleModalTerminal = useCallback(() => {
+    useTerminalStore.getState().toggleModalTerminal(worktreeId)
+  }, [worktreeId])
+
+  const handleToggleModalBrowser = useCallback(() => {
+    useBrowserStore.getState().toggleModal(worktreeId)
+  }, [worktreeId])
+
   // Close on Escape key
   useEffect(() => {
     if (!isOpen) return
@@ -977,6 +987,12 @@ export function SessionChatModal({
                     worktree={worktree}
                     projectId={project.id}
                     projectPath={project.path}
+                    onToggleTerminal={handleToggleModalTerminal}
+                    onToggleBrowser={
+                      isNativeApp() ? handleToggleModalBrowser : undefined
+                    }
+                    packageScripts={packageScripts}
+                    onRunPackageScript={handlePackageScript}
                   />
                 )}
               </div>

@@ -857,6 +857,9 @@ export function SessionChatModal({
     if (!isOpen) return
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        // IME composition uses Escape to cancel its candidate UI; it must not
+        // close the session modal.
+        if (e.isComposing) return
         const target = e.target as HTMLElement
         const portalAncestor = target?.closest?.(
           '[data-slot="dialog-portal"], [data-slot="alert-dialog-portal"], [data-slot="sheet-portal"]'

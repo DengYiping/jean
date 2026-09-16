@@ -13141,7 +13141,15 @@ fn collect_skills_from_dir_inner(
             }
         };
         let path = entry.path();
-        if !file_type.is_dir() || file_type.is_symlink() {
+        let is_linked_directory = file_type.is_symlink()
+            && std::fs::metadata(&path).is_ok_and(|metadata| metadata.is_dir());
+        if !file_type.is_dir() && !is_linked_directory {
+            continue;
+        }
+        // Codex installs can link a skill directly under the skills root. Do
+        // not follow links inside category directories: those are categories,
+        // not installed skills, and can form cycles.
+        if is_linked_directory && entry_depth > 1 {
             continue;
         }
 
@@ -13155,7 +13163,10 @@ fn collect_skills_from_dir_inner(
             }
         };
         if !is_skill_file {
-            if entry_depth < MAX_SKILL_DIRECTORY_DEPTH {
+            // Follow links only when they point directly at a skill root. This
+            // permits installed Codex skills without traversing linked category
+            // directories (which can contain cycles).
+            if !is_linked_directory && entry_depth < MAX_SKILL_DIRECTORY_DEPTH {
                 collect_skills_from_dir_inner(&path, skills, entry_depth);
             }
             continue;
@@ -13369,42 +13380,66 @@ pub async fn set_project_avatar(app: AppHandle, project_id: String) -> Result<Pr
         .unwrap_or("png")
         .to_lowercase();
 
-    // Create destination path: avatars/{project_id}.{ext}
-    let avatars_dir = get_avatars_dir(&app)?;
-    let dest_filename = format!("{project_id}.{extension}");
-    let dest_path = avatars_dir.join(&dest_filename);
-
-    // Remove any existing avatar files for this project (might have different extension)
-    for ext in ["png", "jpg", "jpeg", "webp", "gif"] {
-        let old_file = avatars_dir.join(format!("{project_id}.{ext}"));
-        if old_file.exists() {
-            let _ = std::fs::remove_file(&old_file);
-        }
+    let mut data = load_projects_data(&app)?;
+    if data.find_project(&project_id).is_none() {
+        return Err(format!("Project not found: {project_id}"));
     }
 
-    // Copy the file
+    // Use a fresh name so browsers never reuse a stale cached avatar.
+    let avatars_dir = get_avatars_dir(&app)?;
+    let dest_filename = project_avatar_destination_name(&project_id, &extension);
+    let dest_path = avatars_dir.join(&dest_filename);
+
+    // Copy before replacing project metadata or cleaning up the previous file.
     std::fs::copy(&source_path, &dest_path)
         .map_err(|e| format!("Failed to copy avatar file: {e}"))?;
 
     // Update project with relative path
     let relative_path = format!("avatars/{dest_filename}");
 
-    let mut data = load_projects_data(&app)?;
     let project = data
         .find_project_mut(&project_id)
-        .ok_or_else(|| format!("Project not found: {project_id}"))?;
+        .expect("project existence checked before avatar copy");
 
     project.avatar_path = Some(relative_path);
     project.default_avatar_path = None;
     let updated_project = project.clone();
 
-    save_projects_data(&app, &data)?;
+    if let Err(error) = save_projects_data(&app, &data) {
+        let _ = std::fs::remove_file(&dest_path);
+        return Err(error);
+    }
+
+    if let Ok(entries) = std::fs::read_dir(&avatars_dir) {
+        for entry in entries.flatten() {
+            if entry.path() != dest_path
+                && is_project_avatar_file(&entry.file_name().to_string_lossy(), &project_id)
+            {
+                let _ = std::fs::remove_file(entry.path());
+            }
+        }
+    }
 
     log::trace!(
         "Successfully set avatar for project: {}",
         updated_project.name
     );
     Ok(updated_project)
+}
+
+fn project_avatar_destination_name(project_id: &str, extension: &str) -> String {
+    format!("{project_id}-{}.{}", Uuid::new_v4(), extension)
+}
+
+fn is_project_avatar_file(file_name: &str, project_id: &str) -> bool {
+    if file_name.starts_with(&format!("{project_id}.")) {
+        return true;
+    }
+
+    file_name
+        .strip_prefix(&format!("{project_id}-"))
+        .and_then(|suffix| suffix.rsplit_once('.'))
+        .is_some_and(|(id, _)| Uuid::parse_str(id).is_ok())
 }
 
 /// Remove the custom avatar from a project
@@ -13678,7 +13713,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn skill_discovery_does_not_follow_symlinks() {
+    fn skill_discovery_finds_symlinked_skill_roots_without_following_categories() {
         use std::os::unix::fs::symlink;
 
         let temp = tempfile::tempdir().expect("temp dir");
@@ -13692,7 +13727,31 @@ mod tests {
         let mut skills = std::collections::HashMap::new();
         collect_skills_from_dir(&root, &mut skills);
 
-        assert!(skills.is_empty());
+        assert_eq!(skills.len(), 1);
+        assert_eq!(
+            skills
+                .get("linked-directory")
+                .map(|skill| PathBuf::from(&skill.path)),
+            Some(root.join("linked-directory/SKILL.md"))
+        );
+
+        let category = root.join("category");
+        std::fs::create_dir_all(&category).expect("category dir");
+        symlink(&outside, category.join("linked-category")).expect("category symlink");
+        let mut skills = std::collections::HashMap::new();
+        collect_skills_from_dir(&root, &mut skills);
+        assert_eq!(skills.len(), 1);
+    }
+
+    #[test]
+    fn project_avatar_replacements_get_fresh_cache_safe_names() {
+        let first = project_avatar_destination_name("project-1", "png");
+        let second = project_avatar_destination_name("project-1", "png");
+
+        assert_ne!(first, second);
+        assert!(is_project_avatar_file(&first, "project-1"));
+        assert!(is_project_avatar_file("project-1.png", "project-1"));
+        assert!(!is_project_avatar_file(&first, "project-10"));
     }
 
     #[test]

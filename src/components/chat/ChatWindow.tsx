@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary'
 import { invoke, listen } from '@/lib/transport'
+import { generateId } from '@/lib/uuid'
 import { Bot, GitBranch, GitMerge, Layers } from 'lucide-react'
 import {
   useSession,
@@ -1748,7 +1749,7 @@ export function ChatWindow({
 
   const handleCheckGitHubIssues = useCallback(() => {
     sendMessageNow({
-      id: crypto.randomUUID(),
+      id: generateId(),
       message: CHECK_GITHUB_ISSUES_PROMPT,
       pendingImages: [],
       pendingFiles: [],

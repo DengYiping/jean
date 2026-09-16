@@ -205,7 +205,9 @@ function App() {
             label: 'Restart',
             onClick: async () => {
               const { relaunch } = await import('@tauri-apps/plugin-process')
-              await relaunch()
+              const { relaunchAfterUIStateSave } =
+                await import('@/lib/ui-state-relaunch')
+              await relaunchAfterUIStateSave(relaunch)
             },
           },
         })

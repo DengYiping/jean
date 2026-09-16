@@ -12,10 +12,23 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { useProjectsStore } from '@/store/projects-store'
 import { useCloneProject } from '@/services/projects'
 import { DirectoryBrowser } from '@/components/projects/DirectoryBrowser'
 import { toast } from 'sonner'
+import { buildCloneUrl, type GitProvider } from '@/lib/git-provider'
+import {
+  buildProjectDestination,
+  getLastProjectDestination,
+  rememberProjectDestination,
+} from '@/lib/project-destination'
 
 /** Extract a repository name from a git URL (strips .git suffix) */
 function extractRepoName(url: string): string {
@@ -34,16 +47,31 @@ export function CloneProjectModal() {
 
   const cloneProject = useCloneProject()
 
+  const [provider, setProvider] = useState<GitProvider>('github')
   const [url, setUrl] = useState('')
   const [destination, setDestination] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [browserOpen, setBrowserOpen] = useState(false)
 
   const repoName = useMemo(() => extractRepoName(url), [url])
+  const cloneUrl = useMemo(() => buildCloneUrl(provider, url), [provider, url])
+  const lastDestination = useMemo(
+    () => getLastProjectDestination(),
+    [cloneModalOpen]
+  )
+
+  useEffect(() => {
+    setDestination(
+      lastDestination && repoName
+        ? buildProjectDestination(lastDestination, repoName)
+        : ''
+    )
+  }, [lastDestination, repoName])
 
   // Reset state when modal closes
   useEffect(() => {
     if (!cloneModalOpen) {
+      setProvider('github')
       setUrl('')
       setDestination('')
       setError(null)
@@ -71,22 +99,22 @@ export function CloneProjectModal() {
       const { save } = await import('@tauri-apps/plugin-dialog')
       const selected = await save({
         title: 'Choose clone destination',
-        defaultPath: repoName || 'repo',
+        defaultPath: destination || repoName || 'repo',
       })
 
       if (selected && typeof selected === 'string') {
         setDestination(selected)
+        rememberProjectDestination(selected)
       }
     } catch (error) {
       // User cancelled
       if (error instanceof Error && error.message.includes('cancel')) return
     }
-  }, [repoName])
+  }, [destination, repoName])
 
   const handleClone = useCallback(async () => {
-    const trimmedUrl = url.trim()
-    if (!trimmedUrl) {
-      setError('Please enter a git URL.')
+    if (!cloneUrl) {
+      setError('Please enter a repository.')
       return
     }
     if (!destination) {
@@ -104,7 +132,7 @@ export function CloneProjectModal() {
 
     try {
       await cloneProject.mutateAsync({
-        url: trimmedUrl,
+        url: cloneUrl,
         path: destination,
         parentId: addProjectParentFolderId ?? undefined,
       })
@@ -114,7 +142,7 @@ export function CloneProjectModal() {
       toast.dismiss(toastId)
     }
   }, [
-    url,
+    cloneUrl,
     destination,
     repoName,
     cloneProject,
@@ -133,25 +161,49 @@ export function CloneProjectModal() {
               Clone Repository
             </DialogTitle>
             <DialogDescription>
-              Clone a remote git repository by URL.
+              Clone a remote git repository from a provider or custom URL.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-4">
-            {/* Git URL input */}
+            <div className="space-y-1.5">
+              <Label htmlFor="clone-provider" className="text-xs">
+                Git provider
+              </Label>
+              <Select
+                value={provider}
+                onValueChange={value => setProvider(value as GitProvider)}
+                disabled={cloneProject.isPending}
+              >
+                <SelectTrigger id="clone-provider" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="github">GitHub</SelectItem>
+                  <SelectItem value="gitlab">GitLab</SelectItem>
+                  <SelectItem value="custom">Custom</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Repository input */}
             <div className="space-y-1.5">
               <Label htmlFor="clone-url" className="text-xs">
-                Repository URL
+                {provider === 'custom' ? 'Repository URL' : 'Repository'}
               </Label>
               <Input
                 id="clone-url"
-                placeholder="https://github.com/user/repo.git"
+                placeholder={
+                  provider === 'custom'
+                    ? 'https://example.com/user/repo.git'
+                    : 'user/repository'
+                }
                 value={url}
                 onChange={e => setUrl(e.target.value)}
                 disabled={cloneProject.isPending}
                 autoFocus
                 onKeyDown={e => {
-                  if (e.key === 'Enter' && url.trim() && destination) {
+                  if (e.key === 'Enter' && cloneUrl && destination) {
                     e.preventDefault()
                     handleClone()
                   }
@@ -214,11 +266,15 @@ export function CloneProjectModal() {
         <DirectoryBrowser
           open={browserOpen}
           onOpenChange={setBrowserOpen}
-          onSelect={setDestination}
+          onSelect={path => {
+            setDestination(path)
+            rememberProjectDestination(path)
+          }}
           mode="save"
           title="Choose clone destination"
           description="Choose a parent folder and enter the cloned repository name."
           defaultName={repoName || 'repo'}
+          initialPath={lastDestination}
         />
       </>
     </Dialog>

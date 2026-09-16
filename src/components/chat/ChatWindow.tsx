@@ -495,7 +495,13 @@ export function ChatWindow({
     if (!deferredSessionId || !session) return
     const lastMsg = session.messages.at(-1)
     if (lastMsg?.role === 'assistant' && lastMsg.id.startsWith('running-')) {
-      hydrateRunningSnapshot(deferredSessionId, lastMsg)
+      // Web Access can receive live chunks before this session query resolves.
+      // Merge the persisted running snapshot so output before this client
+      // connected remains visible alongside those live chunks.
+      hydrateRunningSnapshot(deferredSessionId, lastMsg, {
+        allowWhileSending: true,
+        dedupeReplayedOutput: true,
+      })
     }
   }, [deferredSessionId, session])
 

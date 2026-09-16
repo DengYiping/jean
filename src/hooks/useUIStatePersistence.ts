@@ -11,6 +11,7 @@ import { isNativeApp } from '@/lib/environment'
 import { logger } from '@/lib/logger'
 import type { BrowserTab } from '@/types/browser'
 import type { UIState } from '@/types/ui-state'
+import { registerUIStateRelaunchSaver } from '@/lib/ui-state-relaunch'
 
 // Simple debounce implementation
 function debounce(
@@ -60,7 +61,7 @@ function debounce(
 export function useUIStatePersistence() {
   const { data: uiState, isSuccess: uiStateLoaded } = useUIState()
   const { data: projects = [], isSuccess: projectsLoaded } = useProjects()
-  const { mutate: saveUIState } = useSaveUIState()
+  const { mutateAsync: saveUIState } = useSaveUIState()
   const [isInitialized, setIsInitialized] = useState(false)
 
   // Create stable debounced save function
@@ -175,6 +176,15 @@ export function useUIStatePersistence() {
       version: 1, // Reset for first release
     }
   }, [])
+
+  useEffect(() => {
+    registerUIStateRelaunchSaver(async () => {
+      debouncedSaveRef.current?.cancel()
+      await saveUIState(getCurrentUIState())
+    })
+
+    return () => registerUIStateRelaunchSaver(null)
+  }, [getCurrentUIState, saveUIState])
 
   // Step 1: Initialize stores from persisted state (once, when projects are loaded)
   useEffect(() => {

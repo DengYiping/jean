@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { isNativeApp } from '@/lib/environment'
 import { invoke } from '@/lib/transport'
 import { FolderOpen, FolderPlus, Globe } from 'lucide-react'
@@ -13,6 +13,11 @@ import { Kbd } from '@/components/ui/kbd'
 import { useProjectsStore } from '@/store/projects-store'
 import { useAddProject, useInitProject } from '@/services/projects'
 import { DirectoryBrowser } from '@/components/projects/DirectoryBrowser'
+import {
+  buildProjectDestination,
+  getLastProjectDestination,
+  rememberProjectDestination,
+} from '@/lib/project-destination'
 
 export function AddProjectDialog() {
   const {
@@ -23,6 +28,10 @@ export function AddProjectDialog() {
   const addProject = useAddProject()
   const initProject = useInitProject()
   const [browserMode, setBrowserMode] = useState<'select' | 'save' | null>(null)
+  const lastDestination = useMemo(
+    () => getLastProjectDestination(),
+    [addProjectDialogOpen]
+  )
 
   const handleCloneRemote = useCallback(() => {
     const { openCloneModal } = useProjectsStore.getState()
@@ -93,10 +102,13 @@ export function AddProjectDialog() {
       const { save } = await import('@tauri-apps/plugin-dialog')
       const selected = await save({
         title: 'Create new project',
-        defaultPath: 'my-project',
+        defaultPath: lastDestination
+          ? buildProjectDestination(lastDestination, 'my-project')
+          : 'my-project',
       })
 
       if (selected && typeof selected === 'string') {
+        rememberProjectDestination(selected)
         // Check if git identity is configured before init (commit requires it)
         try {
           const identity = await invoke<{
@@ -163,6 +175,7 @@ export function AddProjectDialog() {
       }
 
       if (browserMode === 'save') {
+        rememberProjectDestination(selected)
         try {
           const identity = await invoke<{
             name: string | null
@@ -321,6 +334,7 @@ export function AddProjectDialog() {
               : 'Choose an existing git repository folder.'
           }
           defaultName={browserMode === 'save' ? 'my-project' : undefined}
+          initialPath={browserMode === 'save' ? lastDestination : undefined}
         />
       </>
     </Dialog>

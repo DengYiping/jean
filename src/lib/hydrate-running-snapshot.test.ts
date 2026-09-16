@@ -107,4 +107,54 @@ describe('hydrateRunningSnapshot', () => {
     expect(consumeReplayedText('session-1', 'world')).toBe('')
     expect(consumeReplayedText('session-1', ' next')).toBe(' next')
   })
+
+  it('merges a persisted prefix ahead of live chunks without losing tool output', () => {
+    useChatStore.setState({
+      sendingSessionIds: { 'session-1': true },
+      streamingContents: { 'session-1': ' world' },
+      streamingContentBlocks: {
+        'session-1': [{ type: 'text', text: ' world' }],
+      },
+      activeToolCalls: [
+        {
+          id: 'tool-1',
+          name: 'Bash',
+          input: { command: 'git status' },
+          output: 'live output',
+        },
+      ].reduce((tools, tool) => ({ ...tools, 'session-1': [tool] }), {}),
+    })
+
+    hydrateRunningSnapshot(
+      'session-1',
+      assistantMessage({
+        content_blocks: [
+          { type: 'text', text: 'hello' },
+          { type: 'tool_use', tool_call_id: 'tool-1' },
+        ],
+        tool_calls: [
+          {
+            id: 'tool-1',
+            name: 'Bash',
+            input: { command: 'git status' },
+          },
+        ],
+      }),
+      { allowWhileSending: true, dedupeReplayedOutput: true }
+    )
+
+    expect(useChatStore.getState().streamingContents['session-1']).toBe(
+      'hello world'
+    )
+    expect(useChatStore.getState().streamingContentBlocks['session-1']).toEqual(
+      [
+        { type: 'text', text: 'hello' },
+        { type: 'tool_use', tool_call_id: 'tool-1' },
+        { type: 'text', text: ' world' },
+      ]
+    )
+    expect(
+      useChatStore.getState().activeToolCalls['session-1']?.[0]?.output
+    ).toBe('live output')
+  })
 })

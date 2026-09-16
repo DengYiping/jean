@@ -40,6 +40,7 @@ import {
   chatQueryKeys,
   useUpdateSessionState,
   useCodexSubAgents,
+  useLoadOlderSessionMessages,
 } from '@/services/chat'
 import {
   useWorktree,
@@ -461,6 +462,28 @@ export function ChatWindow({
     activeWorktreeId,
     activeWorktreePath
   )
+  const loadOlderMessages = useLoadOlderSessionMessages()
+  const loadOlderRuns = useCallback(() => {
+    if (
+      !deferredSessionId ||
+      !activeWorktreeId ||
+      !activeWorktreePath ||
+      loadOlderMessages.isPending
+    )
+      return
+    loadOlderMessages.mutate({
+      sessionId: deferredSessionId,
+      worktreeId: activeWorktreeId,
+      worktreePath: activeWorktreePath,
+      beforeRunIndex: session?.loaded_run_start_index ?? 0,
+    })
+  }, [
+    deferredSessionId,
+    activeWorktreeId,
+    activeWorktreePath,
+    loadOlderMessages,
+    session?.loaded_run_start_index,
+  ])
   const isCodeReviewLoadingPanel = shouldShowCodeReviewLoadingPanel({
     session: session ?? undefined,
     isSessionReviewing,
@@ -1194,8 +1217,6 @@ export function ChatWindow({
       activeWorktreePath ?? null,
       {
         enabled: shouldLoadCodexSubAgents,
-        includeThreadSnapshots: true,
-        refetchWhileStreaming: isSending,
       }
     )
   const codexSubAgents = codexSubAgentData?.agents ?? []
@@ -2931,7 +2952,12 @@ export function ChatWindow({
                         {automationBadge}
                       </span>
                     )}
-                    <ChatSearchBar scrollContainerRef={scrollViewportRef} />
+                    <ChatSearchBar
+                      scrollContainerRef={scrollViewportRef}
+                      messages={messages}
+                      virtualizedListRef={virtualizedListRef}
+                      streamingContent={streamingContent}
+                    />
                     {/* Bottom fade gradient so messages don't hard-cut at the input area */}
                     <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-10 h-8 bg-gradient-to-b from-transparent to-background" />
                     {/* Session digest reminder (shows when opening a session that had activity while out of focus) */}
@@ -2985,6 +3011,15 @@ export function ChatWindow({
                             </div>
                           ) : preferences?.compact_chat_view_enabled ? (
                             <CompactMessageList
+                              key={deferredSessionId}
+                              hasOlderOnDisk={
+                                (session?.loaded_run_start_index ?? 0) > 0
+                              }
+                              loadedRunStartIndex={
+                                session?.loaded_run_start_index ?? 0
+                              }
+                              isLoadingOlder={loadOlderMessages.isPending}
+                              onLoadOlderRuns={loadOlderRuns}
                               ref={virtualizedListRef}
                               messages={messages}
                               scrollContainerRef={scrollViewportRef}
@@ -3042,6 +3077,15 @@ export function ChatWindow({
                             />
                           ) : (
                             <VirtualizedMessageList
+                              key={deferredSessionId}
+                              hasOlderOnDisk={
+                                (session?.loaded_run_start_index ?? 0) > 0
+                              }
+                              loadedRunStartIndex={
+                                session?.loaded_run_start_index ?? 0
+                              }
+                              isLoadingOlder={loadOlderMessages.isPending}
+                              onLoadOlderRuns={loadOlderRuns}
                               ref={virtualizedListRef}
                               messages={messages}
                               scrollContainerRef={scrollViewportRef}

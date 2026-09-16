@@ -10,6 +10,24 @@ import type {
   ReviewFinding,
 } from '@/types/chat'
 
+// These tests cover compact grouping; real viewport behavior is exercised separately.
+vi.mock('./hooks/useMessageVirtualizer', () => ({
+  useMessageVirtualizer: (keys: string[]) => ({
+    listRef: { current: null },
+    virtualizer: {
+      getTotalSize: () => keys.length * 240,
+      measureElement: () => {
+        /* no transport listener in this test */
+      },
+      scrollToIndex: () => {
+        /* no transport listener in this test */
+      },
+    },
+    items: keys.map((key, index) => ({ key, index, start: index * 240 })),
+    scrollMargin: 0,
+  }),
+}))
+
 const noopQuestionAnswer = (
   _toolCallId: string,
   _answers: QuestionAnswer[],

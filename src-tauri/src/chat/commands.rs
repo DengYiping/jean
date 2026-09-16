@@ -544,6 +544,7 @@ async fn load_session_with_message_run_limit(
     worktree_path: String,
     session_id: String,
     message_run_limit: Option<usize>,
+    before_run_index: Option<usize>,
 ) -> Result<Session, String> {
     log::debug!("[GetSession] session={session_id} worktree={worktree_id}");
     let sessions = load_sessions(&app, &worktree_path, &worktree_id)?;
@@ -553,8 +554,12 @@ async fn load_session_with_message_run_limit(
         .ok_or_else(|| format!("Session not found: {session_id}"))?;
 
     // Load messages from NDJSON (single source of truth)
-    let mut loaded =
-        run_log::load_session_messages_window(&app, &session_id, message_run_limit, None)?;
+    let mut loaded = run_log::load_session_messages_window(
+        &app,
+        &session_id,
+        message_run_limit,
+        before_run_index,
+    )?;
     log::debug!(
         "[GetSession] session={session_id} loaded {} messages (backend={:?})",
         loaded.messages.len(),
@@ -588,7 +593,8 @@ pub async fn get_session(
     worktree_path: String,
     session_id: String,
 ) -> Result<Session, String> {
-    load_session_with_message_run_limit(app, worktree_id, worktree_path, session_id, None).await
+    load_session_with_message_run_limit(app, worktree_id, worktree_path, session_id, None, None)
+        .await
 }
 
 pub(crate) async fn get_session_windowed(
@@ -604,8 +610,36 @@ pub(crate) async fn get_session_windowed(
         worktree_path,
         session_id,
         Some(message_run_limit),
+        None,
     )
     .await
+}
+
+/// Bounded history for interactive chat. Full-history consumers use get_session.
+#[tauri::command]
+pub async fn get_session_history(
+    app: AppHandle,
+    worktree_id: String,
+    worktree_path: String,
+    session_id: String,
+    before_run_index: Option<usize>,
+) -> Result<Session, String> {
+    load_session_with_message_run_limit(
+        app,
+        worktree_id,
+        worktree_path,
+        session_id,
+        Some(20),
+        before_run_index,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn get_codex_sub_agent_snapshot(
+    thread_id: String,
+) -> Result<CodexSubAgentSnapshot, String> {
+    Ok(read_codex_sub_agent_snapshot(thread_id).await)
 }
 
 fn is_codex_collab_tool(name: &str) -> bool {
@@ -1060,7 +1094,7 @@ pub async fn get_codex_sub_agents(
     session_id: String,
     include_thread_snapshots: Option<bool>,
 ) -> Result<CodexSubAgentIntrospectionResponse, String> {
-    let session = get_session(app, worktree_id, worktree_path, session_id).await?;
+    let session = get_session_windowed(app, worktree_id, worktree_path, session_id, 20).await?;
     let mut response = build_codex_sub_agent_introspection(&session);
 
     if include_thread_snapshots.unwrap_or(false) {

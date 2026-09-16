@@ -1,4 +1,8 @@
 import { useCallback, useEffect } from 'react'
+import {
+  mergeSessionHistory,
+  prependSessionHistory,
+} from '@/lib/session-history'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { invoke } from '@/lib/transport'
 import { toast } from 'sonner'
@@ -14,6 +18,7 @@ import type {
   ArchivedSessionEntry,
   ChatMessage,
   CodexSubAgentIntrospectionResponse,
+  CodexSubAgentSnapshot,
   ChatHistory,
   Session,
   UnreadSessionsResponse,
@@ -523,7 +528,7 @@ export function useSession(
 
       try {
         logger.debug('[useSession] fetching from disk', { sessionId })
-        const session = await invoke<Session>('get_session', {
+        const session = await invoke<Session>('get_session_history', {
           worktreeId,
           worktreePath,
           sessionId,
@@ -534,37 +539,11 @@ export function useSession(
           backend: session.backend,
         })
 
-        // Preserve optimistic messages from sendMessage.onMutate that the
-        // backend hasn't persisted yet (race: refetchOnMount fires before
-        // the send_chat_message invoke writes the user message to disk).
-        // Also preserve messages the user loaded via scroll-up pagination:
-        // fresh fetch uses INITIAL_RUN_LIMIT so its loaded_run_start_index
-        // reflects only the last N runs — using it would wrongly re-show
-        // the "load older" button for runs the cache already contains.
-        const cached = queryClient.getQueryData<Session>(
-          chatQueryKeys.session(sessionId)
+        return mergeSessionHistory(
+          session,
+          queryClient.getQueryData<Session>(chatQueryKeys.session(sessionId)),
+          useChatStore.getState().isSending(sessionId)
         )
-        if (cached && cached.messages.length > session.messages.length) {
-          logger.warn(
-            '[useSession] preserving cached messages over fresh fetch',
-            {
-              sessionId,
-              cachedCount: cached.messages.length,
-              diskCount: session.messages.length,
-              cachedStart: cached.loaded_run_start_index,
-              freshStart: session.loaded_run_start_index,
-            }
-          )
-          return {
-            ...session,
-            messages: cached.messages,
-            // Keep cached pagination cursor (reflects what's actually in
-            // messages); fresh total_runs is still authoritative.
-            loaded_run_start_index: cached.loaded_run_start_index,
-          }
-        }
-
-        return session
       } catch (error) {
         logger.warn('[useSession] FAILED to load session', { error, sessionId })
         return null
@@ -572,10 +551,48 @@ export function useSession(
     },
     enabled: !!sessionId && !!worktreeId && !!worktreePath,
     staleTime: 1000 * 60 * 5, // 5 minutes - enables instant session switching from cache
-    gcTime: 1000 * 60 * 5,
+    gcTime: 1000 * 60,
     // Respects staleTime; cross-client sync handled by cache:invalidate broadcast
     // from Rust after send_chat_message completes (JSONL fully written).
     refetchOnMount: true,
+  })
+}
+
+export function useLoadOlderSessionMessages() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (args: {
+      sessionId: string
+      worktreeId: string
+      worktreePath: string
+      beforeRunIndex: number
+    }) => invoke<Session>('get_session_history', args),
+    onError: () =>
+      toast.error('Could not load older messages. Please try again.'),
+    onSuccess: (page, args) => {
+      queryClient.setQueryData<Session>(
+        chatQueryKeys.session(args.sessionId),
+        current => (current ? prependSessionHistory(page, current) : current)
+      )
+    },
+  })
+}
+
+export function useCodexSubAgentSnapshot(
+  threadId: string | undefined,
+  enabled: boolean,
+  live = false
+) {
+  return useQuery({
+    queryKey: ['chat', 'codex-sub-agent-snapshot', threadId],
+    queryFn: () =>
+      invoke<CodexSubAgentSnapshot>('get_codex_sub_agent_snapshot', {
+        threadId,
+      }),
+    enabled: enabled && !!threadId,
+    staleTime: 5_000,
+    gcTime: 60_000,
+    refetchInterval: enabled && live ? 5_000 : false,
   })
 }
 
@@ -585,8 +602,6 @@ export function useCodexSubAgents(
   worktreePath: string | null,
   options: {
     enabled?: boolean
-    includeThreadSnapshots?: boolean
-    refetchWhileStreaming?: boolean
   } = {}
 ) {
   const enabled =
@@ -605,14 +620,14 @@ export function useCodexSubAgents(
           worktreeId,
           worktreePath,
           sessionId,
-          includeThreadSnapshots: options.includeThreadSnapshots ?? true,
+          includeThreadSnapshots: false,
         }
       )
     },
     enabled,
     staleTime: 1000 * 5,
     gcTime: 1000 * 60 * 5,
-    refetchInterval: options.refetchWhileStreaming ? 2000 : false,
+    refetchInterval: false,
   })
 }
 

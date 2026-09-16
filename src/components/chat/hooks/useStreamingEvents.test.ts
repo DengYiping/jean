@@ -1343,7 +1343,7 @@ describe('useStreamingEvents question notifications', () => {
     }
     const getSession = createDeferredPromise<typeof persistedSession>()
     mockInvoke.mockImplementation((cmd: string) => {
-      if (cmd === 'get_session') return getSession.promise
+      if (cmd === 'get_session_history') return getSession.promise
       return Promise.resolve(undefined)
     })
     useChatStore.setState({
@@ -1373,7 +1373,7 @@ describe('useStreamingEvents question notifications', () => {
 
     expect(useChatStore.getState().inputDrafts['session-1'] ?? '').toBe('')
     await waitFor(() =>
-      expect(mockInvoke).toHaveBeenCalledWith('get_session', {
+      expect(mockInvoke).toHaveBeenCalledWith('get_session_history', {
         sessionId: 'session-1',
         worktreeId: 'worktree-1',
         worktreePath: '/tmp/worktree-1',

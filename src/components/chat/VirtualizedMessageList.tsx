@@ -5,10 +5,9 @@ import {
   forwardRef,
   memo,
   useMemo,
-  useState,
   useCallback,
 } from 'react'
-import { flushSync } from 'react-dom'
+import { useMessageVirtualizer } from './hooks/useMessageVirtualizer'
 import type {
   ChatMessage,
   Question,
@@ -19,13 +18,6 @@ import { MessageItem } from './MessageItem'
 import { getProviderChangeBeforeMessage } from './message-settings-labels'
 import { ProviderChangeSeparator } from './ProviderChangeSeparator'
 import { getAssistantDurationMs } from './time-utils'
-
-/** Number of messages to render initially (from the end) */
-const INITIAL_VISIBLE_COUNT = 10
-/** Number of messages to load when scrolling up */
-const LOAD_MORE_COUNT = 20
-/** Scroll threshold in pixels to trigger loading more */
-const SCROLL_THRESHOLD = 300
 
 export interface VirtualizedMessageListHandle {
   /** Scroll to a specific message by index */
@@ -40,6 +32,10 @@ export interface VirtualizedMessageListHandle {
 }
 
 interface VirtualizedMessageListProps {
+  hasOlderOnDisk?: boolean
+  isLoadingOlder?: boolean
+  onLoadOlderRuns?: () => void
+  loadedRunStartIndex?: number
   /** Messages to render */
   messages: ChatMessage[]
   /** Ref to the scroll container (ScrollArea viewport) */
@@ -120,8 +116,7 @@ interface VirtualizedMessageListProps {
 }
 
 /**
- * Lazy-loading message list that renders the last N messages initially
- * and loads more when scrolling up. Optimized for fast initial render.
+ * Measured viewport window: offscreen messages unmount in both scroll directions.
  * Memoized to prevent re-renders when parent re-renders with same props.
  */
 export const VirtualizedMessageList = memo(
@@ -162,11 +157,14 @@ export const VirtualizedMessageList = memo(
         shouldScrollToBottom,
         onScrollToBottomHandled,
         completedDurationMs,
+        hasOlderOnDisk,
+        isLoadingOlder,
+        onLoadOlderRuns,
+        loadedRunStartIndex,
       },
       ref
     ) {
       const messageRefs = useRef<Map<number, HTMLDivElement>>(new Map())
-      const isLoadingMoreRef = useRef(false)
       const messagesRef = useRef(messages)
 
       useEffect(() => {
@@ -175,23 +173,12 @@ export const VirtualizedMessageList = memo(
 
       const getMessages = useCallback(() => messagesRef.current, [])
 
-      // Track how many messages to render (from the end)
-      const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_COUNT)
-
-      // Calculate which messages to render
-      const startIndex = Math.max(0, messages.length - visibleCount)
-      const visibleMessages = messages.slice(startIndex)
-      const hasMoreMessages = startIndex > 0
-
-      // Reset visible count when session changes (messages go to 0)
-      const prevSessionRef = useRef(sessionId)
-      useEffect(() => {
-        if (sessionId !== prevSessionRef.current) {
-          // eslint-disable-next-line react-hooks/set-state-in-effect
-          setVisibleCount(INITIAL_VISIBLE_COUNT)
-          prevSessionRef.current = sessionId
-        }
-      }, [sessionId])
+      const keys = useMemo(
+        () => messages.map(message => message.id),
+        [messages]
+      )
+      const { listRef, virtualizer, items, scrollMargin } =
+        useMessageVirtualizer(keys, scrollContainerRef)
 
       // Pre-compute hasFollowUpMessage for all messages in O(n) instead of O(n²)
       const hasFollowUpMap = useMemo(() => {
@@ -218,66 +205,13 @@ export const VirtualizedMessageList = memo(
         return map
       }, [messages])
 
-      // Load more messages when scrolling near the top.
-      // Uses flushSync so state update + DOM commit + scroll correction happen in one task.
-      const loadMore = useCallback(() => {
-        const container = scrollContainerRef.current
-        if (!container || !hasMoreMessages || isLoadingMoreRef.current) return
-
-        isLoadingMoreRef.current = true
-        const scrollHeightBefore = container.scrollHeight
-
-        flushSync(() => {
-          setVisibleCount(prev =>
-            Math.min(prev + LOAD_MORE_COUNT, messages.length)
-          )
-        })
-
-        container.scrollTop += container.scrollHeight - scrollHeightBefore
-        isLoadingMoreRef.current = false
-      }, [scrollContainerRef, hasMoreMessages, messages.length])
-
-      // Detect scroll to top
-      useEffect(() => {
-        const container = scrollContainerRef.current
-        if (!container || !hasMoreMessages) return
-
-        const handleScroll = () => {
-          if (container.scrollTop < SCROLL_THRESHOLD) {
-            loadMore()
-          }
-        }
-
-        container.addEventListener('scroll', handleScroll, { passive: true })
-        return () => container.removeEventListener('scroll', handleScroll)
-      }, [scrollContainerRef, hasMoreMessages, loadMore])
-
       // Expose methods to parent via ref
       useImperativeHandle(ref, () => ({
         scrollToIndex: (
           index: number,
           options?: { align?: 'start' | 'center' | 'end' }
         ) => {
-          // If target message isn't rendered yet, expand visibleCount first
-          if (index < startIndex) {
-            const newVisibleCount = messages.length - index + 10
-            setVisibleCount(newVisibleCount)
-            requestAnimationFrame(() => {
-              const el = messageRefs.current.get(index)
-              el?.scrollIntoView({
-                behavior: 'smooth',
-                block: options?.align ?? 'start',
-              })
-            })
-          } else {
-            const el = messageRefs.current.get(index)
-            if (el) {
-              el.scrollIntoView({
-                behavior: 'smooth',
-                block: options?.align ?? 'start',
-              })
-            }
-          }
+          virtualizer.scrollToIndex(index, { align: options?.align ?? 'start' })
         },
         isIndexInView: (index: number) => {
           const el = messageRefs.current.get(index)
@@ -290,8 +224,8 @@ export const VirtualizedMessageList = memo(
           )
         },
         getVisibleRange: () => ({
-          start: startIndex,
-          end: messages.length - 1,
+          start: items[0]?.index ?? 0,
+          end: items.at(-1)?.index ?? -1,
         }),
       }))
 
@@ -302,101 +236,129 @@ export const VirtualizedMessageList = memo(
           shouldScrollToBottom &&
           messages.length > prevMessageCountRef.current
         ) {
-          const lastEl = messageRefs.current.get(messages.length - 1)
-          if (lastEl) {
-            lastEl.scrollIntoView({ behavior: 'instant', block: 'end' })
-            onScrollToBottomHandled?.()
-          }
+          virtualizer.scrollToIndex(messages.length - 1, { align: 'end' })
+          onScrollToBottomHandled?.()
         }
         prevMessageCountRef.current = messages.length
-      }, [messages.length, shouldScrollToBottom, onScrollToBottomHandled])
+      }, [
+        messages.length,
+        shouldScrollToBottom,
+        onScrollToBottomHandled,
+        virtualizer,
+      ])
 
-      if (messages.length === 0) return null
+      if (messages.length === 0 && !hasOlderOnDisk) return null
 
       return (
         <div className="flex flex-col w-full">
-          {hasMoreMessages && (
+          {hasOlderOnDisk && (
             <button
               type="button"
-              onClick={loadMore}
+              onClick={onLoadOlderRuns}
+              disabled={isLoadingOlder}
               className="w-full text-center text-muted-foreground text-xs py-2 opacity-60 hover:opacity-100 transition-opacity cursor-pointer"
             >
-              ↑ Load more ({startIndex} older messages)
+              {isLoadingOlder
+                ? 'Loading older messages…'
+                : `↑ Load older messages (${loadedRunStartIndex} older runs)`}
             </button>
           )}
 
-          {visibleMessages.map((message, localIndex) => {
-            const globalIndex = startIndex + localIndex
-            const hasFollowUpMessage =
-              message.role === 'assistant' &&
-              (hasFollowUpMap.get(globalIndex) ?? false)
-            const durationMs = getAssistantDurationMs(
-              messages,
-              globalIndex,
-              completedDurationMs
-            )
-            const providerChange = providerChangeMap.get(globalIndex)
+          <div
+            ref={listRef}
+            style={{
+              height: virtualizer.getTotalSize(),
+              position: 'relative',
+              overflowAnchor: 'none',
+            }}
+          >
+            {items.map(item => {
+              const globalIndex = item.index
+              const message = messages[globalIndex]
+              if (!message) return null
+              const hasFollowUpMessage =
+                message.role === 'assistant' &&
+                (hasFollowUpMap.get(globalIndex) ?? false)
+              const durationMs = getAssistantDurationMs(
+                messages,
+                globalIndex,
+                completedDurationMs
+              )
+              const providerChange = providerChangeMap.get(globalIndex)
 
-            return (
-              <div
-                key={message.id}
-                ref={el => {
-                  if (el) messageRefs.current.set(globalIndex, el)
-                  else messageRefs.current.delete(globalIndex)
-                }}
-                className={
-                  globalIndex === messages.length - 1 && isSending ? '' : 'pb-4'
-                }
-              >
-                {providerChange && (
-                  <ProviderChangeSeparator change={providerChange} />
-                )}
-                <MessageItem
-                  message={message}
-                  getMessages={getMessages}
-                  messageIndex={globalIndex}
-                  totalMessages={totalMessages}
-                  pendingPlanMessageId={pendingPlanMessageId}
-                  hasFollowUpMessage={hasFollowUpMessage}
-                  sessionId={sessionId}
-                  worktreePath={worktreePath}
-                  approveShortcut={approveShortcut}
-                  approveShortcutYolo={approveShortcutYolo}
-                  approveShortcutClearContext={approveShortcutClearContext}
-                  approveShortcutClearContextBuild={
-                    approveShortcutClearContextBuild
+              return (
+                <div
+                  key={message.id}
+                  data-index={globalIndex}
+                  data-message-anchor-id={message.id}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    transform: `translateY(${item.start - scrollMargin}px)`,
+                  }}
+                  ref={el => {
+                    virtualizer.measureElement(el)
+                    if (el) messageRefs.current.set(globalIndex, el)
+                    else messageRefs.current.delete(globalIndex)
+                  }}
+                  className={
+                    globalIndex === messages.length - 1 && isSending
+                      ? ''
+                      : 'pb-4'
                   }
-                  approveButtonRef={
-                    pendingPlanMessageId === message.id
-                      ? approveButtonRef
-                      : undefined
-                  }
-                  approvedPlanMessageIds={approvedPlanMessageIds}
-                  isSending={isSending}
-                  onPlanApproval={onPlanApproval}
-                  onCustomBuildPrompt={onCustomBuildPrompt}
-                  onPlanApprovalYolo={onPlanApprovalYolo}
-                  onClearContextApproval={onClearContextApproval}
-                  onClearContextApprovalBuild={onClearContextApprovalBuild}
-                  onWorktreeBuildApproval={onWorktreeBuildApproval}
-                  onWorktreeYoloApproval={onWorktreeYoloApproval}
-                  onQuestionAnswer={onQuestionAnswer}
-                  onQuestionSkip={onQuestionSkip}
-                  onFileClick={onFileClick}
-                  scrollViewportRef={scrollContainerRef}
-                  onFixFinding={onFixFinding}
-                  onFixAllFindings={onFixAllFindings}
-                  isQuestionAnswered={isQuestionAnswered}
-                  getSubmittedAnswers={getSubmittedAnswers}
-                  areQuestionsSkipped={areQuestionsSkipped}
-                  isFindingFixed={isFindingFixed}
-                  onCopyToInput={onCopyToInput}
-                  hideApproveButtons={hideApproveButtons}
-                  durationMs={durationMs}
-                />
-              </div>
-            )
-          })}
+                >
+                  {providerChange && (
+                    <ProviderChangeSeparator change={providerChange} />
+                  )}
+                  <MessageItem
+                    message={message}
+                    getMessages={getMessages}
+                    messageIndex={globalIndex}
+                    totalMessages={totalMessages}
+                    pendingPlanMessageId={pendingPlanMessageId}
+                    hasFollowUpMessage={hasFollowUpMessage}
+                    sessionId={sessionId}
+                    worktreePath={worktreePath}
+                    approveShortcut={approveShortcut}
+                    approveShortcutYolo={approveShortcutYolo}
+                    approveShortcutClearContext={approveShortcutClearContext}
+                    approveShortcutClearContextBuild={
+                      approveShortcutClearContextBuild
+                    }
+                    approveButtonRef={
+                      pendingPlanMessageId === message.id
+                        ? approveButtonRef
+                        : undefined
+                    }
+                    approvedPlanMessageIds={approvedPlanMessageIds}
+                    isSending={isSending}
+                    onPlanApproval={onPlanApproval}
+                    onCustomBuildPrompt={onCustomBuildPrompt}
+                    onPlanApprovalYolo={onPlanApprovalYolo}
+                    onClearContextApproval={onClearContextApproval}
+                    onClearContextApprovalBuild={onClearContextApprovalBuild}
+                    onWorktreeBuildApproval={onWorktreeBuildApproval}
+                    onWorktreeYoloApproval={onWorktreeYoloApproval}
+                    onQuestionAnswer={onQuestionAnswer}
+                    onQuestionSkip={onQuestionSkip}
+                    onFileClick={onFileClick}
+                    scrollViewportRef={scrollContainerRef}
+                    onFixFinding={onFixFinding}
+                    onFixAllFindings={onFixAllFindings}
+                    isQuestionAnswered={isQuestionAnswered}
+                    getSubmittedAnswers={getSubmittedAnswers}
+                    areQuestionsSkipped={areQuestionsSkipped}
+                    isFindingFixed={isFindingFixed}
+                    onCopyToInput={onCopyToInput}
+                    hideApproveButtons={hideApproveButtons}
+                    durationMs={durationMs}
+                  />
+                </div>
+              )
+            })}
+          </div>
         </div>
       )
     }

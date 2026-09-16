@@ -1,3 +1,4 @@
+import { mergeSessionHistory } from '@/lib/session-history'
 import { useEffect } from 'react'
 import { listen, useWsConnectionStatus } from '@/lib/transport'
 import { invoke } from '@/lib/transport'
@@ -102,12 +103,15 @@ async function hydrateCompletedSessionFromBackend(
   }
 
   try {
-    const session = await invoke<Session>('get_session', {
+    const session = await invoke<Session>('get_session_history', {
       sessionId,
       worktreeId,
       worktreePath,
     })
-    return session
+    return mergeSessionHistory(
+      session,
+      queryClient.getQueryData<Session>(chatQueryKeys.session(sessionId))
+    )
   } catch (error) {
     logger.debug(
       '[useStreamingEvents] Failed to hydrate completed session from backend:',

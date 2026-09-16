@@ -137,3 +137,35 @@ bun run check:all
 ```
 
 ---
+
+### Bounded chat history and agent inspection
+
+Interactive chat uses `get_session_history`, which parses at most 20 runs per
+request. The load-older button requests the preceding page using `beforeRunIndex`;
+programmatic scrolling and search do not trigger additional history reads. Keep `get_session` for explicit
+full-history workflows such as copying context into a new worktree. Both commands
+are available through native and browser transports.
+
+The session query merges fresh recent messages with explicitly requested older
+pages, replacing overlapping messages with authoritative backend data. The
+`history_expanded` flag exists only in the frontend query cache; it is not session
+persistence. Without that flag, refreshes keep a bounded recent window. Session
+query defaults expire inactive history after one minute, including entries seeded
+by browser bootstrap. Pending user messages are preserved only while sending.
+
+Both chat layouts use `useMessageVirtualizer` with TanStack Virtual. Rows have
+stable keys and measured heights; prepending a page preserves the visible anchor.
+Only the viewport and three overscan rows on each side stay mounted. The parent
+scroll hook still controls following the live tail. Search uses loaded message
+data and navigates via the virtualizer, so it can find unmounted messages. Users
+can load older pages before searching older history.
+
+Codex summaries load recent history once and refresh through existing completion
+invalidation. Live tool events update agent status without polling parent history.
+Only an open agent dialog fetches that agent's thread snapshot; its refresh timer
+stops when the dialog closes. Avoid fetching all agent snapshots for badges or
+collapsed panels.
+
+Regression coverage includes `MessageVirtualization.test.tsx`,
+`chat-history.test.tsx`, `session-history.test.ts`, and the browser test
+`chat-history-performance.spec.ts`.

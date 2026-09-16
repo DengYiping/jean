@@ -18,3 +18,6 @@ export const queryClient = new QueryClient({
     },
   },
 })
+
+// Apply before bootstrap/setQueryData creates entries: TanStack GC times only grow.
+queryClient.setQueryDefaults(['chat', 'session'], { gcTime: 60_000 })

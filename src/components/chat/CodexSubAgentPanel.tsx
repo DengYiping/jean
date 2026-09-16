@@ -1,3 +1,4 @@
+import { useCodexSubAgentSnapshot } from '@/services/chat'
 import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
@@ -79,29 +80,39 @@ function toDisplayAgents(
   agents: CodexSubAgentSummary[],
   fallbackAgents: CodexAgent[]
 ): DisplayAgent[] {
-  if (agents.length > 0) {
-    return agents.map(agent => ({
+  const display = new Map<string, DisplayAgent>(
+    agents.map(agent => [
+      agent.id,
+      {
+        id: agent.id,
+        name: agent.name,
+        prompt: agent.prompt,
+        status: agent.status,
+        latestMessage: agent.latestMessage,
+        receiverThreadIds: agent.receiverThreadIds,
+        senderThreadId: agent.senderThreadId,
+        events: agent.events,
+        snapshot: agent.snapshot,
+      },
+    ])
+  )
+  // Tool events already stream status changes; they supersede the last disk summary.
+  for (const agent of fallbackAgents) {
+    const existing = display.get(agent.id)
+    display.set(agent.id, {
+      ...existing,
       id: agent.id,
-      name: agent.name,
+      name: existing?.name ?? agent.name,
       prompt: agent.prompt,
-      status: agent.status,
-      latestMessage: agent.latestMessage,
-      receiverThreadIds: agent.receiverThreadIds,
-      senderThreadId: agent.senderThreadId,
-      events: agent.events,
-      snapshot: agent.snapshot,
-    }))
+      status: fallbackStatus(agent.status),
+      latestMessage: agent.message ?? existing?.latestMessage,
+      receiverThreadIds: existing?.receiverThreadIds.length
+        ? existing.receiverThreadIds
+        : [agent.id],
+      events: existing?.events ?? [],
+    })
   }
-
-  return fallbackAgents.map(agent => ({
-    id: agent.id,
-    name: agent.name,
-    prompt: agent.prompt,
-    status: fallbackStatus(agent.status),
-    latestMessage: agent.message,
-    receiverThreadIds: [],
-    events: [],
-  }))
+  return [...display.values()]
 }
 
 function statusLabel(status: CodexSubAgentStatus) {
@@ -390,13 +401,44 @@ function AgentRow({ agent }: { agent: DisplayAgent }) {
             </div>
           </CollapsibleContent>
         </Collapsible>
-        <SubAgentSessionDialog agent={agent} />
+        {dialogOpen && <LiveSubAgentSessionDialog agent={agent} />}
       </Dialog>
     </li>
   )
 }
 
-function SubAgentSessionDialog({ agent }: { agent: DisplayAgent }) {
+// Mount the query only while open, so closed snapshots can leave the cache.
+function LiveSubAgentSessionDialog({ agent }: { agent: DisplayAgent }) {
+  const snapshot = useCodexSubAgentSnapshot(
+    agent.receiverThreadIds[0],
+    !agent.snapshot,
+    agent.status === 'running' || agent.status === 'starting'
+  )
+  const resolvedSnapshot =
+    snapshot.data ??
+    agent.snapshot ??
+    (snapshot.error
+      ? {
+          threadId: agent.receiverThreadIds[0] ?? agent.id,
+          messages: [],
+          error: snapshot.error.message,
+        }
+      : undefined)
+  return (
+    <SubAgentSessionDialog
+      agent={{ ...agent, snapshot: resolvedSnapshot }}
+      isLoading={snapshot.isFetching}
+    />
+  )
+}
+
+function SubAgentSessionDialog({
+  agent,
+  isLoading,
+}: {
+  agent: DisplayAgent
+  isLoading: boolean
+}) {
   const messages = agent.snapshot?.messages ?? []
 
   return (
@@ -418,6 +460,11 @@ function SubAgentSessionDialog({ agent }: { agent: DisplayAgent }) {
 
       <ScrollArea className="mt-2 h-[calc(100dvh-5.5rem)] px-4 pb-4 sm:h-auto sm:max-h-[calc(85vh-6rem)] sm:px-0 sm:pb-0">
         <div className="space-y-3 pr-3">
+          {isLoading && (
+            <div role="status" className="text-xs text-muted-foreground">
+              Loading agent messages…
+            </div>
+          )}
           {agent.snapshot?.error && (
             <div className="rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
               {agent.snapshot.error}

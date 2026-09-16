@@ -1167,6 +1167,23 @@ pub async fn dispatch_command(
                     .await?;
             to_value(result)
         }
+        "get_session_history" => {
+            let result = crate::chat::get_session_history(
+                app.clone(),
+                field(&args, "worktreeId", "worktree_id")?,
+                field(&args, "worktreePath", "worktree_path")?,
+                field(&args, "sessionId", "session_id")?,
+                field_opt(&args, "beforeRunIndex", "before_run_index")?,
+            )
+            .await?;
+            to_value(result)
+        }
+        "get_codex_sub_agent_snapshot" => {
+            let result =
+                crate::chat::get_codex_sub_agent_snapshot(field(&args, "threadId", "thread_id")?)
+                    .await?;
+            to_value(result)
+        }
         "get_codex_sub_agents" => {
             let worktree_id: String = field(&args, "worktreeId", "worktree_id")?;
             let worktree_path: String = field(&args, "worktreePath", "worktree_path")?;

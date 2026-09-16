@@ -259,6 +259,10 @@ export interface Session {
   session_derived_state?: SessionDerivedState
   /** Messages queued for sending (synced between native + web clients) */
   queued_messages?: QueuedMessage[]
+  /** Client query-cache flag: older pages were explicitly requested; never persisted. */
+  history_expanded?: boolean
+  /** Total runs reported by the backend history endpoint. */
+  total_runs?: number
   /** Oldest loaded run index when session history is paginated */
   loaded_run_start_index?: number
   /** Pending ScheduleWakeup request (one per session, last-wins) */

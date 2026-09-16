@@ -1,3 +1,4 @@
+import { useMessageVirtualizer } from './hooks/useMessageVirtualizer'
 import {
   forwardRef,
   memo,
@@ -46,7 +47,6 @@ import {
 import type { VirtualizedMessageListHandle } from './VirtualizedMessageList'
 import {
   capturePrependScrollAnchor,
-  restorePrependScrollAnchor,
   type PrependScrollAnchor,
 } from './message-scroll-anchor'
 import {
@@ -54,8 +54,6 @@ import {
   extractRecapSection,
   stripRecapFromMessage,
 } from './recap-utils'
-
-const SCROLL_THRESHOLD = 300
 
 interface CompactMessageListProps {
   messages: ChatMessage[]
@@ -851,6 +849,24 @@ export const CompactMessageList = memo(
         return items
       }, [messages, lastIndex, hasFollowUpMap])
 
+      const itemKeys = useMemo(
+        () =>
+          renderItems.map(item => ('key' in item ? item.key : item.message.id)),
+        [renderItems]
+      )
+      const {
+        listRef,
+        virtualizer,
+        items: virtualItems,
+        scrollMargin,
+      } = useMessageVirtualizer(itemKeys, scrollContainerRef)
+      const getItemMessageIndex = (item: RenderItem | undefined) =>
+        !item
+          ? -1
+          : item.kind === 'compact'
+            ? (item.messages[0]?.globalIndex ?? 0)
+            : item.globalIndex
+
       const renderMessageItem = useCallback(
         (
           item: { message: ChatMessage; globalIndex: number },
@@ -960,7 +976,6 @@ export const CompactMessageList = memo(
       // Restore scroll position after older messages prepend.
       useLayoutEffect(() => {
         const container = scrollContainerRef.current
-        const anchor = pendingPrependAnchorRef.current
         const prevLen = pendingPrependMessagesLengthRef.current
         if (!container || prevLen === null) return
         if (isLoadingOlder) return
@@ -970,19 +985,8 @@ export const CompactMessageList = memo(
 
         if (messages.length === prevLen) return
 
-        restorePrependScrollAnchor(container, anchor)
+        // Stable virtual row keys restore the prepend scroll anchor.
       }, [scrollContainerRef, isLoadingOlder, messages.length])
-
-      // Scroll-to-top auto-load.
-      useEffect(() => {
-        const container = scrollContainerRef.current
-        if (!container || !hasOlderOnDisk || hasHiddenPrompts) return
-        const handleScroll = () => {
-          if (container.scrollTop < SCROLL_THRESHOLD) loadOlder()
-        }
-        container.addEventListener('scroll', handleScroll, { passive: true })
-        return () => container.removeEventListener('scroll', handleScroll)
-      }, [scrollContainerRef, hasOlderOnDisk, hasHiddenPrompts, loadOlder])
 
       // Scroll-to-bottom on new message arrival.
       const prevMessageCountRef = useRef(messages.length)
@@ -992,16 +996,15 @@ export const CompactMessageList = memo(
           pendingPrependMessagesLengthRef.current === null &&
           messages.length > prevMessageCountRef.current
         ) {
-          const lastEl = messageRefs.current.get(lastIndex)
-          if (lastEl) {
-            lastEl.scrollIntoView({ behavior: 'instant', block: 'end' })
-            onScrollToBottomHandled?.()
-          }
+          virtualizer.scrollToIndex(renderItems.length - 1, { align: 'end' })
+          onScrollToBottomHandled?.()
         }
         prevMessageCountRef.current = messages.length
       }, [
         messages.length,
         lastIndex,
+        virtualizer,
+        renderItems.length,
         shouldScrollToBottom,
         onScrollToBottomHandled,
       ])
@@ -1011,13 +1014,15 @@ export const CompactMessageList = memo(
           index: number,
           options?: { align?: 'start' | 'center' | 'end' }
         ) => {
-          const el = messageRefs.current.get(index)
-          if (el) {
-            el.scrollIntoView({
-              behavior: 'smooth',
-              block: options?.align ?? 'start',
+          const itemIndex = renderItems.findIndex(item =>
+            item.kind === 'compact'
+              ? item.messages.some(message => message.globalIndex === index)
+              : item.globalIndex === index
+          )
+          if (itemIndex >= 0)
+            virtualizer.scrollToIndex(itemIndex, {
+              align: options?.align ?? 'start',
             })
-          }
         },
         isIndexInView: (index: number) => {
           const el = messageRefs.current.get(index)
@@ -1029,10 +1034,17 @@ export const CompactMessageList = memo(
             rect.top < containerRect.bottom && rect.bottom > containerRect.top
           )
         },
-        getVisibleRange: () => ({ start: 0, end: lastIndex }),
+        getVisibleRange: () => ({
+          start: virtualItems[0]
+            ? getItemMessageIndex(renderItems[virtualItems[0].index])
+            : 0,
+          end: virtualItems.at(-1)
+            ? getItemMessageIndex(renderItems[virtualItems.at(-1)?.index ?? -1])
+            : -1,
+        }),
       }))
 
-      if (messages.length === 0) return null
+      if (messages.length === 0 && !hasOlderOnDisk) return null
 
       return (
         <div className="flex flex-col w-full">
@@ -1056,181 +1068,221 @@ export const CompactMessageList = memo(
             </button>
           )}
 
-          {renderItems.map(item => {
-            if (item.kind === 'message') {
-              const hasFollowUpMessage =
-                item.message.role === 'assistant' &&
-                hasFollowUpFor(item.globalIndex)
-              const providerChange = providerChangeMap.get(item.globalIndex)
-              return (
-                <div
-                  key={item.message.id}
-                  data-message-anchor-id={item.message.id}
-                  ref={el => {
-                    if (el) messageRefs.current.set(item.globalIndex, el)
-                    else messageRefs.current.delete(item.globalIndex)
-                  }}
-                  className={
-                    item.globalIndex === lastIndex && isSending ? '' : 'pb-4'
-                  }
-                >
-                  {providerChange && (
-                    <ProviderChangeSeparator change={providerChange} />
-                  )}
-                  {renderMessageItem(
-                    { message: item.message, globalIndex: item.globalIndex },
-                    {
-                      hasFollowUpMessage,
-                      durationMs: durationFor(item.globalIndex, item.message),
-                    }
-                  )}
-                </div>
-              )
-            }
-
-            if (item.kind === 'question') {
-              const hasFollowUpMessage = hasFollowUpFor(item.globalIndex)
-              return (
-                <div
-                  key={item.message.id}
-                  data-message-anchor-id={item.message.id}
-                  ref={el => {
-                    if (el) messageRefs.current.set(item.globalIndex, el)
-                    else messageRefs.current.delete(item.globalIndex)
-                  }}
-                  className="pb-4"
-                >
-                  <CompactQuestionMessage
-                    message={item.message}
-                    globalIndex={item.globalIndex}
-                    totalMessages={totalMessages}
-                    hasFollowUpMessage={hasFollowUpMessage}
-                    durationMs={durationFor(item.globalIndex, item.message)}
-                    sessionId={sessionId}
-                    onQuestionAnswer={onQuestionAnswer}
-                    onQuestionSkip={onQuestionSkip}
-                    isQuestionAnswered={isQuestionAnswered}
-                    getSubmittedAnswers={getSubmittedAnswers}
-                    areQuestionsSkipped={areQuestionsSkipped}
-                    renderMessage={renderMessageItem}
-                    hasFollowUpFor={hasFollowUpFor}
-                    durationFor={durationFor}
-                  />
-                </div>
-              )
-            }
-
-            if (item.kind === 'steered') {
-              return (
-                <div key={item.key} className="pb-4">
-                  <SteeredPromptGroup
-                    texts={item.texts}
-                    worktreePath={worktreePath}
-                    onCopyText={
-                      onCopyToInput
-                        ? text =>
-                            onCopyToInput({
-                              id: `${item.messageId}-steered-copy`,
-                              session_id:
-                                messages[item.globalIndex]?.session_id ??
-                                sessionId,
-                              role: 'user',
-                              content: text,
-                              timestamp:
-                                messages[item.globalIndex]?.timestamp ??
-                                Date.now(),
-                              content_blocks: [],
-                              tool_calls: [],
-                            })
-                        : undefined
-                    }
-                  />
-                </div>
-              )
-            }
-
-            const singleMessage = item.messages[0]
-            if (
-              item.messages.length === 1 &&
-              singleMessage &&
-              isPureTextAssistantMessage(singleMessage.message)
-            ) {
-              const hasFollowUpMessage = hasFollowUpFor(
-                singleMessage.globalIndex
-              )
-              return (
-                <div
-                  key={singleMessage.message.id}
-                  ref={el => {
-                    if (el)
-                      messageRefs.current.set(singleMessage.globalIndex, el)
-                    else messageRefs.current.delete(singleMessage.globalIndex)
-                  }}
-                  className={
-                    singleMessage.globalIndex === lastIndex && isSending
-                      ? ''
-                      : 'pb-4'
-                  }
-                >
-                  {renderMessageItem(singleMessage, {
-                    hasFollowUpMessage,
-                    durationMs: durationFor(
-                      singleMessage.globalIndex,
-                      singleMessage.message
-                    ),
-                  })}
-                </div>
-              )
-            }
-
-            const isLatestCompact =
-              renderItems.length > 0 &&
-              renderItems[renderItems.length - 1] === item
-            const latestTextIsRecap =
-              Boolean(item.latestText) &&
-              RECAP_HEADING_RE.test(item.latestText ?? '')
-            const hasCancelledMessage = item.messages.some(
-              ({ message }) => message.cancelled
-            )
-            const showLatestText =
-              isLatestCompact &&
-              !hasCancelledMessage &&
-              Boolean(item.latestText) &&
-              !(latestTextIsRecap && latestRunHasPlan)
-            const surfaceRecap = latestTextIsRecap && showLatestText
-            const surfacedLatestToolCalls = showLatestText
-              ? item.messages.flatMap(({ message }) => message.tool_calls ?? [])
-              : []
-            return (
-              <div key={item.key}>
-                <CompactActivityRow
-                  group={item.messages}
-                  total={totalMessages}
-                  renderMessage={renderMessageItem}
-                  hasFollowUpFor={hasFollowUpFor}
-                  durationFor={durationFor}
-                  recapShownExternally={surfaceRecap}
-                />
-                {showLatestText && (
-                  <div className="pb-4">
-                    <Markdown
-                      streaming={false}
-                      messageId={item.key}
-                      sessionId={sessionId}
+          <div
+            ref={listRef}
+            style={{
+              height: virtualizer.getTotalSize(),
+              position: 'relative',
+              overflowAnchor: 'none',
+            }}
+          >
+            {virtualItems.map(virtualItem => {
+              const item = renderItems[virtualItem.index]
+              if (!item) return null
+              const renderItem = () => {
+                if (item.kind === 'message') {
+                  const hasFollowUpMessage =
+                    item.message.role === 'assistant' &&
+                    hasFollowUpFor(item.globalIndex)
+                  const providerChange = providerChangeMap.get(item.globalIndex)
+                  return (
+                    <div
+                      key={item.message.id}
+                      data-message-anchor-id={item.message.id}
+                      ref={el => {
+                        if (el) messageRefs.current.set(item.globalIndex, el)
+                        else messageRefs.current.delete(item.globalIndex)
+                      }}
+                      className={
+                        item.globalIndex === lastIndex && isSending
+                          ? ''
+                          : 'pb-4'
+                      }
                     >
-                      {item.latestText ?? ''}
-                    </Markdown>
-                    {surfacedLatestToolCalls.length > 0 && (
-                      <EditedFilesDisplay
-                        toolCalls={surfacedLatestToolCalls}
-                        worktreePath={worktreePath}
+                      {providerChange && (
+                        <ProviderChangeSeparator change={providerChange} />
+                      )}
+                      {renderMessageItem(
+                        {
+                          message: item.message,
+                          globalIndex: item.globalIndex,
+                        },
+                        {
+                          hasFollowUpMessage,
+                          durationMs: durationFor(
+                            item.globalIndex,
+                            item.message
+                          ),
+                        }
+                      )}
+                    </div>
+                  )
+                }
+
+                if (item.kind === 'question') {
+                  const hasFollowUpMessage = hasFollowUpFor(item.globalIndex)
+                  return (
+                    <div
+                      key={item.message.id}
+                      data-message-anchor-id={item.message.id}
+                      ref={el => {
+                        if (el) messageRefs.current.set(item.globalIndex, el)
+                        else messageRefs.current.delete(item.globalIndex)
+                      }}
+                      className="pb-4"
+                    >
+                      <CompactQuestionMessage
+                        message={item.message}
+                        globalIndex={item.globalIndex}
+                        totalMessages={totalMessages}
+                        hasFollowUpMessage={hasFollowUpMessage}
+                        durationMs={durationFor(item.globalIndex, item.message)}
+                        sessionId={sessionId}
+                        onQuestionAnswer={onQuestionAnswer}
+                        onQuestionSkip={onQuestionSkip}
+                        isQuestionAnswered={isQuestionAnswered}
+                        getSubmittedAnswers={getSubmittedAnswers}
+                        areQuestionsSkipped={areQuestionsSkipped}
+                        renderMessage={renderMessageItem}
+                        hasFollowUpFor={hasFollowUpFor}
+                        durationFor={durationFor}
                       />
+                    </div>
+                  )
+                }
+
+                if (item.kind === 'steered') {
+                  return (
+                    <div key={item.key} className="pb-4">
+                      <SteeredPromptGroup
+                        texts={item.texts}
+                        worktreePath={worktreePath}
+                        onCopyText={
+                          onCopyToInput
+                            ? text =>
+                                onCopyToInput({
+                                  id: `${item.messageId}-steered-copy`,
+                                  session_id:
+                                    messages[item.globalIndex]?.session_id ??
+                                    sessionId,
+                                  role: 'user',
+                                  content: text,
+                                  timestamp:
+                                    messages[item.globalIndex]?.timestamp ??
+                                    Date.now(),
+                                  content_blocks: [],
+                                  tool_calls: [],
+                                })
+                            : undefined
+                        }
+                      />
+                    </div>
+                  )
+                }
+
+                const singleMessage = item.messages[0]
+                if (
+                  item.messages.length === 1 &&
+                  singleMessage &&
+                  isPureTextAssistantMessage(singleMessage.message)
+                ) {
+                  const hasFollowUpMessage = hasFollowUpFor(
+                    singleMessage.globalIndex
+                  )
+                  return (
+                    <div
+                      key={singleMessage.message.id}
+                      ref={el => {
+                        if (el)
+                          messageRefs.current.set(singleMessage.globalIndex, el)
+                        else
+                          messageRefs.current.delete(singleMessage.globalIndex)
+                      }}
+                      className={
+                        singleMessage.globalIndex === lastIndex && isSending
+                          ? ''
+                          : 'pb-4'
+                      }
+                    >
+                      {renderMessageItem(singleMessage, {
+                        hasFollowUpMessage,
+                        durationMs: durationFor(
+                          singleMessage.globalIndex,
+                          singleMessage.message
+                        ),
+                      })}
+                    </div>
+                  )
+                }
+
+                const isLatestCompact =
+                  renderItems.length > 0 &&
+                  renderItems[renderItems.length - 1] === item
+                const latestTextIsRecap =
+                  Boolean(item.latestText) &&
+                  RECAP_HEADING_RE.test(item.latestText ?? '')
+                const hasCancelledMessage = item.messages.some(
+                  ({ message }) => message.cancelled
+                )
+                const showLatestText =
+                  isLatestCompact &&
+                  !hasCancelledMessage &&
+                  Boolean(item.latestText) &&
+                  !(latestTextIsRecap && latestRunHasPlan)
+                const surfaceRecap = latestTextIsRecap && showLatestText
+                const surfacedLatestToolCalls = showLatestText
+                  ? item.messages.flatMap(
+                      ({ message }) => message.tool_calls ?? []
+                    )
+                  : []
+                return (
+                  <div key={item.key}>
+                    <CompactActivityRow
+                      group={item.messages}
+                      total={totalMessages}
+                      renderMessage={renderMessageItem}
+                      hasFollowUpFor={hasFollowUpFor}
+                      durationFor={durationFor}
+                      recapShownExternally={surfaceRecap}
+                    />
+                    {showLatestText && (
+                      <div className="pb-4">
+                        <Markdown
+                          streaming={false}
+                          messageId={item.key}
+                          sessionId={sessionId}
+                        >
+                          {item.latestText ?? ''}
+                        </Markdown>
+                        {surfacedLatestToolCalls.length > 0 && (
+                          <EditedFilesDisplay
+                            toolCalls={surfacedLatestToolCalls}
+                            worktreePath={worktreePath}
+                          />
+                        )}
+                      </div>
                     )}
                   </div>
-                )}
-              </div>
-            )
-          })}
+                )
+              }
+              return (
+                <div
+                  key={virtualItem.key}
+                  data-index={virtualItem.index}
+                  ref={virtualizer.measureElement}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    transform: `translateY(${virtualItem.start - scrollMargin}px)`,
+                  }}
+                >
+                  {renderItem()}
+                </div>
+              )
+            })}
+          </div>
         </div>
       )
     }

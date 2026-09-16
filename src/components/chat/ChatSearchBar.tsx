@@ -1,18 +1,25 @@
+import type { ChatMessage } from '@/types/chat'
+import type { VirtualizedMessageListHandle } from './VirtualizedMessageList'
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import { useUIStore } from '@/store/ui-store'
 import { ChevronDown, ChevronUp, X } from 'lucide-react'
 
 interface ChatSearchBarProps {
+  streamingContent?: string
+  messages?: ChatMessage[]
+  virtualizedListRef?: RefObject<VirtualizedMessageListHandle | null>
   scrollContainerRef: RefObject<HTMLElement | null>
 }
 
 interface MatchInfo {
-  node: Text
+  node?: Text
+  messageIndex?: number
   index: number
   length: number
 }
 
 function rangeFromMatch(match: MatchInfo): Range | null {
+  if (!match.node) return null
   try {
     const range = new Range()
     range.setStart(match.node, match.index)
@@ -32,7 +39,12 @@ function scrollRangeIntoView(range: Range) {
   element?.scrollIntoView({ block: 'center', behavior: 'smooth' })
 }
 
-export function ChatSearchBar({ scrollContainerRef }: ChatSearchBarProps) {
+export function ChatSearchBar({
+  scrollContainerRef,
+  messages,
+  virtualizedListRef,
+  streamingContent,
+}: ChatSearchBarProps) {
   const chatSearchOpen = useUIStore(state => state.chatSearchOpen)
   const setChatSearchOpen = useUIStore(state => state.setChatSearchOpen)
 
@@ -55,6 +67,17 @@ export function ChatSearchBar({ scrollContainerRef }: ChatSearchBarProps) {
       const match = allMatches[index]
       if (!match) return
 
+      if (match.messageIndex !== undefined) {
+        if (match.messageIndex === messages?.length) {
+          const viewport = scrollContainerRef.current
+          viewport?.scrollTo({ top: viewport.scrollHeight })
+        } else {
+          virtualizedListRef?.current?.scrollToIndex(match.messageIndex, {
+            align: 'center',
+          })
+        }
+        return
+      }
       const range = rangeFromMatch(match)
       if (!range) return
 
@@ -63,7 +86,12 @@ export function ChatSearchBar({ scrollContainerRef }: ChatSearchBarProps) {
       }
       scrollRangeIntoView(range)
     },
-    [supportsHighlightAPI]
+    [
+      supportsHighlightAPI,
+      virtualizedListRef,
+      messages?.length,
+      scrollContainerRef,
+    ]
   )
 
   const performSearch = useCallback(
@@ -78,6 +106,37 @@ export function ChatSearchBar({ scrollContainerRef }: ChatSearchBarProps) {
 
       const lowerQuery = searchQuery.toLowerCase()
       const found: MatchInfo[] = []
+      if (messages) {
+        messages.forEach((message, messageIndex) => {
+          const text = [
+            message.content,
+            ...message.tool_calls.map(tool => JSON.stringify(tool)),
+          ]
+            .join('\n')
+            .toLowerCase()
+          let index = text.indexOf(lowerQuery)
+          while (index >= 0) {
+            found.push({ messageIndex, index, length: searchQuery.length })
+            index = text.indexOf(lowerQuery, index + searchQuery.length)
+          }
+        })
+        let index = streamingContent?.toLowerCase().indexOf(lowerQuery) ?? -1
+        while (index >= 0) {
+          found.push({
+            messageIndex: messages.length,
+            index,
+            length: searchQuery.length,
+          })
+          index =
+            streamingContent
+              ?.toLowerCase()
+              .indexOf(lowerQuery, index + searchQuery.length) ?? -1
+        }
+        setMatches(found)
+        setActiveIndex(0)
+        highlightActiveMatch(0, found)
+        return
+      }
       const walker = document.createTreeWalker(
         scrollContainerRef.current,
         NodeFilter.SHOW_TEXT,
@@ -127,6 +186,8 @@ export function ChatSearchBar({ scrollContainerRef }: ChatSearchBarProps) {
       highlightActiveMatch,
       scrollContainerRef,
       supportsHighlightAPI,
+      messages,
+      streamingContent,
     ]
   )
 
@@ -163,7 +224,8 @@ export function ChatSearchBar({ scrollContainerRef }: ChatSearchBarProps) {
   }, [chatSearchOpen, performSearch, query])
 
   useEffect(() => {
-    if (!chatSearchOpen || !query || !scrollContainerRef.current) return
+    if (messages || !chatSearchOpen || !query || !scrollContainerRef.current)
+      return
 
     const observer = new MutationObserver(() => {
       performSearch(query)
@@ -174,7 +236,57 @@ export function ChatSearchBar({ scrollContainerRef }: ChatSearchBarProps) {
       characterData: true,
     })
     return () => observer.disconnect()
-  }, [chatSearchOpen, performSearch, query, scrollContainerRef])
+  }, [chatSearchOpen, performSearch, query, scrollContainerRef, messages])
+
+  // Highlight mounted text without retaining detached DOM nodes or restarting navigation.
+  useEffect(() => {
+    const viewport = scrollContainerRef.current
+    if (
+      !messages ||
+      !chatSearchOpen ||
+      !query ||
+      !viewport ||
+      !supportsHighlightAPI
+    )
+      return
+    const highlightVisibleText = () => {
+      const ranges: Range[] = []
+      const walker = document.createTreeWalker(viewport, NodeFilter.SHOW_TEXT)
+      let node: Text | null
+      while ((node = walker.nextNode() as Text | null)) {
+        const text = node.textContent?.toLowerCase() ?? ''
+        let offset = text.indexOf(query.toLowerCase())
+        while (offset >= 0) {
+          const range = rangeFromMatch({
+            node,
+            index: offset,
+            length: query.length,
+          })
+          if (range) ranges.push(range)
+          offset = text.indexOf(query.toLowerCase(), offset + query.length)
+        }
+      }
+      CSS.highlights.set('chat-search', new Highlight(...ranges))
+    }
+    highlightVisibleText()
+    const observer = new MutationObserver(highlightVisibleText)
+    observer.observe(viewport, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    })
+    return () => {
+      observer.disconnect()
+      clearHighlights()
+    }
+  }, [
+    messages,
+    chatSearchOpen,
+    query,
+    scrollContainerRef,
+    supportsHighlightAPI,
+    clearHighlights,
+  ])
 
   useEffect(() => {
     if (chatSearchOpen) {
@@ -239,6 +351,7 @@ export function ChatSearchBar({ scrollContainerRef }: ChatSearchBarProps) {
         <span
           className="text-xs text-muted-foreground whitespace-nowrap"
           aria-live="polite"
+          title={messages ? 'Matches in loaded history' : undefined}
         >
           {matches.length > 0 ? `${activeIndex + 1}/${matches.length}` : '0/0'}
         </span>

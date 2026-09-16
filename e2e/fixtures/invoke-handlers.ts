@@ -117,6 +117,14 @@ export const defaultResponses: Record<string, unknown> = {
       is_unread: false,
     },
   },
+  get_session_history: {
+    id: 'unknown',
+    name: 'Session',
+    messages: [],
+    total_runs: 0,
+    loaded_run_start_index: 0,
+  },
+  get_codex_sub_agent_snapshot: { threadId: 'unknown', messages: [] },
   get_codex_sub_agents: {
     sessionId: 'unknown',
     parentThreadId: null,

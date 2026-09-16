@@ -1215,6 +1215,30 @@ export const test = base.extend<TauriMockFixtures>({
                   }),
                 }
           },
+          get_session_history: args => {
+            const session = handlers.get_session?.(args) as Record<string, any>
+            const messages = (session.messages ?? []) as Array<
+              Record<string, any>
+            >
+            const starts = messages.flatMap((message, index) =>
+              message.role === 'user' ? [index] : []
+            )
+            if (messages.length && starts[0] !== 0) starts.unshift(0)
+            const end = Math.min(
+              Number(args?.beforeRunIndex ?? starts.length),
+              starts.length
+            )
+            const start = Math.max(0, end - 20)
+            return {
+              ...session,
+              messages: messages.slice(
+                starts[start] ?? messages.length,
+                starts[end] ?? messages.length
+              ),
+              total_runs: starts.length,
+              loaded_run_start_index: start,
+            }
+          },
           list_unread_sessions: () => {
             const entries: Array<Record<string, unknown>> = []
             for (const [worktreeId, store] of Object.entries(sessionStore)) {

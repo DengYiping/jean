@@ -14,6 +14,7 @@ import {
   type InitialData,
 } from '@/lib/transport'
 import { isNativeApp } from '@/lib/environment'
+import { mergeSessionHistory } from '@/lib/session-history'
 import { setServerPlatform } from '@/lib/platform'
 import { projectsQueryKeys } from '@/services/projects'
 import { chatQueryKeys } from '@/services/chat'
@@ -1238,11 +1239,18 @@ function App() {
             }
             if (worktreePath) {
               try {
-                sessionSnapshot = await invoke<Session>('get_session', {
-                  sessionId: session.session_id,
-                  worktreeId: session.worktree_id,
-                  worktreePath,
-                })
+                const freshSnapshot = await invoke<Session>(
+                  'get_session_history',
+                  {
+                    sessionId: session.session_id,
+                    worktreeId: session.worktree_id,
+                    worktreePath,
+                  }
+                )
+                sessionSnapshot = mergeSessionHistory(
+                  freshSnapshot,
+                  sessionSnapshot
+                )
                 queryClient.setQueryData(
                   chatQueryKeys.session(session.session_id),
                   sessionSnapshot

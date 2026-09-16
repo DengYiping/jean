@@ -35,6 +35,7 @@ interface DirectoryBrowserProps {
   title?: string
   description?: string
   defaultName?: string
+  initialPath?: string
 }
 
 function buildSavePath(currentPath: string, name: string): string {
@@ -52,6 +53,7 @@ export function DirectoryBrowser({
   title,
   description,
   defaultName,
+  initialPath,
 }: DirectoryBrowserProps) {
   const [result, setResult] = useState<BrowseDirectoryResult | null>(null)
   const [pathInput, setPathInput] = useState('')
@@ -94,8 +96,8 @@ export function DirectoryBrowser({
 
   useEffect(() => {
     if (!open) return
-    void loadDirectory()
-  }, [loadDirectory, open])
+    void loadDirectory(initialPath)
+  }, [initialPath, loadDirectory, open])
 
   const visibleEntries = useMemo(
     () =>

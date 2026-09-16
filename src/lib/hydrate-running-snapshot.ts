@@ -25,10 +25,54 @@ function extractSnapshotText(message: ChatMessage): string {
   return textParts.join('')
 }
 
+function appendWithoutOverlap(existing: string, incoming: string): string {
+  if (!existing || !incoming) return existing + incoming
+  if (existing.endsWith(incoming)) return existing
+
+  const maxOverlap = Math.min(existing.length, incoming.length)
+  for (let length = maxOverlap; length > 0; length--) {
+    if (existing.endsWith(incoming.slice(0, length))) {
+      return existing + incoming.slice(length)
+    }
+  }
+  return existing + incoming
+}
+
+function mergeSnapshotBlocks(
+  snapshotBlocks: NonNullable<ChatMessage['content_blocks']>,
+  liveBlocks: NonNullable<ChatMessage['content_blocks']>
+): NonNullable<ChatMessage['content_blocks']> {
+  const merged = [...snapshotBlocks]
+
+  for (const block of liveBlocks) {
+    const last = merged.at(-1)
+    if (block.type === 'tool_use') {
+      if (
+        merged.some(
+          existing =>
+            existing.type === 'tool_use' &&
+            existing.tool_call_id === block.tool_call_id
+        )
+      ) {
+        continue
+      }
+      merged.push(block)
+    } else if (block.type === 'text' && last?.type === 'text') {
+      last.text = appendWithoutOverlap(last.text, block.text)
+    } else if (block.type === 'thinking' && last?.type === 'thinking') {
+      last.thinking = appendWithoutOverlap(last.thinking, block.thinking)
+    } else {
+      merged.push(block)
+    }
+  }
+
+  return coalesceContentBlocks(merged)
+}
+
 /**
  * Rebuild the in-memory streaming state from a persisted running assistant
- * snapshot. Skip when this client already has live streaming state so reconnect
- * or resume flows do not inject duplicate transient UI.
+ * snapshot. When live chunks arrive before the session query, merge the
+ * persisted prefix ahead of the in-memory state instead of losing either.
  */
 export function hydrateRunningSnapshot(
   sessionId: string,
@@ -40,39 +84,42 @@ export function hydrateRunningSnapshot(
     return false
   }
 
-  const hasLiveStreamingState =
-    (store.streamingContentBlocks[sessionId]?.length ?? 0) > 0 ||
-    (store.activeToolCalls[sessionId]?.length ?? 0) > 0
-
-  if (hasLiveStreamingState) {
-    return false
-  }
-
   const snapshotText = extractSnapshotText(message)
-  if (snapshotText) {
-    store.setStreamingContent(sessionId, snapshotText)
+  const normalizedBlocks = coalesceContentBlocks(message.content_blocks ?? [])
+  const liveBlocks = store.streamingContentBlocks[sessionId] ?? []
+  const mergedBlocks = mergeSnapshotBlocks(normalizedBlocks, liveBlocks)
+  const liveText = store.streamingContents[sessionId] ?? ''
+  const mergedText = appendWithoutOverlap(snapshotText, liveText)
+  const snapshotTools = message.tool_calls ?? []
+  const liveTools = store.activeToolCalls[sessionId] ?? []
+  const mergedTools = [...snapshotTools]
+  for (const liveTool of liveTools) {
+    const index = mergedTools.findIndex(tool => tool.id === liveTool.id)
+    if (index === -1) mergedTools.push(liveTool)
+    else mergedTools[index] = { ...mergedTools[index], ...liveTool }
   }
 
-  const normalizedBlocks = coalesceContentBlocks(message.content_blocks ?? [])
+  useChatStore.setState(state => ({
+    streamingContents: {
+      ...state.streamingContents,
+      [sessionId]: mergedText,
+    },
+    streamingContentBlocks: {
+      ...state.streamingContentBlocks,
+      [sessionId]: mergedBlocks,
+    },
+    activeToolCalls: {
+      ...state.activeToolCalls,
+      [sessionId]: mergedTools,
+    },
+  }))
+
   if (options.dedupeReplayedOutput) {
     replayBlocks[sessionId] = normalizedBlocks
   }
-  for (const block of normalizedBlocks) {
-    if (block.type === 'text') {
-      store.addTextBlock(sessionId, block.text)
-    } else if (block.type === 'tool_use') {
-      store.addToolBlock(sessionId, block.tool_call_id)
-    } else if (block.type === 'thinking') {
-      store.addThinkingBlock(sessionId, block.thinking)
-    }
-  }
-
-  for (const toolCall of message.tool_calls ?? []) {
-    store.addToolCall(sessionId, toolCall)
-  }
 
   return Boolean(
-    snapshotText || normalizedBlocks.length || (message.tool_calls?.length ?? 0)
+    snapshotText || normalizedBlocks.length || snapshotTools.length
   )
 }
 

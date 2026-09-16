@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { invoke } from '@/lib/transport'
@@ -41,6 +41,49 @@ describe('useBackgroundInvestigation', () => {
       autoInvestigateSentryIssueWorktreeIds: new Set(),
       autoOpenSessionWorktreeIds: new Set(),
       autoInvestigateOverrides: {},
+    })
+  })
+
+  it('starts when a pending worktree becomes ready without navigation', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const cacheKey = [...projectsQueryKeys.all, 'worktree', 'worktree-1']
+    queryClient.setQueryData<Worktree>(cacheKey, {
+      id: 'worktree-1',
+      project_id: 'project-1',
+      path: '/tmp/worktree-1',
+      status: 'pending',
+    } as Worktree)
+    vi.mocked(invoke).mockImplementation(async command => {
+      if (command === 'list_loaded_issue_contexts') return [{ number: 42 }]
+      if (command === 'start_background_investigation') {
+        return {
+          sessionId: 'session-1',
+          worktreeId: 'worktree-1',
+          status: 'investigation_started',
+        }
+      }
+      throw new Error(`Unexpected command: ${command}`)
+    })
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
+    renderHook(() => useBackgroundInvestigation(), { wrapper })
+
+    expect(invoke).not.toHaveBeenCalled()
+    act(() => {
+      queryClient.setQueryData<Worktree>(cacheKey, old => ({
+        ...(old as Worktree),
+        status: 'ready',
+      }))
+    })
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith(
+        'start_background_investigation',
+        expect.objectContaining({ worktreeId: 'worktree-1' })
+      )
     })
   })
 

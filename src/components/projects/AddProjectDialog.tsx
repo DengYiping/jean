@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { isNativeApp } from '@/lib/environment'
+import { isMacOS } from '@/lib/platform'
 import { invoke } from '@/lib/transport'
 import { FolderOpen, FolderPlus, Globe } from 'lucide-react'
 import {
@@ -41,7 +42,9 @@ export function AddProjectDialog() {
   const isPending = addProject.isPending || initProject.isPending
 
   const handleAddExisting = useCallback(async () => {
-    if (!isNativeApp()) {
+    // The native macOS picker can terminate the process; use Jean's browser
+    // there while retaining the platform picker on Windows and Linux.
+    if (!isNativeApp() || isMacOS) {
       setBrowserMode('select')
       return
     }
@@ -92,7 +95,7 @@ export function AddProjectDialog() {
   }, [addProject, addProjectParentFolderId, setAddProjectDialogOpen])
 
   const handleInitNew = useCallback(async () => {
-    if (!isNativeApp()) {
+    if (!isNativeApp() || isMacOS) {
       setBrowserMode('save')
       return
     }

@@ -1376,6 +1376,7 @@ export const fileEditModeOptions: { value: FileEditMode; label: string }[] = [
 export type ClaudeModel =
   | 'claude-fable-5-1'
   | 'claude-fable-5'
+  | 'claude-opus-5-5'
   | 'claude-opus-5'
   | 'claude-sonnet-5'
   | 'claude-opus-4-8'
@@ -1399,6 +1400,7 @@ export type ClaudeModel =
 export const modelOptions: { value: ClaudeModel; label: string }[] = [
   { value: 'claude-fable-5-1', label: 'Claude Fable 5.1' },
   { value: 'claude-fable-5', label: 'Claude Fable 5' },
+  { value: 'claude-opus-5-5', label: 'Claude Opus 5.5' },
   { value: 'claude-opus-5', label: 'Claude Opus 5' },
   { value: 'claude-sonnet-5', label: 'Claude Sonnet 5' },
   { value: 'claude-opus-4-8[1m]', label: 'Claude Opus 4.8 (1M)' },
@@ -1518,6 +1520,8 @@ export const effortLevelOptions: {
 
 export type KnownCodexModel =
   | 'gpt-6-astra'
+  | 'gpt-6-sol'
+  | 'gpt-6-luna'
   | 'gpt-5.6-sol'
   | 'gpt-5.6-terra'
   | 'gpt-5.6-luna'
@@ -1543,6 +1547,8 @@ export interface CustomCodexModel {
 
 export const codexModelOptions: { value: KnownCodexModel; label: string }[] = [
   { value: 'gpt-6-astra', label: 'GPT 6 Astra' },
+  { value: 'gpt-6-sol', label: 'GPT 6 Sol' },
+  { value: 'gpt-6-luna', label: 'GPT 6 Luna' },
   { value: 'gpt-5.6-sol', label: 'GPT 5.6 Sol' },
   { value: 'gpt-5.6-terra', label: 'GPT 5.6 Terra' },
   { value: 'gpt-5.6-luna', label: 'GPT 5.6 Luna' },

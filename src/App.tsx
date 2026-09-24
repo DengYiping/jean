@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   invoke,
+  useWsConnectionChecking,
   useWsConnectionStatus,
   useWsDataReady,
   setWsDataReady,
@@ -122,14 +123,16 @@ function WsAuthErrorOverlay() {
   )
 }
 
-function WsReconnectingOverlay() {
+function WsReconnectingOverlay({ checking = false }: { checking?: boolean }) {
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-background/90 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background/90 backdrop-blur-sm">
       <div className="flex flex-col items-center gap-3">
         <div className="size-6 animate-spin rounded-full border-2 border-muted border-t-primary" />
-        <div className="text-sm font-medium">Reconnecting...</div>
+        <div className="text-sm font-medium">
+          {checking ? 'Checking connection to Jean...' : 'Reconnecting...'}
+        </div>
         <div className="text-xs text-muted-foreground">
-          Reloading session state
+          {checking ? 'Verifying server connection' : 'Reloading session state'}
         </div>
       </div>
     </div>
@@ -593,6 +596,7 @@ function App() {
   // On first connect: invalidate non-preloaded queries.
   // On reconnect: re-fetch bulk data via HTTP to restore everything fast.
   const wsConnected = useWsConnectionStatus()
+  const wsCheckingConnection = useWsConnectionChecking()
   const wsDataReady = useWsDataReady()
   const wsAuthError = useWsAuthError()
   const hadWsConnectionRef = useRef(false)
@@ -1333,6 +1337,9 @@ function App() {
       <ThemeProvider>
         <MainWindow />
         {showReconnectOverlay && <WsReconnectingOverlay />}
+        {!isNativeApp() && wsCheckingConnection && (
+          <WsReconnectingOverlay checking />
+        )}
         {!isNativeApp() && <WsAuthErrorOverlay />}
       </ThemeProvider>
     </ErrorBoundary>

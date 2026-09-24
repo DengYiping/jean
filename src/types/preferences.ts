@@ -1244,6 +1244,7 @@ export interface AppPreferences {
   codex_model_provider_overrides: Record<string, string> // Codex model -> Codex modelProvider id override
   selected_opencode_model: string // Default OpenCode model (provider/model)
   claude_update_command: string | null // Optional Claude install/update command, e.g. "pnpm install -g @anthropic-ai/claude-code"
+  claude_launch_command: string | null // Optional wrapper used to launch Claude sessions, e.g. "clad"
   codex_update_command: string | null // Optional Codex install/update command, e.g. "npm install -g @openai/codex"
   opencode_launch_command: string | null // Optional OpenCode launcher command, e.g. "dvx opencode"
   default_codex_reasoning_effort: CodexReasoningEffort // Default reasoning effort for Codex: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
@@ -2333,6 +2334,7 @@ export const defaultPreferences: AppPreferences = {
   codex_model_provider_overrides: {}, // Default: use Codex configured provider
   selected_opencode_model: 'opencode/gpt-5.3-codex', // Default OpenCode model
   claude_update_command: null, // Default: use Jean's built-in Claude guidance
+  claude_launch_command: null, // Default: invoke Claude directly from PATH
   codex_update_command: null, // Default: use Jean's built-in Codex guidance
   opencode_launch_command: null, // Default: use opencode directly from PATH
   default_codex_reasoning_effort: 'high', // Default: high reasoning

@@ -983,15 +983,22 @@ pub fn execute_claude_detached(
     pid_callback: Option<Box<dyn FnOnce(u32) + Send>>,
 ) -> Result<(u32, ClaudeResponse), String> {
     use super::detached::spawn_detached_claude;
-    use crate::claude_cli::resolve_cli_binary;
+    use crate::claude_cli::resolve_cli_command;
 
     log::trace!("Executing Claude CLI (detached) for session: {session_id}");
     log::trace!("Input file: {input_file:?}");
     log::trace!("Output file: {output_file:?}");
     log::trace!("Working directory: {working_dir:?}");
 
-    // Get CLI path
-    let cli_path = resolve_cli_binary(app);
+    // Resolve the configured Claude launcher. Its fixed arguments must come
+    // before Jean's session arguments so wrappers such as `clad` work.
+    let cli = resolve_cli_command(app)
+        .map_err(|e| format!("Failed to resolve Claude launcher command: {e}"))?;
+    let crate::claude_cli::ResolvedClaudeLaunchCommand {
+        program: cli_path,
+        args: launcher_args,
+        display: launcher_display,
+    } = cli;
 
     if !cli_path.exists() {
         let error_msg = format!(
@@ -1009,7 +1016,7 @@ pub fn execute_claude_detached(
     }
 
     // Build args
-    let (args, env_vars) = build_claude_args(
+    let (claude_args, env_vars) = build_claude_args(
         app,
         session_id,
         worktree_id,
@@ -1025,11 +1032,15 @@ pub fn execute_claude_detached(
         chrome_enabled,
         custom_profile_name,
     );
+    let args = launcher_args
+        .into_iter()
+        .chain(claude_args)
+        .collect::<Vec<_>>();
 
     // Log the full Claude CLI command for debugging
     log::debug!(
         "Claude CLI command: {} {}",
-        cli_path.display(),
+        launcher_display,
         args.join(" ")
     );
     if !env_vars.is_empty() {

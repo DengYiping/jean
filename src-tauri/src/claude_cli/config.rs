@@ -4,6 +4,13 @@ use serde::Serialize;
 use std::path::{Path, PathBuf};
 use tauri::AppHandle;
 
+#[derive(Debug, Clone)]
+pub struct ResolvedClaudeLaunchCommand {
+    pub program: PathBuf,
+    pub args: Vec<String>,
+    pub display: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResolvedClaudeCommand {
@@ -28,11 +35,39 @@ fn expand_home_path(path: &str) -> PathBuf {
 
 fn parse_custom_command(raw: &str) -> Result<(String, Vec<String>), String> {
     let parts =
-        shlex::split(raw).ok_or_else(|| "Claude update command has invalid quoting".to_string())?;
+        shlex::split(raw).ok_or_else(|| "Claude command has invalid quoting".to_string())?;
     let Some((program, args)) = parts.split_first() else {
-        return Err("Claude update command cannot be empty".to_string());
+        return Err("Claude command cannot be empty".to_string());
     };
     Ok((program.clone(), args.to_vec()))
+}
+
+/// Resolve the command used to launch Claude chat sessions. A configured
+/// wrapper's fixed arguments are placed before Jean's Claude arguments.
+pub fn resolve_cli_command(app: &AppHandle) -> Result<ResolvedClaudeLaunchCommand, String> {
+    let custom_command = crate::load_preferences_sync(app)
+        .ok()
+        .and_then(|prefs| prefs.claude_launch_command);
+
+    if let Some(raw) = custom_command {
+        let trimmed = raw.trim();
+        if !trimmed.is_empty() {
+            let (program, args) = parse_custom_command(trimmed)?;
+            let program = resolve_program_path(&program)?;
+            return Ok(ResolvedClaudeLaunchCommand {
+                program,
+                args,
+                display: trimmed.to_string(),
+            });
+        }
+    }
+
+    let program = get_cli_binary_path(app)?;
+    Ok(ResolvedClaudeLaunchCommand {
+        display: program.to_string_lossy().to_string(),
+        program,
+        args: Vec::new(),
+    })
 }
 
 fn resolve_program_path(program: &str) -> Result<PathBuf, String> {
@@ -42,12 +77,12 @@ fn resolve_program_path(program: &str) -> Result<PathBuf, String> {
             return Ok(expanded);
         }
         return Err(format!(
-            "Failed to resolve Claude update command program '{program}'"
+            "Failed to resolve Claude command program '{program}'"
         ));
     }
 
     which::which(program)
-        .map_err(|e| format!("Failed to resolve Claude update command program '{program}': {e}"))
+        .map_err(|e| format!("Failed to resolve Claude command program '{program}': {e}"))
 }
 
 /// Get the full path to the Claude CLI binary from the host system.
@@ -114,6 +149,19 @@ mod tests {
 
         assert_eq!(program, "pnpm");
         assert_eq!(args, vec!["install", "-g", "@anthropic-ai/claude-code"]);
+    }
+
+    #[test]
+    fn launch_command_arguments_precede_claude_arguments() {
+        let (_, wrapper_args) =
+            parse_custom_command("clad --profile work").expect("should parse wrapper command");
+        let claude_args = vec!["--print".to_string(), "--verbose".to_string()];
+        let combined = wrapper_args
+            .into_iter()
+            .chain(claude_args)
+            .collect::<Vec<_>>();
+
+        assert_eq!(combined, vec!["--profile", "work", "--print", "--verbose"]);
     }
 
     #[test]

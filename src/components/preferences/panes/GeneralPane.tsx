@@ -1376,6 +1376,11 @@ export const GeneralPane: React.FC = () => {
           }
         >
           <div className="space-y-4">
+            <ClaudeLauncherCommandField
+              preferences={preferences}
+              patchPreferences={patchPreferences}
+              queryClient={queryClient}
+            />
             <ClaudeUpdateCommandField
               preferences={preferences}
               patchPreferences={patchPreferences}
@@ -3431,6 +3436,73 @@ const ClaudeUpdateCommandField: FC<{
         <Input
           className="w-80"
           placeholder="Manual host install (claude)"
+          value={localValue}
+          onChange={e => setLocalValue(e.target.value)}
+        />
+        <Button
+          size="sm"
+          onClick={handleSave}
+          disabled={!hasChanges || patchPreferences.isPending}
+        >
+          {patchPreferences.isPending && (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          )}
+          Save
+        </Button>
+      </div>
+    </InlineField>
+  )
+}
+
+const ClaudeLauncherCommandField: FC<{
+  preferences: AppPreferences | undefined
+  patchPreferences: ReturnType<typeof usePatchPreferences>
+  queryClient: ReturnType<typeof useQueryClient>
+}> = ({ preferences, patchPreferences, queryClient }) => {
+  const [localValue, setLocalValue] = useState(
+    preferences?.claude_launch_command ?? ''
+  )
+
+  useEffect(() => {
+    setLocalValue(preferences?.claude_launch_command ?? '')
+  }, [preferences?.claude_launch_command])
+
+  const hasChanges = localValue !== (preferences?.claude_launch_command ?? '')
+
+  const handleSave = useCallback(() => {
+    const trimmed = localValue.trim()
+    patchPreferences.mutate(
+      {
+        claude_launch_command: trimmed.length > 0 ? trimmed : null,
+      },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({
+            queryKey: claudeCliQueryKeys.status(),
+          })
+          queryClient.invalidateQueries({
+            queryKey: claudeCliQueryKeys.auth(),
+          })
+        },
+      }
+    )
+  }, [localValue, patchPreferences, queryClient])
+
+  return (
+    <InlineField
+      label="Session launcher"
+      description={
+        <>
+          Optional wrapper used to start Claude Code sessions. Jean appends its
+          Claude arguments after this command. Leave blank to run{' '}
+          <code>claude</code> directly. Example: <code>clad</code>.
+        </>
+      }
+    >
+      <div className="flex items-center gap-2">
+        <Input
+          className="w-80"
+          placeholder="System default (claude)"
           value={localValue}
           onChange={e => setLocalValue(e.target.value)}
         />

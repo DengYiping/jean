@@ -248,6 +248,8 @@ pub struct AppPreferences {
     #[serde(default)]
     pub claude_update_command: Option<String>, // Optional Claude install/update command, e.g. "pnpm install -g @anthropic-ai/claude-code"
     #[serde(default)]
+    pub claude_launch_command: Option<String>, // Optional wrapper used to launch Claude sessions, e.g. "clad"
+    #[serde(default)]
     pub codex_update_command: Option<String>, // Optional Codex install/update command, e.g. "npm install -g @openai/codex"
     #[serde(default)]
     pub opencode_launch_command: Option<String>, // Optional OpenCode launcher command, e.g. "dvx opencode"
@@ -2268,6 +2270,7 @@ impl Default for AppPreferences {
             codex_model_provider_overrides: std::collections::HashMap::new(),
             selected_opencode_model: default_opencode_model(),
             claude_update_command: None,
+            claude_launch_command: None,
             codex_update_command: None,
             opencode_launch_command: None,
             default_codex_reasoning_effort: default_codex_reasoning_effort(),
@@ -2368,6 +2371,7 @@ fn normalize_preferences(preferences: &mut AppPreferences) {
     normalize_optional_path(&mut preferences.git_cli_path);
     normalize_optional_path(&mut preferences.worktrees_base_dir);
     normalize_optional_path(&mut preferences.claude_update_command);
+    normalize_optional_path(&mut preferences.claude_launch_command);
     normalize_optional_path(&mut preferences.codex_update_command);
     normalize_optional_path(&mut preferences.opencode_launch_command);
     normalize_optional_path(&mut preferences.default_project_id);

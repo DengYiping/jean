@@ -348,6 +348,7 @@ class WsTransport {
   private static readonly EVENT_BUFFER_MAX_AGE = 5_000
   private static readonly EVENT_BUFFER_MAX_SIZE = 50
   private _connected = false
+  private _checkingConnection = false
   private _connecting = false
   private _authError: string | null = null
   private _dataReady = false
@@ -379,6 +380,16 @@ class WsTransport {
 
   get dataReady(): boolean {
     return this._dataReady
+  }
+
+  getCheckingConnectionSnapshot(): boolean {
+    return this._checkingConnection
+  }
+
+  private setCheckingConnection(value: boolean): void {
+    if (this._checkingConnection === value) return
+    this._checkingConnection = value
+    this.notifySubscribers()
   }
 
   private setConnected(value: boolean): void {
@@ -541,6 +552,7 @@ class WsTransport {
       this.clearConnectWatchdog()
       this._lastConnectTime = Date.now()
       this.setConnected(true)
+      this.setCheckingConnection(false)
       this.reconnectAttempt = 0
 
       // Replay missed events for sessions that were actively streaming
@@ -590,6 +602,7 @@ class WsTransport {
     this.ws.onclose = () => {
       this.clearConnectWatchdog()
       this.ws = null
+      this.setCheckingConnection(false)
 
       // If the socket closed within 2s of opening, the token may have been
       // revoked — force full auth validation on the next attempt.
@@ -653,6 +666,7 @@ class WsTransport {
   private static readonly LONG_TIMEOUT = 30 * 60_000
   private static readonly DEFAULT_TIMEOUT = 60_000
   private static readonly CONNECT_TIMEOUT = 12_000
+  private static readonly WAKE_CHECK_TIMEOUT = 3_000
   private static readonly MAX_QUEUE_SIZE = 500
 
   /** Call a backend command over WebSocket. */
@@ -878,7 +892,10 @@ class WsTransport {
       this._connectStartedAt > 0 &&
       Date.now() - this._connectStartedAt >= WsTransport.CONNECT_TIMEOUT
 
-    if (this._connected && isOpen) return
+    if (this._connected && isOpen) {
+      this.checkConnectionAfterWake()
+      return
+    }
 
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer)
@@ -893,6 +910,38 @@ class WsTransport {
     }
 
     this.connect()
+  }
+
+  /** A browser can report OPEN after sleep although the server no longer
+   *  receives commands. Keep the existing reconnect/reseed flow, but do not
+   *  leave the stale shell interactive until a request succeeds. */
+  private checkConnectionAfterWake(): void {
+    if (this._checkingConnection) return
+    const socket = this.ws
+    if (!socket) return
+    this.setCheckingConnection(true)
+
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    void Promise.race([
+      this.invoke('list_projects'),
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error('Connection check timed out')),
+          WsTransport.WAKE_CHECK_TIMEOUT
+        )
+      }),
+    ])
+      .then(() => {
+        if (this.ws === socket && this._connected) {
+          this.setCheckingConnection(false)
+        }
+      })
+      .catch(() => {
+        if (this.ws === socket) socket.close()
+      })
+      .finally(() => {
+        if (timeout) clearTimeout(timeout)
+      })
   }
 
   private clearConnectWatchdog(): void {
@@ -954,6 +1003,8 @@ if (
 const subscribe = (cb: () => void) => wsTransport.subscribe(cb)
 const getSnapshot = () => wsTransport.getSnapshot()
 const getDataReadySnapshot = () => wsTransport.getDataReadySnapshot()
+const getCheckingConnectionSnapshot = () =>
+  wsTransport.getCheckingConnectionSnapshot()
 const getAuthErrorSnapshot = () => wsTransport.getAuthErrorSnapshot()
 
 // E2E mock: always report connected, no auth errors
@@ -971,6 +1022,14 @@ export function useWsConnectionStatus(): boolean {
   return useSyncExternalStore(
     isE2eMocked ? noopSubscribe : subscribe,
     isE2eMocked ? () => true : getSnapshot
+  )
+}
+
+/** Whether browser wake-up is verifying an apparently open WebSocket. */
+export function useWsConnectionChecking(): boolean {
+  return useSyncExternalStore(
+    isE2eMocked ? noopSubscribe : subscribe,
+    isE2eMocked ? () => false : getCheckingConnectionSnapshot
   )
 }
 

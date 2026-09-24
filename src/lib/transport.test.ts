@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, renderHook } from '@testing-library/react'
 
 vi.mock('@/lib/logger', () => ({
   logger: {
@@ -212,5 +213,43 @@ describe('browser WebSocket transport recovery', () => {
     expect(output).toEqual(['hello', 'world'])
 
     unlisten()
+  })
+
+  it('verifies an open socket after browser wake before unblocking the view', async () => {
+    const transport = await importTransport()
+    const { result } = renderHook(() => transport.useWsConnectionChecking())
+    await flushMicrotasks()
+
+    const socket = MockWebSocket.instances[0]
+    if (!socket) throw new Error('Expected initial socket')
+    socket.open()
+
+    act(() => window.dispatchEvent(new Event('pageshow')))
+    expect(result.current).toBe(true)
+    const request = JSON.parse(socket.sent.at(-1) ?? '')
+    expect(request.command).toBe('list_projects')
+
+    await act(async () => {
+      socket.message({ type: 'response', id: request.id, data: [] })
+      await flushMicrotasks()
+    })
+    expect(result.current).toBe(false)
+    expect(socket.close).not.toHaveBeenCalled()
+  })
+
+  it('closes a zombie open socket when the wake check times out', async () => {
+    const transport = await importTransport()
+    const { result } = renderHook(() => transport.useWsConnectionChecking())
+    await flushMicrotasks()
+
+    const socket = MockWebSocket.instances[0]
+    if (!socket) throw new Error('Expected initial socket')
+    socket.open()
+
+    act(() => window.dispatchEvent(new Event('pageshow')))
+    expect(result.current).toBe(true)
+    await vi.advanceTimersByTimeAsync(3_000)
+
+    expect(socket.close).toHaveBeenCalledTimes(1)
   })
 })

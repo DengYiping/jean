@@ -49,4 +49,18 @@ describe('SessionChatModal removal behavior', () => {
       /reconnectNativeCliSession\(nativeSession, worktreeId, \{[\s\S]*?openModal: false/
     )
   })
+
+  it('refreshes modal sessions and respects the backend active session', () => {
+    const source = readSource('src/components/chat/SessionChatModal.tsx')
+
+    expect(source).toMatch(
+      /useSessions\(\s*worktreeId \|\| null,\s*worktreePath \|\| null,\s*\{ refetchOnMount: 'always' \}\s*\)/
+    )
+    expect(source).toContain(
+      'const backendActiveSessionId = sessionsData?.active_session_id'
+    )
+    expect(source).toContain(
+      'sessions.some(session => session.id === backendActiveSessionId)'
+    )
+  })
 })

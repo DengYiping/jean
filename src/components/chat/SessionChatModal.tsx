@@ -214,7 +214,8 @@ export function SessionChatModal({
   })
   const { data: sessionsData } = useSessions(
     worktreeId || null,
-    worktreePath || null
+    worktreePath || null,
+    { refetchOnMount: 'always' }
   )
   const sessions = useMemo(
     () => sessionsData?.sessions ?? [],
@@ -249,7 +250,14 @@ export function SessionChatModal({
   const activeSessionId = useChatStore(
     state => state.activeSessionIds[worktreeId]
   )
-  const currentSessionId = activeSessionId ?? sessions[0]?.id ?? null
+  const backendActiveSessionId = sessionsData?.active_session_id
+  const currentSessionId =
+    activeSessionId ??
+    (backendActiveSessionId &&
+    sessions.some(session => session.id === backendActiveSessionId)
+      ? backendActiveSessionId
+      : sessions[0]?.id) ??
+    null
   const currentSession = sessions.find(s => s.id === currentSessionId) ?? null
   const primarySurface = useUIStore(state =>
     currentSessionId

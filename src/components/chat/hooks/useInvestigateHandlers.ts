@@ -402,7 +402,7 @@ export function useInvestigateHandlers({
         setEffortLevel(activeSessionId, investigateEffortLevel)
       }
       setSelectedProvider(activeSessionId, investigateProvider)
-      setExecutingMode(activeSessionId, 'build')
+      setExecutingMode(activeSessionId, 'yolo')
 
       setSessionProvider.mutate({
         sessionId: activeSessionId,
@@ -468,7 +468,7 @@ export function useInvestigateHandlers({
           worktreePath: activeWorktreePath,
           message: prompt,
           model: investigateModel,
-          executionMode: 'build',
+          executionMode: 'yolo',
           thinkingLevel: selectedThinkingLevelRef.current,
           effortLevel: investigateUseAdaptive
             ? (investigateEffort ?? undefined)
@@ -818,9 +818,7 @@ export function useInvestigateHandlers({
         ? promptOrPrompts.filter(prompt => prompt.trim().length > 0)
         : [promptOrPrompts].filter(prompt => prompt.trim().length > 0)
       if (prompts.length === 0) return
-      const reviewExecutionMode =
-        options?.executionMode ??
-        (Array.isArray(promptOrPrompts) ? 'plan' : executionModeRef.current)
+      const reviewExecutionMode = options?.executionMode ?? 'yolo'
 
       const reviewCommentsBackend = resolveMagicPromptBackend(
         preferences?.magic_prompt_backends,

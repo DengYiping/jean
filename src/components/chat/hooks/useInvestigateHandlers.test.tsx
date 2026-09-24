@@ -235,7 +235,7 @@ describe('useInvestigateHandlers', () => {
     )
   })
 
-  it('runs investigate issue in build mode even when current mode is plan', async () => {
+  it('runs investigate issue in yolo mode even when current mode is plan', async () => {
     const queryClient = new QueryClient({
       defaultOptions: {
         queries: { retry: false },
@@ -308,11 +308,47 @@ describe('useInvestigateHandlers', () => {
     expect(sendMessage.mutate).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionId: 'session-1',
-        executionMode: 'build',
+        executionMode: 'yolo',
       }),
       expect.any(Object)
     )
-    expect(useChatStore.getState().executingModes['session-1']).toBe('build')
+    expect(useChatStore.getState().executingModes['session-1']).toBe('yolo')
+  })
+
+  it('defaults review comments to yolo mode', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    })
+    const createSession = {
+      mutate: vi.fn(),
+      mutateAsync: vi.fn().mockResolvedValue({ id: 'comment-session-1' }),
+    }
+    const { params, sendMessage } = createInvestigateHookParams({
+      createSession,
+      executionModeRef: { current: 'plan' } as RefObject<ExecutionMode>,
+    })
+
+    const { result } = renderHook(() => useInvestigateHandlers(params), {
+      wrapper: createWrapper(queryClient),
+    })
+
+    await act(async () => {
+      await result.current.handleReviewComments('fix one')
+    })
+
+    expect(sendMessage.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 'comment-session-1',
+        executionMode: 'yolo',
+      }),
+      expect.any(Object)
+    )
+    expect(useChatStore.getState().executingModes['comment-session-1']).toBe(
+      'yolo'
+    )
   })
 
   it('uses an explicit yolo override for review comments even when current mode is plan', async () => {

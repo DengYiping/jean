@@ -46,7 +46,8 @@ Usage:
 What it does:
   1. Builds the macOS .app bundle with Tauri's --no-sign flag
   2. Uses the current host target instead of forcing a universal build
-  3. Replaces /Applications/Jean.app with the new build via staged rename
+  3. Uses the release-fast Cargo profile, skips tsc and updater artifacts
+  4. Replaces /Applications/Jean.app with the new build via staged rename
 `)
 }
 
@@ -75,7 +76,7 @@ const builtAppPath = path.join(
   projectDir,
   'src-tauri',
   'target',
-  'release',
+  'release-fast',
   'bundle',
   'macos',
   `${productName}.app`
@@ -92,10 +93,29 @@ const installedCliBinaryPath = path.join(
 )
 
 console.log('==> Building unsigned macOS app bundle...')
-run('bun', ['run', 'tauri:build', '--', '--no-sign', '--bundles', 'app'], {
-  cwd: projectDir,
-  env: process.env,
-})
+run(
+  'bun',
+  [
+    'run',
+    'tauri',
+    'build',
+    '--no-sign',
+    '--bundles',
+    'app',
+    '--config',
+    JSON.stringify({
+      build: { beforeBuildCommand: 'bunx vite build' },
+      bundle: { createUpdaterArtifacts: false },
+    }),
+    '--',
+    '--profile',
+    'release-fast',
+  ],
+  {
+    cwd: projectDir,
+    env: process.env,
+  }
+)
 
 if (!fs.existsSync(builtAppPath)) {
   fail(`Built app bundle not found at ${builtAppPath}`)

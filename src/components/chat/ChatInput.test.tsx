@@ -2,6 +2,7 @@ import { createRef } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@/test/test-utils'
 import { ChatInput } from './ChatInput'
+import { invoke } from '@/lib/transport'
 import {
   appendPromptMetadataToPlainText,
   encodePromptAttachmentMetadata,
@@ -26,6 +27,19 @@ vi.mock('./SlashPopover', () => ({
 
 vi.mock('@/lib/transport', () => ({
   invoke: vi.fn(),
+}))
+
+const preferenceState = vi.hoisted(() => ({
+  attachLargePastedTextAsFiles: true,
+}))
+
+vi.mock('@/services/preferences', () => ({
+  usePreferences: () => ({
+    data: {
+      attach_large_pasted_text_as_files:
+        preferenceState.attachLargePastedTextAsFiles,
+    },
+  }),
 }))
 
 interface StoreState {
@@ -85,6 +99,8 @@ describe('ChatInput copied prompt restore', () => {
   }
 
   beforeEach(() => {
+    preferenceState.attachLargePastedTextAsFiles = true
+    vi.mocked(invoke).mockReset()
     storeState.inputDrafts = {}
     storeState.setInputDraft.mockClear()
     storeState.addPendingImage.mockClear()
@@ -94,6 +110,28 @@ describe('ChatInput copied prompt restore', () => {
     storeState.removePendingFile.mockClear()
     storeState.setDraftSkillBindings.mockClear()
     storeState.syncDraftSkillBindings.mockClear()
+  })
+
+  it('keeps long pasted text inline when large-text attachments are disabled', async () => {
+    preferenceState.attachLargePastedTextAsFiles = false
+    const textarea = renderInput()
+
+    const pasteWasNotPrevented = fireEvent.paste(textarea, {
+      clipboardData: {
+        getData: (type: string) =>
+          type === 'text/plain' ? 'x'.repeat(2000) : '',
+        items: [],
+      },
+    })
+
+    expect(pasteWasNotPrevented).toBe(true)
+    await waitFor(() => {
+      expect(invoke).not.toHaveBeenCalledWith(
+        'save_pasted_text',
+        expect.anything()
+      )
+      expect(storeState.addPendingTextFile).not.toHaveBeenCalled()
+    })
   })
 
   it('restores attachments and draft skill bindings from rich copied prompt metadata', async () => {

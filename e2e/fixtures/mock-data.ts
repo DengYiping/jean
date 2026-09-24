@@ -75,6 +75,7 @@ export const mockPreferences = {
   zoom_level: 1.0,
   recap_prompting_enabled: false,
   parallel_execution_prompt_enabled: false,
+  attach_large_pasted_text_as_files: true,
   auto_pull_base_branch: false,
   auto_investigate: true,
   auto_archive_on_merge: false,

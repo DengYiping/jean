@@ -2594,6 +2594,20 @@ export const GeneralPane: React.FC = () => {
             />
           </InlineField>
 
+          <InlineField
+            label="Attach long pasted text"
+            description="Save pasted text of 2,000 or more characters as a file attachment instead of inserting it in the chat box"
+          >
+            <Switch
+              checked={preferences?.attach_large_pasted_text_as_files ?? true}
+              onCheckedChange={checked => {
+                patchPreferences.mutate({
+                  attach_large_pasted_text_as_files: checked,
+                })
+              }}
+            />
+          </InlineField>
+
           {isNativeApp() && (
             <InlineField label="Editor" description="App to open worktrees in">
               <Select

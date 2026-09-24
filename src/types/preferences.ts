@@ -1195,6 +1195,7 @@ export interface AppPreferences {
   recap_prompting_enabled: boolean // Ask assistants to append an end-of-turn recap in chat responses
   parallel_execution_prompt_enabled: boolean // Add system prompt to encourage parallel sub-agent execution
   compact_chat_view_enabled: boolean // Collapse intermediate tool calls/replies into a single ticker line, only showing the latest activity
+  attach_large_pasted_text_as_files: boolean // Save pasted text of 2,000+ characters as text-file attachments
   magic_prompts: MagicPrompts // Customizable prompts for AI-powered features
   magic_prompt_models: MagicPromptModels // Per-prompt model overrides
   magic_prompt_providers: MagicPromptProviders // Per-prompt provider overrides (null = use default_provider)
@@ -2278,6 +2279,7 @@ export const defaultPreferences: AppPreferences = {
   recap_prompting_enabled: false, // Default: disabled (experimental)
   parallel_execution_prompt_enabled: false, // Default: disabled (experimental)
   compact_chat_view_enabled: false, // Default: disabled (experimental)
+  attach_large_pasted_text_as_files: true, // Default: preserve long-paste attachments
   magic_prompts: DEFAULT_MAGIC_PROMPTS,
   magic_prompt_models: DEFAULT_MAGIC_PROMPT_MODELS,
   magic_prompt_providers: DEFAULT_MAGIC_PROMPT_PROVIDERS,

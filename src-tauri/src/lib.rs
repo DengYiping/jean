@@ -149,6 +149,8 @@ pub struct AppPreferences {
     pub parallel_execution_prompt_enabled: bool, // Add system prompt to encourage parallel sub-agent execution
     #[serde(default = "default_compact_chat_view_enabled")]
     pub compact_chat_view_enabled: bool, // Collapse intermediate tool calls into single ticker line
+    #[serde(default = "default_attach_large_pasted_text_as_files")]
+    pub attach_large_pasted_text_as_files: bool, // Save pasted text of 2,000+ characters as text-file attachments
     #[serde(default)]
     pub magic_prompts: MagicPrompts, // Customizable prompts for AI-powered features
     #[serde(default)]
@@ -306,6 +308,10 @@ pub struct AppPreferences {
 }
 
 fn default_jean_mcp_enabled() -> bool {
+    true
+}
+
+fn default_attach_large_pasted_text_as_files() -> bool {
     true
 }
 
@@ -2212,6 +2218,7 @@ impl Default for AppPreferences {
             recap_prompting_enabled: default_recap_prompting_enabled(),
             parallel_execution_prompt_enabled: default_parallel_execution_prompt_enabled(),
             compact_chat_view_enabled: default_compact_chat_view_enabled(),
+            attach_large_pasted_text_as_files: default_attach_large_pasted_text_as_files(),
             magic_prompts: MagicPrompts::default(),
             magic_prompt_models: MagicPromptModels::default(),
             magic_prompt_providers: MagicPromptProviders::default(),

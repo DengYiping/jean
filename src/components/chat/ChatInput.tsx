@@ -24,6 +24,7 @@ import {
   type FileMentionPopoverHandle,
 } from './FileMentionPopover'
 import { queryClient } from '@/lib/query-client'
+import { usePreferences } from '@/services/preferences'
 import { fileQueryKeys } from '@/services/files'
 import {
   githubQueryKeys,
@@ -126,6 +127,9 @@ export const ChatInput = memo(function ChatInput({
   inputRef,
 }: ChatInputProps) {
   const isMobile = useIsMobile()
+  const { data: preferences } = usePreferences()
+  const attachLargePastedTextAsFiles =
+    preferences?.attach_large_pasted_text_as_files ?? true
   const resizeTextarea = useAutoResize(inputRef)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -688,7 +692,13 @@ export const ChatInput = memo(function ChatInput({
       }
 
       const saveLargeTextPaste = async (text: string): Promise<boolean> => {
-        if (!text || text.length < TEXT_PASTE_THRESHOLD) return false
+        if (
+          !attachLargePastedTextAsFiles ||
+          !text ||
+          text.length < TEXT_PASTE_THRESHOLD
+        ) {
+          return false
+        }
 
         const textSize = new TextEncoder().encode(text).length
         if (textSize > MAX_TEXT_SIZE) {
@@ -723,7 +733,8 @@ export const ChatInput = memo(function ChatInput({
       const resolvePastedMentions = async (text: string) => {
         if (
           !text ||
-          text.length >= TEXT_PASTE_THRESHOLD ||
+          (attachLargePastedTextAsFiles &&
+            text.length >= TEXT_PASTE_THRESHOLD) ||
           !activeWorktreePath
         ) {
           return
@@ -1032,7 +1043,11 @@ export const ChatInput = memo(function ChatInput({
 
       // Check for large text paste
       const text = clipboardText
-      if (text && text.length >= TEXT_PASTE_THRESHOLD) {
+      if (
+        attachLargePastedTextAsFiles &&
+        text &&
+        text.length >= TEXT_PASTE_THRESHOLD
+      ) {
         // Prevent default paste (we're handling it as a file)
         e.preventDefault()
         await saveLargeTextPaste(text)
@@ -1041,7 +1056,13 @@ export const ChatInput = memo(function ChatInput({
       // Auto-resolve @file mentions in regular (small) text pastes
       await resolvePastedMentions(text)
     },
-    [activeSessionId, activeWorktreePath, inputRef, resizeTextarea]
+    [
+      activeSessionId,
+      activeWorktreePath,
+      attachLargePastedTextAsFiles,
+      inputRef,
+      resizeTextarea,
+    ]
   )
 
   const handleFileInputChange = useCallback(

@@ -85,7 +85,7 @@ strip = true             # Remove debug symbols
 [profile.release-fast]
 inherits = "release"
 codegen-units = 16       # Parallel codegen (was 1)
-lto = "thin"             # Thin LTO (was fat) — much faster link
+lto = false              # No LTO (was fat) — much faster incremental rebuilds
 opt-level = 2            # Speed-tuned, drops size-optimizer passes
 strip = "debuginfo"      # Keep symbols for crash reports, drop debuginfo
 incremental = true       # Reuse compilation across local rebuilds

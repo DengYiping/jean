@@ -1,11 +1,19 @@
+import { createElement, type ReactNode } from 'react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useNativeNotificationNavigation } from './useNativeNotificationNavigation'
 
-const { mockInvoke, mockListen, mockOpenWorkspaceSession } = vi.hoisted(() => ({
+const {
+  mockInvoke,
+  mockListen,
+  mockOpenWorkspaceSession,
+  mockMarkSessionsRead,
+} = vi.hoisted(() => ({
   mockInvoke: vi.fn(),
   mockListen: vi.fn(),
   mockOpenWorkspaceSession: vi.fn(),
+  mockMarkSessionsRead: vi.fn(),
 }))
 
 vi.mock('@/lib/environment', () => ({
@@ -21,15 +29,28 @@ vi.mock('@/lib/workspace-navigation', () => ({
   openWorkspaceSession: mockOpenWorkspaceSession,
 }))
 
+vi.mock('@/components/unread/mark-sessions-read', () => ({
+  markSessionsRead: mockMarkSessionsRead,
+}))
+
+function renderNavigationHook() {
+  const queryClient = new QueryClient()
+  const wrapper = ({ children }: { children: ReactNode }) =>
+    createElement(QueryClientProvider, { client: queryClient }, children)
+  renderHook(() => useNativeNotificationNavigation(), { wrapper })
+  return queryClient
+}
+
 describe('useNativeNotificationNavigation', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockInvoke.mockResolvedValue({ entries: [] })
     mockListen.mockResolvedValue(vi.fn())
+    mockMarkSessionsRead.mockResolvedValue(undefined)
   })
 
-  it('opens the session attached to a clicked native notification', async () => {
-    renderHook(() => useNativeNotificationNavigation())
+  it('opens the clicked session and clears its unread notification', async () => {
+    const queryClient = renderNavigationHook()
 
     await waitFor(() => {
       expect(mockListen).toHaveBeenCalledWith(
@@ -45,9 +66,13 @@ describe('useNativeNotificationNavigation', () => {
       worktreePath: '/tmp/worktree-1',
       sessionId: 'session-1',
     }
-    handler({ payload: target })
+    await handler({ payload: target })
 
     expect(mockOpenWorkspaceSession).toHaveBeenCalledWith(target)
+    expect(mockInvoke).not.toHaveBeenCalled()
+    expect(mockMarkSessionsRead).toHaveBeenCalledWith(queryClient, [
+      'session-1',
+    ])
   })
 
   it('resolves the workspace when only the session id was available', async () => {
@@ -61,7 +86,7 @@ describe('useNativeNotificationNavigation', () => {
         },
       ],
     })
-    renderHook(() => useNativeNotificationNavigation())
+    renderNavigationHook()
     await waitFor(() => expect(mockListen).toHaveBeenCalled())
 
     const handler = mockListen.mock.calls[0]?.[1]
@@ -73,5 +98,6 @@ describe('useNativeNotificationNavigation', () => {
       worktreePath: '/tmp/worktree-1',
       sessionId: 'session-1',
     })
+    expect(mockMarkSessionsRead).toHaveBeenCalled()
   })
 })

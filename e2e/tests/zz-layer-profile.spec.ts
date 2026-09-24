@@ -17,24 +17,39 @@ test('layer profile', async ({ mockPage }) => {
       if (!l.drawsContent) continue
       let reasons: string[] = []
       try {
-        const r = await cdp.send('LayerTree.compositingReasons', { layerId: l.layerId })
+        const r = await cdp.send('LayerTree.compositingReasons', {
+          layerId: l.layerId,
+        })
         reasons = r.compositingReasonIds ?? []
       } catch {}
       let node = ''
       if (l.backendNodeId) {
         try {
-          const d = await cdp.send('DOM.describeNode', { backendNodeId: l.backendNodeId })
+          const d = await cdp.send('DOM.describeNode', {
+            backendNodeId: l.backendNodeId,
+          })
           const attrs = d.node.attributes ?? []
           const cls = attrs[attrs.indexOf('class') + 1] ?? ''
           node = `${d.node.localName}.${cls.slice(0, 90)}`
         } catch {}
       }
-      rows.push({ mb: (l.width * l.height * 4 * 4) / 1048576, w: l.width, h: l.height, reasons: reasons.join(','), node })
+      rows.push({
+        mb: (l.width * l.height * 4 * 4) / 1048576,
+        w: l.width,
+        h: l.height,
+        reasons: reasons.join(','),
+        node,
+      })
     }
     rows.sort((a, b) => b.mb - a.mb)
     const total = rows.reduce((s, r) => s + r.mb, 0)
-    console.info(`[layers] ${label}: ${rows.length} layers, ${total.toFixed(0)} MB`)
-    for (const r of rows.slice(0, 15)) console.info(`  ${r.mb.toFixed(1)}MB ${r.w}x${r.h} [${r.reasons}] ${r.node}`)
+    console.info(
+      `[layers] ${label}: ${rows.length} layers, ${total.toFixed(0)} MB`
+    )
+    for (const r of rows.slice(0, 15))
+      console.info(
+        `  ${r.mb.toFixed(1)}MB ${r.w}x${r.h} [${r.reasons}] ${r.node}`
+      )
   }
   await mockPage.waitForTimeout(2000)
   await dump('canvas')

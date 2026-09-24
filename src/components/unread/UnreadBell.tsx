@@ -7,19 +7,15 @@ import {
 } from '@/components/ui/popover'
 import { Kbd } from '@/components/ui/kbd'
 import { cn } from '@/lib/utils'
-import { invoke } from '@/lib/transport'
 import { useQueryClient } from '@tanstack/react-query'
 import { chatQueryKeys, useUnreadSessions } from '@/services/chat'
 import { useUnreadCount } from './useUnreadCount'
 import { formatShortcutDisplay } from '@/types/keybindings'
 import { openWorkspaceSession } from '@/lib/workspace-navigation'
-import type {
-  Session,
-  UnreadSessionEntry,
-  UnreadSessionsResponse,
-} from '@/types/chat'
+import type { UnreadSessionEntry } from '@/types/chat'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { getUnreadSessionStatus } from './unread-session-utils'
+import { markSessionsRead, markSessionsReadInCache } from './mark-sessions-read'
 
 function formatRelativeTime(timestamp: number): string {
   const ms = timestamp < 1_000_000_000_000 ? timestamp * 1000 : timestamp
@@ -94,63 +90,16 @@ export function UnreadBell({ title, hideTitle }: UnreadBellProps) {
     return unreadSessions?.entries ?? []
   }, [unreadSessions])
 
-  const markSessionsReadOptimistically = useCallback(
-    (sessionIds: string[]) => {
-      const now = Math.floor(Date.now() / 1000)
-      queryClient.setQueryData<UnreadSessionsResponse>(
-        chatQueryKeys.unreadSessions(),
-        old => {
-          if (!old) return old
-          return {
-            entries: old.entries.filter(
-              entry => !sessionIds.includes(entry.session.id)
-            ),
-          }
-        }
-      )
-      queryClient.setQueryData<number>(chatQueryKeys.unreadCount(), old =>
-        Math.max(0, (old ?? unreadCount) - sessionIds.length)
-      )
-      queryClient.setQueryData(['all-sessions'], old => {
-        if (!old) return old
-        const data = old as { entries?: { sessions?: Session[] }[] }
-        if (!data.entries) return old
-        return {
-          ...data,
-          entries: data.entries.map(entry => ({
-            ...entry,
-            sessions: (entry.sessions ?? []).map(session =>
-              sessionIds.includes(session.id)
-                ? { ...session, last_opened_at: now }
-                : session
-            ),
-          })),
-        }
-      })
-    },
-    [queryClient, unreadCount]
-  )
-
   const handleMarkAllRead = useCallback(async () => {
-    const ids = unreadItems.map(item => item.session.id)
-    markSessionsReadOptimistically(ids)
-    await invoke('set_sessions_last_opened_bulk', { sessionIds: ids })
-    queryClient.invalidateQueries({ queryKey: chatQueryKeys.unreadSessions() })
-    queryClient.invalidateQueries({ queryKey: chatQueryKeys.unreadCount() })
-    window.dispatchEvent(new CustomEvent('session-opened'))
-  }, [unreadItems, queryClient, markSessionsReadOptimistically])
+    await markSessionsRead(
+      queryClient,
+      unreadItems.map(item => item.session.id)
+    )
+  }, [unreadItems, queryClient])
 
   const handleMarkOneRead = useCallback(
     async (item: UnreadItem) => {
-      markSessionsReadOptimistically([item.session.id])
-      await invoke('set_session_last_opened', {
-        sessionId: item.session.id,
-      })
-      queryClient.invalidateQueries({
-        queryKey: chatQueryKeys.unreadSessions(),
-      })
-      queryClient.invalidateQueries({ queryKey: chatQueryKeys.unreadCount() })
-      window.dispatchEvent(new CustomEvent('session-opened'))
+      await markSessionsRead(queryClient, [item.session.id])
       // Adjust focus: stay at same index or move up if at end
       setFocusedIndex(i => {
         const newTotal = unreadItems.length - 1
@@ -158,7 +107,7 @@ export function UnreadBell({ title, hideTitle }: UnreadBellProps) {
         return Math.min(i, newTotal - 1)
       })
     },
-    [queryClient, unreadItems.length, markSessionsReadOptimistically]
+    [queryClient, unreadItems.length]
   )
 
   const handleSelect = useCallback(
@@ -172,10 +121,10 @@ export function UnreadBell({ title, hideTitle }: UnreadBellProps) {
         worktreePath,
         sessionId: item.session.id,
       })
-      markSessionsReadOptimistically([item.session.id])
+      markSessionsReadInCache(queryClient, [item.session.id])
       setOpen(false)
     },
-    [markSessionsReadOptimistically]
+    [queryClient]
   )
 
   const handleKeyDown = useCallback(

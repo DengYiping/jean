@@ -1701,12 +1701,20 @@ pub async fn dispatch_command(
         }
         "send_native_notification" => {
             let title: String = from_field(&args, "title")?;
+            let subtitle: Option<String> = from_field_opt(&args, "subtitle")?;
             let body: Option<String> = from_field_opt(&args, "body")?;
             let background_only: Option<bool> =
                 field_opt(&args, "backgroundOnly", "background_only")?;
             let target: Option<crate::NativeNotificationTarget> = from_field_opt(&args, "target")?;
-            crate::send_native_notification(app.clone(), title, body, background_only, target)
-                .await?;
+            crate::send_native_notification(
+                app.clone(),
+                title,
+                subtitle,
+                body,
+                background_only,
+                target,
+            )
+            .await?;
             Ok(Value::Null)
         }
         "save_emergency_data" => {

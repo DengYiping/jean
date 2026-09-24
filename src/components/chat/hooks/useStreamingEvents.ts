@@ -17,10 +17,7 @@ import type { AppPreferences, NotificationSound } from '@/types/preferences'
 import { triggerImmediateGitPoll } from '@/services/git-status'
 import { isAskUserQuestion, isExitPlanMode } from '@/types/chat'
 import { playNotificationSound } from '@/lib/sounds'
-import {
-  notifyIfBackground,
-  type SessionNotificationTarget,
-} from '@/lib/session-notifications'
+import { notifySessionEvent } from '@/lib/session-notifications'
 import { findPlanFilePath } from '@/components/chat/tool-call-utils'
 import { lookupSessionLabel } from '@/components/chat/hooks/session-label-utils'
 import { generateId } from '@/lib/uuid'
@@ -209,31 +206,14 @@ function getReviewSoundPreference(queryClient: QueryClient): NotificationSound {
 function notifySession(
   queryClient: QueryClient,
   sessionId: string,
-  title: string
+  title: string,
+  preview?: string
 ): void {
   const preferences = queryClient.getQueryData<AppPreferences>(
     preferencesQueryKeys.preferences()
   )
   if (preferences?.desktop_notifications_enabled === false) return
-  const session = queryClient.getQueryData<Session>(
-    chatQueryKeys.session(sessionId)
-  )
-  const entry = queryClient
-    .getQueryData<AllSessionsResponse>(['all-sessions'])
-    ?.entries.find(candidate =>
-      candidate.sessions.some(
-        candidateSession => candidateSession.id === sessionId
-      )
-    )
-  const target: SessionNotificationTarget = entry
-    ? {
-        projectId: entry.project_id,
-        worktreeId: entry.worktree_id,
-        worktreePath: entry.worktree_path,
-        sessionId,
-      }
-    : { sessionId }
-  notifyIfBackground(title, session?.name, target)
+  void notifySessionEvent(queryClient, sessionId, title, preview)
 }
 
 function updateAllSessionsCache(
@@ -1851,7 +1831,7 @@ export default function useStreamingEvents({
         }
 
         playNotificationSound(getReviewSoundPreference(queryClient))
-        notifySession(queryClient, sessionId, 'Session finished')
+        notifySession(queryClient, sessionId, 'Session finished', content)
       }
 
       // Update last_run_status + waiting state for sessions with blocking tools.

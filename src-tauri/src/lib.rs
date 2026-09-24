@@ -612,7 +612,7 @@ fn resolve_http_server_bind_host(prefs: &AppPreferences) -> String {
 mod tests {
     use super::{
         default_automation_run_prompt, default_claude_system_prompt, default_codex_system_prompt,
-        default_pr_content_prompt, default_provider_switch_handoff_prompt,
+        default_pr_content_prompt, default_provider_switch_handoff_prompt, join_notification_body,
         legacy_pr_content_prompt_without_session_recap, migrate_loaded_preferences,
         resolve_http_server_bind_host, should_send_native_notification, try_parse_cli_args,
         AppPreferences, CliArgs, CliCommand, MagicPrompts,
@@ -625,6 +625,19 @@ mod tests {
         assert!(should_send_native_notification(true, Some(false)));
         assert!(should_send_native_notification(true, None));
         assert!(should_send_native_notification(false, Some(true)));
+    }
+
+    #[test]
+    fn notification_body_folds_subtitle_for_platforms_without_one() {
+        assert_eq!(
+            join_notification_body(Some("Jean › main".into()), Some("Done".into())),
+            Some("Jean › main\nDone".to_string())
+        );
+        assert_eq!(
+            join_notification_body(None, Some("Done".into())),
+            Some("Done".to_string())
+        );
+        assert_eq!(join_notification_body(Some(String::new()), None), None);
     }
 
     #[test]
@@ -2954,6 +2967,7 @@ async fn save_ui_state(app: AppHandle, ui_state: UIState) -> Result<(), String> 
 async fn send_native_notification(
     app: AppHandle,
     title: String,
+    subtitle: Option<String>,
     body: Option<String>,
     background_only: Option<bool>,
     target: Option<NativeNotificationTarget>,
@@ -2970,35 +2984,36 @@ async fn send_native_notification(
     #[cfg(target_os = "macos")]
     if let Some(target) = target {
         let identifier = app.config().identifier.clone();
-        let _ = notify_rust::set_application(if tauri::is_dev() {
+        let _ = mac_notification_sys::set_application(if tauri::is_dev() {
             "com.apple.Terminal"
         } else {
             &identifier
         });
+        // Each clickable notification blocks its own thread until the user
+        // clicks or dismisses it (including later from Notification Center).
         std::thread::spawn(move || {
-            let mut notification = notify_rust::Notification::new();
-            notification.summary(&title);
-            if let Some(body_text) = body {
-                notification.body(&body_text);
-            }
+            let mut notification = mac_notification_sys::Notification::new();
+            notification
+                .title(&title)
+                .maybe_subtitle(subtitle.as_deref().filter(|text| !text.is_empty()))
+                .message(body.as_deref().unwrap_or(""))
+                // Without this, the notification is fire-and-forget and the
+                // click response is never observed.
+                .wait_for_click(true);
 
-            match notification.show() {
-                Ok(handle) => {
-                    log::trace!("Native notification sent successfully");
-                    handle.wait_for_action(move |action| {
-                        if action != "default" {
-                            return;
-                        }
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.unminimize();
-                            let _ = window.set_focus();
-                        }
-                        if let Err(error) = app.emit("native-notification-clicked", target) {
-                            log::error!("Failed to handle native notification click: {error}");
-                        }
-                    });
+            match notification.send() {
+                Ok(mac_notification_sys::NotificationResponse::Click) => {
+                    log::trace!("Native notification clicked: {}", target.session_id);
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.unminimize();
+                        let _ = window.set_focus();
+                    }
+                    if let Err(error) = app.emit("native-notification-clicked", target) {
+                        log::error!("Failed to handle native notification click: {error}");
+                    }
                 }
+                Ok(response) => log::trace!("Native notification closed: {response:?}"),
                 Err(error) => log::error!("Failed to send native notification: {error}"),
             }
         });
@@ -3011,7 +3026,7 @@ async fn send_native_notification(
 
         let mut notification = app.notification().builder().title(title);
 
-        if let Some(body_text) = body {
+        if let Some(body_text) = join_notification_body(subtitle, body) {
             notification = notification.body(body_text);
         }
 
@@ -3032,6 +3047,16 @@ async fn send_native_notification(
         log::warn!("Native notifications not supported on mobile");
         Err("Native notifications not supported on mobile".to_string())
     }
+}
+
+/// Platforms without a subtitle line get it prepended to the body instead.
+fn join_notification_body(subtitle: Option<String>, body: Option<String>) -> Option<String> {
+    let parts: Vec<String> = [subtitle, body]
+        .into_iter()
+        .flatten()
+        .filter(|text| !text.is_empty())
+        .collect();
+    (!parts.is_empty()).then(|| parts.join("\n"))
 }
 
 #[derive(Clone, Serialize, Deserialize)]

@@ -2505,7 +2505,7 @@ dependencies = [
  "image",
  "libc",
  "log",
- "notify-rust",
+ "mac-notification-sys",
  "objc2-app-kit",
  "once_cell",
  "portable-pty",

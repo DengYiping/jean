@@ -264,6 +264,7 @@ export const defaultResponses: Record<string, unknown> = {
   fetch_worktrees_status: null,
   update_all_primary_branches: {
     updated: ['Test Project'],
+    updatedProjectIds: ['project-1'],
     skipped: 0,
     failures: [],
   },

@@ -634,6 +634,7 @@ pub async fn list_projects(app: AppHandle) -> Result<Vec<Project>, String> {
 #[serde(rename_all = "camelCase")]
 pub struct UpdateAllPrimaryBranchesResponse {
     pub updated: Vec<String>,
+    pub updated_project_ids: Vec<String>,
     pub skipped: usize,
     pub failures: Vec<ProjectBranchUpdateFailure>,
 }
@@ -645,54 +646,68 @@ pub struct ProjectBranchUpdateFailure {
     pub error: String,
 }
 
-/// Update the base branch for every non-folder project.
+fn update_primary_branch(project: Project) -> Result<(String, String), ProjectBranchUpdateFailure> {
+    let failure = |error| ProjectBranchUpdateFailure {
+        project_name: project.name.clone(),
+        error,
+    };
+
+    match git::get_current_branch(&project.path) {
+        Ok(branch) if branch == project.default_branch => {}
+        Ok(branch) => {
+            return Err(failure(format!(
+                "Expected {} to be checked out, but found {branch}",
+                project.default_branch
+            )));
+        }
+        Err(error) => return Err(failure(error)),
+    }
+
+    git::git_pull(&project.path, &project.default_branch, None).map_err(failure)?;
+    Ok((project.id, project.name))
+}
+
+/// Update the base branch for every non-folder project, with bounded parallel git work.
 #[tauri::command]
 pub async fn update_all_primary_branches(
     app: AppHandle,
 ) -> Result<UpdateAllPrimaryBranchesResponse, String> {
     let projects = load_projects_data(&app)?.projects;
     let mut updated = Vec::new();
+    let mut updated_project_ids = Vec::new();
     let mut failures = Vec::new();
-    let mut skipped = 0;
+    let skipped = projects.iter().filter(|project| project.is_folder).count();
+    let repositories: Vec<_> = projects
+        .into_iter()
+        .filter(|project| !project.is_folder)
+        .collect();
 
-    for project in projects {
-        if project.is_folder {
-            skipped += 1;
-            continue;
-        }
-
-        match git::get_current_branch(&project.path) {
-            Ok(branch) if branch == project.default_branch => {}
-            Ok(branch) => {
-                failures.push(ProjectBranchUpdateFailure {
-                    project_name: project.name,
-                    error: format!(
-                        "Expected {} to be checked out, but found {branch}",
-                        project.default_branch
-                    ),
-                });
-                continue;
+    // Git operations are blocking; limit concurrent subprocesses across large project lists.
+    for batch in repositories.chunks(8) {
+        let tasks: Vec<_> = batch
+            .iter()
+            .map(|project| {
+                let project = project.clone();
+                tokio::task::spawn_blocking(move || update_primary_branch(project))
+            })
+            .collect();
+        for task in tasks {
+            match task
+                .await
+                .map_err(|error| format!("Project update task failed: {error}"))?
+            {
+                Ok((id, name)) => {
+                    updated_project_ids.push(id);
+                    updated.push(name);
+                }
+                Err(failure) => failures.push(failure),
             }
-            Err(error) => {
-                failures.push(ProjectBranchUpdateFailure {
-                    project_name: project.name,
-                    error,
-                });
-                continue;
-            }
-        }
-
-        match git::git_pull(&project.path, &project.default_branch, None) {
-            Ok(_) => updated.push(project.name),
-            Err(error) => failures.push(ProjectBranchUpdateFailure {
-                project_name: project.name,
-                error,
-            }),
         }
     }
 
     Ok(UpdateAllPrimaryBranchesResponse {
         updated,
+        updated_project_ids,
         skipped,
         failures,
     })

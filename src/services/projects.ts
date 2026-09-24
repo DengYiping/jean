@@ -52,6 +52,7 @@ export const projectsQueryKeys = {
 
 export interface UpdateAllPrimaryBranchesResult {
   updated: string[]
+  updatedProjectIds: string[]
   skipped: number
   failures: { projectName: string; error: string }[]
 }
@@ -238,7 +239,15 @@ export function useUpdateAllPrimaryBranches() {
   return useMutation({
     mutationFn: () =>
       invoke<UpdateAllPrimaryBranchesResult>('update_all_primary_branches'),
-    onSuccess: ({ updated, skipped, failures }) => {
+    onSuccess: async ({ updated, updatedProjectIds, skipped, failures }) => {
+      // The project and base-session badges use git-status events, not the
+      // projects query. Refresh every successfully pulled project immediately.
+      await Promise.allSettled([
+        invoke('trigger_immediate_git_poll'),
+        ...(updatedProjectIds ?? []).map(projectId =>
+          invoke('fetch_worktrees_status', { projectId })
+        ),
+      ])
       const projectCount = updated.length
       const description = [
         skipped > 0

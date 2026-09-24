@@ -110,6 +110,7 @@ describe('projects service', () => {
     const queryClient = createTestQueryClient()
     mockInvoke.mockResolvedValue({
       updated: ['Jean'],
+      updatedProjectIds: ['project-1', 'project-2'],
       skipped: 1,
       failures: [],
     })
@@ -123,6 +124,13 @@ describe('projects service', () => {
     })
 
     expect(mockInvoke).toHaveBeenCalledWith('update_all_primary_branches')
+    expect(mockInvoke).toHaveBeenCalledWith('trigger_immediate_git_poll')
+    expect(mockInvoke).toHaveBeenCalledWith('fetch_worktrees_status', {
+      projectId: 'project-1',
+    })
+    expect(mockInvoke).toHaveBeenCalledWith('fetch_worktrees_status', {
+      projectId: 'project-2',
+    })
     expect(toast.success).toHaveBeenCalledWith('Updated 1 project', {
       description: 'Skipped 1 folder.',
     })

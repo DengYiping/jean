@@ -1,4 +1,5 @@
 import {
+  memo,
   useCallback,
   useDeferredValue,
   useEffect,
@@ -7,6 +8,7 @@ import {
   useState,
   lazy,
   Suspense,
+  type ComponentProps,
 } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -205,7 +207,7 @@ import { useQueuedMessages } from './hooks/useQueuedMessages'
 import { completePlanApprovalTransition } from './hooks/plan-approval-transition'
 import { resolveApprovedPlanContinuation } from './hooks/approved-plan-continuation'
 import { sendApprovedPlanContinuation } from './hooks/send-approved-plan-continuation'
-import { dedupeInFlightAssistantMessage } from './in-flight-message-dedupe'
+import { shouldHideTrailingAssistant } from './in-flight-message-dedupe'
 import { shouldShowPermissionApproval } from './permission-approval-utils'
 import type { PendingInputSnapshot } from './pending-input'
 import { navigateToForkedSession } from './fork-session-navigation'
@@ -216,6 +218,40 @@ import { shouldShowCodeReviewLoadingPanel } from './session-card-utils'
 // Using these constants ensures referential equality for empty states
 const EMPTY_TOOL_CALLS: ToolCall[] = []
 const EMPTY_CONTENT_BLOCKS: ContentBlock[] = []
+
+type LiveStreamingMessageProps = Omit<
+  ComponentProps<typeof StreamingMessage>,
+  'contentBlocks' | 'toolCalls' | 'streamingContent'
+> & { compact: boolean }
+
+/**
+ * Subscribes to per-chunk streaming state itself so text chunks re-render only
+ * the live message, not the whole ChatWindow tree.
+ */
+const LiveStreamingMessage = memo(function LiveStreamingMessage({
+  compact,
+  ...props
+}: LiveStreamingMessageProps) {
+  const { sessionId } = props
+  const streamingContent = useChatStore(
+    state => state.streamingContents[sessionId] ?? ''
+  )
+  const contentBlocks = useChatStore(
+    state => state.streamingContentBlocks[sessionId] ?? EMPTY_CONTENT_BLOCKS
+  )
+  const toolCalls = useChatStore(
+    state => state.activeToolCalls[sessionId] ?? EMPTY_TOOL_CALLS
+  )
+  const Component = compact ? CompactStreamingTicker : StreamingMessage
+  return (
+    <Component
+      {...props}
+      contentBlocks={contentBlocks}
+      toolCalls={toolCalls}
+      streamingContent={streamingContent}
+    />
+  )
+})
 const EMPTY_PENDING_IMAGES: PendingImage[] = []
 const EMPTY_PENDING_TEXT_FILES: PendingTextFile[] = []
 const EMPTY_PENDING_FILES: PendingFile[] = []
@@ -774,19 +810,22 @@ export function ChatWindow({
   // When switching tabs, these selectors return stable values until React catches up
   // This prevents the ~1 second freeze from 15+ selectors re-evaluating simultaneously
   // IMPORTANT: Use stable empty array constants to prevent infinite render loops
-  const streamingContent = useChatStore(state =>
-    deferredSessionId ? (state.streamingContents[deferredSessionId] ?? '') : ''
-  )
   const currentToolCalls = useChatStore(state =>
     deferredSessionId
       ? (state.activeToolCalls[deferredSessionId] ?? EMPTY_TOOL_CALLS)
       : EMPTY_TOOL_CALLS
   )
-  const currentStreamingContentBlocks = useChatStore(state =>
+  const streamingContentBlockCount = useChatStore(state =>
     deferredSessionId
-      ? (state.streamingContentBlocks[deferredSessionId] ??
-        EMPTY_CONTENT_BLOCKS)
-      : EMPTY_CONTENT_BLOCKS
+      ? (state.streamingContentBlocks[deferredSessionId]?.length ?? 0)
+      : 0
+  )
+  const getStreamingContent = useCallback(
+    () =>
+      deferredSessionId
+        ? (useChatStore.getState().streamingContents[deferredSessionId] ?? '')
+        : '',
+    [deferredSessionId]
   )
   // Per-session input - check if there's any input for submit button state
   // PERFORMANCE: Track hasValue via callback from ChatInput instead of store subscription
@@ -2682,7 +2721,7 @@ export function ChatWindow({
     setDiffRequest,
     isAtBottom,
     scrollToBottom,
-    currentStreamingContentBlocks,
+    streamingContentBlockCount,
     isSending,
     currentQueuedMessages,
     createSession,
@@ -2819,22 +2858,24 @@ export function ChatWindow({
   })
 
   // Messages for rendering - memoize to ensure stable reference
-  const messages = useMemo(
-    () =>
-      dedupeInFlightAssistantMessage(session?.messages ?? [], {
-        isSending,
-        streamingContent,
-        streamingContentBlocks: currentStreamingContentBlocks,
-        streamingToolCalls: currentToolCalls,
-      }),
-    [
-      session?.messages,
+  const sessionMessages = session?.messages
+  const hideTrailingAssistant = useChatStore(state =>
+    shouldHideTrailingAssistant(sessionMessages ?? [], {
       isSending,
-      streamingContent,
-      currentStreamingContentBlocks,
-      currentToolCalls,
-    ]
+      streamingContent: deferredSessionId
+        ? (state.streamingContents[deferredSessionId] ?? '')
+        : '',
+      streamingContentBlocks: deferredSessionId
+        ? (state.streamingContentBlocks[deferredSessionId] ??
+          EMPTY_CONTENT_BLOCKS)
+        : EMPTY_CONTENT_BLOCKS,
+      streamingToolCalls: currentToolCalls,
+    })
   )
+  const messages = useMemo(() => {
+    const all = sessionMessages ?? []
+    return hideTrailingAssistant ? all.slice(0, -1) : all
+  }, [sessionMessages, hideTrailingAssistant])
 
   // Virtualizer for message list - always use virtualization for consistent performance
   // Even small conversations benefit from virtualization when messages have heavy content
@@ -2956,7 +2997,7 @@ export function ChatWindow({
                       scrollContainerRef={scrollViewportRef}
                       messages={messages}
                       virtualizedListRef={virtualizedListRef}
-                      streamingContent={streamingContent}
+                      getStreamingContent={getStreamingContent}
                     />
                     {/* Bottom fade gradient so messages don't hard-cut at the input area */}
                     <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-10 h-8 bg-gradient-to-b from-transparent to-background" />
@@ -3142,115 +3183,56 @@ export function ChatWindow({
                               completedDurationMs={completedDurationMs}
                             />
                           )}
-                          {isSending &&
-                            activeSessionId &&
-                            (preferences?.compact_chat_view_enabled ? (
-                              <CompactStreamingTicker
-                                sessionId={activeSessionId}
-                                worktreePath={activeWorktreePath ?? ''}
-                                contentBlocks={currentStreamingContentBlocks}
-                                toolCalls={currentToolCalls}
-                                streamingContent={streamingContent}
-                                selectedThinkingLevel={selectedThinkingLevel}
-                                approveShortcut={approveShortcut}
-                                approveShortcutYolo={approveShortcutYolo}
-                                approveShortcutClearContext={
-                                  approveShortcutClearContext
-                                }
-                                approveShortcutClearContextBuild={
-                                  approveShortcutClearContextBuild
-                                }
-                                approveButtonRef={approveButtonRef}
-                                onQuestionAnswer={handleQuestionAnswer}
-                                onQuestionSkip={handleSkipQuestion}
-                                onFileClick={setViewingFilePath}
-                                scrollViewportRef={scrollViewportRef}
-                                isQuestionAnswered={isQuestionAnswered}
-                                getSubmittedAnswers={getSubmittedAnswers}
-                                areQuestionsSkipped={areQuestionsSkipped}
-                                isStreamingPlanApproved={
-                                  isStreamingPlanApproved
-                                }
-                                onStreamingPlanApproval={
-                                  handleStreamingPlanApproval
-                                }
-                                onStreamingCustomBuildPrompt={
-                                  openBuildCustomPromptDialog
-                                }
-                                onStreamingPlanApprovalYolo={
-                                  handleStreamingPlanApprovalYolo
-                                }
-                                onStreamingClearContextApproval={
-                                  handleStreamingClearContextApproval
-                                }
-                                onStreamingClearContextApprovalBuild={
-                                  handleStreamingClearContextApprovalBuild
-                                }
-                                onStreamingWorktreeBuildApproval={
-                                  worktree?.project_id
-                                    ? handleStreamingWorktreeBuildApproval
-                                    : undefined
-                                }
-                                onStreamingWorktreeYoloApproval={
-                                  worktree?.project_id
-                                    ? handleStreamingWorktreeYoloApproval
-                                    : undefined
-                                }
-                              />
-                            ) : (
-                              <StreamingMessage
-                                sessionId={activeSessionId}
-                                worktreePath={activeWorktreePath ?? ''}
-                                contentBlocks={currentStreamingContentBlocks}
-                                toolCalls={currentToolCalls}
-                                streamingContent={streamingContent}
-                                selectedThinkingLevel={selectedThinkingLevel}
-                                approveShortcut={approveShortcut}
-                                approveShortcutYolo={approveShortcutYolo}
-                                approveShortcutClearContext={
-                                  approveShortcutClearContext
-                                }
-                                approveShortcutClearContextBuild={
-                                  approveShortcutClearContextBuild
-                                }
-                                approveButtonRef={approveButtonRef}
-                                onQuestionAnswer={handleQuestionAnswer}
-                                onQuestionSkip={handleSkipQuestion}
-                                onFileClick={setViewingFilePath}
-                                scrollViewportRef={scrollViewportRef}
-                                isQuestionAnswered={isQuestionAnswered}
-                                getSubmittedAnswers={getSubmittedAnswers}
-                                areQuestionsSkipped={areQuestionsSkipped}
-                                isStreamingPlanApproved={
-                                  isStreamingPlanApproved
-                                }
-                                onStreamingPlanApproval={
-                                  handleStreamingPlanApproval
-                                }
-                                onStreamingCustomBuildPrompt={
-                                  openBuildCustomPromptDialog
-                                }
-                                onStreamingPlanApprovalYolo={
-                                  handleStreamingPlanApprovalYolo
-                                }
-                                onStreamingClearContextApproval={
-                                  handleStreamingClearContextApproval
-                                }
-                                onStreamingClearContextApprovalBuild={
-                                  handleStreamingClearContextApprovalBuild
-                                }
-                                onStreamingWorktreeBuildApproval={
-                                  worktree?.project_id
-                                    ? handleStreamingWorktreeBuildApproval
-                                    : undefined
-                                }
-                                onStreamingWorktreeYoloApproval={
-                                  worktree?.project_id
-                                    ? handleStreamingWorktreeYoloApproval
-                                    : undefined
-                                }
-                              />
-                            ))}
+                          {isSending && activeSessionId && (
+                            <LiveStreamingMessage
+                              compact={!!preferences?.compact_chat_view_enabled}
+                              sessionId={activeSessionId}
+                              worktreePath={activeWorktreePath ?? ''}
+                              selectedThinkingLevel={selectedThinkingLevel}
+                              approveShortcut={approveShortcut}
+                              approveShortcutYolo={approveShortcutYolo}
+                              approveShortcutClearContext={
+                                approveShortcutClearContext
+                              }
+                              approveShortcutClearContextBuild={
+                                approveShortcutClearContextBuild
+                              }
+                              approveButtonRef={approveButtonRef}
+                              onQuestionAnswer={handleQuestionAnswer}
+                              onQuestionSkip={handleSkipQuestion}
+                              onFileClick={setViewingFilePath}
+                              scrollViewportRef={scrollViewportRef}
+                              isQuestionAnswered={isQuestionAnswered}
+                              getSubmittedAnswers={getSubmittedAnswers}
+                              areQuestionsSkipped={areQuestionsSkipped}
+                              isStreamingPlanApproved={isStreamingPlanApproved}
+                              onStreamingPlanApproval={
+                                handleStreamingPlanApproval
+                              }
+                              onStreamingCustomBuildPrompt={
+                                openBuildCustomPromptDialog
+                              }
+                              onStreamingPlanApprovalYolo={
+                                handleStreamingPlanApprovalYolo
+                              }
+                              onStreamingClearContextApproval={
+                                handleStreamingClearContextApproval
+                              }
+                              onStreamingClearContextApprovalBuild={
+                                handleStreamingClearContextApprovalBuild
+                              }
+                              onStreamingWorktreeBuildApproval={
+                                worktree?.project_id
+                                  ? handleStreamingWorktreeBuildApproval
+                                  : undefined
+                              }
+                              onStreamingWorktreeYoloApproval={
+                                worktree?.project_id
+                                  ? handleStreamingWorktreeYoloApproval
+                                  : undefined
+                              }
+                            />
+                          )}
 
                           {/* Permission approval UI - shown when tools require approval (never in yolo mode) */}
                           {showPermissionApproval && activeSessionId && (

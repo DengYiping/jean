@@ -148,9 +148,12 @@ pub fn get_base_index_path(app: &AppHandle, project_id: &str) -> Result<PathBuf,
 /// Load a worktree index (internal, no locking)
 fn load_index_internal(app: &AppHandle, worktree_id: &str) -> Result<WorktreeIndex, String> {
     let path = get_index_path(app, worktree_id)?;
+    load_index_from(&path, worktree_id)
+}
 
+fn load_index_from(path: &Path, worktree_id: &str) -> Result<WorktreeIndex, String> {
     if path.exists() {
-        let contents = fs::read_to_string(&path).map_err(|e| {
+        let contents = fs::read_to_string(path).map_err(|e| {
             log::error!("Failed to read index file: {e}");
             format!("Failed to read index: {e}")
         })?;
@@ -170,14 +173,18 @@ fn load_index_internal(app: &AppHandle, worktree_id: &str) -> Result<WorktreeInd
 
 /// Save a worktree index (internal, no locking - atomic write)
 fn save_index_internal(app: &AppHandle, index: &WorktreeIndex) -> Result<(), String> {
-    log::trace!("Saving index for worktree: {}", index.worktree_id);
     let path = get_index_path(app, &index.worktree_id)?;
+    save_index_to(&path, index)
+}
+
+fn save_index_to(path: &Path, index: &WorktreeIndex) -> Result<(), String> {
+    log::trace!("Saving index for worktree: {}", index.worktree_id);
     let json_content = serde_json::to_string_pretty(index).map_err(|e| {
         log::error!("Failed to serialize index: {e}");
         format!("Failed to serialize index: {e}")
     })?;
 
-    crate::platform::write_file_atomically(&path, json_content.as_bytes()).map_err(|e| {
+    crate::platform::write_file_atomically(path, json_content.as_bytes()).map_err(|e| {
         log::error!("Failed to save index file: {e}");
         e
     })?;
@@ -243,13 +250,16 @@ fn load_metadata_internal(
     session_id: &str,
 ) -> Result<Option<SessionMetadata>, String> {
     let path = get_metadata_path(app, session_id)?;
+    load_metadata_from(&path)
+}
 
+fn load_metadata_from(path: &Path) -> Result<Option<SessionMetadata>, String> {
     if !path.exists() {
         return Ok(None);
     }
 
     let file =
-        File::open(&path).map_err(|e| format!("Failed to open metadata file {path:?}: {e}"))?;
+        File::open(path).map_err(|e| format!("Failed to open metadata file {path:?}: {e}"))?;
 
     let reader = BufReader::new(file);
     let metadata: SessionMetadata = serde_json::from_reader(reader)
@@ -261,9 +271,13 @@ fn load_metadata_internal(
 /// Save session metadata (internal, no locking - atomic write)
 fn save_metadata_internal(app: &AppHandle, metadata: &SessionMetadata) -> Result<(), String> {
     let path = get_metadata_path(app, &metadata.id)?;
+    save_metadata_to(&path, metadata)
+}
+
+fn save_metadata_to(path: &Path, metadata: &SessionMetadata) -> Result<(), String> {
     let json_content = serde_json::to_vec_pretty(metadata)
         .map_err(|e| format!("Failed to write metadata: {e}"))?;
-    crate::platform::write_file_atomically(&path, &json_content)
+    crate::platform::write_file_atomically(path, &json_content)
         .map_err(|e| format!("Failed to save metadata file: {e}"))?;
 
     log::trace!("Saved metadata for session: {}", metadata.id);
@@ -786,12 +800,46 @@ where
     let index_lock = get_index_lock(worktree_id);
     let _index_guard = index_lock.lock().unwrap();
 
+    let index_path = get_index_path(app, worktree_id)?;
+    let data_dir = get_data_dir(app)?;
+    with_sessions_mut_at(
+        &index_path,
+        &data_dir,
+        worktree_id,
+        || super::commands::resolve_default_backend(app, Some(worktree_id)),
+        f,
+    )
+}
+
+/// Path-based core of `with_sessions_mut`. Caller must hold the worktree index lock.
+fn with_sessions_mut_at<F, T>(
+    index_path: &Path,
+    data_dir: &Path,
+    worktree_id: &str,
+    default_backend: impl Fn() -> super::types::Backend,
+    f: F,
+) -> Result<T, String>
+where
+    F: FnOnce(&mut WorktreeSessions) -> Result<T, String>,
+{
+    let metadata_path = |session_id: &str| -> Result<PathBuf, String> {
+        let session_dir = data_dir.join(session_id);
+        fs::create_dir_all(&session_dir)
+            .map_err(|e| format!("Failed to create session directory: {e}"))?;
+        Ok(session_dir.join("metadata.json"))
+    };
+
     // Load current index and hydrate sessions from metadata.
-    let mut index = load_index_internal(app, worktree_id)?;
+    let index_existed = index_path.exists();
+    let mut index = load_index_from(index_path, worktree_id)?;
+    let original_index = serde_json::to_vec(&index).ok();
+    let mut original_metadata: HashMap<String, SessionMetadata> = HashMap::new();
     let mut hydrated_sessions = Vec::new();
     for entry in &index.sessions {
-        let session = if let Some(metadata) = load_metadata_internal(app, &entry.id)? {
-            metadata.to_session()
+        let session = if let Some(metadata) = load_metadata_from(&metadata_path(&entry.id)?)? {
+            let session = metadata.to_session();
+            original_metadata.insert(entry.id.clone(), metadata);
+            session
         } else {
             // No metadata found - create minimal session from index entry
             // Use resolved backend from preferences instead of hardcoded Claude
@@ -808,7 +856,7 @@ where
                 last_message_at: None,
                 messages: vec![],
                 message_count: Some(entry.message_count),
-                backend: super::commands::resolve_default_backend(app, Some(worktree_id)),
+                backend: default_backend(),
                 claude_session_id: None,
                 codex_thread_id: None,
                 codex_goal: None,
@@ -911,14 +959,25 @@ where
         .sessions
         .retain(|e| session_ids_in_use.contains(&e.id));
 
-    save_index_internal(app, &index)?;
+    if !index_existed || serde_json::to_vec(&index).ok() != original_index {
+        save_index_to(index_path, &index)?;
+    }
 
-    // Save metadata for each session
+    // Save metadata only for sessions whose persisted fields changed
     for session in &sessions.sessions {
+        if let Some(original) = original_metadata.get(&session.id) {
+            let mut updated = original.clone();
+            updated.update_from_session(session);
+            if serde_json::to_vec(&updated).ok() == serde_json::to_vec(original).ok() {
+                continue;
+            }
+        }
+
         let lock = get_metadata_lock(&session.id);
         let _guard = lock.lock().unwrap();
 
-        let mut metadata = load_metadata_internal(app, &session.id)?.unwrap_or_else(|| {
+        let session_metadata_path = metadata_path(&session.id)?;
+        let mut metadata = load_metadata_from(&session_metadata_path)?.unwrap_or_else(|| {
             SessionMetadata::new(
                 session.id.clone(),
                 worktree_id.to_string(),
@@ -928,7 +987,7 @@ where
         });
 
         metadata.update_from_session(session);
-        save_metadata_internal(app, &metadata)?;
+        save_metadata_to(&session_metadata_path, &metadata)?;
     }
 
     Ok(result)
@@ -1215,6 +1274,107 @@ mod tests {
         assert_eq!(metadata.order, 0);
         assert!(metadata.runs.is_empty());
         assert_eq!(metadata.version, 1);
+    }
+
+    fn seed_worktree(root: &Path, session_count: usize, runs_per_session: usize) -> PathBuf {
+        let data_dir = root.join("data");
+        let index_path = root.join("index").join("wt.json");
+        let mut index = WorktreeIndex::new_empty("wt".to_string());
+        for i in 0..session_count {
+            let id = format!("sess-{i}");
+            let mut metadata = SessionMetadata::new(
+                id.clone(),
+                "wt".to_string(),
+                format!("Session {i}"),
+                i as u32,
+            );
+            for r in 0..runs_per_session {
+                metadata.runs.push(super::super::types::RunEntry {
+                    run_id: format!("run-{r}"),
+                    user_message_id: format!("msg-{r}"),
+                    user_message: "Please look into this change and explain it. ".repeat(8),
+                    model: Some("opus".to_string()),
+                    backend: None,
+                    execution_mode: Some("build".to_string()),
+                    thinking_level: None,
+                    effort_level: None,
+                    started_at: 1_700_000_000 + r as u64,
+                    ended_at: Some(1_700_000_010 + r as u64),
+                    status: super::super::types::RunStatus::Completed,
+                    assistant_message_id: Some(format!("asst-{r}")),
+                    cancelled: false,
+                    recovered: false,
+                    claude_session_id: None,
+                    pid: None,
+                    usage: None,
+                });
+            }
+            index.sessions.push(metadata.to_index_entry());
+            let dir = data_dir.join(&id);
+            fs::create_dir_all(&dir).unwrap();
+            save_metadata_to(&dir.join("metadata.json"), &metadata).unwrap();
+        }
+        save_index_to(&index_path, &index).unwrap();
+        index_path
+    }
+
+    fn metadata_mtimes(data_dir: &Path, count: usize) -> Vec<std::time::SystemTime> {
+        (0..count)
+            .map(|i| {
+                fs::metadata(data_dir.join(format!("sess-{i}")).join("metadata.json"))
+                    .unwrap()
+                    .modified()
+                    .unwrap()
+            })
+            .collect()
+    }
+
+    fn set_model_on_one_session(index_path: &Path, data_dir: &Path, model: &str) {
+        with_sessions_mut_at(index_path, data_dir, "wt", Default::default, |sessions| {
+            let session = sessions
+                .sessions
+                .iter_mut()
+                .find(|s| s.id == "sess-3")
+                .unwrap();
+            session.selected_model = Some(model.to_string());
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn test_with_sessions_mut_only_rewrites_changed_session_metadata() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let index_path = seed_worktree(temp.path(), 5, 2);
+        let data_dir = temp.path().join("data");
+        let before = metadata_mtimes(&data_dir, 5);
+        std::thread::sleep(std::time::Duration::from_millis(20));
+
+        set_model_on_one_session(&index_path, &data_dir, "sonnet");
+
+        let after = metadata_mtimes(&data_dir, 5);
+        let rewritten: Vec<usize> = (0..5).filter(|&i| before[i] != after[i]).collect();
+        assert_eq!(rewritten, vec![3]);
+        let saved = load_metadata_from(&data_dir.join("sess-3").join("metadata.json"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(saved.selected_model.as_deref(), Some("sonnet"));
+    }
+
+    /// Run with: cargo test --lib bench_with_sessions_mut -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn bench_with_sessions_mut_single_session_change() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let index_path = seed_worktree(temp.path(), 44, 40);
+        let data_dir = temp.path().join("data");
+        let iterations = 20;
+        let start = std::time::Instant::now();
+        for i in 0..iterations {
+            set_model_on_one_session(&index_path, &data_dir, &format!("model-{i}"));
+        }
+        let per_call = start.elapsed() / iterations;
+        eprintln!("[bench] with_sessions_mut (44 sessions, 1 changed): {per_call:?} per call");
     }
 
     #[test]

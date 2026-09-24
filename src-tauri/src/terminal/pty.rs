@@ -1,7 +1,9 @@
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::io::Read;
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::sync::Mutex;
 use std::thread;
+use std::time::{Duration, Instant};
 use tauri::AppHandle;
 
 use crate::http_server::EmitExt;
@@ -259,6 +261,20 @@ pub fn spawn_terminal(
     // invalid sequences.
     let app_clone = app.clone();
     let terminal_id_clone = terminal_id.clone();
+    let (output_tx, output_rx) = mpsc::channel::<String>();
+    let emitter_app = app.clone();
+    let emitter_terminal_id = terminal_id.clone();
+    let emitter = thread::spawn(move || {
+        coalesce_terminal_output(&output_rx, |data| {
+            let event = TerminalOutputEvent {
+                terminal_id: emitter_terminal_id.clone(),
+                data,
+            };
+            if let Err(e) = emitter_app.emit_all("terminal:output", &event) {
+                log::error!("Failed to emit terminal:output event: {e}");
+            }
+        });
+    });
     thread::spawn(move || {
         const BUF_SIZE: usize = 4096;
         let mut buf = [0u8; BUF_SIZE];
@@ -273,13 +289,7 @@ pub fn spawn_terminal(
                 Ok(0) => {
                     log::trace!("Terminal EOF for: {terminal_id_clone}");
                     if let Some(data) = flush_terminal_output_carry(&mut carry_len) {
-                        let event = TerminalOutputEvent {
-                            terminal_id: terminal_id_clone.clone(),
-                            data,
-                        };
-                        if let Err(e) = app_clone.emit_all("terminal:output", &event) {
-                            log::error!("Failed to emit terminal:output event: {e}");
-                        }
+                        let _ = output_tx.send(data);
                     }
                     break;
                 }
@@ -288,13 +298,7 @@ pub fn spawn_terminal(
                     if let Some(data) =
                         decode_terminal_output_chunk(&buf[..total], &mut carry, &mut carry_len)
                     {
-                        let event = TerminalOutputEvent {
-                            terminal_id: terminal_id_clone.clone(),
-                            data,
-                        };
-                        if let Err(e) = app_clone.emit_all("terminal:output", &event) {
-                            log::error!("Failed to emit terminal:output event: {e}");
-                        }
+                        let _ = output_tx.send(data);
                     }
                 }
                 Err(e) => {
@@ -303,6 +307,10 @@ pub fn spawn_terminal(
                 }
             }
         }
+
+        // Flush buffered output before reporting exit.
+        drop(output_tx);
+        let _ = emitter.join();
 
         // Terminal has exited, get exit code and cleanup
         if let Some(mut session) = unregister_terminal(&terminal_id_clone) {
@@ -494,4 +502,124 @@ pub fn kill_all_terminals() -> usize {
     eprintln!("[TERMINAL CLEANUP] Cleanup complete, killed {count} terminal(s)");
 
     count
+}
+
+/// Window over which PTY reads are merged into one `terminal:output` event.
+const OUTPUT_COALESCE_WINDOW: Duration = Duration::from_millis(5);
+/// Flush early once this many bytes are buffered.
+const OUTPUT_COALESCE_MAX_BYTES: usize = 64 * 1024;
+
+/// PTY reads are often tiny (tens of bytes), so emitting one event per read
+/// floods IPC during bulk output. Merge chunks that arrive within a short
+/// window, preserving order, until the sender is dropped.
+fn coalesce_terminal_output(rx: &Receiver<String>, mut emit: impl FnMut(String)) {
+    while let Ok(first) = rx.recv() {
+        let mut batch = first;
+        let deadline = Instant::now() + OUTPUT_COALESCE_WINDOW;
+        let mut disconnected = false;
+        while batch.len() < OUTPUT_COALESCE_MAX_BYTES {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            match rx.recv_timeout(remaining) {
+                Ok(chunk) => batch.push_str(&chunk),
+                Err(RecvTimeoutError::Timeout) => break,
+                Err(RecvTimeoutError::Disconnected) => {
+                    disconnected = true;
+                    break;
+                }
+            }
+        }
+        emit(batch);
+        if disconnected {
+            break;
+        }
+    }
+}
+
+#[cfg(test)]
+mod pty_read_bench {
+    use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+    use std::io::Read;
+
+    /// Run with: cargo test --release --lib bench_pty_read_chunks -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn bench_pty_read_chunks() {
+        let pair = native_pty_system()
+            .openpty(PtySize {
+                rows: 40,
+                cols: 120,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .unwrap();
+        let mut cmd = CommandBuilder::new("sh");
+        cmd.args(["-c", "seq 1 200000"]);
+        let mut child = pair.slave.spawn_command(cmd).unwrap();
+        drop(pair.slave);
+        let mut reader = pair.master.try_clone_reader().unwrap();
+        let (tx, rx) = std::sync::mpsc::channel::<String>();
+        let emitter = std::thread::spawn(move || {
+            let mut emits = 0usize;
+            super::coalesce_terminal_output(&rx, |_| emits += 1);
+            emits
+        });
+        let mut buf = [0u8; 4096];
+        let (mut reads, mut bytes) = (0usize, 0usize);
+        let start = std::time::Instant::now();
+        while let Ok(n) = reader.read(&mut buf) {
+            if n == 0 {
+                break;
+            }
+            reads += 1;
+            bytes += n;
+            let _ = tx.send(String::from_utf8_lossy(&buf[..n]).into_owned());
+        }
+        drop(tx);
+        let emits = emitter.join().unwrap();
+        let _ = child.wait();
+        eprintln!(
+            "[bench] pty: {reads} reads, {emits} terminal:output events for {bytes} bytes in {:?}",
+            start.elapsed(),
+        );
+    }
+}
+
+#[cfg(test)]
+mod coalesce_tests {
+    use super::coalesce_terminal_output;
+
+    #[test]
+    fn merges_burst_chunks_in_order_and_flushes_on_disconnect() {
+        let (tx, rx) = std::sync::mpsc::channel::<String>();
+        for i in 0..1000 {
+            tx.send(format!("{i},")).unwrap();
+        }
+        drop(tx);
+
+        let mut batches = Vec::new();
+        coalesce_terminal_output(&rx, |data| batches.push(data));
+
+        let expected: String = (0..1000).map(|i| format!("{i},")).collect();
+        assert_eq!(batches.concat(), expected);
+        assert_eq!(batches.len(), 1);
+    }
+
+    #[test]
+    fn emits_isolated_chunk_after_window() {
+        let (tx, rx) = std::sync::mpsc::channel::<String>();
+        let handle = std::thread::spawn(move || {
+            let mut batches = Vec::new();
+            coalesce_terminal_output(&rx, |data| batches.push(data));
+            batches
+        });
+        tx.send("a".to_string()).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        tx.send("b".to_string()).unwrap();
+        drop(tx);
+
+        assert_eq!(
+            handle.join().unwrap(),
+            vec!["a".to_string(), "b".to_string()]
+        );
+    }
 }

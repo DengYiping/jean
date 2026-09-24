@@ -8,12 +8,7 @@ import { useTerminalStore } from '@/store/terminal-store'
 import { cancelChatMessage } from '@/services/chat'
 import { isNativeApp } from '@/lib/environment'
 import { logger } from '@/lib/logger'
-import type {
-  ContentBlock,
-  QueuedMessage,
-  SessionDigest,
-  Session,
-} from '@/types/chat'
+import type { QueuedMessage, SessionDigest, Session } from '@/types/chat'
 import type { PlanDialogMode } from '../PlanDialog'
 
 interface UseChatWindowEventsParams {
@@ -61,7 +56,7 @@ interface UseChatWindowEventsParams {
   // Auto-scroll
   isAtBottom: boolean
   scrollToBottom: (instant?: boolean) => void
-  currentStreamingContentBlocks: ContentBlock[]
+  streamingContentBlockCount: number
   isSending: boolean
   currentQueuedMessages: QueuedMessage[]
   // Create session
@@ -135,7 +130,7 @@ export function useChatWindowEvents({
   setDiffRequest,
   isAtBottom,
   scrollToBottom,
-  currentStreamingContentBlocks,
+  streamingContentBlockCount,
   isSending,
   currentQueuedMessages,
   createSession: _createSession,
@@ -226,7 +221,7 @@ export function useChatWindowEvents({
     }
   }, [
     session?.messages.length,
-    currentStreamingContentBlocks.length,
+    streamingContentBlockCount,
     isSending,
     currentQueuedMessages.length,
   ])

@@ -64,6 +64,7 @@ import useStreamingEvents from './components/chat/hooks/useStreamingEvents'
 import { hydrateRunningSnapshot } from './lib/hydrate-running-snapshot'
 import { preloadAllSounds } from './lib/sounds'
 import { applyCliImportNavigation } from './lib/cli-import'
+import { startCliRequestTrigger } from './lib/cli-request-trigger'
 import {
   applyCliYoloNavigation,
   resolveCliYoloExecutionConfig,
@@ -882,14 +883,13 @@ function App() {
       }
     }
 
-    void processPendingImports()
-    const intervalId = window.setInterval(() => {
-      void processPendingImports()
-    }, 750)
+    const stopTrigger = startCliRequestTrigger(
+      () => void processPendingImports()
+    )
 
     return () => {
       cancelled = true
-      window.clearInterval(intervalId)
+      stopTrigger()
     }
   }, [queryClient])
 

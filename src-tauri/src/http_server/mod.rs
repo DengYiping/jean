@@ -5,7 +5,7 @@ pub mod websocket;
 
 use serde::Serialize;
 use std::collections::{HashMap, VecDeque};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::broadcast;
@@ -20,8 +20,17 @@ const SESSION_BUFFER_CAP: usize = 2000;
 /// Terminals can stream high-volume output; cap protects memory.
 const TERMINAL_BUFFER_CAP: usize = 4000;
 
+/// Maximum serialized bytes buffered per terminal for replay on reconnect.
+const TERMINAL_BUFFER_MAX_BYTES: usize = 4 * 1024 * 1024;
+
 type SessionReplayBufferMap = HashMap<String, VecDeque<(u64, Arc<str>)>>;
-type TerminalReplayBufferMap = HashMap<String, VecDeque<(u64, Arc<str>)>>;
+type TerminalReplayBufferMap = HashMap<String, TerminalReplayBuffer>;
+
+#[derive(Default)]
+struct TerminalReplayBuffer {
+    events: VecDeque<(u64, Arc<str>)>,
+    bytes: usize,
+}
 
 /// Events that are worth buffering for replay on reconnect.
 const REPLAYABLE_EVENTS: &[&str] = &[
@@ -50,6 +59,11 @@ const TERMINAL_REPLAYABLE_EVENTS: &[&str] = &["terminal:output", "terminal:start
 /// Managed as Tauri state so any code with an AppHandle can broadcast.
 pub struct WsBroadcaster {
     tx: broadcast::Sender<WsEvent>,
+    /// Number of running HTTP servers. When zero, `broadcast` is a no-op so
+    /// native-only use skips serialization and replay buffering. A count (not a
+    /// flag) keeps a restart safe when the old server finishes shutting down
+    /// after the new one started.
+    running_servers: AtomicUsize,
     /// Per-session ring buffer for event replay on WebSocket reconnect.
     /// Key: session_id extracted from the event payload.
     session_buffers: Mutex<SessionReplayBufferMap>,
@@ -88,6 +102,7 @@ impl WsBroadcaster {
         (
             Self {
                 tx,
+                running_servers: AtomicUsize::new(0),
                 session_buffers: Mutex::new(HashMap::new()),
                 terminal_buffers: Mutex::new(HashMap::new()),
             },
@@ -99,6 +114,9 @@ impl WsBroadcaster {
     /// Each broadcast receiver gets an `Arc<str>` clone (cheap ref-count
     /// increment) instead of re-serializing per client.
     pub fn broadcast<S: Serialize>(&self, event: &str, payload: &S) {
+        if self.running_servers.load(Ordering::Relaxed) == 0 {
+            return;
+        }
         let seq = EVENT_SEQ.fetch_add(1, Ordering::Relaxed);
         let envelope = WsEnvelope {
             msg_type: "event",
@@ -113,16 +131,32 @@ impl WsBroadcaster {
                 return;
             }
         };
-        let json_arc: Arc<str> = Arc::from(json);
 
-        // Buffer replayable events per session
-        if REPLAYABLE_EVENTS.contains(&event) {
-            // Try to extract session_id from the payload
-            if let Ok(val) = serde_json::to_value(payload) {
-                if let Some(sid) = val.get("session_id").and_then(|v| v.as_str()) {
-                    if let Ok(mut buffers) = self.session_buffers.lock() {
+        let is_session_event = REPLAYABLE_EVENTS.contains(&event);
+        let is_terminal_event =
+            TERMINAL_REPLAYABLE_EVENTS.contains(&event) || event == "terminal:stopped";
+        let ids = if is_session_event || is_terminal_event {
+            serde_json::to_value(payload).ok()
+        } else {
+            None
+        };
+        let json_arc: Arc<str> = Arc::from(json);
+        let id_field = |key: &str| {
+            ids.as_ref()
+                .and_then(|val| val.get(key))
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+        };
+
+        if ids.is_some() {
+            if let Some(sid) = id_field("session_id").filter(|_| is_session_event) {
+                if let Ok(mut buffers) = self.session_buffers.lock() {
+                    // Clean up session buffer on chat:done or chat:cancelled
+                    if event == "chat:done" || event == "chat:cancelled" {
+                        buffers.remove(&sid);
+                    } else {
                         let buf = buffers
-                            .entry(sid.to_string())
+                            .entry(sid)
                             .or_insert_with(|| VecDeque::with_capacity(SESSION_BUFFER_CAP));
                         if buf.len() >= SESSION_BUFFER_CAP {
                             buf.pop_front();
@@ -131,42 +165,23 @@ impl WsBroadcaster {
                     }
                 }
             }
-        }
 
-        // Clean up session buffer on chat:done or chat:cancelled
-        if event == "chat:done" || event == "chat:cancelled" {
-            if let Ok(val) = serde_json::to_value(payload) {
-                if let Some(sid) = val.get("session_id").and_then(|v| v.as_str()) {
-                    if let Ok(mut buffers) = self.session_buffers.lock() {
-                        buffers.remove(sid);
-                    }
-                }
-            }
-        }
-
-        // Buffer replayable terminal events keyed by terminal_id
-        if TERMINAL_REPLAYABLE_EVENTS.contains(&event) {
-            if let Ok(val) = serde_json::to_value(payload) {
-                if let Some(tid) = val.get("terminal_id").and_then(|v| v.as_str()) {
-                    if let Ok(mut buffers) = self.terminal_buffers.lock() {
-                        let buf = buffers
-                            .entry(tid.to_string())
-                            .or_insert_with(|| VecDeque::with_capacity(TERMINAL_BUFFER_CAP));
-                        if buf.len() >= TERMINAL_BUFFER_CAP {
-                            buf.pop_front();
+            if let Some(tid) = id_field("terminal_id").filter(|_| is_terminal_event) {
+                if let Ok(mut buffers) = self.terminal_buffers.lock() {
+                    // Drop terminal buffer on terminal:stopped — no further output expected
+                    if event == "terminal:stopped" {
+                        buffers.remove(&tid);
+                    } else {
+                        let buf = buffers.entry(tid).or_default();
+                        buf.bytes += json_arc.len();
+                        buf.events.push_back((seq, json_arc.clone()));
+                        while buf.events.len() > TERMINAL_BUFFER_CAP
+                            || (buf.bytes > TERMINAL_BUFFER_MAX_BYTES && buf.events.len() > 1)
+                        {
+                            if let Some((_, dropped)) = buf.events.pop_front() {
+                                buf.bytes -= dropped.len();
+                            }
                         }
-                        buf.push_back((seq, json_arc.clone()));
-                    }
-                }
-            }
-        }
-
-        // Drop terminal buffer on terminal:stopped — no further output expected
-        if event == "terminal:stopped" {
-            if let Ok(val) = serde_json::to_value(payload) {
-                if let Some(tid) = val.get("terminal_id").and_then(|v| v.as_str()) {
-                    if let Ok(mut buffers) = self.terminal_buffers.lock() {
-                        buffers.remove(tid);
                     }
                 }
             }
@@ -177,6 +192,30 @@ impl WsBroadcaster {
             json: json_arc,
             seq,
         });
+    }
+
+    /// Enable broadcasting and replay buffering while the HTTP server runs.
+    pub fn server_started(&self) {
+        self.running_servers.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Disable broadcasting and release replay buffers.
+    pub fn server_stopped(&self) {
+        let previous = self
+            .running_servers
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| {
+                Some(n.saturating_sub(1))
+            })
+            .unwrap_or(0);
+        if previous > 1 {
+            return;
+        }
+        if let Ok(mut buffers) = self.session_buffers.lock() {
+            buffers.clear();
+        }
+        if let Ok(mut buffers) = self.terminal_buffers.lock() {
+            buffers.clear();
+        }
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<WsEvent> {
@@ -212,6 +251,7 @@ impl WsBroadcaster {
         };
         match buffers.get(terminal_id) {
             Some(buf) => buf
+                .events
                 .iter()
                 .filter(|(seq, _)| *seq > after_seq)
                 .cloned()
@@ -248,9 +288,71 @@ mod tests {
     use super::WsBroadcaster;
     use serde_json::json;
 
+    fn terminal_chunk(i: usize) -> serde_json::Value {
+        json!({
+            "terminal_id": "term-1",
+            "data": format!("\u{1b}[32mline {i}\u{1b}[0m ").repeat(200),
+        })
+    }
+
+    /// Run with: cargo test --release --lib bench_broadcast -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn bench_broadcast_terminal_output() {
+        for (label, server_running) in [("no server", false), ("server running", true)] {
+            let (broadcaster, _) = WsBroadcaster::new();
+            if server_running {
+                broadcaster.server_started();
+            }
+            let events: Vec<_> = (0..20_000).map(terminal_chunk).collect();
+            let start = std::time::Instant::now();
+            for event in &events {
+                broadcaster.broadcast("terminal:output", event);
+            }
+            let per_event = start.elapsed() / events.len() as u32;
+            let retained: usize = broadcaster
+                .replay_terminal_events("term-1", 0)
+                .iter()
+                .map(|(_, json)| json.len())
+                .sum();
+            eprintln!(
+                "[bench] broadcast terminal:output ({label}): {per_event:?}/event, retained {:.1} MB",
+                retained as f64 / 1_048_576.0
+            );
+        }
+    }
+
+    #[test]
+    fn skips_serialization_and_buffering_when_server_not_running() {
+        let (broadcaster, _) = WsBroadcaster::new();
+        broadcaster.broadcast("terminal:output", &terminal_chunk(0));
+        broadcaster.broadcast(
+            "chat:chunk",
+            &json!({ "session_id": "s-1", "content": "hi" }),
+        );
+
+        assert!(broadcaster.replay_terminal_events("term-1", 0).is_empty());
+        assert!(broadcaster.replay_events("s-1", 0).is_empty());
+    }
+
+    #[test]
+    fn keeps_broadcasting_when_old_server_stops_after_restart() {
+        let (broadcaster, _) = WsBroadcaster::new();
+        broadcaster.server_started(); // old server
+        broadcaster.server_started(); // new server started before old one finished
+        broadcaster.server_stopped(); // old server shutdown completes
+
+        broadcaster.broadcast("terminal:output", &terminal_chunk(0));
+        assert_eq!(broadcaster.replay_terminal_events("term-1", 0).len(), 1);
+
+        broadcaster.server_stopped();
+        assert!(broadcaster.replay_terminal_events("term-1", 0).is_empty());
+    }
+
     #[test]
     fn replays_terminal_events_after_sequence() {
         let (broadcaster, _) = WsBroadcaster::new();
+        broadcaster.server_started();
 
         broadcaster.broadcast("terminal:started", &json!({ "terminal_id": "term-1" }));
         broadcaster.broadcast(
@@ -276,6 +378,7 @@ mod tests {
     #[test]
     fn clears_terminal_replay_buffer_when_terminal_stops() {
         let (broadcaster, _) = WsBroadcaster::new();
+        broadcaster.server_started();
 
         broadcaster.broadcast("terminal:started", &json!({ "terminal_id": "term-1" }));
         broadcaster.broadcast(

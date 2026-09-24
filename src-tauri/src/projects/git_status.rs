@@ -1,5 +1,8 @@
 use crate::platform::silent_command;
-use std::time::{SystemTime, UNIX_EPOCH};
+use once_cell::sync::Lazy;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 
@@ -54,8 +57,85 @@ pub fn base_ref(base_remote: Option<&str>, base_branch: &str) -> String {
     format!("{}/{base_branch}", base_remote.unwrap_or("origin"))
 }
 
+/// How long a successful `git fetch <remote> <branch>` is reused. Worktrees of
+/// the same repository share remote-tracking refs, so status polling across
+/// many worktrees only needs to hit the network once per window.
+const FETCH_TTL: Duration = Duration::from_secs(180);
+
+type FetchKey = (String, String, String);
+type FetchSlots = HashMap<FetchKey, Arc<Mutex<Option<Instant>>>>;
+
+/// Last fetch time per (git common dir, remote, branch). The per-key mutex also
+/// makes concurrent pollers wait for an in-flight fetch instead of duplicating it.
+static RECENT_FETCHES: Lazy<Mutex<FetchSlots>> = Lazy::new(|| Mutex::new(HashMap::new()));
+
+/// Worktree path -> shared git directory.
+static GIT_COMMON_DIRS: Lazy<Mutex<HashMap<String, String>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
+fn git_common_dir(repo_path: &str) -> String {
+    if let Some(dir) = GIT_COMMON_DIRS.lock().unwrap().get(repo_path) {
+        return dir.clone();
+    }
+    let resolved = silent_command("git")
+        .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
+        .current_dir(repo_path)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .filter(|dir| !dir.is_empty());
+    match resolved {
+        Some(dir) => {
+            GIT_COMMON_DIRS
+                .lock()
+                .unwrap()
+                .insert(repo_path.to_string(), dir.clone());
+            dir
+        }
+        None => repo_path.to_string(),
+    }
+}
+
+/// Run `fetch` unless the same remote branch was fetched for this repository
+/// within `FETCH_TTL`.
+fn fetch_deduplicated(
+    repo_path: &str,
+    remote: &str,
+    branch: &str,
+    fetch: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    let key = (
+        git_common_dir(repo_path),
+        remote.to_string(),
+        branch.to_string(),
+    );
+    let slot = RECENT_FETCHES
+        .lock()
+        .unwrap()
+        .entry(key)
+        .or_default()
+        .clone();
+    let mut last_fetch = slot.lock().unwrap();
+    if last_fetch.is_some_and(|at| at.elapsed() < FETCH_TTL) {
+        log::trace!("Skipping fetch of {remote}/{branch} for {repo_path}: fetched recently");
+        return Ok(());
+    }
+    let result = fetch();
+    if result.is_ok() {
+        *last_fetch = Some(Instant::now());
+    }
+    result
+}
+
 /// Fetch the latest changes from origin for a specific branch
 fn fetch_origin_branch(repo_path: &str, branch: &str) -> Result<(), String> {
+    fetch_deduplicated(repo_path, "origin", branch, || {
+        fetch_origin_branch_uncached(repo_path, branch)
+    })
+}
+
+fn fetch_origin_branch_uncached(repo_path: &str, branch: &str) -> Result<(), String> {
     log::trace!("Fetching origin/{branch} in {repo_path}");
 
     let output = silent_command("git")
@@ -83,6 +163,16 @@ fn fetch_origin_branch(repo_path: &str, branch: &str) -> Result<(), String> {
 
 /// Fetch a branch from a specific remote (not necessarily origin)
 fn fetch_origin_branch_from_remote(
+    repo_path: &str,
+    remote: &str,
+    branch: &str,
+) -> Result<(), String> {
+    fetch_deduplicated(repo_path, remote, branch, || {
+        fetch_origin_branch_from_remote_uncached(repo_path, remote, branch)
+    })
+}
+
+fn fetch_origin_branch_from_remote_uncached(
     repo_path: &str,
     remote: &str,
     branch: &str,
@@ -417,6 +507,29 @@ fn ref_exists(repo_path: &str, git_ref: &str) -> bool {
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)
+}
+
+/// Count commits only in `left` and only in `right` with a single git call.
+/// Returns (0, 0) if either ref doesn't exist.
+fn count_commits_left_right(repo_path: &str, left: &str, right: &str) -> (u32, u32) {
+    let output = silent_command("git")
+        .args([
+            "rev-list",
+            "--left-right",
+            "--count",
+            &format!("{left}...{right}"),
+        ])
+        .current_dir(repo_path)
+        .output();
+
+    match output {
+        Ok(o) if o.status.success() => {
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            let mut counts = stdout.split_whitespace().map(|n| n.parse().unwrap_or(0));
+            (counts.next().unwrap_or(0), counts.next().unwrap_or(0))
+        }
+        _ => (0, 0),
+    }
 }
 
 /// Count commits between two refs
@@ -768,11 +881,8 @@ pub fn get_branch_status(info: &ActiveWorktreeInfo) -> Result<GitBranchStatus, S
     // Compare HEAD to origin/{base_branch}
     let origin_ref = base_ref(base_remote, base_branch);
 
-    // Commits we're behind (commits in origin/base that aren't in HEAD)
-    let behind_count = count_commits_between(repo_path, "HEAD", &origin_ref);
-
-    // Commits we're ahead (commits in HEAD that aren't in origin/base)
-    let ahead_count = count_commits_between(repo_path, &origin_ref, "HEAD");
+    // Commits we're ahead (in HEAD, not in origin/base) and behind (in origin/base, not in HEAD)
+    let (ahead_count, behind_count) = count_commits_left_right(repo_path, "HEAD", &origin_ref);
 
     // Get uncommitted diff stats (working directory changes)
     let (uncommitted_added, uncommitted_removed) = get_uncommitted_diff_stats(repo_path);
@@ -783,8 +893,8 @@ pub fn get_branch_status(info: &ActiveWorktreeInfo) -> Result<GitBranchStatus, S
 
     // Base branch's own remote sync status
     // Compare local base branch to origin/base_branch
-    let base_branch_ahead_count = count_commits_between(repo_path, &origin_ref, base_branch);
-    let base_branch_behind_count = count_commits_between(repo_path, base_branch, &origin_ref);
+    let (base_branch_ahead_count, base_branch_behind_count) =
+        count_commits_left_right(repo_path, base_branch, &origin_ref);
 
     // Commits unique to this worktree (ahead of local base branch)
     let worktree_base_ref = if base_remote.is_some() {
@@ -870,6 +980,103 @@ pub fn get_branch_status(info: &ActiveWorktreeInfo) -> Result<GitBranchStatus, S
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Simulates two consecutive dashboard refreshes over real worktrees.
+    /// Run with: JEAN_BENCH_WORKTREES=/path/a,/path/b \
+    ///   cargo test --release --lib bench_branch_status -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn bench_branch_status_refresh_rounds() {
+        let Ok(paths) = std::env::var("JEAN_BENCH_WORKTREES") else {
+            eprintln!("[bench] JEAN_BENCH_WORKTREES not set, skipping");
+            return;
+        };
+        let infos: Vec<ActiveWorktreeInfo> = paths
+            .split(',')
+            .enumerate()
+            .map(|(i, path)| ActiveWorktreeInfo {
+                worktree_id: format!("wt-{i}"),
+                worktree_path: path.to_string(),
+                base_branch: "main".to_string(),
+                base_remote: None,
+                pr_number: None,
+                pr_url: None,
+                pr_push_remote: None,
+                pr_push_branch: None,
+            })
+            .collect();
+        for round in 1..=2 {
+            let start = std::time::Instant::now();
+            std::thread::scope(|scope| {
+                for info in &infos {
+                    scope.spawn(move || get_branch_status(info).unwrap());
+                }
+            });
+            eprintln!(
+                "[bench] branch status round {round} ({} worktrees, parallel): {:?}",
+                infos.len(),
+                start.elapsed()
+            );
+        }
+    }
+
+    #[test]
+    fn left_right_counts_match_pairwise_counts() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo = temp.path().to_str().unwrap();
+        let git = |args: &[&str]| {
+            let status = silent_command("git")
+                .args(args)
+                .current_dir(repo)
+                .status()
+                .unwrap();
+            assert!(status.success(), "git {args:?}");
+        };
+        git(&["init", "-q", "-b", "main"]);
+        git(&[
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "base",
+        ]);
+        git(&["branch", "other"]);
+        for m in ["a1", "a2"] {
+            git(&[
+                "-c",
+                "user.email=t@t",
+                "-c",
+                "user.name=t",
+                "commit",
+                "-q",
+                "--allow-empty",
+                "-m",
+                m,
+            ]);
+        }
+        git(&["checkout", "-q", "other"]);
+        git(&[
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "b1",
+        ]);
+
+        let (left, right) = count_commits_left_right(repo, "main", "other");
+        assert_eq!(left, count_commits_between(repo, "other", "main"));
+        assert_eq!(right, count_commits_between(repo, "main", "other"));
+        assert_eq!((left, right), (2, 1));
+        assert_eq!(count_commits_left_right(repo, "main", "missing"), (0, 0));
+    }
 
     #[test]
     fn base_ref_uses_the_selected_remote() {

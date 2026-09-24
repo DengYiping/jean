@@ -75,7 +75,7 @@ describe('useChatWindowEvents worktree approval shortcuts', () => {
       setDiffRequest: vi.fn(),
       isAtBottom: true,
       scrollToBottom: vi.fn(),
-      currentStreamingContentBlocks: [],
+      streamingContentBlockCount: 0,
       isSending: false,
       currentQueuedMessages: [],
       createSession: {

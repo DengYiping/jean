@@ -487,6 +487,13 @@ pub(crate) fn tool_result_content_to_string(content: &serde_json::Value) -> Stri
 
 /// Parse JSONL lines and build a ChatMessage
 /// This replicates the parsing logic from execute_claude_streaming
+/// Claude `--include-partial-messages` delta lines. The CLI writes these as
+/// `{"type":"stream_event",...}` and no parser consumes them, so skip them
+/// before paying for a full JSON parse.
+pub(crate) fn is_partial_stream_event_line(line: &str) -> bool {
+    line.starts_with("{\"type\":\"stream_event\"")
+}
+
 pub fn parse_run_to_message(lines: &[String], run: &RunEntry) -> Result<ChatMessage, String> {
     let mut content = String::new();
     let mut tool_calls: Vec<ToolCall> = Vec::new();
@@ -566,7 +573,7 @@ pub fn parse_run_to_message(lines: &[String], run: &RunEntry) -> Result<ChatMess
     }
 
     for line in lines {
-        if line.trim().is_empty() {
+        if line.trim().is_empty() || is_partial_stream_event_line(line) {
             continue;
         }
 
@@ -1724,6 +1731,59 @@ mod tests {
             pid: None,
             usage: None,
         }
+    }
+
+    /// Run with: JEAN_BENCH_RUN_LOGS=/path/to/list.txt \
+    ///   cargo test --release --lib bench_parse_run_logs -- --ignored --nocapture
+    /// where list.txt contains one Claude run log path per line.
+    #[test]
+    #[ignore]
+    fn bench_parse_run_logs() {
+        let Ok(list) = std::env::var("JEAN_BENCH_RUN_LOGS") else {
+            eprintln!("[bench] JEAN_BENCH_RUN_LOGS not set, skipping");
+            return;
+        };
+        let runs: Vec<Vec<String>> = std::fs::read_to_string(list)
+            .unwrap()
+            .lines()
+            .filter_map(|path| std::fs::read_to_string(path).ok())
+            .map(|contents| contents.lines().map(str::to_string).collect())
+            .collect();
+        let run = test_run_with_model(Some("opus"));
+        let iterations = 5;
+        let start = std::time::Instant::now();
+        for _ in 0..iterations {
+            for lines in &runs {
+                let _ = super::parse_run_to_message(lines, &run);
+            }
+        }
+        eprintln!(
+            "[bench] parse_run_to_message over {} run logs: {:?} per pass",
+            runs.len(),
+            start.elapsed() / iterations
+        );
+    }
+
+    #[test]
+    fn partial_stream_event_lines_do_not_change_parsed_message() {
+        let run = test_run_with_model(Some("opus"));
+        let assistant = r#"{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"Hello"}]}}"#;
+        let partial = r#"{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Hel"}}}"#;
+        assert!(super::is_partial_stream_event_line(partial));
+        assert!(!super::is_partial_stream_event_line(assistant));
+
+        let with_partial = super::parse_run_to_message(
+            &[
+                partial.to_string(),
+                assistant.to_string(),
+                partial.to_string(),
+            ],
+            &run,
+        )
+        .unwrap();
+        let without_partial = super::parse_run_to_message(&[assistant.to_string()], &run).unwrap();
+        assert_eq!(with_partial.content, without_partial.content);
+        assert_eq!(with_partial.content, "Hello");
     }
 
     #[test]

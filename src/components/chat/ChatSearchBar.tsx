@@ -5,7 +5,8 @@ import { useUIStore } from '@/store/ui-store'
 import { ChevronDown, ChevronUp, X } from 'lucide-react'
 
 interface ChatSearchBarProps {
-  streamingContent?: string
+  /** Read at search time so streaming chunks do not restart the search. */
+  getStreamingContent?: () => string
   messages?: ChatMessage[]
   virtualizedListRef?: RefObject<VirtualizedMessageListHandle | null>
   scrollContainerRef: RefObject<HTMLElement | null>
@@ -43,7 +44,7 @@ export function ChatSearchBar({
   scrollContainerRef,
   messages,
   virtualizedListRef,
-  streamingContent,
+  getStreamingContent,
 }: ChatSearchBarProps) {
   const chatSearchOpen = useUIStore(state => state.chatSearchOpen)
   const setChatSearchOpen = useUIStore(state => state.setChatSearchOpen)
@@ -120,6 +121,7 @@ export function ChatSearchBar({
             index = text.indexOf(lowerQuery, index + searchQuery.length)
           }
         })
+        const streamingContent = getStreamingContent?.()
         let index = streamingContent?.toLowerCase().indexOf(lowerQuery) ?? -1
         while (index >= 0) {
           found.push({
@@ -187,7 +189,7 @@ export function ChatSearchBar({
       scrollContainerRef,
       supportsHighlightAPI,
       messages,
-      streamingContent,
+      getStreamingContent,
     ]
   )
 

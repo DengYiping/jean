@@ -216,6 +216,11 @@ pub async fn start_server(
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
     let bind_host_for_log = bind_host.clone();
 
+    if let Some(ws) = app.try_state::<super::WsBroadcaster>() {
+        ws.server_started();
+    }
+    let app_for_shutdown = app.clone();
+
     // Spawn the server
     tokio::spawn(async move {
         log::info!(
@@ -228,6 +233,9 @@ pub async fn start_server(
             })
             .await
             .unwrap_or_else(|e| log::error!("HTTP server error: {e}"));
+        if let Some(ws) = app_for_shutdown.try_state::<super::WsBroadcaster>() {
+            ws.server_stopped();
+        }
     });
 
     Ok(HttpServerHandle {

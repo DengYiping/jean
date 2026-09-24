@@ -17,6 +17,37 @@ pub const POLL_INTERVAL: Duration = Duration::from_millis(50);
 /// instead of 50ms reduces per-event latency by up to 45ms.
 pub const POLL_INTERVAL_FAST: Duration = Duration::from_millis(5);
 
+/// Longest idle polling interval, reached after a sustained quiet period
+/// (e.g. a long-running tool call).
+pub const POLL_INTERVAL_MAX: Duration = Duration::from_millis(250);
+
+/// Idle polls at `POLL_INTERVAL` before backing off further.
+const IDLE_POLLS_BEFORE_BACKOFF: u32 = 10;
+
+/// Chooses the sleep between tail polls: fast while data flows, the default
+/// interval for short gaps, then doubling up to `POLL_INTERVAL_MAX`.
+#[derive(Debug, Default)]
+pub struct PollBackoff {
+    idle_polls: u32,
+}
+
+impl PollBackoff {
+    pub fn next_interval(&mut self, had_data: bool) -> Duration {
+        if had_data {
+            self.idle_polls = 0;
+            return POLL_INTERVAL_FAST;
+        }
+        self.idle_polls = self.idle_polls.saturating_add(1);
+        let doublings = self
+            .idle_polls
+            .saturating_sub(IDLE_POLLS_BEFORE_BACKOFF)
+            .min(8);
+        POLL_INTERVAL
+            .saturating_mul(1 << doublings)
+            .min(POLL_INTERVAL_MAX)
+    }
+}
+
 /// Tailer for reading new lines from an NDJSON file.
 ///
 /// Maintains position in the file and returns only new complete lines
@@ -312,6 +343,46 @@ mod tests {
         assert_eq!(lines.len(), 1);
         // trim_end_matches('\n') leaves \r, but that's OK for JSON parsing
         assert!(lines[0].contains(r#""type": "crlf""#));
+    }
+
+    /// Wakeups for a run that streams for 2s, then waits 60s on a tool, then
+    /// streams again. Output arrives as a burst every 20ms while streaming.
+    fn simulated_wakeups() -> (usize, Duration) {
+        let mut backoff = PollBackoff::default();
+        let mut now = Duration::ZERO;
+        let mut next_data = Duration::ZERO;
+        let mut wakeups = 0;
+        let mut worst_latency = Duration::ZERO;
+        let stream_until = Duration::from_secs(2);
+        let resume_at = Duration::from_secs(62);
+        let end = Duration::from_secs(64);
+        while now < end {
+            wakeups += 1;
+            let had_data = next_data <= now;
+            if had_data {
+                worst_latency = worst_latency.max(now - next_data);
+                next_data = if now < stream_until || now >= resume_at {
+                    next_data + Duration::from_millis(20)
+                } else {
+                    resume_at
+                };
+                if next_data < stream_until.max(now) && now < stream_until {
+                    next_data = now + Duration::from_millis(20);
+                }
+            }
+            now += backoff.next_interval(had_data);
+        }
+        (wakeups, worst_latency)
+    }
+
+    #[test]
+    fn idle_tail_backs_off() {
+        let (wakeups, worst_latency) = simulated_wakeups();
+        eprintln!(
+            "[measure] tail wakeups over 64s run: {wakeups}, worst latency {worst_latency:?}"
+        );
+        assert!(wakeups < 600, "wakeups = {wakeups}");
+        assert!(worst_latency <= Duration::from_millis(250));
     }
 
     #[test]

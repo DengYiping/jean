@@ -88,7 +88,20 @@ export function dedupeInFlightAssistantMessage(
   messages: ChatMessage[],
   options: InFlightMessageDedupOptions
 ): ChatMessage[] {
-  if (!options.isSending || messages.length < 2) return messages
+  return shouldHideTrailingAssistant(messages, options)
+    ? messages.slice(0, -1)
+    : messages
+}
+
+/**
+ * Decision half of `dedupeInFlightAssistantMessage`. Returns a boolean so
+ * callers can subscribe to streaming state without re-rendering per chunk.
+ */
+export function shouldHideTrailingAssistant(
+  messages: ChatMessage[],
+  options: InFlightMessageDedupOptions
+): boolean {
+  if (!options.isSending || messages.length < 2) return false
 
   const lastMessage = messages[messages.length - 1]
   const previousMessage = messages[messages.length - 2]
@@ -99,7 +112,7 @@ export function dedupeInFlightAssistantMessage(
   // one-render window where the message appears then gets removed by dedupe —
   // causing visible flicker (message count bounces N → N+1 → N).
   if (lastMessage?.role !== 'assistant' || previousMessage?.role !== 'user') {
-    return messages
+    return false
   }
 
   const hasLiveStreaming =
@@ -110,10 +123,8 @@ export function dedupeInFlightAssistantMessage(
   // Always hide trailing assistant during send — either streaming hasn't
   // started yet (backend persisted early) or it matches the live stream.
   if (!hasLiveStreaming) {
-    return messages.slice(0, -1)
+    return true
   }
 
   return isTransientTrailingAssistant(lastMessage, options)
-    ? messages.slice(0, -1)
-    : messages
 }

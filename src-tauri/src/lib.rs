@@ -5047,6 +5047,8 @@ pub fn run() {
                     let _ = window.show();
                     let _ = window.set_focus();
                 }
+                // `jean import` / `jean yolo` enqueue a request and then reopen the app.
+                let _ = _app_handle.emit("cli:requests-pending", ());
             }
             tauri::RunEvent::WindowEvent { label, event, .. } => {
                 if let tauri::WindowEvent::CloseRequested { .. } = event {

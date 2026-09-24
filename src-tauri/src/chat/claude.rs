@@ -1141,7 +1141,7 @@ pub fn tail_claude_output(
     pid: u32,
 ) -> Result<ClaudeResponse, String> {
     use super::detached::is_process_alive;
-    use super::tail::{NdjsonTailer, POLL_INTERVAL, POLL_INTERVAL_FAST};
+    use super::tail::{NdjsonTailer, PollBackoff};
     use std::time::{Duration, Instant};
 
     log::trace!("Starting to tail NDJSON output for session: {session_id}");
@@ -1203,6 +1203,7 @@ pub fn tail_claude_output(
     let started_at = Instant::now();
     let mut last_output_time = Instant::now();
     let mut received_claude_output = false; // Track if we've received any Claude output (not our metadata)
+    let mut poll_backoff = PollBackoff::default();
 
     loop {
         // Poll for new lines
@@ -1240,6 +1241,11 @@ pub fn tail_claude_output(
                 {
                     let _ = writeln!(f, "{line}");
                 }
+            }
+
+            // Partial-message deltas are never consumed; skip the JSON parse.
+            if super::run_log::is_partial_stream_event_line(&line) {
+                continue;
             }
 
             // Parse the JSON line
@@ -2057,12 +2063,8 @@ pub fn tail_claude_output(
         }
 
         // Adaptive sleep: poll faster when actively receiving data (5ms)
-        // to reduce per-event latency, back off to 50ms when idle.
-        std::thread::sleep(if had_data {
-            POLL_INTERVAL_FAST
-        } else {
-            POLL_INTERVAL
-        });
+        // to reduce per-event latency, back off when idle.
+        std::thread::sleep(poll_backoff.next_interval(had_data));
     }
 
     // Drain any still-armed Monitors (process died / user cancel / completed)

@@ -75,6 +75,7 @@ import {
 } from './lib/session-state-hydration'
 import { scheduleIdleWork } from './lib/idle'
 import { checkWebClientVersion } from './lib/web-client-version'
+import { isResizeObserverNotification } from './lib/browser-errors'
 import type {
   CliImportedProjectResult,
   CliYoloSessionResult,
@@ -537,6 +538,7 @@ function App() {
 
     const handleError = (event: ErrorEvent) => {
       const message = event.error?.message ?? event.message ?? 'Unknown error'
+      if (isResizeObserverNotification(message)) return
       logger.error('Uncaught window error', {
         message,
         stack: event.error?.stack,
